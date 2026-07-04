@@ -10,6 +10,7 @@ import { Platform } from 'react-native';
 import { apiRequest } from './apiClient';
 
 const CHANNEL_ID = 'formbae-reminders';
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
 
 const IDS = {
   workout: 'reminder-workout',
@@ -143,26 +144,35 @@ async function fetchNotificationConfig(): Promise<NotificationConfig> {
   }
 }
 
-function nextDailyTimestamp(hour: number, minute: number): number {
-  const now = new Date();
-  const next = new Date();
-  next.setHours(hour, minute, 0, 0);
-  if (next.getTime() <= now.getTime()) {
-    next.setDate(next.getDate() + 1);
-  }
-  return next.getTime();
+function getIstWallDate(now = Date.now()) {
+  return new Date(now + IST_OFFSET_MS);
 }
 
-function nextWeeklyTimestamp(weekday: number, hour: number, minute: number): number {
-  const now = new Date();
-  const next = new Date();
-  next.setHours(hour, minute, 0, 0);
-  const diff = (weekday - next.getDay() + 7) % 7;
-  next.setDate(next.getDate() + diff);
-  if (next.getTime() <= now.getTime()) {
-    next.setDate(next.getDate() + 7);
+function istWallTimeToUtcTimestamp(year: number, monthIndex: number, day: number, hour: number, minute: number) {
+  return Date.UTC(year, monthIndex, day, hour, minute, 0, 0) - IST_OFFSET_MS;
+}
+
+function nextDailyIstTimestamp(hour: number, minute: number): number {
+  const now = Date.now();
+  const ist = getIstWallDate(now);
+  let timestamp = istWallTimeToUtcTimestamp(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), hour, minute);
+  if (timestamp <= now) {
+    timestamp = istWallTimeToUtcTimestamp(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() + 1, hour, minute);
   }
-  return next.getTime();
+  return timestamp;
+}
+
+function nextWeeklyIstTimestamp(weekday: number, hour: number, minute: number): number {
+  const now = Date.now();
+  const ist = getIstWallDate(now);
+  const currentWeekday = ist.getUTCDay();
+  let diff = (weekday - currentWeekday + 7) % 7;
+  let timestamp = istWallTimeToUtcTimestamp(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() + diff, hour, minute);
+  if (timestamp <= now) {
+    diff += 7;
+    timestamp = istWallTimeToUtcTimestamp(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate() + diff, hour, minute);
+  }
+  return timestamp;
 }
 
 async function scheduleReminder(id: string, title: string, body: string, timestamp: number, repeat: RepeatFrequency) {
@@ -203,7 +213,7 @@ export async function syncReminders(prefs: NotificationPrefs): Promise<void> {
       IDS.workout,
       config.workout.title,
       config.workout.body,
-      nextDailyTimestamp(hour, minute),
+      nextDailyIstTimestamp(hour, minute),
       RepeatFrequency.DAILY,
     );
   }
@@ -214,7 +224,7 @@ export async function syncReminders(prefs: NotificationPrefs): Promise<void> {
       IDS.checkIn,
       config.checkIn.title,
       config.checkIn.body,
-      nextWeeklyTimestamp(config.checkIn.weekday ?? 0, hour, minute),
+      nextWeeklyIstTimestamp(config.checkIn.weekday ?? 0, hour, minute),
       RepeatFrequency.WEEKLY,
     );
   }
@@ -225,7 +235,7 @@ export async function syncReminders(prefs: NotificationPrefs): Promise<void> {
       IDS.trainer,
       config.trainer.title,
       config.trainer.body,
-      nextDailyTimestamp(hour, minute),
+      nextDailyIstTimestamp(hour, minute),
       RepeatFrequency.DAILY,
     );
   }
