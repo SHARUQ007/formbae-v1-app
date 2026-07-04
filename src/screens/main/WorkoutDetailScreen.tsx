@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Feather from 'react-native-vector-icons/Feather';
 import { Card } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
+import { ProgressBar } from '../../components/ProgressBar';
+import { Badge } from '../../components/Badge';
 import { ExerciseVideo } from '../../components/ExerciseVideo';
+import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { fetchWorkoutDay } from '../../services/workoutService';
 import {
   completeWithQueue,
@@ -12,20 +17,26 @@ import {
   clearWorkoutProgress,
 } from '../../store/workoutStore';
 import { useRestTimer } from '../../hooks/useRestTimer';
-import { displayLocalNotification } from '../../services/notificationService';
+import { displayBehavioralNotification, displayLocalNotification } from '../../services/notificationService';
+import { useAuthStore } from '../../store/authStore';
 import type { WorkoutDayDetail } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
+import { spacing } from '../../theme/spacing';
+import { radius } from '../../theme/radius';
+import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutDetail'>;
 
 export function WorkoutDetailScreen({ route, navigation }: Props) {
   const { planDayId, mode = 'standard' } = route.params;
+  const insets = useSafeAreaInsets();
   const [detail, setDetail] = useState<WorkoutDayDetail | null>(null);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
+  const { status } = useAuthStore();
   const timer = useRestTimer(() => {
     displayLocalNotification('Rest complete', 'Time for your next set.').catch(() => undefined);
   });
@@ -101,6 +112,10 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
         workoutMode: detail.workoutMode,
       });
       await clearWorkoutProgress(planDayId);
+      await displayBehavioralNotification('workoutComplete', {
+        firstName: (status?.name || 'there').split(' ')[0],
+        workoutTitle: detail.focus || detail.planTitle || 'Workout',
+      }).catch(() => undefined);
       Alert.alert(
         'Workout complete',
         result.synced ? 'Great work! Your progress is saved.' : 'Saved offline — it will sync when you are back online.',
@@ -109,123 +124,176 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
     } finally {
       setFinishing(false);
     }
-  }, [detail, planDayId, navigation]);
+  }, [detail, planDayId, navigation, status?.name]);
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator color={colors.accent} size="large" />
+      <View style={[styles.container, styles.centerPad, { paddingTop: insets.top }]}>
+        <Header onBack={() => navigation.goBack()} title="Workout" />
+        <LoadingState message="Loading workout…" />
       </View>
     );
   }
 
   if (error || !detail) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.error}>{error || 'Workout not found'}</Text>
-        <PrimaryButton title="Retry" onPress={load} style={{ marginTop: 16 }} />
+      <View style={[styles.container, styles.centerPad, { paddingTop: insets.top }]}>
+        <Header onBack={() => navigation.goBack()} title="Workout" />
+        <ErrorState message={error || 'Workout not found'} onRetry={load} />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <Header onBack={() => navigation.goBack()} title={`Day ${detail.dayNumber}`} subtitle={detail.focus || detail.planTitle} />
+
       {timer.running ? (
         <View style={styles.timerBar}>
-          <Text style={styles.timerText}>Rest: {timer.remaining}s</Text>
+          <View style={styles.timerLeft}>
+            <Feather name="clock" size={18} color={colors.white} />
+            <Text style={styles.timerText}>Rest {timer.remaining}s</Text>
+          </View>
           <View style={styles.timerActions}>
-            <TouchableOpacity onPress={() => timer.addTime(15)}>
+            <TouchableOpacity onPress={() => timer.addTime(15)} style={styles.timerPill}>
               <Text style={styles.timerBtn}>+15s</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={timer.stop}>
+            <TouchableOpacity onPress={timer.stop} style={styles.timerPill}>
               <Text style={styles.timerBtn}>Skip</Text>
             </TouchableOpacity>
           </View>
         </View>
       ) : null}
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.day}>Day {detail.dayNumber}</Text>
-        <Text style={styles.focus}>{detail.focus || detail.planTitle}</Text>
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + spacing.xl }]}>
+        <View style={styles.progressCard}>
+          <View style={styles.progressTop}>
+            <Text style={styles.progressLabel}>
+              {completed.size}/{detail.exercises.length} done
+            </Text>
+            <Text style={styles.progressPct}>{Math.round(progress * 100)}%</Text>
+          </View>
+          <ProgressBar value={progress} />
         </View>
-        <Text style={styles.progressLabel}>
-          {completed.size}/{detail.exercises.length} exercises done
-        </Text>
 
         {detail.exercises.length === 0 ? (
-          <Card>
-            <Text style={styles.empty}>No exercises for this day. It may be a rest day.</Text>
-          </Card>
+          <EmptyState icon="coffee" title="Rest day" message="No exercises for this day. Recover well!" />
         ) : (
           detail.exercises.map((exercise, index) => {
             const done = completed.has(exercise.exerciseId);
             return (
-              <Card key={`${exercise.exerciseId}_${index}`} style={done ? styles.doneCard : undefined}>
-                <View style={styles.exerciseHeader}>
-                  <Text style={styles.exerciseName}>
-                    {index + 1}. {exercise.exerciseName}
-                  </Text>
-                  {done ? <Text style={styles.doneTag}>✓ Done</Text> : null}
+              <Card key={`${exercise.exerciseId}_${index}`} style={StyleSheet.flatten([styles.exCard, done && styles.exDone])}>
+                <View style={styles.exHeader}>
+                  <View style={[styles.exNum, done && styles.exNumDone]}>
+                    {done ? <Feather name="check" size={16} color={colors.white} /> : <Text style={styles.exNumText}>{index + 1}</Text>}
+                  </View>
+                  <Text style={styles.exName}>{exercise.exerciseName}</Text>
                 </View>
-                <Text style={styles.meta}>
-                  {exercise.sets ? `${exercise.sets} sets` : ''}
-                  {exercise.reps ? ` · ${exercise.reps} reps` : ''}
-                  {exercise.restSec ? ` · ${exercise.restSec}s rest` : ''}
-                </Text>
+
+                <View style={styles.chips}>
+                  {exercise.sets ? <Badge label={`${exercise.sets} sets`} tone="neutral" icon="layers" /> : null}
+                  {exercise.reps ? <Badge label={`${exercise.reps} reps`} tone="neutral" icon="repeat" /> : null}
+                  {exercise.restSec ? <Badge label={`${exercise.restSec}s rest`} tone="neutral" icon="clock" /> : null}
+                </View>
+
                 {exercise.notes ? <Text style={styles.notes}>{exercise.notes}</Text> : null}
+
                 <View style={styles.videoBox}>
                   <ExerciseVideo url={exercise.videoUrl} />
                 </View>
+
                 <PrimaryButton
                   title={done ? 'Mark not done' : 'Mark complete'}
+                  icon={done ? 'rotate-ccw' : 'check'}
                   variant={done ? 'secondary' : 'primary'}
                   onPress={() => toggleExercise(exercise.exerciseId, exercise.restSec)}
-                  style={{ marginTop: 12 }}
+                  style={styles.exBtn}
                 />
               </Card>
             );
           })
         )}
 
-        <PrimaryButton title="Finish workout" onPress={onFinish} loading={finishing} style={{ marginTop: 20 }} />
-        <Text style={styles.safety}>
-          Warm up before you start and use good form. Stop immediately and rest if you feel pain, dizziness, or
-          discomfort, and consult a healthcare professional if it continues.
-        </Text>
+        <PrimaryButton title="Finish workout" icon="flag" onPress={onFinish} loading={finishing} style={styles.finish} />
+        <View style={styles.safetyRow}>
+          <Feather name="alert-circle" size={14} color={colors.inkMuted} />
+          <Text style={styles.safety}>
+            Warm up first and use good form. Stop and rest if you feel pain, dizziness, or discomfort, and consult a
+            healthcare professional if it continues.
+          </Text>
+        </View>
       </ScrollView>
+    </View>
+  );
+}
+
+function Header({ onBack, title, subtitle }: { onBack: () => void; title: string; subtitle?: string }) {
+  return (
+    <View style={styles.header}>
+      <TouchableOpacity onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityRole="button" accessibilityLabel="Go back">
+        <Feather name="chevron-left" size={26} color={colors.ink} />
+      </TouchableOpacity>
+      <View style={styles.headerText}>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text style={styles.headerSubtitle} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg, padding: 24 },
-  error: { color: colors.error, textAlign: 'center' },
-  scroll: { padding: 24 },
-  day: { color: colors.accent, fontWeight: '700' },
-  focus: { fontSize: 24, fontWeight: '700', color: colors.ink, marginVertical: 6 },
-  progressTrack: { height: 6, backgroundColor: colors.border, borderRadius: 99, marginTop: 8 },
-  progressFill: { height: 6, backgroundColor: colors.accent, borderRadius: 99 },
-  progressLabel: { color: colors.inkMuted, marginTop: 6, marginBottom: 12 },
-  empty: { color: colors.inkMuted },
-  doneCard: { backgroundColor: colors.accentLight, marginBottom: 12 },
-  exerciseHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  exerciseName: { fontSize: 17, fontWeight: '700', color: colors.ink, flex: 1, paddingRight: 8 },
-  doneTag: { color: colors.accent, fontWeight: '700' },
-  meta: { color: colors.inkMuted, marginTop: 4 },
-  notes: { color: colors.inkMuted, marginTop: 6, fontStyle: 'italic' },
-  videoBox: { marginTop: 12 },
+  centerPad: { paddingHorizontal: spacing.lg },
+  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+  headerText: { flex: 1 },
+  headerTitle: { ...typography.title, color: colors.ink },
+  headerSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   timerBar: {
     backgroundColor: colors.accentDark,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    marginHorizontal: spacing.lg,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
   },
-  timerText: { color: colors.white, fontSize: 18, fontWeight: '700' },
-  timerActions: { flexDirection: 'row', gap: 20 },
-  timerBtn: { color: colors.white, fontWeight: '700' },
-  safety: { color: colors.inkMuted, fontSize: 12, lineHeight: 18, marginTop: 16, fontStyle: 'italic' },
+  timerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  timerText: { color: colors.white, ...typography.subtitle },
+  timerActions: { flexDirection: 'row', gap: spacing.sm },
+  timerPill: { backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill },
+  timerBtn: { color: colors.white, fontWeight: '700', fontSize: 13 },
+  scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
+  progressCard: { marginBottom: spacing.md },
+  progressTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  progressLabel: { ...typography.bodyBold, color: colors.ink },
+  progressPct: { ...typography.bodyBold, color: colors.accent },
+  exCard: { marginBottom: spacing.sm },
+  exDone: { backgroundColor: colors.accentLight, borderColor: colors.accentSurface },
+  exHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  exNum: {
+    width: 30,
+    height: 30,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exNumDone: { backgroundColor: colors.accent },
+  exNumText: { ...typography.bodyBold, color: colors.inkMuted },
+  exName: { ...typography.subtitle, color: colors.ink, flex: 1 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: spacing.sm },
+  notes: { ...typography.body, color: colors.inkMuted, fontStyle: 'italic', marginBottom: spacing.sm },
+  videoBox: { marginBottom: spacing.sm },
+  exBtn: { marginTop: spacing.xs },
+  finish: { marginTop: spacing.md },
+  safetyRow: { flexDirection: 'row', gap: 6, marginTop: spacing.md, alignItems: 'flex-start' },
+  safety: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 17, fontStyle: 'italic' },
 });

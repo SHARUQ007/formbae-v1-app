@@ -1,12 +1,17 @@
-import { ScrollView, Text, StyleSheet } from 'react-native';
+import { ScrollView, Text, View, StyleSheet } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenTitle, Card } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
+import { Avatar } from '../../components/Avatar';
+import { Badge } from '../../components/Badge';
 import { ErrorState, LoadingState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { fetchRecommendedTrainer } from '../../services/trainerService';
 import type { OnboardingStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
+import { spacing } from '../../theme/spacing';
+import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'TrainerMatch'>;
 
@@ -33,26 +38,53 @@ export function TrainerMatchScreen({ navigation }: Props) {
   }
 
   return (
-    <ScreenContainer>
-      <ScrollView>
+    <ScreenContainer withBottomInset>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         <ScreenTitle>Your recommended trainer</ScreenTitle>
-        <Card>
-          <Text style={styles.badge}>{trainer.badge}</Text>
-          <Text style={styles.name}>{trainer.name}</Text>
-          <Text style={styles.coach}>{trainer.coachType}</Text>
+
+        <Card style={styles.card}>
+          <View style={styles.headerRow}>
+            <Avatar name={trainer.name} size={64} />
+            <View style={styles.headerText}>
+              {trainer.badge ? <Badge label={trainer.badge} tone="accent" icon="award" /> : null}
+              <Text style={styles.name}>{trainer.name}</Text>
+              <Text style={styles.coach}>{trainer.coachType}</Text>
+            </View>
+          </View>
+
           <Text style={styles.body}>{trainer.description}</Text>
-          <Text style={styles.why}>{trainer.why}</Text>
+
+          <View style={styles.whyBox}>
+            <View style={styles.whyHeader}>
+              <Feather name="check-circle" size={16} color={colors.accent} />
+              <Text style={styles.whyTitle}>Why this match</Text>
+            </View>
+            <Text style={styles.why}>{trainer.why}</Text>
+          </View>
         </Card>
-        <PrimaryButton title="Continue with this trainer" onPress={() => navigation.navigate('PaymentRequired')} />
+
+        <PrimaryButton
+          title="Continue with this trainer"
+          icon="arrow-right"
+          onPress={() => navigation.navigate('PaymentRequired')}
+          style={styles.cta}
+        />
       </ScrollView>
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  badge: { color: colors.accent, fontWeight: '700', marginBottom: 8 },
-  name: { fontSize: 24, fontWeight: '700', color: colors.ink },
-  coach: { color: colors.inkMuted, marginBottom: 12 },
-  body: { color: colors.ink, lineHeight: 22, marginBottom: 12 },
-  why: { color: colors.accentDark, lineHeight: 21 },
+  scroll: { paddingBottom: spacing.lg },
+  card: { gap: spacing.md },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  headerText: { flex: 1, gap: 4 },
+  name: { ...typography.title, color: colors.ink },
+  coach: { ...typography.caption, color: colors.inkMuted },
+  body: { ...typography.body, color: colors.ink },
+  whyBox: { backgroundColor: colors.accentLight, borderRadius: 14, padding: spacing.md },
+  whyHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  whyTitle: { ...typography.label, color: colors.accentDarker },
+  why: { ...typography.body, color: colors.accentDarker },
+  cta: { marginTop: spacing.lg },
 });

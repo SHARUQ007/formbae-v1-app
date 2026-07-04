@@ -32,6 +32,14 @@ export function setAuthToken(token: string | null) {
   authToken = token;
 }
 
+export function getAuthToken() {
+  return authToken;
+}
+
+export function getApiUrl(path: string) {
+  return `${getApiBaseUrl()}${API_PREFIX}${path}`;
+}
+
 export function setUnauthorizedHandler(handler: () => void) {
   onUnauthorized = handler;
 }
@@ -62,7 +70,7 @@ async function doFetch(url: string, init: RequestInit, timeoutMs: number, extern
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const url = `${getApiBaseUrl()}${API_PREFIX}${path}`;
+  const url = getApiUrl(path);
   const method = options.method || 'GET';
   const headers: Record<string, string> = {
     Accept: 'application/json',

@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react';
 import { ScrollView, Text, TouchableOpacity, StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { ScreenContainer, ScreenTitle, ScreenSubtitle } from '../../components/Card';
+import Feather from 'react-native-vector-icons/Feather';
+import { ScreenContainer } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { FormInput } from '../../components/FormInput';
+import { ProgressBar } from '../../components/ProgressBar';
+import { LoadingState } from '../../components/States';
 import { fetchQuestionnaire, saveQuestionnaireDraft, submitQuestionnaire } from '../../services/questionnaireService';
 import { loadQuestionnaireDraft, saveQuestionnaireDraft as saveLocalDraft } from '../../store/onboardingStore';
 import type { MobileQuestion } from '../../types/api';
 import type { OnboardingStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
+import { spacing } from '../../theme/spacing';
+import { radius } from '../../theme/radius';
+import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'Questionnaire'>;
 
@@ -67,15 +73,33 @@ export function QuestionnaireScreen({ navigation }: Props) {
   const renderBody = () => {
     if (!current) return null;
     if (current.type === 'text') {
-      return <FormInput value={answers[current.id] || ''} onChangeText={setAnswer} placeholder="Optional notes" />;
+      return (
+        <FormInput
+          value={answers[current.id] || ''}
+          onChangeText={setAnswer}
+          placeholder="Type your answer"
+          multiline
+          autoCapitalize="sentences"
+        />
+      );
     }
     return (
       <View style={styles.options}>
         {current.options?.map((opt) => {
           const selected = answers[current.id] === opt.value;
           return (
-            <TouchableOpacity key={opt.value} style={[styles.option, selected && styles.optionSelected]} onPress={() => setAnswer(opt.value)}>
+            <TouchableOpacity
+              key={opt.value}
+              activeOpacity={0.8}
+              style={[styles.option, selected && styles.optionSelected]}
+              onPress={() => setAnswer(opt.value)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
+            >
               <Text style={[styles.optionText, selected && styles.optionTextSelected]}>{opt.label}</Text>
+              <View style={[styles.radio, selected && styles.radioSelected]}>
+                {selected ? <Feather name="check" size={14} color={colors.white} /> : null}
+              </View>
             </TouchableOpacity>
           );
         })}
@@ -86,45 +110,95 @@ export function QuestionnaireScreen({ navigation }: Props) {
   if (loading || !current) {
     return (
       <ScreenContainer>
-        <ScreenTitle>Loading questionnaire…</ScreenTitle>
+        <LoadingState message="Loading your questionnaire…" />
       </ScreenContainer>
     );
   }
 
+  const isHealth = /injur|restrict|medical|condition|health/i.test(`${current.id} ${current.title}`);
+
   return (
-    <ScreenContainer>
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
-      </View>
-      <Text style={styles.step}>Question {index + 1} of {questions.length}</Text>
-      <ScreenTitle>{current.title}</ScreenTitle>
-      {current.subtitle ? <ScreenSubtitle>{current.subtitle}</ScreenSubtitle> : null}
-      <ScrollView>
-        {renderBody()}
-        {/injur|restrict|medical|condition|health/i.test(`${current.id} ${current.title}`) ? (
-          <Text style={styles.disclaimer}>
-            FormBae provides fitness coaching, not medical advice. If you have an injury or medical condition, please
-            consult a qualified healthcare professional before starting any program.
+    <ScreenContainer withBottomInset>
+      <View style={styles.progressHeader}>
+        <View style={styles.progressTop}>
+          {index > 0 ? (
+            <TouchableOpacity onPress={() => setIndex(index - 1)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Feather name="chevron-left" size={24} color={colors.ink} />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.spacer} />
+          )}
+          <Text style={styles.step}>
+            {index + 1} / {questions.length}
           </Text>
+        </View>
+        <ProgressBar value={progress} />
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        <Text style={styles.title}>{current.title}</Text>
+        {current.subtitle ? <Text style={styles.subtitle}>{current.subtitle}</Text> : null}
+        {renderBody()}
+        {isHealth ? (
+          <View style={styles.disclaimer}>
+            <Feather name="info" size={16} color={colors.warn} />
+            <Text style={styles.disclaimerText}>
+              FormBae provides fitness coaching, not medical advice. If you have an injury or medical condition, consult a
+              qualified healthcare professional before starting any program.
+            </Text>
+          </View>
         ) : null}
       </ScrollView>
-      <View style={styles.actions}>
-        {index > 0 ? <PrimaryButton title="Back" variant="secondary" onPress={() => setIndex(index - 1)} /> : null}
-        <PrimaryButton title={index === questions.length - 1 ? 'Submit' : 'Continue'} onPress={onNext} loading={submitting} />
-      </View>
+
+      <PrimaryButton
+        title={index === questions.length - 1 ? 'Submit answers' : 'Continue'}
+        icon={index === questions.length - 1 ? 'check' : 'arrow-right'}
+        onPress={onNext}
+        loading={submitting}
+      />
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  progressTrack: { height: 6, backgroundColor: colors.border, borderRadius: 99, marginBottom: 16 },
-  progressFill: { height: 6, backgroundColor: colors.accent, borderRadius: 99 },
-  step: { color: colors.inkMuted, marginBottom: 8 },
-  options: { gap: 10 },
-  option: { backgroundColor: colors.white, borderRadius: 12, padding: 16, borderWidth: 1, borderColor: colors.border },
+  progressHeader: { marginBottom: spacing.lg },
+  progressTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  spacer: { width: 24 },
+  step: { ...typography.label, color: colors.inkMuted },
+  scroll: { paddingBottom: spacing.lg },
+  title: { ...typography.title, color: colors.ink, marginBottom: spacing.xs },
+  subtitle: { ...typography.body, color: colors.inkMuted, marginBottom: spacing.lg },
+  options: { gap: spacing.sm },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.panel,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+  },
   optionSelected: { borderColor: colors.accent, backgroundColor: colors.accentLight },
-  optionText: { fontSize: 16, color: colors.ink },
-  optionTextSelected: { color: colors.accentDark, fontWeight: '600' },
-  actions: { gap: 10, marginTop: 12 },
-  disclaimer: { color: colors.inkMuted, fontSize: 13, lineHeight: 19, marginTop: 16, fontStyle: 'italic' },
+  optionText: { ...typography.body, color: colors.ink, flex: 1, paddingRight: spacing.sm },
+  optionTextSelected: { color: colors.accentDarker, fontWeight: '600' },
+  radio: {
+    width: 24,
+    height: 24,
+    borderRadius: radius.pill,
+    borderWidth: 2,
+    borderColor: colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
+  disclaimer: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    backgroundColor: colors.warnLight,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.lg,
+  },
+  disclaimerText: { ...typography.caption, color: colors.warn, flex: 1, lineHeight: 17 },
 });

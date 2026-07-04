@@ -16,11 +16,7 @@ export function WorkoutsNavigator() {
       }}
     >
       <Stack.Screen name="WorkoutList" component={WorkoutsScreen} options={{ headerShown: false }} />
-      <Stack.Screen
-        name="WorkoutDetail"
-        component={WorkoutDetailScreen}
-        options={({ route }) => ({ title: route.params.title || 'Workout' })}
-      />
+      <Stack.Screen name="WorkoutDetail" component={WorkoutDetailScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );
 }

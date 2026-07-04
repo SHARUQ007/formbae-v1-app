@@ -5,6 +5,7 @@ import notifee, {
   TriggerType,
   TimestampTrigger,
 } from '@notifee/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { apiRequest } from './apiClient';
 
@@ -22,6 +23,84 @@ export type NotificationPrefs = {
   trainerMessageReminders: boolean;
 };
 
+type NotificationTemplate = {
+  enabled: boolean;
+  title: string;
+  body: string;
+  timeHHMM: string;
+  weekday?: number;
+};
+
+type NotificationConfig = {
+  workout: NotificationTemplate;
+  checkIn: NotificationTemplate;
+  trainer: NotificationTemplate;
+  behavioral: Record<BehavioralNotificationEvent, BehavioralNotificationTemplate>;
+};
+
+export type BehavioralNotificationEvent = 'workoutComplete' | 'dietPhotoLogged' | 'checkInSubmitted' | 'paymentConfirmed' | 'planReady';
+
+type BehavioralNotificationTemplate = {
+  enabled: boolean;
+  title: string;
+  body: string;
+  cooldownHours: number;
+};
+
+const DEFAULT_CONFIG: NotificationConfig = {
+  workout: {
+    enabled: true,
+    title: 'Time to train',
+    body: 'Your FormBae workout is waiting. A short session keeps your streak alive.',
+    timeHHMM: '08:00',
+  },
+  checkIn: {
+    enabled: true,
+    title: 'Weekly check-in due',
+    body: 'Share your weight, energy, and notes so your trainer can adjust your plan.',
+    timeHHMM: '18:00',
+    weekday: 0,
+  },
+  trainer: {
+    enabled: true,
+    title: 'Message your trainer',
+    body: 'Have a question? Your FormBae trainer is one message away.',
+    timeHHMM: '19:30',
+  },
+  behavioral: {
+    workoutComplete: {
+      enabled: true,
+      title: 'Workout logged',
+      body: 'Great work, {firstName}. Your trainer can now see today’s progress.',
+      cooldownHours: 2,
+    },
+    dietPhotoLogged: {
+      enabled: true,
+      title: 'Meal saved',
+      body: '{mealType} added to your diet diary. Keep the streak going.',
+      cooldownHours: 2,
+    },
+    checkInSubmitted: {
+      enabled: true,
+      title: 'Check-in sent',
+      body: 'Your trainer has your latest update and can adjust your plan if needed.',
+      cooldownHours: 12,
+    },
+    paymentConfirmed: {
+      enabled: true,
+      title: 'Payment confirmed',
+      body: 'Your FormBae trainer-backed plan is being prepared.',
+      cooldownHours: 24,
+    },
+    planReady: {
+      enabled: true,
+      title: 'Your plan is ready',
+      body: 'Your trainer has published your workout plan. Open FormBae to begin.',
+      cooldownHours: 12,
+    },
+  },
+};
+
 export async function ensureNotificationSetup(): Promise<boolean> {
   const settings = await notifee.requestPermission();
   const granted =
@@ -36,6 +115,32 @@ export async function ensureNotificationSetup(): Promise<boolean> {
     });
   }
   return granted;
+}
+
+function parseTimeHHMM(value: string, fallback: string) {
+  const raw = /^([01]\d|2[0-3]):([0-5]\d)$/.test(value) ? value : fallback;
+  const [hour, minute] = raw.split(':').map((part) => Number(part));
+  return { hour, minute };
+}
+
+async function fetchNotificationConfig(): Promise<NotificationConfig> {
+  try {
+    const response = await apiRequest<{ config: NotificationConfig }>('/notifications/config');
+    return {
+      workout: { ...DEFAULT_CONFIG.workout, ...response.config.workout },
+      checkIn: { ...DEFAULT_CONFIG.checkIn, ...response.config.checkIn },
+      trainer: { ...DEFAULT_CONFIG.trainer, ...response.config.trainer },
+      behavioral: {
+        workoutComplete: { ...DEFAULT_CONFIG.behavioral.workoutComplete, ...response.config.behavioral?.workoutComplete },
+        dietPhotoLogged: { ...DEFAULT_CONFIG.behavioral.dietPhotoLogged, ...response.config.behavioral?.dietPhotoLogged },
+        checkInSubmitted: { ...DEFAULT_CONFIG.behavioral.checkInSubmitted, ...response.config.behavioral?.checkInSubmitted },
+        paymentConfirmed: { ...DEFAULT_CONFIG.behavioral.paymentConfirmed, ...response.config.behavioral?.paymentConfirmed },
+        planReady: { ...DEFAULT_CONFIG.behavioral.planReady, ...response.config.behavioral?.planReady },
+      },
+    };
+  } catch {
+    return DEFAULT_CONFIG;
+  }
 }
 
 function nextDailyTimestamp(hour: number, minute: number): number {
@@ -86,37 +191,41 @@ async function scheduleReminder(id: string, title: string, body: string, timesta
 export async function syncReminders(prefs: NotificationPrefs): Promise<void> {
   const granted = await ensureNotificationSetup();
   if (!granted) return;
+  const config = await fetchNotificationConfig();
 
   await notifee.cancelTriggerNotification(IDS.workout);
   await notifee.cancelTriggerNotification(IDS.checkIn);
   await notifee.cancelTriggerNotification(IDS.trainer);
 
-  if (prefs.workoutReminders) {
+  if (prefs.workoutReminders && config.workout.enabled) {
+    const { hour, minute } = parseTimeHHMM(config.workout.timeHHMM, DEFAULT_CONFIG.workout.timeHHMM);
     await scheduleReminder(
       IDS.workout,
-      'Time to train',
-      'Your FormBae workout is waiting. A short session keeps your streak alive.',
-      nextDailyTimestamp(8, 0),
+      config.workout.title,
+      config.workout.body,
+      nextDailyTimestamp(hour, minute),
       RepeatFrequency.DAILY,
     );
   }
 
-  if (prefs.weeklyCheckInReminders) {
+  if (prefs.weeklyCheckInReminders && config.checkIn.enabled) {
+    const { hour, minute } = parseTimeHHMM(config.checkIn.timeHHMM, DEFAULT_CONFIG.checkIn.timeHHMM);
     await scheduleReminder(
       IDS.checkIn,
-      'Weekly check-in due',
-      'Share your weight, energy, and notes so your trainer can adjust your plan.',
-      nextWeeklyTimestamp(0, 18, 0),
+      config.checkIn.title,
+      config.checkIn.body,
+      nextWeeklyTimestamp(config.checkIn.weekday ?? 0, hour, minute),
       RepeatFrequency.WEEKLY,
     );
   }
 
-  if (prefs.trainerMessageReminders) {
+  if (prefs.trainerMessageReminders && config.trainer.enabled) {
+    const { hour, minute } = parseTimeHHMM(config.trainer.timeHHMM, DEFAULT_CONFIG.trainer.timeHHMM);
     await scheduleReminder(
       IDS.trainer,
-      'Message your trainer',
-      'Have a question? Your FormBae trainer is one message away.',
-      nextDailyTimestamp(19, 30),
+      config.trainer.title,
+      config.trainer.body,
+      nextDailyTimestamp(hour, minute),
       RepeatFrequency.DAILY,
     );
   }
@@ -129,6 +238,33 @@ export async function displayLocalNotification(title: string, body: string): Pro
     body,
     android: { channelId: CHANNEL_ID, pressAction: { id: 'default' } },
   });
+}
+
+function renderTemplate(value: string, variables: Record<string, string> = {}) {
+  return value.replace(/\{(\w+)\}/g, (_match, key: string) => variables[key] || '');
+}
+
+async function canSendBehavioral(event: BehavioralNotificationEvent, cooldownHours: number) {
+  if (cooldownHours <= 0) return true;
+  const key = `formbae_behavioral_notification:${event}`;
+  const lastRaw = await AsyncStorage.getItem(key);
+  const last = lastRaw ? Number(lastRaw) : 0;
+  const now = Date.now();
+  if (last && now - last < cooldownHours * 60 * 60 * 1000) return false;
+  await AsyncStorage.setItem(key, String(now));
+  return true;
+}
+
+export async function displayBehavioralNotification(
+  event: BehavioralNotificationEvent,
+  variables: Record<string, string> = {},
+): Promise<void> {
+  const config = await fetchNotificationConfig();
+  const template = config.behavioral[event];
+  if (!template?.enabled) return;
+  const allowed = await canSendBehavioral(event, template.cooldownHours ?? 0);
+  if (!allowed) return;
+  await displayLocalNotification(renderTemplate(template.title, variables), renderTemplate(template.body, variables));
 }
 
 /**

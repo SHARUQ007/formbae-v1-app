@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ScrollView, Text, StyleSheet, TouchableOpacity, RefreshControl, ActivityIndicator, View } from 'react-native';
+import { ScrollView, Text, StyleSheet, RefreshControl, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenTitle, Card } from '../../components/Card';
-import { PrimaryButton } from '../../components/PrimaryButton';
+import { Badge } from '../../components/Badge';
+import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { fetchWorkoutPlan } from '../../services/workoutService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
 import type { PlanDay } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
+import { spacing } from '../../theme/spacing';
+import { radius } from '../../theme/radius';
+import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutList'>;
 
@@ -49,47 +54,66 @@ export function WorkoutsScreen({ navigation }: Props) {
   if (loading) {
     return (
       <ScreenContainer>
-        <ScreenTitle>Loading plan…</ScreenTitle>
-        <ActivityIndicator color={colors.accent} />
+        <ScreenTitle>My plan</ScreenTitle>
+        <LoadingState message="Loading your plan…" />
       </ScreenContainer>
     );
   }
 
+  const doneCount = days.filter((d) => d.completed).length;
+
   return (
     <ScreenContainer>
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+      >
         <ScreenTitle>{title}</ScreenTitle>
+        {days.length > 0 ? (
+          <Text style={styles.summary}>
+            {doneCount} of {days.length} days completed · {mode === 'quick' ? 'Quick' : 'Standard'} mode
+          </Text>
+        ) : null}
+
         {error ? (
-          <Card>
-            <Text style={styles.error}>{error}</Text>
-            <PrimaryButton title="Retry" onPress={load} style={{ marginTop: 12 }} />
-          </Card>
+          <ErrorState message={error} onRetry={load} />
         ) : days.length === 0 ? (
-          <Card>
-            <Text style={styles.empty}>Your workout plan will appear here once your trainer publishes it.</Text>
-          </Card>
+          <EmptyState
+            icon="calendar"
+            title="No plan yet"
+            message="Your workout plan will appear here once your trainer publishes it."
+          />
         ) : (
-          days.map((day) => {
-            const count = day.exercises?.length ?? 0;
-            return (
-              <TouchableOpacity
-                key={day.planDayId}
-                activeOpacity={0.85}
-                onPress={() => navigation.navigate('WorkoutDetail', { planDayId: day.planDayId, title: day.focus, mode })}
-              >
-                <Card style={day.completed ? styles.doneCard : styles.dayCard}>
-                  <View style={styles.rowBetween}>
-                    <Text style={styles.dayLabel}>Day {day.dayNumber}</Text>
-                    {day.completed ? <Text style={styles.doneTag}>✓ Completed</Text> : null}
+          <View style={styles.days}>
+            {days.map((day) => {
+              const count = day.exercises?.length ?? 0;
+              return (
+                <Card
+                  key={day.planDayId}
+                  onPress={() => navigation.navigate('WorkoutDetail', { planDayId: day.planDayId, title: day.focus, mode })}
+                  style={styles.dayCard}
+                >
+                  <View style={[styles.dayBadge, day.completed && styles.dayBadgeDone]}>
+                    {day.completed ? (
+                      <Feather name="check" size={18} color={colors.white} />
+                    ) : (
+                      <Text style={styles.dayNum}>{day.dayNumber}</Text>
+                    )}
                   </View>
-                  <Text style={styles.dayTitle}>{day.focus || 'Workout'}</Text>
-                  <Text style={styles.meta}>
-                    {count} exercise{count === 1 ? '' : 's'} · {mode === 'quick' ? 'Quick' : 'Standard'} mode
-                  </Text>
+                  <View style={styles.dayInfo}>
+                    <Text style={styles.dayTitle} numberOfLines={1}>
+                      {day.focus || 'Workout'}
+                    </Text>
+                    <Text style={styles.meta}>
+                      {count} exercise{count === 1 ? '' : 's'}
+                    </Text>
+                  </View>
+                  {day.completed ? <Badge label="Done" tone="success" icon="check" /> : <Feather name="chevron-right" size={20} color={colors.inkSubtle} />}
                 </Card>
-              </TouchableOpacity>
-            );
-          })
+              );
+            })}
+          </View>
         )}
       </ScrollView>
     </ScreenContainer>
@@ -97,13 +121,21 @@ export function WorkoutsScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  empty: { color: colors.inkMuted, lineHeight: 21 },
-  error: { color: colors.error },
-  dayCard: { marginBottom: 10 },
-  doneCard: { marginBottom: 10, backgroundColor: colors.accentLight },
-  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  dayLabel: { color: colors.accent, fontWeight: '700' },
-  doneTag: { color: colors.accent, fontWeight: '700' },
-  dayTitle: { fontSize: 18, fontWeight: '700', color: colors.ink, marginVertical: 4 },
-  meta: { color: colors.inkMuted },
+  scroll: { paddingBottom: spacing.xl },
+  summary: { ...typography.caption, color: colors.inkMuted, marginBottom: spacing.md, marginTop: -spacing.xs },
+  days: { gap: spacing.sm },
+  dayCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
+  dayBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.accentLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayBadgeDone: { backgroundColor: colors.accent },
+  dayNum: { ...typography.subtitle, color: colors.accentDark, fontWeight: '800' },
+  dayInfo: { flex: 1 },
+  dayTitle: { ...typography.bodyBold, color: colors.ink },
+  meta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
 });

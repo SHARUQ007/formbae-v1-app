@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Text, StyleSheet } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { GradientLoading } from '../../components/GradientLoading';
 import { generateAnalysis } from '../../services/questionnaireService';
 import type { OnboardingStackParamList } from '../../navigation/types';
-import { colors } from '../../theme/colors';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'AnalysisLoading'>;
 
@@ -33,16 +31,5 @@ export function AnalysisLoadingScreen({ navigation }: Props) {
     })();
   }, [navigation]);
 
-  return (
-    <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={styles.container}>
-      <Text style={styles.title}>Setting up your free analysis</Text>
-      <Text style={styles.subtitle}>{messages[msgIndex]}</Text>
-    </LinearGradient>
-  );
+  return <GradientLoading title="Setting up your free analysis" subtitle={messages[msgIndex]} />;
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  title: { color: colors.white, fontSize: 24, fontWeight: '700', marginBottom: 12, textAlign: 'center' },
-  subtitle: { color: '#ecfdf5', fontSize: 16, textAlign: 'center' },
-});

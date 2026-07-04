@@ -1,8 +1,12 @@
 import { useState } from 'react';
-import { ScrollView, Text, StyleSheet, Switch, View, RefreshControl, TouchableOpacity } from 'react-native';
+import { ScrollView, Text, StyleSheet, Switch, View, RefreshControl } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { ScreenContainer, ScreenTitle, Card } from '../../components/Card';
+import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
+import { Avatar } from '../../components/Avatar';
+import { Badge } from '../../components/Badge';
+import { ListRow } from '../../components/ListRow';
+import { Divider } from '../../components/Divider';
 import { LoadingState, ErrorState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { fetchSettings, updateSettings } from '../../services/settingsService';
@@ -11,6 +15,8 @@ import { titleCase } from '../../utils/format';
 import { useAuthStore } from '../../store/authStore';
 import type { ProfileStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
+import { spacing } from '../../theme/spacing';
+import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'ProfileMain'>;
 
@@ -81,103 +87,92 @@ export function ProfileScreen({ navigation }: Props) {
 
   return (
     <ScreenContainer>
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
+      >
         <ScreenTitle>Profile</ScreenTitle>
 
         <Card>
-          <Text style={styles.name}>{status?.name || 'FormBae Trainee'}</Text>
-          <Text style={styles.phone}>{status?.phone || ''}</Text>
-          <View style={[styles.badge, status?.hasPaid ? styles.badgePaid : styles.badgeFree]}>
-            <Text style={[styles.badgeText, status?.hasPaid ? styles.badgeTextPaid : styles.badgeTextFree]}>
-              {status?.hasPaid ? `Active plan${planName ? ` · ${planName}` : ''}` : 'Payment required'}
-            </Text>
+          <View style={styles.headerRow}>
+            <Avatar name={status?.name} size={60} />
+            <View style={styles.headerText}>
+              <Text style={styles.name}>{status?.name || 'FormBae Trainee'}</Text>
+              <Text style={styles.phone}>{status?.phone || ''}</Text>
+            </View>
+          </View>
+          <View style={styles.badgeRow}>
+            {status?.hasPaid ? (
+              <Badge label={`Active plan${planName ? ` · ${planName}` : ''}`} tone="success" icon="check-circle" />
+            ) : (
+              <Badge label="Payment required" tone="warn" icon="alert-circle" />
+            )}
           </View>
         </Card>
 
-        {details.length > 0 ? (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Your details</Text>
-            {details.map(([label, value]) => (
-              <View key={label} style={styles.detailRow}>
-                <Text style={styles.detailLabel}>{label}</Text>
-                <Text style={styles.detailValue}>{value}</Text>
+        <SectionTitle>Your details</SectionTitle>
+        <Card>
+          {details.length > 0 ? (
+            details.map(([label, value], i) => (
+              <View key={label}>
+                {i > 0 ? <Divider /> : null}
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>{label}</Text>
+                  <Text style={styles.detailValue}>{value}</Text>
+                </View>
               </View>
-            ))}
-          </Card>
-        ) : (
-          <Card style={styles.section}>
-            <Text style={styles.sectionTitle}>Your details</Text>
+            ))
+          ) : (
             <Text style={styles.muted}>Complete your questionnaire to see your fitness summary here.</Text>
-          </Card>
-        )}
-
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Notification preferences</Text>
-          <Row label="Workout reminders" value={notifications.workoutReminders} onChange={(v) => toggle('workoutReminders', v)} />
-          <Row label="Weekly check-in reminders" value={notifications.weeklyCheckInReminders} onChange={(v) => toggle('weeklyCheckInReminders', v)} />
-          <Row label="Trainer message reminders" value={notifications.trainerMessageReminders} onChange={(v) => toggle('trainerMessageReminders', v)} />
-          <Text style={styles.todo}>
-            Local reminders are scheduled on this device. Server push (FCM/APNs) activates automatically once Firebase config is added.
-          </Text>
+          )}
         </Card>
 
-        <Card style={styles.section}>
-          <Text style={styles.sectionTitle}>Account & legal</Text>
-          <LinkRow label="Legal & support" onPress={() => navigation.navigate('Legal')} />
-          <LinkRow label="Delete account" destructive onPress={() => navigation.navigate('DeleteAccount')} />
+        <SectionTitle>Notifications</SectionTitle>
+        <Card>
+          <ToggleRow label="Workout reminders" value={notifications.workoutReminders} onChange={(v) => toggle('workoutReminders', v)} />
+          <Divider />
+          <ToggleRow label="Weekly check-in reminders" value={notifications.weeklyCheckInReminders} onChange={(v) => toggle('weeklyCheckInReminders', v)} />
+          <Divider />
+          <ToggleRow label="Trainer message reminders" value={notifications.trainerMessageReminders} onChange={(v) => toggle('trainerMessageReminders', v)} />
         </Card>
 
-        <PrimaryButton title="Log out" variant="secondary" onPress={() => logout()} />
+        <SectionTitle>Account & legal</SectionTitle>
+        <Card>
+          <ListRow icon="file-text" label="Legal & support" onPress={() => navigation.navigate('Legal')} />
+          <Divider inset={54} />
+          <ListRow icon="trash-2" label="Delete account" tone="danger" onPress={() => navigation.navigate('DeleteAccount')} />
+        </Card>
+
+        <PrimaryButton title="Log out" icon="log-out" variant="secondary" onPress={() => logout()} style={styles.logout} />
         <Text style={styles.version}>FormBae · v1.0.0</Text>
       </ScrollView>
     </ScreenContainer>
   );
 }
 
-function LinkRow({ label, onPress, destructive }: { label: string; onPress: () => void; destructive?: boolean }) {
+function ToggleRow({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <TouchableOpacity
-      style={styles.linkRow}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-    >
-      <Text style={[styles.linkLabel, destructive && styles.linkDestructive]}>{label}</Text>
-      <Text style={styles.chevron}>›</Text>
-    </TouchableOpacity>
-  );
-}
-
-function Row({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Switch value={value} onValueChange={onChange} trackColor={{ true: colors.accent }} />
+    <View style={styles.toggleRow}>
+      <Text style={styles.toggleLabel}>{label}</Text>
+      <Switch value={value} onValueChange={onChange} trackColor={{ true: colors.accent, false: colors.borderStrong }} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  name: { fontSize: 22, fontWeight: '700', color: colors.ink },
-  phone: { color: colors.inkMuted, marginTop: 2 },
-  badge: { alignSelf: 'flex-start', borderRadius: 99, paddingHorizontal: 12, paddingVertical: 6, marginTop: 12 },
-  badgePaid: { backgroundColor: colors.accentLight },
-  badgeFree: { backgroundColor: '#fff4e6' },
-  badgeText: { fontWeight: '700', fontSize: 13 },
-  badgeTextPaid: { color: colors.accentDark },
-  badgeTextFree: { color: colors.warn },
-  section: { marginTop: 12 },
-  sectionTitle: { fontWeight: '700', fontSize: 16, marginBottom: 8, color: colors.ink },
-  detailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border },
-  detailLabel: { color: colors.inkMuted },
-  detailValue: { color: colors.ink, fontWeight: '600', flexShrink: 1, textAlign: 'right', paddingLeft: 12 },
-  muted: { color: colors.inkMuted, lineHeight: 21 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },
-  rowLabel: { color: colors.ink, flex: 1, paddingRight: 12 },
-  todo: { marginTop: 12, fontSize: 12, color: colors.inkMuted },
-  linkRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 14, minHeight: 48 },
-  linkLabel: { fontSize: 16, color: colors.ink, fontWeight: '600' },
-  linkDestructive: { color: colors.error },
-  chevron: { fontSize: 22, color: colors.inkMuted },
-  version: { textAlign: 'center', color: colors.inkMuted, fontSize: 12, marginTop: 16 },
+  scroll: { paddingBottom: spacing.xl },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  headerText: { flex: 1 },
+  name: { ...typography.title, color: colors.ink },
+  phone: { ...typography.body, color: colors.inkMuted, marginTop: 2 },
+  badgeRow: { marginTop: spacing.md },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm },
+  detailLabel: { ...typography.body, color: colors.inkMuted },
+  detailValue: { ...typography.bodyBold, color: colors.ink, flexShrink: 1, textAlign: 'right', paddingLeft: spacing.md },
+  muted: { ...typography.body, color: colors.inkMuted },
+  toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.sm, minHeight: 44 },
+  toggleLabel: { ...typography.body, color: colors.ink, flex: 1, paddingRight: spacing.md },
+  logout: { marginTop: spacing.lg },
+  version: { ...typography.caption, textAlign: 'center', color: colors.inkSubtle, marginTop: spacing.md },
 });

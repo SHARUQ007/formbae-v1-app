@@ -1,12 +1,18 @@
 import { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, ImageBackground, Linking, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { getYoutubeEmbedUrl } from '../utils/video';
+import { getYoutubeEmbedUrl, getYoutubeThumbnailUrl, getYoutubeWatchUrl } from '../utils/video';
 import { colors } from '../theme/colors';
+import { radius } from '../theme/radius';
+import { spacing } from '../theme/spacing';
+import { typography } from '../theme/typography';
 
 export function ExerciseVideo({ url }: { url: string }) {
   const embed = getYoutubeEmbedUrl(url);
+  const thumbnail = getYoutubeThumbnailUrl(url);
+  const watchUrl = getYoutubeWatchUrl(url);
   const [play, setPlay] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   if (!embed) {
     return (
@@ -16,47 +22,111 @@ export function ExerciseVideo({ url }: { url: string }) {
     );
   }
 
-  if (!play) {
+  const openOnYoutube = async () => {
+    if (!watchUrl) return;
+    const ok = await Linking.canOpenURL(watchUrl);
+    if (ok) await Linking.openURL(watchUrl);
+  };
+
+  if (!play || failed) {
     return (
-      <TouchableOpacity style={styles.poster} activeOpacity={0.85} onPress={() => setPlay(true)}>
+      <ImageBackground source={thumbnail ? { uri: thumbnail } : undefined} style={styles.poster} imageStyle={styles.posterImage}>
+        <View style={styles.scrim} />
         <View style={styles.playButton}>
           <Text style={styles.playIcon}>▶</Text>
         </View>
-        <Text style={styles.posterText}>Tap to watch technique</Text>
-      </TouchableOpacity>
+        <Text style={styles.posterText}>{failed ? 'Video could not load here' : 'Tap to watch technique'}</Text>
+        <View style={styles.posterActions}>
+          <TouchableOpacity
+            style={styles.posterAction}
+            activeOpacity={0.85}
+            onPress={() => {
+              setFailed(false);
+              setPlay(true);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Play technique video"
+          >
+            <Text style={styles.posterActionText}>{failed ? 'Try again' : 'Play'}</Text>
+          </TouchableOpacity>
+          {watchUrl ? (
+            <TouchableOpacity style={styles.posterActionGhost} activeOpacity={0.85} onPress={openOnYoutube}>
+              <Text style={styles.posterActionText}>Open YouTube</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </ImageBackground>
     );
   }
+
+  const html = `
+<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <style>
+      html, body, iframe { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <iframe
+      src="${embed}"
+      title="Workout technique video"
+      frameborder="0"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      allowfullscreen>
+    </iframe>
+  </body>
+</html>`;
 
   return (
     <View style={styles.videoWrap}>
       <WebView
-        source={{ uri: embed }}
+        source={{ html, baseUrl: 'https://formbae.in' }}
         style={styles.webview}
+        originWhitelist={['https://*', 'http://*', 'about:blank']}
         allowsFullscreenVideo
+        allowsInlineMediaPlayback
         javaScriptEnabled
         domStorageEnabled
-        mediaPlaybackRequiresUserAction={false}
+        mediaPlaybackRequiresUserAction
+        startInLoadingState
+        renderLoading={() => (
+          <View style={styles.loading}>
+            <ActivityIndicator color={colors.white} />
+          </View>
+        )}
+        onError={() => setFailed(true)}
+        onHttpError={() => setFailed(true)}
       />
+      <TouchableOpacity style={styles.closeButton} onPress={() => setPlay(false)} accessibilityRole="button" accessibilityLabel="Close video">
+        <Text style={styles.closeText}>×</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   placeholder: {
-    height: 80,
-    borderRadius: 12,
+    height: 96,
+    borderRadius: radius.lg,
     backgroundColor: colors.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
+    padding: spacing.md,
   },
-  placeholderText: { color: colors.inkMuted },
+  placeholderText: { ...typography.caption, color: colors.inkMuted, textAlign: 'center' },
   poster: {
     height: 180,
-    borderRadius: 12,
+    borderRadius: radius.lg,
     backgroundColor: '#0f2417',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+    padding: spacing.md,
   },
+  posterImage: { borderRadius: radius.lg },
+  scrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.48)' },
   playButton: {
     width: 56,
     height: 56,
@@ -66,7 +136,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   playIcon: { color: colors.white, fontSize: 22, marginLeft: 4 },
-  posterText: { color: colors.white, marginTop: 12 },
-  videoWrap: { height: 200, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000' },
+  posterText: { ...typography.bodyBold, color: colors.white, marginTop: 12, textAlign: 'center' },
+  posterActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  posterAction: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 8 },
+  posterActionGhost: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 8 },
+  posterActionText: { ...typography.caption, color: colors.white, fontWeight: '700' },
+  videoWrap: { height: 220, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' },
   webview: { flex: 1, backgroundColor: '#000' },
+  loading: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' },
+  closeButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeText: { color: colors.white, fontSize: 24, lineHeight: 28 },
 });

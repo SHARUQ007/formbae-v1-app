@@ -1,53 +1,134 @@
-import { View, Text, StyleSheet, ViewStyle } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Feather from 'react-native-vector-icons/Feather';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { radius } from '../theme/radius';
 import { shadows } from '../theme/shadows';
+import { typography } from '../theme/typography';
 
-type Props = {
+type CardVariant = 'elevated' | 'flat' | 'accent' | 'outline';
+
+type CardProps = {
   children: React.ReactNode;
   style?: ViewStyle;
+  variant?: CardVariant;
+  onPress?: () => void;
 };
 
-export function Card({ children, style }: Props) {
-  return <View style={[styles.card, style]}>{children}</View>;
+export function Card({ children, style, variant = 'elevated', onPress }: CardProps) {
+  const content = <View style={[styles.card, cardVariants[variant], style]}>{children}</View>;
+  if (onPress) {
+    return (
+      <TouchableOpacity activeOpacity={0.85} onPress={onPress}>
+        {content}
+      </TouchableOpacity>
+    );
+  }
+  return content;
 }
 
-export function ScreenContainer({ children, style }: Props) {
-  return <View style={[styles.screen, style]}>{children}</View>;
+type Props = { children: React.ReactNode; style?: ViewStyle };
+
+type ScreenContainerProps = Props & {
+  /** Add bottom safe-area inset. Use on screens without a tab bar. Default false. */
+  withBottomInset?: boolean;
+};
+
+export function ScreenContainer({ children, style, withBottomInset = false }: ScreenContainerProps) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View
+      style={[
+        styles.screen,
+        {
+          paddingTop: insets.top + spacing.md,
+          paddingBottom: withBottomInset ? insets.bottom + spacing.lg : spacing.lg,
+        },
+        style,
+      ]}
+    >
+      {children}
+    </View>
+  );
 }
 
-export function ScreenTitle({ children }: { children: string }) {
+export function ScreenTitle({ children }: { children: React.ReactNode }) {
   return <Text style={styles.title}>{children}</Text>;
 }
 
-export function ScreenSubtitle({ children }: { children: string }) {
+export function ScreenSubtitle({ children }: { children: React.ReactNode }) {
   return <Text style={styles.subtitle}>{children}</Text>;
 }
 
+export function SectionTitle({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
+  return <Text style={[styles.section, style]}>{children}</Text>;
+}
+
+/** Compact top header with optional back button and right slot. */
+export function ScreenHeader({
+  title,
+  subtitle,
+  onBack,
+  right,
+}: {
+  title: string;
+  subtitle?: string;
+  onBack?: () => void;
+  right?: React.ReactNode;
+}) {
+  return (
+    <View style={styles.header}>
+      {onBack ? (
+        <TouchableOpacity
+          onPress={onBack}
+          style={styles.backBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Feather name="chevron-left" size={24} color={colors.ink} />
+        </TouchableOpacity>
+      ) : null}
+      <View style={styles.headerText}>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text style={styles.headerSubtitle} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+      {right ? <View style={styles.headerRight}>{right}</View> : null}
+    </View>
+  );
+}
+
+const cardVariants: Record<CardVariant, ViewStyle> = {
+  elevated: { backgroundColor: colors.panel, borderColor: colors.border, borderWidth: 1, ...shadows.card },
+  flat: { backgroundColor: colors.panelMuted },
+  outline: { backgroundColor: colors.panel, borderColor: colors.borderStrong, borderWidth: 1 },
+  accent: { backgroundColor: colors.accentLight, borderColor: colors.accentSurface, borderWidth: 1 },
+};
+
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.panel,
-    borderRadius: 16,
+    borderRadius: radius.xl,
     padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.card,
   },
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.ink,
-    marginBottom: spacing.sm,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: colors.inkMuted,
-    lineHeight: 22,
-    marginBottom: spacing.lg,
-  },
+  title: { ...typography.hero, color: colors.ink, marginBottom: spacing.sm },
+  subtitle: { ...typography.body, color: colors.inkMuted, marginBottom: spacing.lg },
+  section: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase', marginBottom: spacing.sm, marginTop: spacing.md },
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg, minHeight: 32 },
+  backBtn: { marginRight: spacing.sm, marginLeft: -6 },
+  headerText: { flex: 1 },
+  headerTitle: { ...typography.title, color: colors.ink },
+  headerSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  headerRight: { marginLeft: spacing.sm },
 });

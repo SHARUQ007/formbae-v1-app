@@ -1,12 +1,16 @@
 import { useState } from 'react';
-import { ScrollView, Text, StyleSheet, Alert } from 'react-native';
-import { ScreenContainer, ScreenTitle, Card } from '../../components/Card';
+import { ScrollView, Text, StyleSheet, View, Alert } from 'react-native';
+import Feather from 'react-native-vector-icons/Feather';
+import { ScreenContainer, Card } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { FormInput } from '../../components/FormInput';
 import { KeyboardScreen } from '../../components/KeyboardScreen';
 import { requestAccountDeletion } from '../../services/legalService';
 import { useAuthStore } from '../../store/authStore';
 import { colors } from '../../theme/colors';
+import { spacing } from '../../theme/spacing';
+import { radius } from '../../theme/radius';
+import { typography } from '../../theme/typography';
 
 export function DeleteAccountScreen() {
   const { logout } = useAuthStore();
@@ -36,50 +40,58 @@ export function DeleteAccountScreen() {
     }
   };
 
+  const points = [
+    'Your account is deactivated immediately and you are signed out.',
+    'Your profile, questionnaire answers, progress logs, check-ins and messages are permanently deleted within 30 days.',
+    'Payment and invoice records may be retained where required by law or tax regulations.',
+    'This action cannot be undone. You will need to sign up again to use FormBae.',
+  ];
+
   return (
     <KeyboardScreen>
       <ScreenContainer>
-        <ScrollView>
-          <ScreenTitle>Delete account</ScreenTitle>
-          <Card>
-            <Text style={styles.heading}>What happens when you delete</Text>
-            <Bullet text="Your account is deactivated immediately and you are signed out." />
-            <Bullet text="Your profile, questionnaire answers, progress logs, check-ins, and messages are permanently deleted within 30 days." />
-            <Bullet text="Payment and invoice records may be retained where required by law or tax regulations." />
-            <Bullet text="This action cannot be undone. You will need to sign up again to use FormBae." />
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+          <Card variant="outline" style={styles.warnCard}>
+            <View style={styles.warnHeader}>
+              <View style={styles.warnIcon}>
+                <Feather name="alert-triangle" size={20} color={colors.error} />
+              </View>
+              <Text style={styles.warnTitle}>What happens when you delete</Text>
+            </View>
+            {points.map((text) => (
+              <View key={text} style={styles.point}>
+                <Feather name="dot" size={20} color={colors.inkMuted} style={styles.dot} />
+                <Text style={styles.pointText}>{text}</Text>
+              </View>
+            ))}
           </Card>
 
           <Card style={styles.reasonCard}>
-            <Text style={styles.heading}>Anything we could have done better? (optional)</Text>
-            <FormInput
-              value={reason}
-              onChangeText={setReason}
-              placeholder="Your feedback helps us improve"
-              multiline
-              autoCapitalize="sentences"
-            />
+            <Text style={styles.heading}>Anything we could have done better?</Text>
+            <Text style={styles.optional}>Optional — your feedback helps us improve.</Text>
+            <FormInput value={reason} onChangeText={setReason} placeholder="Share your feedback" multiline autoCapitalize="sentences" />
           </Card>
 
-          <PrimaryButton title="Delete my account" onPress={confirmDelete} loading={submitting} style={styles.deleteBtn} />
-          <Text style={styles.note}>Need help instead? Contact support from Profile → Legal & support.</Text>
+          <PrimaryButton title="Delete my account" icon="trash-2" variant="danger" onPress={confirmDelete} loading={submitting} style={styles.deleteBtn} />
+          <Text style={styles.note}>Need help instead? Contact support from Profile → Legal &amp; support.</Text>
         </ScrollView>
       </ScreenContainer>
     </KeyboardScreen>
   );
 }
 
-function Bullet({ text }: { text: string }) {
-  return (
-    <Text style={styles.bullet}>
-      {'\u2022'}  {text}
-    </Text>
-  );
-}
-
 const styles = StyleSheet.create({
-  heading: { fontWeight: '700', color: colors.ink, marginBottom: 10, fontSize: 15 },
-  bullet: { color: colors.inkMuted, lineHeight: 22, marginBottom: 8 },
-  reasonCard: { marginTop: 12 },
-  deleteBtn: { marginTop: 16, backgroundColor: colors.error },
-  note: { color: colors.inkMuted, fontSize: 13, textAlign: 'center', marginTop: 14 },
+  scroll: { paddingBottom: spacing.xl },
+  warnCard: { borderColor: '#f6caca' },
+  warnHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  warnIcon: { width: 38, height: 38, borderRadius: radius.md, backgroundColor: colors.errorLight, alignItems: 'center', justifyContent: 'center' },
+  warnTitle: { ...typography.subtitle, color: colors.ink, flex: 1 },
+  point: { flexDirection: 'row', gap: 4, marginBottom: spacing.sm },
+  dot: { marginTop: 1 },
+  pointText: { ...typography.body, color: colors.inkMuted, flex: 1 },
+  reasonCard: { marginTop: spacing.md },
+  heading: { ...typography.bodyBold, color: colors.ink },
+  optional: { ...typography.caption, color: colors.inkMuted, marginBottom: spacing.sm, marginTop: 2 },
+  deleteBtn: { marginTop: spacing.lg },
+  note: { ...typography.caption, color: colors.inkMuted, textAlign: 'center', marginTop: spacing.md },
 });

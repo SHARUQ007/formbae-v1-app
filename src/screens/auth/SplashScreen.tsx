@@ -1,9 +1,12 @@
 import { useEffect } from 'react';
-import { Image, StyleSheet } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
+import { View, Text, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { LogoMark } from '../../components/Logo';
 import { useAuthStore } from '../../store/authStore';
 import { colors } from '../../theme/colors';
+import { spacing } from '../../theme/spacing';
+import { typography } from '../../theme/typography';
 import { resolveOnboardingInitialRoute, resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
 import type { RootStackParamList } from '../../navigation/types';
 
@@ -11,6 +14,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Splash'>;
 
 export function SplashScreen({ navigation }: Props) {
   const { bootstrap, ready, token, status } = useAuthStore();
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     bootstrap();
@@ -38,13 +42,24 @@ export function SplashScreen({ navigation }: Props) {
   }, [ready, token, status, navigation]);
 
   return (
-    <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={styles.container}>
-      <Image source={require('../../assets/logo.png')} style={styles.logo} resizeMode="contain" />
-    </LinearGradient>
+    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <View style={styles.blob} />
+      <View style={styles.center}>
+        <LogoMark size={96} />
+        <Text style={styles.word}>
+          Form<Text style={styles.wordAccent}>Bae</Text>
+        </Text>
+        <Text style={styles.tagline}>Trainer-backed fitness</Text>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  logo: { width: 120, height: 120 },
+  container: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentDark, overflow: 'hidden' },
+  blob: { position: 'absolute', top: -100, right: -80, width: 320, height: 320, borderRadius: 160, backgroundColor: colors.accent, opacity: 0.6 },
+  center: { alignItems: 'center', gap: spacing.md },
+  word: { fontSize: 32, fontWeight: '800', color: colors.white, letterSpacing: -0.5, marginTop: spacing.sm },
+  wordAccent: { color: colors.accentLight },
+  tagline: { ...typography.body, color: colors.onAccentMuted },
 });

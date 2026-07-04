@@ -1,7 +1,10 @@
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import Feather from 'react-native-vector-icons/Feather';
 import { PrimaryButton } from './PrimaryButton';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { radius } from '../theme/radius';
+import { typography } from '../theme/typography';
 
 export function LoadingState({ message = 'Loading…' }: { message?: string }) {
   return (
@@ -15,9 +18,12 @@ export function LoadingState({ message = 'Loading…' }: { message?: string }) {
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <View style={styles.wrap}>
+      <View style={[styles.iconCircle, { backgroundColor: colors.errorLight }]}>
+        <Feather name="alert-triangle" size={26} color={colors.error} />
+      </View>
       <Text style={styles.errorTitle}>Something went wrong</Text>
       <Text style={styles.text}>{message}</Text>
-      {onRetry ? <PrimaryButton title="Try again" variant="secondary" onPress={onRetry} style={styles.retry} /> : null}
+      {onRetry ? <PrimaryButton title="Try again" icon="refresh-cw" variant="secondary" onPress={onRetry} style={styles.retry} /> : null}
     </View>
   );
 }
@@ -25,16 +31,21 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
 export function EmptyState({
   title,
   message,
+  icon = 'inbox',
   actionLabel,
   onAction,
 }: {
   title: string;
   message?: string;
+  icon?: string;
   actionLabel?: string;
   onAction?: () => void;
 }) {
   return (
     <View style={styles.wrap}>
+      <View style={[styles.iconCircle, { backgroundColor: colors.accentLight }]}>
+        <Feather name={icon} size={26} color={colors.accent} />
+      </View>
       <Text style={styles.emptyTitle}>{title}</Text>
       {message ? <Text style={styles.text}>{message}</Text> : null}
       {actionLabel && onAction ? <PrimaryButton title={actionLabel} onPress={onAction} style={styles.retry} /> : null}
@@ -44,8 +55,9 @@ export function EmptyState({
 
 const styles = StyleSheet.create({
   wrap: { paddingVertical: spacing.xl, paddingHorizontal: spacing.lg, alignItems: 'center', justifyContent: 'center' },
-  text: { color: colors.inkMuted, fontSize: 15, textAlign: 'center', marginTop: spacing.sm, lineHeight: 21 },
-  errorTitle: { color: colors.error, fontSize: 17, fontWeight: '700' },
-  emptyTitle: { color: colors.ink, fontSize: 17, fontWeight: '700' },
+  iconCircle: { width: 60, height: 60, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md },
+  text: { ...typography.body, color: colors.inkMuted, textAlign: 'center', marginTop: spacing.xs },
+  errorTitle: { ...typography.subtitle, color: colors.ink },
+  emptyTitle: { ...typography.subtitle, color: colors.ink },
   retry: { marginTop: spacing.md, alignSelf: 'stretch' },
 });

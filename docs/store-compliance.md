@@ -17,6 +17,7 @@ qualified legal/compliance advisor before publishing.
 | Injury / restriction notes | Plan safety | Yes | No | No | Yes | Optional |
 | Payment status | Unlock plan, lifecycle routing | Yes | Payment processor | No | Partial* | Required |
 | Progress logs / check-ins | Coaching & progress | Yes | No | No | Yes | Optional |
+| Food photos / diet diary | User-requested meal logging and trainer context | Yes | No | No | Yes | Optional |
 | Messages to trainer | Coaching communication | Yes | No | No | Yes | Optional |
 | Push token (if FCM configured) | Reminders/notifications | Yes | Google/Apple push service | No | Yes | Optional |
 | Crash/analytics | Not collected currently | — | — | — | — | — |
@@ -33,9 +34,11 @@ qualified legal/compliance advisor before publishing.
 | INTERNET | Android | API calls | Implicit |
 | POST_NOTIFICATIONS | Android 13+ | Local workout/check-in reminders | Requested contextually (Profile → toggles / after login), not at first launch |
 | VIBRATE | Android | Notification feedback | Implicit |
+| CAMERA | Android / iOS | Capture food photos for Diet Diary | Requested only when user taps Take food photo |
+| READ_MEDIA_IMAGES / Photo Library | Android / iOS | Import existing food photos into Diet Diary | Requested only when user taps Import from gallery |
 | Notifications | iOS | Local reminders | Requested when user engages with reminders |
 
-Not requested: Camera, Photos, Location, Contacts, Bluetooth, Microphone, HealthKit, Google Fit / Health Connect, SCHEDULE_EXACT_ALARM.
+Not requested: Location, Contacts, Bluetooth, Microphone, HealthKit, Google Fit / Health Connect, SCHEDULE_EXACT_ALARM.
 
 ## 3. Privacy Policy & Terms
 

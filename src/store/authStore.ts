@@ -99,13 +99,16 @@ export function useAuthStore() {
   }, []);
 
   const logout = useCallback(async () => {
-    await logoutRequest();
-    setState({ token: null, user: null, status: null });
+    try {
+      await logoutRequest();
+    } finally {
+      setState({ ready: true, token: null, user: null, status: null, loading: false, error: null });
+    }
   }, []);
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
-      logoutRequest().finally(() => setState({ token: null, user: null, status: null }));
+      logoutRequest().finally(() => setState({ ready: true, token: null, user: null, status: null, loading: false, error: null }));
     });
   }, []);
 

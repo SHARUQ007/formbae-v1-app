@@ -11,6 +11,7 @@ Bare React Native (no Expo) customer app for FormBae — workout plan, trainer m
 - `react-native-razorpay` — native in-app checkout
 - `@notifee/react-native` — local reminders (offline, no server needed)
 - `react-native-webview` — exercise video playback (YouTube embeds)
+- `react-native-image-picker` + `react-native-fs` — diet diary camera/gallery capture + local photo storage
 - `react-native-linear-gradient`, `react-native-vector-icons`, `react-native-svg`
 - API: Next.js BFF at `{API_BASE_URL}/api/mobile/*` (see `docs/mobile-api.md`)
 
@@ -103,6 +104,7 @@ App/
 
 - **Native Razorpay checkout** — create order → SDK → verify → instant unlock, with web fallback
 - **Workout player** — per-exercise video (YouTube), rest timer with +15s/skip, per-exercise completion, finish workout
+- **Diet diary** — bottom-tab diet area with camera/gallery food photos, meal labels, local-first storage, and backend sync
 - **Offline-safe workouts** — completions persist locally and flush automatically when back online
 - **Local reminders** — daily workout, weekly check-in, and trainer nudges via `@notifee/react-native` (works offline)
 - **Remote push (optional)** — auto-registers a device token when Firebase config is present (see below)
@@ -116,6 +118,19 @@ App/
 - **react-native-razorpay:** set `RAZORPAY_KEY_ID` in `.env`; iOS needs `pod install`
 - **@notifee/react-native:** Android 13+ needs `POST_NOTIFICATIONS` (declared in manifest, prompted at runtime)
 - **react-native-webview:** used for exercise videos; iOS needs `pod install`
+- **react-native-image-picker / react-native-fs:** used for Diet Diary food photos; iOS needs camera/photo usage strings and `pod install`
+
+### Diet Diary backend storage
+
+Diet Diary sync uses `GET/POST/DELETE /api/mobile/diet/diary`.
+
+Set this on the live frontend server for durable photo file storage:
+
+| Variable | Description |
+|----------|-------------|
+| `DIET_DIARY_STORAGE_DIR` | Writable directory for diet diary images, e.g. `/var/lib/formbae/diet-diary` |
+
+If it is not set, the BFF falls back to storing small image data URLs in `AppSettings` so the feature still works, but production should use a writable persistent directory or equivalent mounted volume.
 
 ### Enabling remote push (FCM/APNs) — optional
 
@@ -136,7 +151,8 @@ Local reminders work out of the box. To enable server-sent push:
 | Login 404 | Use signup flow (`createIfMissing`) or complete web payment first |
 | Empty workout plan | Trainer must publish active plan in admin/trainer dashboard |
 | Payment fails in app | Verify `RAZORPAY_KEY_ID` / server `RAZORPAY_KEY_SECRET`; web fallback always available |
-| No videos | Exercise must have a YouTube URL/key on the plan |
+| No videos | Exercise must have a YouTube URL/key on the plan; app also offers Open YouTube fallback |
+| Diet photo not saved remotely | Check live frontend `DIET_DIARY_STORAGE_DIR` permissions and network connectivity |
 | iOS build missing pods | `cd ios && bundle exec pod install` |
 
 ## Typecheck
@@ -155,7 +171,7 @@ This app is built for App Store + Play Store submission. Before publishing, read
 
 Key compliance facts:
 - **Identifiers:** Android `com.formbae`, iOS `com.formbae`, Android targetSdk 36.
-- **Permissions:** INTERNET, POST_NOTIFICATIONS (contextual), VIBRATE only. No camera/photos/location/health.
+- **Permissions:** INTERNET, POST_NOTIFICATIONS (contextual), VIBRATE, CAMERA and Photos/Media only for Diet Diary food-photo capture/import. No location/health.
 - **No Expo** packages. **No analytics/ads SDKs.**
 - **Account deletion:** Profile → Delete account (`POST /api/mobile/me/delete-request`).
 - **Legal:** Profile → Legal & support (Privacy, Terms, Refund, Support) via `GET /api/mobile/legal`.

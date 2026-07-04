@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ScrollView, Text, StyleSheet, RefreshControl, ActivityIndicator, View } from 'react-native';
+import { ScrollView, Text, StyleSheet, RefreshControl, View } from 'react-native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
-import { ScreenContainer, ScreenTitle, Card } from '../../components/Card';
+import Feather from 'react-native-vector-icons/Feather';
+import { ScreenContainer, Card, SectionTitle } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
+import { GradientHero } from '../../components/GradientHero';
+import { Avatar } from '../../components/Avatar';
+import { Badge } from '../../components/Badge';
+import { ProgressBar } from '../../components/ProgressBar';
+import { StatTile } from '../../components/StatTile';
+import { LoadingState } from '../../components/States';
 import { fetchToday } from '../../services/workoutService';
 import { fetchCheckIns } from '../../services/checkInService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
@@ -10,6 +17,8 @@ import { useAuthStore } from '../../store/authStore';
 import type { TodayPayload } from '../../types/api';
 import type { MainTabParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
+import { spacing } from '../../theme/spacing';
+import { typography } from '../../theme/typography';
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Home'>;
 
@@ -53,66 +62,97 @@ export function HomeScreen({ navigation }: Props) {
   if (loading) {
     return (
       <ScreenContainer>
-        <ScreenTitle>Loading…</ScreenTitle>
-        <ActivityIndicator color={colors.accent} />
+        <LoadingState message="Loading your dashboard…" />
       </ScreenContainer>
     );
   }
 
   return (
     <ScreenContainer>
-      <ScrollView refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-        <ScreenTitle>{`Hi ${firstName}`}</ScreenTitle>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
+      >
+        <View style={styles.topBar}>
+          <View>
+            <Text style={styles.greeting}>Welcome back</Text>
+            <Text style={styles.name}>{firstName}</Text>
+          </View>
+          <Avatar name={status?.name} size={46} />
+        </View>
+
         {error ? (
-          <Card>
-            <Text style={styles.error}>{error}</Text>
-            <PrimaryButton title="Retry" onPress={load} style={{ marginTop: 12 }} />
+          <Card variant="outline" style={styles.errorCard}>
+            <Text style={styles.errorText}>{error}</Text>
+            <PrimaryButton title="Retry" icon="refresh-cw" variant="secondary" onPress={load} style={styles.errorBtn} />
           </Card>
         ) : null}
+
         {checkInDue ? (
-          <Card style={styles.reminder}>
-            <Text style={styles.reminderText}>Weekly check-in due — share how your week went with your trainer.</Text>
-            <PrimaryButton title="Weekly check-in" onPress={() => navigation.navigate('Progress')} />
+          <Card variant="accent" style={styles.reminder} onPress={() => navigation.navigate('Progress')}>
+            <View style={styles.reminderRow}>
+              <Feather name="edit-3" size={20} color={colors.accentDark} />
+              <Text style={styles.reminderText}>Weekly check-in due — share how your week went.</Text>
+              <Feather name="chevron-right" size={20} color={colors.accentDark} />
+            </View>
           </Card>
         ) : null}
-        <Card>
-          <Text style={styles.cardLabel}>Today&apos;s workout</Text>
-          <Text style={styles.cardTitle}>{todayDay?.focus || data?.plan?.title || 'Your plan is being prepared'}</Text>
-          <Text style={styles.cardMeta}>{todayDay?.exercises?.length || 0} exercises</Text>
+
+        <GradientHero eyebrow="Today's workout">
+          <Text style={styles.heroTitle}>{todayDay?.focus || data?.plan?.title || 'Your plan is being prepared'}</Text>
+          <Text style={styles.heroMeta}>{todayDay?.exercises?.length || 0} exercises</Text>
           <PrimaryButton
             title={todayDay ? 'Start workout' : 'View plan'}
+            icon={todayDay ? 'play' : 'list'}
+            variant="secondary"
             onPress={() =>
               todayDay
                 ? navigation.navigate('Workouts', { screen: 'WorkoutDetail', params: { planDayId: todayDay.planDayId, title: todayDay.focus } } as never)
                 : navigation.navigate('Workouts')
             }
-            style={{ marginTop: 12 }}
+            style={styles.heroBtn}
           />
-        </Card>
+        </GradientHero>
+
+        <SectionTitle>Your trainer</SectionTitle>
         {data?.assignedTrainer ? (
-          <Card style={styles.trainerCard}>
-            <Text style={styles.cardLabel}>Your trainer</Text>
-            <Text style={styles.cardTitle}>{data.assignedTrainer.name}</Text>
-            <Text style={styles.cardMeta}>{data.assignedTrainer.trainerDescription || 'Human online personal trainer'}</Text>
-            <PrimaryButton title="Message trainer" variant="secondary" onPress={() => navigation.navigate('Trainer')} style={{ marginTop: 12 }} />
-          </Card>
-        ) : (
-          <Card style={styles.trainerCard}>
-            <Text style={styles.cardLabel}>Your trainer</Text>
-            <Text style={styles.cardMeta}>We are matching you with the right coach. You will see them here soon.</Text>
-          </Card>
-        )}
-        {progress ? (
-          <Card>
-            <Text style={styles.cardLabel}>Weekly progress</Text>
-            <Text style={styles.cardTitle}>{progress.adherencePct}% adherence</Text>
-            <Text style={styles.cardMeta}>
-              {progress.completed}/{progress.planned} workouts · {progress.currentStreak} day streak
-            </Text>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${Math.min(100, progress.adherencePct)}%` }]} />
+          <Card onPress={() => navigation.navigate('Trainer')}>
+            <View style={styles.trainerRow}>
+              <Avatar name={data.assignedTrainer.name} size={52} />
+              <View style={styles.trainerText}>
+                <Text style={styles.trainerName}>{data.assignedTrainer.name}</Text>
+                <Text style={styles.trainerDesc} numberOfLines={2}>
+                  {data.assignedTrainer.trainerDescription || 'Human online personal trainer'}
+                </Text>
+              </View>
+              <Feather name="message-circle" size={22} color={colors.accent} />
             </View>
           </Card>
+        ) : (
+          <Card variant="flat">
+            <View style={styles.matchingRow}>
+              <Feather name="search" size={20} color={colors.inkMuted} />
+              <Text style={styles.matchingText}>We are matching you with the right coach. You&apos;ll see them here soon.</Text>
+            </View>
+          </Card>
+        )}
+
+        {progress ? (
+          <>
+            <SectionTitle>This week</SectionTitle>
+            <Card>
+              <View style={styles.progressHead}>
+                <Text style={styles.progressPct}>{progress.adherencePct}%</Text>
+                <Badge label="Adherence" tone="accent" />
+              </View>
+              <ProgressBar value={progress.adherencePct / 100} />
+              <View style={styles.statsRow}>
+                <StatTile icon="check-circle" value={`${progress.completed}/${progress.planned}`} label="Workouts" />
+                <StatTile icon="zap" value={`${progress.currentStreak}`} label="Day streak" />
+              </View>
+            </Card>
+          </>
         ) : null}
       </ScrollView>
     </ScreenContainer>
@@ -120,13 +160,26 @@ export function HomeScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  error: { color: colors.error },
-  reminder: { marginBottom: 12, backgroundColor: colors.accentLight },
-  reminderText: { color: colors.ink, marginBottom: 12 },
-  cardLabel: { color: colors.inkMuted, marginBottom: 4 },
-  cardTitle: { fontSize: 20, fontWeight: '700', color: colors.ink },
-  cardMeta: { color: colors.inkMuted, marginTop: 4 },
-  trainerCard: { marginTop: 12 },
-  progressTrack: { height: 6, backgroundColor: colors.border, borderRadius: 99, marginTop: 10 },
-  progressFill: { height: 6, backgroundColor: colors.accent, borderRadius: 99 },
+  scroll: { paddingBottom: spacing.xl },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.lg },
+  greeting: { ...typography.caption, color: colors.inkMuted },
+  name: { ...typography.hero, color: colors.ink },
+  errorCard: { marginBottom: spacing.md },
+  errorText: { ...typography.body, color: colors.error },
+  errorBtn: { marginTop: spacing.sm },
+  reminder: { marginBottom: spacing.md },
+  reminderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  reminderText: { ...typography.bodyBold, color: colors.accentDarker, flex: 1 },
+  heroTitle: { ...typography.title, color: colors.white, marginTop: 4 },
+  heroMeta: { ...typography.body, color: colors.onAccentMuted, marginTop: 4 },
+  heroBtn: { marginTop: spacing.md },
+  trainerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  trainerText: { flex: 1 },
+  trainerName: { ...typography.subtitle, color: colors.ink },
+  trainerDesc: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  matchingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  matchingText: { ...typography.body, color: colors.inkMuted, flex: 1 },
+  progressHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
+  progressPct: { ...typography.display, color: colors.ink },
+  statsRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
 });

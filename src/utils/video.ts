@@ -1,32 +1,58 @@
 /**
- * Normalizes a stored video URL/key into a YouTube embed URL for WebView playback.
- * Backend videos store either a full URL or a youtube video key.
+ * Normalizes a stored video URL/key into a YouTube video id / URL pair.
+ * Backend videos store either a full URL or a YouTube video key.
  */
-export function getYoutubeEmbedUrl(rawUrl: string): string | null {
+export function getYouTubeVideoId(rawUrl: string): string | null {
   const url = (rawUrl || '').trim();
   if (!url) return null;
 
-  // Already an embed URL
-  if (url.includes('youtube.com/embed/')) return url;
-
   const patterns = [
-    /(?:youtube\.com\/watch\?v=)([\w-]{11})/,
-    /(?:youtu\.be\/)([\w-]{11})/,
-    /(?:youtube\.com\/shorts\/)([\w-]{11})/,
+    /youtube\.com\/shorts\/([^?&/]+)/i,
+    /youtube\.com\/watch\?(?:.*&)?v=([^?&/]+)/i,
+    /youtube\.com\/embed\/([^?&/]+)/i,
+    /youtube\.com\/live\/([^?&/]+)/i,
+    /youtube-nocookie\.com\/embed\/([^?&/]+)/i,
+    /youtu\.be\/([^?&/]+)/i,
   ];
   for (const pattern of patterns) {
     const match = url.match(pattern);
     if (match?.[1]) {
-      return `https://www.youtube.com/embed/${match[1]}?rel=0&playsinline=1`;
+      return match[1];
     }
   }
 
   // Bare 11-char key
   if (/^[\w-]{11}$/.test(url)) {
-    return `https://www.youtube.com/embed/${url}?rel=0&playsinline=1`;
+    return url;
   }
 
   return null;
+}
+
+export function getYoutubeEmbedUrl(rawUrl: string): string | null {
+  const videoId = getYouTubeVideoId(rawUrl);
+  if (!videoId) return null;
+  const params = [
+    'playsinline=1',
+    'enablejsapi=1',
+    'controls=1',
+    'rel=0',
+    'modestbranding=1',
+    'iv_load_policy=3',
+    'autoplay=0',
+    'origin=https%3A%2F%2Fformbae.in',
+  ];
+  return `https://www.youtube.com/embed/${videoId}?${params.join('&')}`;
+}
+
+export function getYoutubeWatchUrl(rawUrl: string): string | null {
+  const videoId = getYouTubeVideoId(rawUrl);
+  return videoId ? `https://www.youtube.com/watch?v=${videoId}` : null;
+}
+
+export function getYoutubeThumbnailUrl(rawUrl: string): string | null {
+  const videoId = getYouTubeVideoId(rawUrl);
+  return videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null;
 }
 
 export function isPlayableVideo(rawUrl: string): boolean {

@@ -1,12 +1,10 @@
 import { useEffect } from 'react';
-import { Text, StyleSheet } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { GradientLoading } from '../../components/GradientLoading';
 import { syncPayment } from '../../services/paymentService';
 import { useAuthStore } from '../../store/authStore';
 import type { PaidStackParamList, RootStackParamList } from '../../navigation/types';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { colors } from '../../theme/colors';
 
 type Props = NativeStackScreenProps<PaidStackParamList, 'PaymentSync'>;
 
@@ -38,14 +36,5 @@ export function PaymentSyncScreen({ navigation }: Props) {
     })();
   }, [navigation, refreshStatus]);
 
-  return (
-    <LinearGradient colors={[colors.gradientStart, colors.gradientEnd]} style={styles.container}>
-      <Text style={styles.text}>Checking your FormBae plan…</Text>
-    </LinearGradient>
-  );
+  return <GradientLoading title="Checking your FormBae plan…" subtitle="Syncing your payment and unlocking access." />;
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  text: { color: colors.white, fontSize: 20, fontWeight: '600' },
-});
