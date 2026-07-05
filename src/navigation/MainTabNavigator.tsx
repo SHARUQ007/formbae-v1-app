@@ -1,4 +1,5 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { WorkoutsNavigator } from './WorkoutsNavigator';
@@ -20,6 +21,20 @@ const dietIcon = ({ color, focused }: TabIconProps) => (
 const progressIcon = ({ color, focused }: TabIconProps) => <Icon name="bar-chart-2" size={focused ? 24 : 22} color={color} />;
 const profileIcon = ({ color, focused }: TabIconProps) => <Icon name="user" size={focused ? 24 : 22} color={color} />;
 
+const premiumTabBarStyle = {
+  height: 74,
+  marginHorizontal: 14,
+  marginBottom: 10,
+  borderRadius: 28,
+  borderTopWidth: 0,
+  borderColor: colors.border,
+  borderWidth: 1,
+  backgroundColor: colors.white,
+  paddingTop: 8,
+  paddingBottom: 10,
+  ...shadows.lg,
+};
+
 export function MainTabNavigator() {
   return (
     <Tab.Navigator
@@ -27,24 +42,23 @@ export function MainTabNavigator() {
         headerShown: false,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.inkSubtle,
-        tabBarStyle: {
-          height: 74,
-          marginHorizontal: 14,
-          marginBottom: 10,
-          borderRadius: 28,
-          borderTopWidth: 0,
-          borderColor: colors.border,
-          borderWidth: 1,
-          backgroundColor: colors.white,
-          paddingTop: 8,
-          paddingBottom: 10,
-          ...shadows.lg,
-        },
+        tabBarStyle: premiumTabBarStyle,
         tabBarItemStyle: { borderRadius: 22 },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '700', marginTop: 2 },
       }}
     >
-      <Tab.Screen name="Workouts" component={WorkoutsNavigator} options={{ title: 'Workout', tabBarIcon: workoutIcon }} />
+      <Tab.Screen
+        name="Workouts"
+        component={WorkoutsNavigator}
+        options={({ route }) => {
+          const focusedRoute = getFocusedRouteNameFromRoute(route);
+          return {
+            title: 'Workout',
+            tabBarIcon: workoutIcon,
+            tabBarStyle: focusedRoute === 'WorkoutDetail' ? { display: 'none' } : premiumTabBarStyle,
+          };
+        }}
+      />
       <Tab.Screen name="Diet" component={DietScreen} options={{ tabBarIcon: dietIcon }} />
       <Tab.Screen name="Progress" component={ProgressScreen} options={{ tabBarIcon: progressIcon }} />
       <Tab.Screen name="Profile" component={ProfileNavigator} options={{ tabBarIcon: profileIcon }} />

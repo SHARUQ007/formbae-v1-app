@@ -289,7 +289,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom + spacing.sm }]}>
+    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom + spacing.md }]}>
       <RewardOverlay reward={reward} onDone={clearReward} />
       <View style={styles.fullPlayer} {...swipeResponder.panHandlers}>
         <View style={styles.fullHeader}>
@@ -528,7 +528,7 @@ const styles = StyleSheet.create({
   progressTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
   progressLabel: { ...typography.bodyBold, color: colors.ink },
   progressPct: { ...typography.bodyBold, color: colors.accent },
-  fullPlayer: { flex: 1, paddingHorizontal: spacing.md },
+  fullPlayer: { flex: 1, paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
   fullHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
   fullBackButton: {
     width: 40,
@@ -622,7 +622,7 @@ const styles = StyleSheet.create({
   },
   notes: { ...typography.body, color: colors.accentDarker, flex: 1 },
   videoBox: { flex: 1, marginBottom: spacing.sm, alignItems: 'center', justifyContent: 'center' },
-  videoActions: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  videoActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs, marginBottom: spacing.sm },
   videoActionButton: { flex: 1 },
   exBtn: { marginTop: spacing.xs },
   setTracker: { borderRadius: 24, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.white, padding: spacing.sm, marginBottom: spacing.xs },
@@ -647,7 +647,7 @@ const styles = StyleSheet.create({
   primaryNavButton: { width: '100%' },
   navRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   navButton: { flex: 1 },
-  finish: { marginTop: spacing.sm },
+  finish: { marginTop: spacing.sm, marginBottom: spacing.xs },
   safetyRow: { flexDirection: 'row', gap: 6, marginTop: spacing.sm, alignItems: 'flex-start' },
   safety: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 17, fontStyle: 'italic' },
   rewardOverlay: {
