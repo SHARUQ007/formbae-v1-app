@@ -255,22 +255,13 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     },
     onPanResponderRelease: (_event, gesture) => {
       if (gesture.dy > 44) {
-        if (activePanel === 'video') {
-          setActivePanel('details');
-          return;
-        }
         if (activeExerciseIndex < trackableExercises.length - 1) {
           moveToNext();
         }
       }
       if (gesture.dy < -44) {
-        if (activePanel === 'details') {
-          setActivePanel('video');
-          return;
-        }
         if (activeExerciseIndex > 0) {
           moveToPrevious();
-          setActivePanel('details');
         }
       }
     },
@@ -332,7 +323,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                   <Text style={styles.exerciseCounterText}>
                     {activeExerciseIndex + 1} / {trackableExercises.length}
                   </Text>
-                  <Text style={styles.exerciseCounterSub}>{activePanel === 'video' ? 'Swipe down for details' : 'Swipe down for next'}</Text>
+                <Text style={styles.exerciseCounterSub}>Swipe down = next</Text>
                 </View>
                 <TouchableOpacity
                   onPress={moveToNext}
@@ -361,7 +352,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
               <View style={styles.coachHint}>
                 <View style={styles.hintItem}>
                   <Feather name="arrow-down" size={14} color={colors.accentDark} />
-                  <Text style={styles.hintText}>{activePanel === 'video' ? 'Swipe down for sets, reps and rest' : 'Swipe down for next exercise'}</Text>
+                  <Text style={styles.hintText}>Swipe down for next exercise</Text>
                 </View>
               </View>
 
