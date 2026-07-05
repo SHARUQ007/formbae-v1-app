@@ -255,13 +255,13 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     },
     onPanResponderRelease: (_event, gesture) => {
       if (gesture.dy > 44) {
-        if (activeExerciseIndex < trackableExercises.length - 1) {
-          moveToNext();
+        if (activeExerciseIndex > 0) {
+          moveToPrevious();
         }
       }
       if (gesture.dy < -44) {
-        if (activeExerciseIndex > 0) {
-          moveToPrevious();
+        if (activeExerciseIndex < trackableExercises.length - 1) {
+          moveToNext();
         }
       }
     },
