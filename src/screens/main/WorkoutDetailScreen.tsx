@@ -55,6 +55,8 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const [detail, setDetail] = useState<WorkoutDayDetail | null>(null);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
+  const [setProgress, setSetProgress] = useState<Record<string, number>>({});
+  const [activeIndex, setActiveIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
@@ -71,6 +73,7 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
       setDetail(data);
       const saved = await loadWorkoutProgress(planDayId);
       setCompleted(new Set(saved.completedExerciseIds));
+      setSetProgress(saved.setProgressByExercise || {});
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load workout');
     } finally {
@@ -82,40 +85,16 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
     load();
   }, [load]);
 
-  const persist = useCallback(
-    async (next: Set<string>) => {
+  const persistSets = useCallback(
+    async (next: Record<string, number>, completedSet = completed) => {
       await saveWorkoutProgress({
         planDayId,
-        completedExerciseIds: Array.from(next),
+        completedExerciseIds: Array.from(completedSet),
+        setProgressByExercise: next,
         updatedAt: new Date().toISOString(),
       });
     },
-    [planDayId],
-  );
-
-  const toggleExercise = useCallback(
-    async (exerciseId: string, restSec: string) => {
-      if (!detail) return;
-      const next = new Set(completed);
-      const isDone = next.has(exerciseId);
-      if (isDone) {
-        next.delete(exerciseId);
-      } else {
-        next.add(exerciseId);
-        const rest = Number(restSec);
-        if (Number.isFinite(rest) && rest > 0) timer.start(rest);
-      }
-      setCompleted(next);
-      await persist(next);
-      await completeWithQueue({
-        planId: detail.planId,
-        planDayId: detail.planDayId,
-        action: isDone ? 'exerciseUndo' : 'exercise',
-        exerciseId,
-        workoutMode: detail.workoutMode,
-      });
-    },
-    [detail, completed, persist, timer],
+    [completed, planDayId],
   );
 
   const progress = useMemo(() => {
@@ -171,6 +150,55 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
 
   const trackableExercises = detail.exercises.filter((exercise) => !isSectionMarker(exercise.notes));
   const completedTrackableCount = trackableExercises.filter((exercise) => completed.has(exercise.exerciseId)).length;
+  const activeExercise = trackableExercises[Math.min(activeIndex, Math.max(0, trackableExercises.length - 1))] || null;
+  const activeExerciseIndex = activeExercise ? trackableExercises.findIndex((exercise) => exercise.exerciseId === activeExercise.exerciseId) : 0;
+  const activeDone = activeExercise ? completed.has(activeExercise.exerciseId) : false;
+  const activeSets = Math.max(1, Number(activeExercise?.sets || 1));
+  const activeSetCount = activeExercise ? Math.min(activeSets, setProgress[activeExercise.exerciseId] || 0) : 0;
+  const activeRest = Number(activeExercise?.restSec || 0);
+  const activeNotes = cleanExerciseNotes(activeExercise?.notes || '');
+
+  const moveToNext = () => {
+    setActiveIndex((current) => Math.min(trackableExercises.length - 1, current + 1));
+  };
+
+  const moveToPrevious = () => {
+    setActiveIndex((current) => Math.max(0, current - 1));
+  };
+
+  const completeActiveExercise = async (setsOverride = setProgress) => {
+    if (!activeExercise || !detail || completed.has(activeExercise.exerciseId)) return;
+    const nextCompleted = new Set(completed);
+    nextCompleted.add(activeExercise.exerciseId);
+    setCompleted(nextCompleted);
+    await persistSets(setsOverride, nextCompleted);
+    await completeWithQueue({
+      planId: detail.planId,
+      planDayId: detail.planDayId,
+      action: 'exercise',
+      exerciseId: activeExercise.exerciseId,
+      workoutMode: detail.workoutMode,
+    });
+  };
+
+  const onSetDone = async () => {
+    if (!activeExercise) return;
+    const nextCount = Math.min(activeSets, activeSetCount + 1);
+    const nextSets = { ...setProgress, [activeExercise.exerciseId]: nextCount };
+    setSetProgress(nextSets);
+    await persistSets(nextSets);
+    if (activeRest > 0) timer.start(activeRest);
+    if (nextCount >= activeSets) {
+      await completeActiveExercise(nextSets);
+    }
+  };
+
+  const markActiveComplete = async () => {
+    if (!activeExercise) return;
+    const nextSets = { ...setProgress, [activeExercise.exerciseId]: activeSets };
+    setSetProgress(nextSets);
+    await completeActiveExercise(nextSets);
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -204,75 +232,91 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
           <ProgressBar value={progress} />
         </View>
 
-        {detail.exercises.length === 0 ? (
+        {trackableExercises.length === 0 ? (
           <EmptyState icon="coffee" title="Rest day" message="No exercises for this day. Recover well!" />
+        ) : activeExercise ? (
+          <Card style={StyleSheet.flatten([styles.focusCard, activeDone && styles.exDone])}>
+            <View style={styles.focusTop}>
+              <View>
+                <Text style={styles.focusKicker}>
+                  Movement {activeExerciseIndex + 1} of {trackableExercises.length}
+                </Text>
+                <Text style={styles.focusTitle}>{activeExercise.exerciseName}</Text>
+                <Text style={styles.focusSub}>{getSectionLabel(activeExercise.notes, detail.focus || 'Workout')}</Text>
+              </View>
+              <View style={[styles.focusStatus, activeDone && styles.focusStatusDone]}>
+                <Feather name={activeDone ? 'check' : 'activity'} size={18} color={activeDone ? colors.white : colors.accent} />
+              </View>
+            </View>
+
+            <View style={styles.videoBox}>
+              <ExerciseVideo url={activeExercise.videoUrl} />
+            </View>
+
+            <View style={styles.prescription}>
+              <View style={styles.prescriptionTile}>
+                <Text style={styles.prescriptionLabel}>Sets</Text>
+                <Text style={styles.prescriptionValue}>{activeSets}</Text>
+              </View>
+              <View style={styles.prescriptionTile}>
+                <Text style={styles.prescriptionLabel}>Reps / time</Text>
+                <Text style={styles.prescriptionValue}>{displayValue(activeExercise.reps, '-')}</Text>
+              </View>
+              <View style={styles.prescriptionTile}>
+                <Text style={styles.prescriptionLabel}>Rest</Text>
+                <Text style={styles.prescriptionValue}>{displayValue(activeExercise.restSec, '0')}s</Text>
+              </View>
+            </View>
+
+            <View style={styles.setTracker}>
+              <View style={styles.setTrackerHead}>
+                <Text style={styles.setTrackerTitle}>Set tracker</Text>
+                <Text style={styles.setTrackerMeta}>
+                  {activeSetCount}/{activeSets} complete
+                </Text>
+              </View>
+              <View style={styles.setDots}>
+                {Array.from({ length: activeSets }).map((_, index) => {
+                  const done = index < activeSetCount;
+                  return (
+                    <View key={index} style={[styles.setDot, done && styles.setDotDone]}>
+                      <Text style={[styles.setDotText, done && styles.setDotTextDone]}>{index + 1}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+              <PrimaryButton
+                title={activeDone ? 'Movement complete' : activeSetCount >= activeSets ? 'Mark complete' : `Log set ${activeSetCount + 1}`}
+                icon={activeDone ? 'check' : 'plus'}
+                onPress={activeSetCount >= activeSets ? markActiveComplete : onSetDone}
+                disabled={activeDone}
+                style={styles.exBtn}
+              />
+            </View>
+
+            {activeNotes ? (
+              <View style={styles.coachNote}>
+                <Feather name="info" size={15} color={colors.accentDark} />
+                <Text style={styles.notes}>{activeNotes}</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.navRow}>
+              <PrimaryButton title="Previous" icon="chevron-left" variant="secondary" onPress={moveToPrevious} disabled={activeExerciseIndex === 0} style={styles.navButton} />
+              <PrimaryButton title="Try another" icon="shuffle" variant="secondary" onPress={moveToNext} disabled={activeExerciseIndex >= trackableExercises.length - 1} style={styles.navButton} />
+            </View>
+            <PrimaryButton
+              title={activeExerciseIndex >= trackableExercises.length - 1 ? 'Finish workout' : 'Next movement'}
+              icon={activeExerciseIndex >= trackableExercises.length - 1 ? 'flag' : 'chevron-right'}
+              onPress={activeExerciseIndex >= trackableExercises.length - 1 ? onFinish : moveToNext}
+              loading={finishing}
+              style={styles.finish}
+            />
+          </Card>
         ) : (
-          detail.exercises.map((exercise, index) => {
-            const section = isSectionMarker(exercise.notes);
-            const cleanNotes = cleanExerciseNotes(exercise.notes);
-            const sectionLabel = getSectionLabel(exercise.notes, exercise.exerciseName);
-            if (section) {
-              return (
-                <View key={`${exercise.exerciseId}_${index}`} style={styles.sectionBreak}>
-                  <Text style={styles.sectionKicker}>Workout block</Text>
-                  <Text style={styles.sectionTitle}>{sectionLabel}</Text>
-                </View>
-              );
-            }
-
-            const done = completed.has(exercise.exerciseId);
-            const movementNumber = detail.exercises.slice(0, index + 1).filter((item) => !isSectionMarker(item.notes)).length;
-            return (
-              <Card key={`${exercise.exerciseId}_${index}`} style={StyleSheet.flatten([styles.exCard, done && styles.exDone])}>
-                <View style={styles.exHeader}>
-                  <View style={[styles.exNum, done && styles.exNumDone]}>
-                    {done ? <Feather name="check" size={16} color={colors.white} /> : <Text style={styles.exNumText}>{movementNumber}</Text>}
-                  </View>
-                  <View style={styles.exHeaderText}>
-                    <Text style={styles.exName}>{exercise.exerciseName}</Text>
-                    <Text style={styles.exSub}>{getSectionLabel(exercise.notes, detail.focus || 'Workout')}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.prescription}>
-                  <View style={styles.prescriptionTile}>
-                    <Text style={styles.prescriptionLabel}>Sets</Text>
-                    <Text style={styles.prescriptionValue}>{displayValue(exercise.sets, '1')}</Text>
-                  </View>
-                  <View style={styles.prescriptionTile}>
-                    <Text style={styles.prescriptionLabel}>Reps / time</Text>
-                    <Text style={styles.prescriptionValue}>{displayValue(exercise.reps || exercise.restSec, '-')}</Text>
-                  </View>
-                  <View style={styles.prescriptionTile}>
-                    <Text style={styles.prescriptionLabel}>Rest</Text>
-                    <Text style={styles.prescriptionValue}>{displayValue(exercise.restSec, '0')}s</Text>
-                  </View>
-                </View>
-
-                {cleanNotes ? (
-                  <View style={styles.coachNote}>
-                    <Feather name="info" size={15} color={colors.accentDark} />
-                    <Text style={styles.notes}>{cleanNotes}</Text>
-                  </View>
-                ) : null}
-
-                <View style={styles.videoBox}>
-                  <ExerciseVideo url={exercise.videoUrl} />
-                </View>
-
-                <PrimaryButton
-                  title={done ? 'Mark not done' : 'Mark complete'}
-                  icon={done ? 'rotate-ccw' : 'check'}
-                  variant={done ? 'secondary' : 'primary'}
-                  onPress={() => toggleExercise(exercise.exerciseId, exercise.restSec)}
-                  style={styles.exBtn}
-                />
-              </Card>
-            );
-          })
+          <EmptyState icon="coffee" title="Rest day" message="No movements for this day. Recover well!" />
         )}
 
-        <PrimaryButton title="Finish workout" icon="flag" onPress={onFinish} loading={finishing} style={styles.finish} />
         <View style={styles.safetyRow}>
           <Feather name="alert-circle" size={14} color={colors.inkMuted} />
           <Text style={styles.safety}>
@@ -333,6 +377,20 @@ const styles = StyleSheet.create({
   progressTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
   progressLabel: { ...typography.bodyBold, color: colors.ink },
   progressPct: { ...typography.bodyBold, color: colors.accent },
+  focusCard: { marginBottom: spacing.sm },
+  focusTop: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
+  focusKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 4 },
+  focusTitle: { ...typography.hero, color: colors.ink },
+  focusSub: { ...typography.caption, color: colors.inkMuted, marginTop: 4, textTransform: 'uppercase' },
+  focusStatus: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accentLight,
+  },
+  focusStatusDone: { backgroundColor: colors.accent },
   exCard: { marginBottom: spacing.sm },
   exDone: { backgroundColor: colors.accentLight, borderColor: colors.accentSurface },
   exHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
@@ -381,6 +439,26 @@ const styles = StyleSheet.create({
   notes: { ...typography.body, color: colors.accentDarker, flex: 1 },
   videoBox: { marginBottom: spacing.md, alignItems: 'center' },
   exBtn: { marginTop: spacing.xs },
+  setTracker: { borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
+  setTrackerHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  setTrackerTitle: { ...typography.bodyBold, color: colors.ink },
+  setTrackerMeta: { ...typography.caption, color: colors.inkMuted },
+  setDots: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
+  setDot: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  setDotDone: { backgroundColor: colors.accent, borderColor: colors.accent },
+  setDotText: { ...typography.bodyBold, color: colors.inkMuted },
+  setDotTextDone: { color: colors.white },
+  navRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  navButton: { flex: 1 },
   finish: { marginTop: spacing.md },
   safetyRow: { flexDirection: 'row', gap: 6, marginTop: spacing.md, alignItems: 'flex-start' },
   safety: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 17, fontStyle: 'italic' },

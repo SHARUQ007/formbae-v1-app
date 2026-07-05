@@ -7,6 +7,7 @@ const QUEUE_KEY = 'formbae_workout_queue';
 export type WorkoutProgress = {
   planDayId: string;
   completedExerciseIds: string[];
+  setProgressByExercise?: Record<string, number>;
   updatedAt: string;
 };
 
