@@ -20,7 +20,7 @@ import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutList'>;
 
-export function WorkoutsScreen({ navigation }: Props) {
+function WorkoutDashboardScreen({ navigation }: Props) {
   const [days, setDays] = useState<PlanDay[]>([]);
   const [title, setTitle] = useState('My workout plan');
   const [selectedMode, setSelectedMode] = useState<'standard' | 'quick'>('standard');
@@ -236,6 +236,8 @@ export function WorkoutsScreen({ navigation }: Props) {
     </ScreenContainer>
   );
 }
+
+export const WorkoutsScreen = WorkoutDashboardScreen;
 
 function ModeButton({
   label,
