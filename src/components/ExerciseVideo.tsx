@@ -99,7 +99,7 @@ export function ExerciseVideo({ url, compact = false }: { url: string; compact?:
 const styles = StyleSheet.create({
   placeholder: {
     height: 96,
-    borderRadius: radius.lg,
+    borderRadius: 26,
     backgroundColor: colors.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
@@ -119,8 +119,8 @@ const styles = StyleSheet.create({
   posterCompact: {
     maxHeight: COMPACT_VIDEO_MAX_HEIGHT,
   },
-  posterImage: { borderRadius: radius.lg },
-  scrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.48)' },
+  posterImage: { borderRadius: 26 },
+  scrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.38)' },
   playButton: {
     width: 56,
     height: 56,
@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
   posterActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   posterAction: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 8 },
   posterActionText: { ...typography.caption, color: colors.white, fontWeight: '700' },
-  videoWrap: { width: '100%', aspectRatio: 9 / 16, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' },
+  videoWrap: { width: '100%', aspectRatio: 9 / 16, borderRadius: 26, overflow: 'hidden', backgroundColor: '#000' },
   videoWrapCompact: { maxHeight: COMPACT_VIDEO_MAX_HEIGHT },
   webview: { flex: 1, backgroundColor: '#000' },
   loading: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' },

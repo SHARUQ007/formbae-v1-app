@@ -1,9 +1,9 @@
 export const colors = {
   // Surfaces
-  bg: '#f3f7f4',
-  bgTint: '#eaf2ec',
+  bg: '#f7faf7',
+  bgTint: '#eef6f1',
   panel: '#ffffff',
-  panelMuted: '#eef4f0',
+  panelMuted: '#f0f6f2',
 
   // Text
   ink: '#0f1f16',
@@ -24,8 +24,8 @@ export const colors = {
   gradientEnd: '#047857',
 
   // Lines
-  border: '#e2ece6',
-  borderStrong: '#cfe0d5',
+  border: '#e6efe9',
+  borderStrong: '#c9ddd1',
 
   // Status
   success: '#059669',

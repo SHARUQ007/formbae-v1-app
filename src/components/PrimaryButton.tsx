@@ -86,7 +86,7 @@ const variantStyles: Record<Variant, ViewStyle> = {
 
 const styles = StyleSheet.create({
   button: {
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     paddingHorizontal: spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',

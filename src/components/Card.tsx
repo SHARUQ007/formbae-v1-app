@@ -3,7 +3,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
-import { radius } from '../theme/radius';
 import { shadows } from '../theme/shadows';
 import { typography } from '../theme/typography';
 
@@ -106,15 +105,15 @@ export function ScreenHeader({
 }
 
 const cardVariants: Record<CardVariant, ViewStyle> = {
-  elevated: { backgroundColor: colors.panel, borderColor: colors.border, borderWidth: 1, ...shadows.card },
-  flat: { backgroundColor: colors.panelMuted },
+  elevated: { backgroundColor: colors.panel, borderColor: 'rgba(201,221,209,0.72)', borderWidth: 1, ...shadows.card },
+  flat: { backgroundColor: colors.panelMuted, borderColor: 'rgba(201,221,209,0.45)', borderWidth: 1 },
   outline: { backgroundColor: colors.panel, borderColor: colors.borderStrong, borderWidth: 1 },
-  accent: { backgroundColor: colors.accentLight, borderColor: colors.accentSurface, borderWidth: 1 },
+  accent: { backgroundColor: colors.accentLight, borderColor: colors.accentSurface, borderWidth: 1, ...shadows.sm },
 };
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: radius.xl,
+    borderRadius: 24,
     padding: spacing.lg,
   },
   screen: {

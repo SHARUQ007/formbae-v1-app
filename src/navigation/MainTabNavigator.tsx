@@ -7,6 +7,7 @@ import { ProgressScreen } from '../screens/main/ProgressScreen';
 import { ProfileNavigator } from './ProfileNavigator';
 import type { MainTabParamList } from './types';
 import { colors } from '../theme/colors';
+import { shadows } from '../theme/shadows';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -27,11 +28,20 @@ export function MainTabNavigator() {
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.inkSubtle,
         tabBarStyle: {
-          borderTopColor: colors.border,
+          height: 74,
+          marginHorizontal: 14,
+          marginBottom: 10,
+          borderRadius: 28,
+          borderTopWidth: 0,
+          borderColor: colors.border,
+          borderWidth: 1,
           backgroundColor: colors.white,
-          paddingTop: 6,
+          paddingTop: 8,
+          paddingBottom: 10,
+          ...shadows.lg,
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+        tabBarItemStyle: { borderRadius: 22 },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '700', marginTop: 2 },
       }}
     >
       <Tab.Screen name="Workouts" component={WorkoutsNavigator} options={{ title: 'Workout', tabBarIcon: workoutIcon }} />
