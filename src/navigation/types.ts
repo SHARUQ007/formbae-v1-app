@@ -27,11 +27,9 @@ export type PaidStackParamList = {
 };
 
 export type MainTabParamList = {
-  Home: undefined;
   Workouts: undefined;
   Diet: undefined;
   Progress: undefined;
-  Trainer: undefined;
   Profile: undefined;
 };
 
@@ -42,6 +40,7 @@ export type WorkoutStackParamList = {
 
 export type ProfileStackParamList = {
   ProfileMain: undefined;
+  Trainer: undefined;
   Legal: undefined;
   DeleteAccount: undefined;
 };

@@ -1,5 +1,6 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ProfileScreen } from '../screens/main/ProfileScreen';
+import { TrainerScreen } from '../screens/main/TrainerScreen';
 import { LegalScreen } from '../screens/legal/LegalScreen';
 import { DeleteAccountScreen } from '../screens/profile/DeleteAccountScreen';
 import type { ProfileStackParamList } from './types';
@@ -18,6 +19,7 @@ export function ProfileNavigator() {
       }}
     >
       <Stack.Screen name="ProfileMain" component={ProfileScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Trainer" component={TrainerScreen} options={{ title: 'Your trainer' }} />
       <Stack.Screen name="Legal" component={LegalScreen} options={{ title: 'Legal & support' }} />
       <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ title: 'Delete account' }} />
     </Stack.Navigator>

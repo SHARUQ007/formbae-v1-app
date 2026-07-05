@@ -137,6 +137,11 @@ export function ProfileScreen({ navigation }: Props) {
           <ToggleRow label="Trainer message reminders" value={notifications.trainerMessageReminders} onChange={(v) => toggle('trainerMessageReminders', v)} />
         </Card>
 
+        <SectionTitle>Coaching</SectionTitle>
+        <Card>
+          <ListRow icon="message-circle" label="Message your trainer" onPress={() => navigation.navigate('Trainer')} />
+        </Card>
+
         <SectionTitle>Account & legal</SectionTitle>
         <Card>
           <ListRow icon="file-text" label="Legal & support" onPress={() => navigation.navigate('Legal')} />
