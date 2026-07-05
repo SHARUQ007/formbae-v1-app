@@ -61,7 +61,7 @@ function wait(ms: number) {
   });
 }
 
-export function WorkoutDetailScreen({ route, navigation }: Props) {
+function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const { planDayId, mode = 'standard' } = route.params;
   const insets = useSafeAreaInsets();
   const [detail, setDetail] = useState<WorkoutDayDetail | null>(null);
@@ -476,6 +476,8 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
     </View>
   );
 }
+
+export const WorkoutDetailScreen = FocusedWorkoutDetailScreen;
 
 function Header({ onBack, title, subtitle }: { onBack: () => void; title: string; subtitle?: string }) {
   return (
