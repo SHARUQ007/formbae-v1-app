@@ -4,7 +4,8 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenTitle, Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
-import { LoadingState, ErrorState, EmptyState } from '../../components/States';
+import { ErrorState, EmptyState } from '../../components/States';
+import { SkeletonBlock } from '../../components/Skeleton';
 import { fetchWorkoutPlan } from '../../services/workoutService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
 import type { PlanDay } from '../../types/api';
@@ -54,8 +55,19 @@ export function WorkoutsScreen({ navigation }: Props) {
   if (loading) {
     return (
       <ScreenContainer>
-        <ScreenTitle>My plan</ScreenTitle>
-        <LoadingState message="Loading your plan…" />
+        <SkeletonBlock style={styles.skeletonTitle} />
+        <SkeletonBlock style={styles.skeletonSummary} />
+        <View style={styles.days}>
+          {[0, 1, 2, 3].map((item) => (
+            <View key={item} style={styles.dayCard}>
+              <SkeletonBlock style={styles.dayBadge} />
+              <View style={styles.dayInfo}>
+                <SkeletonBlock style={styles.skeletonDayTitle} />
+                <SkeletonBlock style={styles.skeletonMeta} />
+              </View>
+            </View>
+          ))}
+        </View>
       </ScreenContainer>
     );
   }
@@ -138,4 +150,8 @@ const styles = StyleSheet.create({
   dayInfo: { flex: 1 },
   dayTitle: { ...typography.bodyBold, color: colors.ink },
   meta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  skeletonTitle: { width: '62%', height: 30, marginBottom: spacing.sm },
+  skeletonSummary: { width: '74%', height: 14, marginBottom: spacing.md },
+  skeletonDayTitle: { width: '72%', height: 16 },
+  skeletonMeta: { width: '48%', height: 12, marginTop: spacing.sm },
 });

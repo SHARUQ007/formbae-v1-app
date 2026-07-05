@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LogoMark } from './Logo';
 import { colors } from '../theme/colors';
@@ -8,12 +8,10 @@ import { typography } from '../theme/typography';
 export function GradientLoading({
   title,
   subtitle,
-  showSpinner = true,
   showBrand = true,
 }: {
   title: string;
   subtitle?: string;
-  showSpinner?: boolean;
   showBrand?: boolean;
 }) {
   const insets = useSafeAreaInsets();
@@ -23,7 +21,11 @@ export function GradientLoading({
       {showBrand ? <LogoMark size={84} /> : null}
       <Text style={styles.title}>{title}</Text>
       {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-      {showSpinner ? <ActivityIndicator color={colors.white} style={styles.spinner} /> : null}
+      <View style={styles.progress}>
+        <View style={styles.progressDot} />
+        <View style={[styles.progressDot, styles.progressDotMuted]} />
+        <View style={[styles.progressDot, styles.progressDotMuted]} />
+      </View>
     </View>
   );
 }
@@ -33,5 +35,7 @@ const styles = StyleSheet.create({
   blob: { position: 'absolute', top: -80, right: -60, width: 260, height: 260, borderRadius: 130, backgroundColor: colors.accent, opacity: 0.6 },
   title: { ...typography.title, color: colors.white, textAlign: 'center', marginTop: spacing.lg },
   subtitle: { ...typography.body, color: colors.onAccentMuted, textAlign: 'center', marginTop: spacing.sm },
-  spinner: { marginTop: spacing.lg },
+  progress: { flexDirection: 'row', gap: 8, marginTop: spacing.lg },
+  progressDot: { width: 28, height: 6, borderRadius: 99, backgroundColor: colors.white },
+  progressDotMuted: { opacity: 0.38 },
 });

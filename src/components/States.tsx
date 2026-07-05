@@ -1,6 +1,7 @@
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { PrimaryButton } from './PrimaryButton';
+import { ScreenSkeleton } from './Skeleton';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { radius } from '../theme/radius';
@@ -8,9 +9,9 @@ import { typography } from '../theme/typography';
 
 export function LoadingState({ message = 'Loading…' }: { message?: string }) {
   return (
-    <View style={styles.wrap}>
-      <ActivityIndicator color={colors.accent} size="large" />
-      <Text style={styles.text}>{message}</Text>
+    <View style={styles.loadingWrap} accessibilityLabel={message} accessibilityLiveRegion="polite">
+      <ScreenSkeleton />
+      <Text style={styles.loadingText}>{message}</Text>
     </View>
   );
 }
@@ -54,6 +55,8 @@ export function EmptyState({
 }
 
 const styles = StyleSheet.create({
+  loadingWrap: { paddingVertical: spacing.sm },
+  loadingText: { ...typography.caption, color: colors.inkSubtle, textAlign: 'center', marginTop: spacing.md },
   wrap: { paddingVertical: spacing.xl, paddingHorizontal: spacing.lg, alignItems: 'center', justifyContent: 'center' },
   iconCircle: { width: 60, height: 60, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md },
   text: { ...typography.body, color: colors.inkMuted, textAlign: 'center', marginTop: spacing.xs },

@@ -9,7 +9,7 @@ import { Avatar } from '../../components/Avatar';
 import { Badge } from '../../components/Badge';
 import { ProgressBar } from '../../components/ProgressBar';
 import { StatTile } from '../../components/StatTile';
-import { LoadingState } from '../../components/States';
+import { SkeletonBlock } from '../../components/Skeleton';
 import { fetchToday } from '../../services/workoutService';
 import { fetchCheckIns } from '../../services/checkInService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
@@ -62,7 +62,25 @@ export function HomeScreen({ navigation }: Props) {
   if (loading) {
     return (
       <ScreenContainer>
-        <LoadingState message="Loading your dashboard…" />
+        <View style={styles.topBar}>
+          <View>
+            <SkeletonBlock style={styles.skeletonGreeting} />
+            <SkeletonBlock style={styles.skeletonName} />
+          </View>
+          <SkeletonBlock style={styles.skeletonAvatar} />
+        </View>
+        <SkeletonBlock style={styles.skeletonHero} />
+        <View style={styles.skeletonSection}>
+          <SkeletonBlock style={styles.skeletonLabel} />
+          <SkeletonBlock style={styles.skeletonCard} />
+        </View>
+        <View style={styles.skeletonSection}>
+          <SkeletonBlock style={styles.skeletonLabel} />
+          <View style={styles.statsRow}>
+            <SkeletonBlock style={styles.skeletonTile} />
+            <SkeletonBlock style={styles.skeletonTile} />
+          </View>
+        </View>
       </ScreenContainer>
     );
   }
@@ -182,4 +200,12 @@ const styles = StyleSheet.create({
   progressHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
   progressPct: { ...typography.display, color: colors.ink },
   statsRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  skeletonGreeting: { width: 96, height: 12, marginBottom: 8 },
+  skeletonName: { width: 148, height: 30 },
+  skeletonAvatar: { width: 46, height: 46, borderRadius: 23 },
+  skeletonHero: { height: 172, borderRadius: 20, marginBottom: spacing.lg },
+  skeletonSection: { marginTop: spacing.md },
+  skeletonLabel: { width: 92, height: 12, marginBottom: spacing.sm },
+  skeletonCard: { height: 96, borderRadius: 20 },
+  skeletonTile: { flex: 1, height: 86, borderRadius: 16 },
 });

@@ -22,23 +22,20 @@ export function SplashScreen({ navigation }: Props) {
 
   useEffect(() => {
     if (!ready) return;
-    const timer = setTimeout(() => {
-      if (!token || !status) {
-        navigation.replace('Auth');
-        return;
-      }
-      const root = resolveRootRoute(status.recommendedNextScreen);
-      if (root === 'Onboarding') {
-        navigation.replace('Onboarding', { screen: resolveOnboardingInitialRoute(status.recommendedNextScreen) });
-        return;
-      }
-      if (root === 'PaidTransition') {
-        navigation.replace('PaidTransition', { screen: resolvePaidInitialRoute(status.recommendedNextScreen) });
-        return;
-      }
-      navigation.replace(root);
-    }, 1400);
-    return () => clearTimeout(timer);
+    if (!token || !status) {
+      navigation.replace('Auth');
+      return;
+    }
+    const root = resolveRootRoute(status.recommendedNextScreen);
+    if (root === 'Onboarding') {
+      navigation.replace('Onboarding', { screen: resolveOnboardingInitialRoute(status.recommendedNextScreen) });
+      return;
+    }
+    if (root === 'PaidTransition') {
+      navigation.replace('PaidTransition', { screen: resolvePaidInitialRoute(status.recommendedNextScreen) });
+      return;
+    }
+    navigation.replace(root);
   }, [ready, token, status, navigation]);
 
   return (
