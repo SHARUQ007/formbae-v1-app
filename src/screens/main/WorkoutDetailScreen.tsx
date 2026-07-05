@@ -185,9 +185,25 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     setActivePanel('video');
   };
 
-  const moveToPrevious = () => {
-    setActiveIndex((current) => Math.max(0, current - 1));
-    setActivePanel('video');
+  const moveToNextPanel = () => {
+    if (activePanel === 'video') {
+      setActivePanel('details');
+      return;
+    }
+    if (activeExerciseIndex < trackableExercises.length - 1) {
+      moveToNext();
+    }
+  };
+
+  const moveToPreviousPanel = () => {
+    if (activePanel === 'details') {
+      setActivePanel('video');
+      return;
+    }
+    if (activeExerciseIndex > 0) {
+      setActiveIndex((current) => Math.max(0, current - 1));
+      setActivePanel('details');
+    }
   };
 
   const completeActiveExercise = async (setsOverride = setProgress) => {
@@ -255,14 +271,10 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     },
     onPanResponderRelease: (_event, gesture) => {
       if (gesture.dy > 44) {
-        if (activeExerciseIndex > 0) {
-          moveToPrevious();
-        }
+        moveToPreviousPanel();
       }
       if (gesture.dy < -44) {
-        if (activeExerciseIndex < trackableExercises.length - 1) {
-          moveToNext();
-        }
+        moveToNextPanel();
       }
     },
   });
