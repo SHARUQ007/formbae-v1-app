@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, Text, StyleSheet, RefreshControl, View } from 'react-native';
+import { Image, ScrollView, Text, StyleSheet, RefreshControl, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
@@ -149,6 +149,30 @@ function WorkoutDashboardScreen({ navigation }: Props) {
               </View>
             </Card>
 
+            {trainer ? (
+              <Card variant="outline" style={styles.trainerCard}>
+                <View style={styles.trainerPhotoWrap}>
+                  {trainer.trainerPhotoUrl ? (
+                    <Image source={{ uri: trainer.trainerPhotoUrl }} style={styles.trainerPhoto} resizeMode="cover" />
+                  ) : (
+                    <View style={styles.trainerFallback}>
+                      <Text style={styles.trainerInitial}>{(trainer.name || 'T').slice(0, 1).toUpperCase()}</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.trainerInfo}>
+                  <Text style={styles.trainerLabel}>Your coach</Text>
+                  <Text style={styles.trainerName} numberOfLines={1}>{trainer.name || 'FormBae Trainer'}</Text>
+                  <Text style={styles.trainerDescription} numberOfLines={2}>
+                    {trainer.trainerDescription || 'Guiding your workout plan, check-ins and weekly progress.'}
+                  </Text>
+                </View>
+                <View style={styles.trainerBadge}>
+                  <Feather name="shield" size={16} color={colors.accent} />
+                </View>
+              </Card>
+            ) : null}
+
             {progress ? (
               <View style={styles.statsRow}>
                 <StatTile icon="target" value={`${progress.adherencePct}%`} label="Adherence" />
@@ -229,6 +253,31 @@ const styles = StyleSheet.create({
   todayTitle: { ...typography.title, color: colors.white, marginTop: spacing.md },
   todayMeta: { ...typography.body, color: colors.onAccentMuted, marginTop: 4 },
   heroActions: { gap: spacing.sm, marginTop: spacing.lg },
+  trainerCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md, padding: spacing.md },
+  trainerPhotoWrap: {
+    width: 58,
+    height: 58,
+    borderRadius: 22,
+    overflow: 'hidden',
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+  },
+  trainerPhoto: { width: '100%', height: '100%' },
+  trainerFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight },
+  trainerInitial: { ...typography.title, color: colors.accentDark },
+  trainerInfo: { flex: 1 },
+  trainerLabel: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase', marginBottom: 2 },
+  trainerName: { ...typography.subtitle, color: colors.ink },
+  trainerDescription: { ...typography.caption, color: colors.inkMuted, marginTop: 2, lineHeight: 17 },
+  trainerBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accentLight,
+  },
   statsRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   weekProgress: { marginTop: spacing.md },
   weekProgressTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
