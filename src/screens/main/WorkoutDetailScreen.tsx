@@ -255,13 +255,22 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     },
     onPanResponderRelease: (_event, gesture) => {
       if (gesture.dy > 44) {
-        if (activeExerciseIndex > 0) {
-          moveToPrevious();
+        if (activePanel === 'video') {
+          setActivePanel('details');
+          return;
+        }
+        if (activeExerciseIndex < trackableExercises.length - 1) {
+          moveToNext();
         }
       }
       if (gesture.dy < -44) {
-        if (activeExerciseIndex < trackableExercises.length - 1) {
-          moveToNext();
+        if (activePanel === 'details') {
+          setActivePanel('video');
+          return;
+        }
+        if (activeExerciseIndex > 0) {
+          moveToPrevious();
+          setActivePanel('details');
         }
       }
     },
@@ -346,7 +355,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                     />
                   </View>
 
-                  <PrimaryButton title="See workout details" icon="arrow-down" onPress={() => setActivePanel('details')} style={styles.finish} />
+                  <PrimaryButton title="Workout details" icon="arrow-down" onPress={() => setActivePanel('details')} style={styles.finish} />
                 </>
               ) : (
                 <>
