@@ -309,37 +309,10 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         ) : activeExercise ? (
           <View style={styles.gestureSurface} {...swipeResponder.panHandlers}>
             <Card style={StyleSheet.flatten([styles.focusCard, activeDone && styles.exDone])}>
-              <View style={styles.topExerciseNav}>
-                <TouchableOpacity
-                  onPress={moveToPrevious}
-                  disabled={activeExerciseIndex === 0}
-                  style={[styles.arrowButton, activeExerciseIndex === 0 && styles.arrowButtonDisabled]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Previous exercise"
-                >
-                  <Feather name="chevron-left" size={22} color={activeExerciseIndex === 0 ? colors.inkSubtle : colors.ink} />
-                </TouchableOpacity>
-                <View style={styles.exerciseCounter}>
-                  <Text style={styles.exerciseCounterText}>
-                    {activeExerciseIndex + 1} / {trackableExercises.length}
-                  </Text>
-                <Text style={styles.exerciseCounterSub}>Swipe down = next</Text>
-                </View>
-                <TouchableOpacity
-                  onPress={moveToNext}
-                  disabled={activeExerciseIndex >= trackableExercises.length - 1}
-                  style={[styles.arrowButton, activeExerciseIndex >= trackableExercises.length - 1 && styles.arrowButtonDisabled]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Next exercise"
-                >
-                  <Feather name="chevron-right" size={22} color={activeExerciseIndex >= trackableExercises.length - 1 ? colors.inkSubtle : colors.ink} />
-                </TouchableOpacity>
-              </View>
-
               <View style={styles.focusTop}>
-                <View>
+                <View style={styles.focusTitleWrap}>
                   <Text style={styles.focusKicker}>
-                    Movement {activeExerciseIndex + 1} of {trackableExercises.length}
+                    {activeExerciseIndex + 1} of {trackableExercises.length}
                   </Text>
                   <Text style={styles.focusTitle}>{activeExercise.exerciseName}</Text>
                   <Text style={styles.focusSub}>{getSectionLabel(activeExercise.notes, detail.focus || 'Workout')}</Text>
@@ -351,11 +324,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
 
               {activePanel === 'video' ? (
                 <>
-                  <View style={styles.videoZoneLabel}>
-                    <Text style={styles.zoneLabel}>Swipe down for next exercise</Text>
-                    <Text style={styles.zoneHint}>Replay / try another below</Text>
-                  </View>
-
                   <View style={styles.videoBox}>
                     <ExerciseVideo key={`${activeExercise.exerciseId}_${replayNonce}`} url={activeExercise.videoUrl} compact />
                   </View>
@@ -382,11 +350,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                 </>
               ) : (
                 <>
-                  <View style={styles.trackingZoneLabel}>
-                    <Text style={styles.zoneLabel}>Tracking</Text>
-                    <Text style={styles.zoneHint}>Sets + rest</Text>
-                  </View>
-
                   <View style={styles.prescription}>
                     <View style={styles.prescriptionTile}>
                       <Text style={styles.prescriptionLabel}>Sets</Text>
@@ -586,30 +549,8 @@ const styles = StyleSheet.create({
   progressPct: { ...typography.bodyBold, color: colors.accent },
   gestureSurface: { flex: 1, width: '100%' },
   focusCard: { marginBottom: spacing.sm, minHeight: Math.max(620, VIEWPORT_HEIGHT - 150), padding: spacing.sm },
-  topExerciseNav: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.xs,
-    borderRadius: radius.lg,
-    backgroundColor: colors.panelMuted,
-    padding: 6,
-  },
-  arrowButton: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  arrowButtonDisabled: { opacity: 0.45 },
-  exerciseCounter: { alignItems: 'center', flex: 1 },
-  exerciseCounterText: { ...typography.bodyBold, color: colors.ink },
-  exerciseCounterSub: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
   focusTop: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.xs },
+  focusTitleWrap: { flex: 1 },
   focusKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 1 },
   focusTitle: { ...typography.title, color: colors.ink },
   focusSub: { ...typography.caption, color: colors.inkMuted, marginTop: 1, textTransform: 'uppercase' },
@@ -632,10 +573,6 @@ const styles = StyleSheet.create({
   hintItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   hintText: { ...typography.caption, color: colors.accentDarker, fontWeight: '700' },
   hintTextMuted: { ...typography.caption, color: colors.accentDarker, textAlign: 'center', opacity: 0.8 },
-  videoZoneLabel: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: spacing.xs },
-  trackingZoneLabel: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: spacing.xs },
-  zoneLabel: { ...typography.label, color: colors.ink, textTransform: 'uppercase' },
-  zoneHint: { ...typography.caption, color: colors.inkMuted, flexShrink: 1, textAlign: 'right' },
   exCard: { marginBottom: spacing.sm },
   exDone: { backgroundColor: colors.accentLight, borderColor: colors.accentSurface },
   exHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
