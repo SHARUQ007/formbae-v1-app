@@ -7,7 +7,7 @@ import { radius } from '../theme/radius';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
 
-const COMPACT_VIDEO_MAX_HEIGHT = Math.min(330, Math.round(Dimensions.get('window').height * 0.36));
+const COMPACT_VIDEO_MAX_HEIGHT = Math.min(560, Math.round(Dimensions.get('window').height * 0.62));
 
 export function ExerciseVideo({ url, compact = false }: { url: string; compact?: boolean }) {
   const embed = getYoutubeEmbedUrl(url);

@@ -349,18 +349,11 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                 </View>
               </View>
 
-              <View style={styles.coachHint}>
-                <View style={styles.hintItem}>
-                  <Feather name="arrow-down" size={14} color={colors.accentDark} />
-                  <Text style={styles.hintText}>Swipe down for next exercise</Text>
-                </View>
-              </View>
-
               {activePanel === 'video' ? (
                 <>
                   <View style={styles.videoZoneLabel}>
-                    <Text style={styles.zoneLabel}>Technique</Text>
-                    <Text style={styles.zoneHint}>Video-first mode</Text>
+                    <Text style={styles.zoneLabel}>Swipe down for next exercise</Text>
+                    <Text style={styles.zoneHint}>Replay / try another below</Text>
                   </View>
 
                   <View style={styles.videoBox}>
@@ -592,12 +585,12 @@ const styles = StyleSheet.create({
   progressLabel: { ...typography.bodyBold, color: colors.ink },
   progressPct: { ...typography.bodyBold, color: colors.accent },
   gestureSurface: { flex: 1, width: '100%' },
-  focusCard: { marginBottom: spacing.sm, minHeight: Math.max(560, VIEWPORT_HEIGHT - 170), padding: spacing.md },
+  focusCard: { marginBottom: spacing.sm, minHeight: Math.max(620, VIEWPORT_HEIGHT - 150), padding: spacing.sm },
   topExerciseNav: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
     borderRadius: radius.lg,
     backgroundColor: colors.panelMuted,
     padding: 6,
@@ -617,9 +610,9 @@ const styles = StyleSheet.create({
   exerciseCounterText: { ...typography.bodyBold, color: colors.ink },
   exerciseCounterSub: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
   focusTop: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.xs },
-  focusKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 2 },
+  focusKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 1 },
   focusTitle: { ...typography.title, color: colors.ink },
-  focusSub: { ...typography.caption, color: colors.inkMuted, marginTop: 2, textTransform: 'uppercase' },
+  focusSub: { ...typography.caption, color: colors.inkMuted, marginTop: 1, textTransform: 'uppercase' },
   focusStatus: {
     width: 38,
     height: 38,
