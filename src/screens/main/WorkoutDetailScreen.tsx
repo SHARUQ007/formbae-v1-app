@@ -240,6 +240,10 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
   };
 
   const swipeResponder = PanResponder.create({
+    onMoveShouldSetPanResponderCapture: (_event, gesture) => {
+      const horizontal = Math.abs(gesture.dx) > 24 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2;
+      return horizontal;
+    },
     onMoveShouldSetPanResponder: (_event, gesture) => {
       const horizontal = Math.abs(gesture.dx) > 36 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35;
       return horizontal;
@@ -290,127 +294,129 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
         {trackableExercises.length === 0 ? (
           <EmptyState icon="coffee" title="Rest day" message="No exercises for this day. Recover well!" />
         ) : activeExercise ? (
-          <Card style={StyleSheet.flatten([styles.focusCard, activeDone && styles.exDone])} {...swipeResponder.panHandlers}>
-            <View style={styles.topExerciseNav}>
-              <TouchableOpacity
-                onPress={moveToPrevious}
-                disabled={activeExerciseIndex === 0}
-                style={[styles.arrowButton, activeExerciseIndex === 0 && styles.arrowButtonDisabled]}
-                accessibilityRole="button"
-                accessibilityLabel="Previous exercise"
-              >
-                <Feather name="chevron-left" size={22} color={activeExerciseIndex === 0 ? colors.inkSubtle : colors.ink} />
-              </TouchableOpacity>
-              <View style={styles.exerciseCounter}>
-                <Text style={styles.exerciseCounterText}>
-                  {activeExerciseIndex + 1} / {trackableExercises.length}
-                </Text>
-                <Text style={styles.exerciseCounterSub}>Swipe</Text>
+          <View {...swipeResponder.panHandlers}>
+            <Card style={StyleSheet.flatten([styles.focusCard, activeDone && styles.exDone])}>
+              <View style={styles.topExerciseNav}>
+                <TouchableOpacity
+                  onPress={moveToPrevious}
+                  disabled={activeExerciseIndex === 0}
+                  style={[styles.arrowButton, activeExerciseIndex === 0 && styles.arrowButtonDisabled]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Previous exercise"
+                >
+                  <Feather name="chevron-left" size={22} color={activeExerciseIndex === 0 ? colors.inkSubtle : colors.ink} />
+                </TouchableOpacity>
+                <View style={styles.exerciseCounter}>
+                  <Text style={styles.exerciseCounterText}>
+                    {activeExerciseIndex + 1} / {trackableExercises.length}
+                  </Text>
+                  <Text style={styles.exerciseCounterSub}>Swipe</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={moveToNext}
+                  disabled={activeExerciseIndex >= trackableExercises.length - 1}
+                  style={[styles.arrowButton, activeExerciseIndex >= trackableExercises.length - 1 && styles.arrowButtonDisabled]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Next exercise"
+                >
+                  <Feather name="chevron-right" size={22} color={activeExerciseIndex >= trackableExercises.length - 1 ? colors.inkSubtle : colors.ink} />
+                </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                onPress={moveToNext}
-                disabled={activeExerciseIndex >= trackableExercises.length - 1}
-                style={[styles.arrowButton, activeExerciseIndex >= trackableExercises.length - 1 && styles.arrowButtonDisabled]}
-                accessibilityRole="button"
-                accessibilityLabel="Next exercise"
-              >
-                <Feather name="chevron-right" size={22} color={activeExerciseIndex >= trackableExercises.length - 1 ? colors.inkSubtle : colors.ink} />
-              </TouchableOpacity>
-            </View>
 
-            <View style={styles.focusTop}>
-              <View>
-                <Text style={styles.focusKicker}>
-                  Movement {activeExerciseIndex + 1} of {trackableExercises.length}
-                </Text>
-                <Text style={styles.focusTitle}>{activeExercise.exerciseName}</Text>
-                <Text style={styles.focusSub}>{getSectionLabel(activeExercise.notes, detail.focus || 'Workout')}</Text>
+              <View style={styles.focusTop}>
+                <View>
+                  <Text style={styles.focusKicker}>
+                    Movement {activeExerciseIndex + 1} of {trackableExercises.length}
+                  </Text>
+                  <Text style={styles.focusTitle}>{activeExercise.exerciseName}</Text>
+                  <Text style={styles.focusSub}>{getSectionLabel(activeExercise.notes, detail.focus || 'Workout')}</Text>
+                </View>
+                <View style={[styles.focusStatus, activeDone && styles.focusStatusDone]}>
+                  <Feather name={activeDone ? 'check' : 'activity'} size={18} color={activeDone ? colors.white : colors.accent} />
+                </View>
               </View>
-              <View style={[styles.focusStatus, activeDone && styles.focusStatusDone]}>
-                <Feather name={activeDone ? 'check' : 'activity'} size={18} color={activeDone ? colors.white : colors.accent} />
-              </View>
-            </View>
 
-            <View style={styles.coachHint}>
-              <View style={styles.hintItem}>
-                <Feather name="arrow-left" size={14} color={colors.accentDark} />
-                <Text style={styles.hintText}>Swipe to browse exercises</Text>
-                <Feather name="arrow-right" size={14} color={colors.accentDark} />
+              <View style={styles.coachHint}>
+                <View style={styles.hintItem}>
+                  <Feather name="arrow-left" size={14} color={colors.accentDark} />
+                  <Text style={styles.hintText}>Swipe to browse exercises</Text>
+                  <Feather name="arrow-right" size={14} color={colors.accentDark} />
+                </View>
               </View>
-            </View>
 
-            <View style={styles.videoZoneLabel}>
-              <Text style={styles.zoneLabel}>Technique</Text>
-              <Text style={styles.zoneHint}>Video</Text>
-            </View>
-
-            <View style={styles.videoBox}>
-              <ExerciseVideo url={activeExercise.videoUrl} compact />
-            </View>
-
-            <View style={styles.trackingZoneLabel}>
-              <Text style={styles.zoneLabel}>Tracking</Text>
-              <Text style={styles.zoneHint}>Sets + rest</Text>
-            </View>
-
-            <View style={styles.prescription}>
-              <View style={styles.prescriptionTile}>
-                <Text style={styles.prescriptionLabel}>Sets</Text>
-                <Text style={styles.prescriptionValue}>{activeSets}</Text>
+              <View style={styles.videoZoneLabel}>
+                <Text style={styles.zoneLabel}>Technique</Text>
+                <Text style={styles.zoneHint}>Video</Text>
               </View>
-              <View style={styles.prescriptionTile}>
-                <Text style={styles.prescriptionLabel}>Reps / time</Text>
-                <Text style={styles.prescriptionValue}>{displayValue(activeExercise.reps, '-')}</Text>
-              </View>
-              <View style={styles.prescriptionTile}>
-                <Text style={styles.prescriptionLabel}>Rest</Text>
-                <Text style={styles.prescriptionValue}>{displayValue(activeExercise.restSec, '0')}s</Text>
-              </View>
-            </View>
 
-            <View style={styles.setTracker}>
-              <View style={styles.setTrackerHead}>
-                <Text style={styles.setTrackerTitle}>Set tracker</Text>
-                <Text style={styles.setTrackerMeta}>
-                  {activeSetCount}/{activeSets} complete
-                </Text>
+              <View style={styles.videoBox}>
+                <ExerciseVideo url={activeExercise.videoUrl} compact />
               </View>
-              <View style={styles.setDots}>
-                {Array.from({ length: activeSets }).map((_, index) => {
-                  const done = index < activeSetCount;
-                  return (
-                    <View key={index} style={[styles.setDot, done && styles.setDotDone]}>
-                      <Text style={[styles.setDotText, done && styles.setDotTextDone]}>{index + 1}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-              <PrimaryButton
-                title={activeDone ? 'Movement complete' : activeSetCount >= activeSets ? 'Mark complete' : `Log set ${activeSetCount + 1}`}
-                icon={activeDone ? 'check' : 'plus'}
-                onPress={activeSetCount >= activeSets ? markActiveComplete : onSetDone}
-                disabled={activeDone}
-                style={styles.exBtn}
-              />
-            </View>
 
-            <View style={styles.primaryNavRow}>
-              <PrimaryButton
-                title={activeExerciseIndex >= trackableExercises.length - 1 ? 'Finish workout' : 'Next movement'}
-                icon={activeExerciseIndex >= trackableExercises.length - 1 ? 'flag' : 'chevron-right'}
-                onPress={activeExerciseIndex >= trackableExercises.length - 1 ? onFinish : moveToNext}
-                loading={finishing}
-                style={styles.primaryNavButton}
-              />
-            </View>
-
-            {activeNotes ? (
-              <View style={styles.coachNote}>
-                <Feather name="info" size={15} color={colors.accentDark} />
-                <Text style={styles.notes}>{activeNotes}</Text>
+              <View style={styles.trackingZoneLabel}>
+                <Text style={styles.zoneLabel}>Tracking</Text>
+                <Text style={styles.zoneHint}>Sets + rest</Text>
               </View>
-            ) : null}
-          </Card>
+
+              <View style={styles.prescription}>
+                <View style={styles.prescriptionTile}>
+                  <Text style={styles.prescriptionLabel}>Sets</Text>
+                  <Text style={styles.prescriptionValue}>{activeSets}</Text>
+                </View>
+                <View style={styles.prescriptionTile}>
+                  <Text style={styles.prescriptionLabel}>Reps / time</Text>
+                  <Text style={styles.prescriptionValue}>{displayValue(activeExercise.reps, '-')}</Text>
+                </View>
+                <View style={styles.prescriptionTile}>
+                  <Text style={styles.prescriptionLabel}>Rest</Text>
+                  <Text style={styles.prescriptionValue}>{displayValue(activeExercise.restSec, '0')}s</Text>
+                </View>
+              </View>
+
+              <View style={styles.setTracker}>
+                <View style={styles.setTrackerHead}>
+                  <Text style={styles.setTrackerTitle}>Set tracker</Text>
+                  <Text style={styles.setTrackerMeta}>
+                    {activeSetCount}/{activeSets} complete
+                  </Text>
+                </View>
+                <View style={styles.setDots}>
+                  {Array.from({ length: activeSets }).map((_, index) => {
+                    const done = index < activeSetCount;
+                    return (
+                      <View key={index} style={[styles.setDot, done && styles.setDotDone]}>
+                        <Text style={[styles.setDotText, done && styles.setDotTextDone]}>{index + 1}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+                <PrimaryButton
+                  title={activeDone ? 'Movement complete' : activeSetCount >= activeSets ? 'Mark complete' : `Log set ${activeSetCount + 1}`}
+                  icon={activeDone ? 'check' : 'plus'}
+                  onPress={activeSetCount >= activeSets ? markActiveComplete : onSetDone}
+                  disabled={activeDone}
+                  style={styles.exBtn}
+                />
+              </View>
+
+              <View style={styles.primaryNavRow}>
+                <PrimaryButton
+                  title={activeExerciseIndex >= trackableExercises.length - 1 ? 'Finish workout' : 'Next movement'}
+                  icon={activeExerciseIndex >= trackableExercises.length - 1 ? 'flag' : 'chevron-right'}
+                  onPress={activeExerciseIndex >= trackableExercises.length - 1 ? onFinish : moveToNext}
+                  loading={finishing}
+                  style={styles.primaryNavButton}
+                />
+              </View>
+
+              {activeNotes ? (
+                <View style={styles.coachNote}>
+                  <Feather name="info" size={15} color={colors.accentDark} />
+                  <Text style={styles.notes}>{activeNotes}</Text>
+                </View>
+              ) : null}
+            </Card>
+          </View>
         ) : (
           <EmptyState icon="coffee" title="Rest day" message="No movements for this day. Recover well!" />
         )}
