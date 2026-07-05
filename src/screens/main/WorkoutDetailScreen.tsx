@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Dimensions, PanResponder, ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Dimensions, PanResponder, ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
@@ -29,6 +29,9 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutDetail'>;
 
 const VIEWPORT_HEIGHT = Dimensions.get('window').height;
 
+type RewardType = 'set' | 'movement' | 'workout';
+type RewardState = { id: number; type: RewardType; title: string; subtitle: string } | null;
+
 function getSectionLabel(notes: string, fallback: string) {
   const section = notes.match(/(?:^|[|\n])\s*Section:\s*([^|\n]+)/i)?.[1]?.trim();
   return section || fallback;
@@ -52,6 +55,12 @@ function displayValue(value: string, fallback = '-') {
   return cleaned || fallback;
 }
 
+function wait(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 export function WorkoutDetailScreen({ route, navigation }: Props) {
   const { planDayId, mode = 'standard' } = route.params;
   const insets = useSafeAreaInsets();
@@ -62,10 +71,12 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
+  const [reward, setReward] = useState<RewardState>(null);
   const { status } = useAuthStore();
   const timer = useRestTimer(() => {
     displayLocalNotification('Rest complete', 'Time for your next set.').catch(() => undefined);
   });
+  const clearReward = useCallback(() => setReward(null), []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,6 +122,13 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
     if (!detail) return;
     setFinishing(true);
     try {
+      setReward({
+        id: Date.now(),
+        type: 'workout',
+        title: 'Workout complete',
+        subtitle: 'Strong finish. Your progress is saved.',
+      });
+      await wait(900);
       const result = await completeWithQueue({
         planId: detail.planId,
         planDayId: detail.planDayId,
@@ -191,7 +209,20 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
     await persistSets(nextSets);
     if (activeRest > 0) timer.start(activeRest);
     if (nextCount >= activeSets) {
+      setReward({
+        id: Date.now(),
+        type: 'movement',
+        title: 'Movement complete',
+        subtitle: `${activeExercise.exerciseName} done.`,
+      });
       await completeActiveExercise(nextSets);
+    } else {
+      setReward({
+        id: Date.now(),
+        type: 'set',
+        title: `Set ${nextCount} logged`,
+        subtitle: `${activeSets - nextCount} set${activeSets - nextCount === 1 ? '' : 's'} left.`,
+      });
     }
   };
 
@@ -199,6 +230,12 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
     if (!activeExercise) return;
     const nextSets = { ...setProgress, [activeExercise.exerciseId]: activeSets };
     setSetProgress(nextSets);
+    setReward({
+      id: Date.now(),
+      type: 'movement',
+      title: 'Movement complete',
+      subtitle: `${activeExercise.exerciseName} done.`,
+    });
     await completeActiveExercise(nextSets);
   };
 
@@ -219,6 +256,7 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      <RewardOverlay reward={reward} onDone={clearReward} />
       <Header onBack={() => navigation.goBack()} title={`Day ${detail.dayNumber}`} subtitle={detail.focus || detail.planTitle} />
 
       {timer.running ? (
@@ -410,6 +448,74 @@ function Header({ onBack, title, subtitle }: { onBack: () => void; title: string
   );
 }
 
+function RewardOverlay({ reward, onDone }: { reward: RewardState; onDone: () => void }) {
+  const scale = useRef(new Animated.Value(0.82)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  const lift = useRef(new Animated.Value(24)).current;
+  const particle = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!reward) return;
+    scale.setValue(0.82);
+    opacity.setValue(0);
+    lift.setValue(24);
+    particle.setValue(0);
+
+    Animated.parallel([
+      Animated.sequence([
+        Animated.parallel([
+          Animated.spring(scale, { toValue: 1, friction: 5, tension: 90, useNativeDriver: true }),
+          Animated.timing(opacity, { toValue: 1, duration: 160, useNativeDriver: true }),
+          Animated.timing(lift, { toValue: 0, duration: 220, useNativeDriver: true }),
+          Animated.timing(particle, { toValue: 1, duration: reward.type === 'set' ? 520 : 850, useNativeDriver: true }),
+        ]),
+        Animated.delay(reward.type === 'set' ? 420 : 720),
+        Animated.timing(opacity, { toValue: 0, duration: 220, useNativeDriver: true }),
+      ]),
+    ]).start(({ finished }) => {
+      if (finished) onDone();
+    });
+  }, [lift, onDone, opacity, particle, reward, scale]);
+
+  if (!reward) return null;
+
+  const big = reward.type !== 'set';
+  const colorsForReward = reward.type === 'workout' ? [colors.star, colors.accent, colors.info] : [colors.accent, colors.accentDark, colors.star];
+
+  return (
+    <Animated.View pointerEvents="none" style={[styles.rewardOverlay, { opacity }]}>
+      <View style={styles.rewardParticles}>
+        {Array.from({ length: big ? 14 : 8 }).map((_, index) => {
+          const angle = (index / (big ? 14 : 8)) * Math.PI * 2;
+          const distance = big ? 126 : 76;
+          const translateX = particle.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(angle) * distance] });
+          const translateY = particle.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(angle) * distance] });
+          const particleScale = particle.interpolate({ inputRange: [0, 0.35, 1], outputRange: [0.7, 1.25, 0.4] });
+          return (
+            <Animated.View
+              key={index}
+              style={[
+                styles.rewardParticle,
+                {
+                  backgroundColor: colorsForReward[index % colorsForReward.length],
+                  transform: [{ translateX }, { translateY }, { scale: particleScale }],
+                },
+              ]}
+            />
+          );
+        })}
+      </View>
+      <Animated.View style={[styles.rewardCard, big && styles.rewardCardBig, { transform: [{ scale }, { translateY: lift }] }]}>
+        <View style={[styles.rewardIcon, big && styles.rewardIconBig]}>
+          <Feather name={reward.type === 'set' ? 'plus' : reward.type === 'movement' ? 'check' : 'award'} size={big ? 34 : 24} color={colors.white} />
+        </View>
+        <Text style={[styles.rewardTitle, big && styles.rewardTitleBig]}>{reward.title}</Text>
+        <Text style={styles.rewardSubtitle}>{reward.subtitle}</Text>
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   centerPad: { paddingHorizontal: spacing.lg },
@@ -562,4 +668,42 @@ const styles = StyleSheet.create({
   finish: { marginTop: spacing.md },
   safetyRow: { flexDirection: 'row', gap: 6, marginTop: spacing.md, alignItems: 'flex-start' },
   safety: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 17, fontStyle: 'italic' },
+  rewardOverlay: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  rewardParticles: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+  rewardParticle: { position: 'absolute', width: 12, height: 12, borderRadius: 6 },
+  rewardCard: {
+    minWidth: 210,
+    borderRadius: radius.xl,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+    shadowColor: colors.accentDark,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.22,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  rewardCardBig: { minWidth: 270, paddingVertical: spacing.xl },
+  rewardIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  rewardIconBig: { width: 72, height: 72, marginBottom: spacing.md },
+  rewardTitle: { ...typography.subtitle, color: colors.ink, textAlign: 'center' },
+  rewardTitleBig: { ...typography.title, color: colors.ink, textAlign: 'center' },
+  rewardSubtitle: { ...typography.body, color: colors.inkMuted, textAlign: 'center', marginTop: 4 },
 });
