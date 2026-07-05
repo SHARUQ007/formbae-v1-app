@@ -127,6 +127,8 @@ export function DietScreen() {
       mediaType: 'photo',
       cameraType: 'back',
       quality: 0.8,
+      maxWidth: 1600,
+      maxHeight: 1600,
       includeBase64: true,
       saveToPhotos: false,
     });
@@ -143,6 +145,8 @@ export function DietScreen() {
       mediaType: 'photo',
       selectionLimit: 1,
       quality: 0.9,
+      maxWidth: 1600,
+      maxHeight: 1600,
       includeBase64: true,
     });
     if (result.didCancel) return;
