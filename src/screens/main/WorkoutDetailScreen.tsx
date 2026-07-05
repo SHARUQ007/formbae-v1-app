@@ -255,22 +255,13 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     },
     onPanResponderRelease: (_event, gesture) => {
       if (gesture.dy > 44) {
-        if (activePanel === 'video') {
-          setActivePanel('details');
-          return;
-        }
         if (activeExerciseIndex < trackableExercises.length - 1) {
           moveToNext();
         }
       }
       if (gesture.dy < -44) {
-        if (activePanel === 'details') {
-          setActivePanel('video');
-          return;
-        }
         if (activeExerciseIndex > 0) {
           moveToPrevious();
-          setActivePanel('details');
         }
       }
     },
@@ -301,7 +292,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       <ScrollView
         showsVerticalScrollIndicator={false}
         scrollEnabled={!activeExercise}
-        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + spacing.xl }]}
+        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + spacing.sm }]}
       >
         <View style={styles.progressCard}>
           <View style={styles.progressTop}>
@@ -355,7 +346,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                     />
                   </View>
 
-                  <PrimaryButton title="Workout details" icon="arrow-down" onPress={() => setActivePanel('details')} style={styles.finish} />
+                  <PrimaryButton title="Workout details" icon="list" onPress={() => setActivePanel('details')} style={styles.finish} />
                 </>
               ) : (
                 <>
@@ -551,13 +542,13 @@ const styles = StyleSheet.create({
   timerActions: { flexDirection: 'row', gap: spacing.sm },
   timerPill: { backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill },
   timerBtn: { color: colors.white, fontWeight: '700', fontSize: 13 },
-  scroll: { paddingHorizontal: spacing.md, paddingTop: 2 },
-  progressCard: { marginBottom: spacing.sm },
+  scroll: { flexGrow: 1, paddingHorizontal: spacing.sm, paddingTop: 0 },
+  progressCard: { marginBottom: spacing.xs, paddingHorizontal: spacing.xs },
   progressTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
   progressLabel: { ...typography.bodyBold, color: colors.ink },
   progressPct: { ...typography.bodyBold, color: colors.accent },
   gestureSurface: { flex: 1, width: '100%' },
-  focusCard: { marginBottom: spacing.sm, minHeight: Math.max(620, VIEWPORT_HEIGHT - 150), padding: spacing.sm },
+  focusCard: { flex: 1, marginBottom: spacing.xs, minHeight: Math.max(650, VIEWPORT_HEIGHT - 126), padding: spacing.sm },
   focusTop: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.xs },
   focusTitleWrap: { flex: 1 },
   focusKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 1 },
