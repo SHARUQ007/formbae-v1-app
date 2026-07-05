@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { ActivityIndicator, Dimensions, ImageBackground, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, Dimensions, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { getYoutubeEmbedUrl, getYoutubeThumbnailUrl } from '../utils/video';
+import { getYoutubeEmbedUrl } from '../utils/video';
 import { colors } from '../theme/colors';
-import { radius } from '../theme/radius';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
 
@@ -11,8 +10,6 @@ const COMPACT_VIDEO_MAX_HEIGHT = Math.min(560, Math.round(Dimensions.get('window
 
 export function ExerciseVideo({ url, compact = false }: { url: string; compact?: boolean }) {
   const embed = getYoutubeEmbedUrl(url);
-  const thumbnail = getYoutubeThumbnailUrl(url);
-  const [play, setPlay] = useState(false);
   const [failed, setFailed] = useState(false);
 
   if (!embed) {
@@ -23,29 +20,14 @@ export function ExerciseVideo({ url, compact = false }: { url: string; compact?:
     );
   }
 
-  if (!play || failed) {
+  if (failed) {
     return (
-      <ImageBackground source={thumbnail ? { uri: thumbnail } : undefined} style={[styles.poster, compact && styles.posterCompact]} imageStyle={styles.posterImage}>
-        <View style={styles.scrim} />
-        <View style={styles.playButton}>
-          <Text style={styles.playIcon}>▶</Text>
-        </View>
-        <Text style={styles.posterText}>{failed ? 'Video could not load here' : 'Tap to watch technique'}</Text>
-        <View style={styles.posterActions}>
-          <TouchableOpacity
-            style={styles.posterAction}
-            activeOpacity={0.85}
-            onPress={() => {
-              setFailed(false);
-              setPlay(true);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Play technique video"
-          >
-            <Text style={styles.posterActionText}>{failed ? 'Try again' : 'Play'}</Text>
-          </TouchableOpacity>
-        </View>
-      </ImageBackground>
+      <View style={[styles.videoWrap, compact && styles.videoWrapCompact, styles.fallback]}>
+        <Text style={styles.fallbackTitle}>Video could not load here</Text>
+        <TouchableOpacity style={styles.retryButton} activeOpacity={0.85} onPress={() => setFailed(false)} accessibilityRole="button">
+          <Text style={styles.retryText}>Try again</Text>
+        </TouchableOpacity>
+      </View>
     );
   }
 
@@ -89,9 +71,6 @@ export function ExerciseVideo({ url, compact = false }: { url: string; compact?:
         onError={() => setFailed(true)}
         onHttpError={() => setFailed(true)}
       />
-      <TouchableOpacity style={styles.closeButton} onPress={() => setPlay(false)} accessibilityRole="button" accessibilityLabel="Close video">
-        <Text style={styles.closeText}>×</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -106,48 +85,12 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   placeholderText: { ...typography.caption, color: colors.inkMuted, textAlign: 'center' },
-  poster: {
-    width: '100%',
-    aspectRatio: 9 / 16,
-    borderRadius: radius.lg,
-    backgroundColor: '#0f2417',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    padding: spacing.md,
-  },
-  posterCompact: {
-    maxHeight: COMPACT_VIDEO_MAX_HEIGHT,
-  },
-  posterImage: { borderRadius: 26 },
-  scrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.38)' },
-  playButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  playIcon: { color: colors.white, fontSize: 22, marginLeft: 4 },
-  posterText: { ...typography.bodyBold, color: colors.white, marginTop: 12, textAlign: 'center' },
-  posterActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
-  posterAction: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 8 },
-  posterActionText: { ...typography.caption, color: colors.white, fontWeight: '700' },
   videoWrap: { width: '100%', aspectRatio: 9 / 16, borderRadius: 26, overflow: 'hidden', backgroundColor: '#000' },
   videoWrapCompact: { maxHeight: COMPACT_VIDEO_MAX_HEIGHT },
   webview: { flex: 1, backgroundColor: '#000' },
   loading: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' },
-  closeButton: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeText: { color: colors.white, fontSize: 24, lineHeight: 28 },
+  fallback: { alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+  fallbackTitle: { ...typography.bodyBold, color: colors.white, textAlign: 'center', marginBottom: spacing.md },
+  retryButton: { backgroundColor: colors.accent, borderRadius: 999, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+  retryText: { ...typography.caption, color: colors.white, fontWeight: '800' },
 });
