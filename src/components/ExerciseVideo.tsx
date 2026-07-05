@@ -7,7 +7,7 @@ import { radius } from '../theme/radius';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
 
-export function ExerciseVideo({ url }: { url: string }) {
+export function ExerciseVideo({ url, compact = false }: { url: string; compact?: boolean }) {
   const embed = getYoutubeEmbedUrl(url);
   const thumbnail = getYoutubeThumbnailUrl(url);
   const [play, setPlay] = useState(false);
@@ -23,7 +23,7 @@ export function ExerciseVideo({ url }: { url: string }) {
 
   if (!play || failed) {
     return (
-      <ImageBackground source={thumbnail ? { uri: thumbnail } : undefined} style={styles.poster} imageStyle={styles.posterImage}>
+      <ImageBackground source={thumbnail ? { uri: thumbnail } : undefined} style={[styles.poster, compact && styles.posterCompact]} imageStyle={styles.posterImage}>
         <View style={styles.scrim} />
         <View style={styles.playButton}>
           <Text style={styles.playIcon}>▶</Text>
@@ -68,7 +68,7 @@ export function ExerciseVideo({ url }: { url: string }) {
 </html>`;
 
   return (
-    <View style={styles.videoWrap}>
+    <View style={[styles.videoWrap, compact && styles.videoWrapCompact]}>
       <WebView
         source={{ html, baseUrl: 'https://formbae.in' }}
         style={styles.webview}
@@ -114,6 +114,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     padding: spacing.md,
   },
+  posterCompact: {
+    maxHeight: 360,
+  },
   posterImage: { borderRadius: radius.lg },
   scrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.48)' },
   playButton: {
@@ -130,6 +133,7 @@ const styles = StyleSheet.create({
   posterAction: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 8 },
   posterActionText: { ...typography.caption, color: colors.white, fontWeight: '700' },
   videoWrap: { width: '100%', aspectRatio: 9 / 16, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' },
+  videoWrapCompact: { maxHeight: 360 },
   webview: { flex: 1, backgroundColor: '#000' },
   loading: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' },
   closeButton: {

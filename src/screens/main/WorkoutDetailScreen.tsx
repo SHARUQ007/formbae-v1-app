@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { Dimensions, ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
@@ -26,6 +26,8 @@ import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutDetail'>;
+
+const VIEWPORT_HEIGHT = Dimensions.get('window').height;
 
 function getSectionLabel(notes: string, fallback: string) {
   const section = notes.match(/(?:^|[|\n])\s*Section:\s*([^|\n]+)/i)?.[1]?.trim();
@@ -236,6 +238,33 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
           <EmptyState icon="coffee" title="Rest day" message="No exercises for this day. Recover well!" />
         ) : activeExercise ? (
           <Card style={StyleSheet.flatten([styles.focusCard, activeDone && styles.exDone])}>
+            <View style={styles.topExerciseNav}>
+              <TouchableOpacity
+                onPress={moveToPrevious}
+                disabled={activeExerciseIndex === 0}
+                style={[styles.arrowButton, activeExerciseIndex === 0 && styles.arrowButtonDisabled]}
+                accessibilityRole="button"
+                accessibilityLabel="Previous exercise"
+              >
+                <Feather name="chevron-left" size={22} color={activeExerciseIndex === 0 ? colors.inkSubtle : colors.ink} />
+              </TouchableOpacity>
+              <View style={styles.exerciseCounter}>
+                <Text style={styles.exerciseCounterText}>
+                  {activeExerciseIndex + 1} / {trackableExercises.length}
+                </Text>
+                <Text style={styles.exerciseCounterSub}>Browse exercises</Text>
+              </View>
+              <TouchableOpacity
+                onPress={moveToNext}
+                disabled={activeExerciseIndex >= trackableExercises.length - 1}
+                style={[styles.arrowButton, activeExerciseIndex >= trackableExercises.length - 1 && styles.arrowButtonDisabled]}
+                accessibilityRole="button"
+                accessibilityLabel="Next exercise"
+              >
+                <Feather name="chevron-right" size={22} color={activeExerciseIndex >= trackableExercises.length - 1 ? colors.inkSubtle : colors.ink} />
+              </TouchableOpacity>
+            </View>
+
             <View style={styles.focusTop}>
               <View>
                 <Text style={styles.focusKicker}>
@@ -247,10 +276,6 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
               <View style={[styles.focusStatus, activeDone && styles.focusStatusDone]}>
                 <Feather name={activeDone ? 'check' : 'activity'} size={18} color={activeDone ? colors.white : colors.accent} />
               </View>
-            </View>
-
-            <View style={styles.videoBox}>
-              <ExerciseVideo url={activeExercise.videoUrl} />
             </View>
 
             <View style={styles.prescription}>
@@ -294,24 +319,26 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
               />
             </View>
 
+            <View style={styles.primaryNavRow}>
+              <PrimaryButton
+                title={activeExerciseIndex >= trackableExercises.length - 1 ? 'Finish workout' : 'Next movement'}
+                icon={activeExerciseIndex >= trackableExercises.length - 1 ? 'flag' : 'chevron-right'}
+                onPress={activeExerciseIndex >= trackableExercises.length - 1 ? onFinish : moveToNext}
+                loading={finishing}
+                style={styles.primaryNavButton}
+              />
+            </View>
+
+            <View style={styles.videoBox}>
+              <ExerciseVideo url={activeExercise.videoUrl} compact />
+            </View>
+
             {activeNotes ? (
               <View style={styles.coachNote}>
                 <Feather name="info" size={15} color={colors.accentDark} />
                 <Text style={styles.notes}>{activeNotes}</Text>
               </View>
             ) : null}
-
-            <View style={styles.navRow}>
-              <PrimaryButton title="Previous" icon="chevron-left" variant="secondary" onPress={moveToPrevious} disabled={activeExerciseIndex === 0} style={styles.navButton} />
-              <PrimaryButton title="Try another" icon="shuffle" variant="secondary" onPress={moveToNext} disabled={activeExerciseIndex >= trackableExercises.length - 1} style={styles.navButton} />
-            </View>
-            <PrimaryButton
-              title={activeExerciseIndex >= trackableExercises.length - 1 ? 'Finish workout' : 'Next movement'}
-              icon={activeExerciseIndex >= trackableExercises.length - 1 ? 'flag' : 'chevron-right'}
-              onPress={activeExerciseIndex >= trackableExercises.length - 1 ? onFinish : moveToNext}
-              loading={finishing}
-              style={styles.finish}
-            />
           </Card>
         ) : (
           <EmptyState icon="coffee" title="Rest day" message="No movements for this day. Recover well!" />
@@ -377,8 +404,31 @@ const styles = StyleSheet.create({
   progressTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
   progressLabel: { ...typography.bodyBold, color: colors.ink },
   progressPct: { ...typography.bodyBold, color: colors.accent },
-  focusCard: { marginBottom: spacing.sm },
-  focusTop: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
+  focusCard: { marginBottom: spacing.sm, minHeight: Math.max(620, VIEWPORT_HEIGHT - 190) },
+  topExerciseNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panelMuted,
+    padding: spacing.sm,
+  },
+  arrowButton: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  arrowButtonDisabled: { opacity: 0.45 },
+  exerciseCounter: { alignItems: 'center', flex: 1 },
+  exerciseCounterText: { ...typography.bodyBold, color: colors.ink },
+  exerciseCounterSub: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  focusTop: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.sm },
   focusKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 4 },
   focusTitle: { ...typography.hero, color: colors.ink },
   focusSub: { ...typography.caption, color: colors.inkMuted, marginTop: 4, textTransform: 'uppercase' },
@@ -416,7 +466,7 @@ const styles = StyleSheet.create({
   },
   sectionKicker: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase', marginBottom: 4 },
   sectionTitle: { ...typography.title, color: colors.white },
-  prescription: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  prescription: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   prescriptionTile: {
     flex: 1,
     borderRadius: radius.lg,
@@ -439,7 +489,7 @@ const styles = StyleSheet.create({
   notes: { ...typography.body, color: colors.accentDarker, flex: 1 },
   videoBox: { marginBottom: spacing.md, alignItems: 'center' },
   exBtn: { marginTop: spacing.xs },
-  setTracker: { borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
+  setTracker: { borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm },
   setTrackerHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
   setTrackerTitle: { ...typography.bodyBold, color: colors.ink },
   setTrackerMeta: { ...typography.caption, color: colors.inkMuted },
@@ -457,6 +507,8 @@ const styles = StyleSheet.create({
   setDotDone: { backgroundColor: colors.accent, borderColor: colors.accent },
   setDotText: { ...typography.bodyBold, color: colors.inkMuted },
   setDotTextDone: { color: colors.white },
+  primaryNavRow: { marginTop: spacing.sm, marginBottom: spacing.sm },
+  primaryNavButton: { width: '100%' },
   navRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   navButton: { flex: 1 },
   finish: { marginTop: spacing.md },
