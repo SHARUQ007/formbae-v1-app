@@ -113,6 +113,8 @@ export function ProfileScreen({ navigation }: Props) {
 
         <SectionTitle>Your details</SectionTitle>
         <Card>
+          <ListRow icon="edit-3" label="Edit profile" onPress={() => navigation.navigate('EditProfile')} />
+          {details.length > 0 ? <Divider inset={54} /> : null}
           {details.length > 0 ? (
             details.map(([label, value], i) => (
               <View key={label}>

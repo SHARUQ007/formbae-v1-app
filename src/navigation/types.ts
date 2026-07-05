@@ -40,6 +40,7 @@ export type WorkoutStackParamList = {
 
 export type ProfileStackParamList = {
   ProfileMain: undefined;
+  EditProfile: undefined;
   Trainer: undefined;
   Legal: undefined;
   DeleteAccount: undefined;
