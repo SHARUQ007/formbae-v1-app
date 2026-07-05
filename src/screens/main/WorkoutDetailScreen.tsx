@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Dimensions, ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { Dimensions, PanResponder, ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
@@ -202,6 +202,21 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
     await completeActiveExercise(nextSets);
   };
 
+  const swipeResponder = PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, gesture) => {
+      const horizontal = Math.abs(gesture.dx) > 36 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35;
+      return horizontal;
+    },
+    onPanResponderRelease: (_event, gesture) => {
+      if (gesture.dx < -64 && activeExerciseIndex < trackableExercises.length - 1) {
+        moveToNext();
+      }
+      if (gesture.dx > 64 && activeExerciseIndex > 0) {
+        moveToPrevious();
+      }
+    },
+  });
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <Header onBack={() => navigation.goBack()} title={`Day ${detail.dayNumber}`} subtitle={detail.focus || detail.planTitle} />
@@ -237,7 +252,7 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
         {trackableExercises.length === 0 ? (
           <EmptyState icon="coffee" title="Rest day" message="No exercises for this day. Recover well!" />
         ) : activeExercise ? (
-          <Card style={StyleSheet.flatten([styles.focusCard, activeDone && styles.exDone])}>
+          <Card style={StyleSheet.flatten([styles.focusCard, activeDone && styles.exDone])} {...swipeResponder.panHandlers}>
             <View style={styles.topExerciseNav}>
               <TouchableOpacity
                 onPress={moveToPrevious}
@@ -252,7 +267,7 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
                 <Text style={styles.exerciseCounterText}>
                   {activeExerciseIndex + 1} / {trackableExercises.length}
                 </Text>
-                <Text style={styles.exerciseCounterSub}>Browse exercises</Text>
+                <Text style={styles.exerciseCounterSub}>Swipe left/right</Text>
               </View>
               <TouchableOpacity
                 onPress={moveToNext}
@@ -276,6 +291,29 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
               <View style={[styles.focusStatus, activeDone && styles.focusStatusDone]}>
                 <Feather name={activeDone ? 'check' : 'activity'} size={18} color={activeDone ? colors.white : colors.accent} />
               </View>
+            </View>
+
+            <View style={styles.coachHint}>
+              <View style={styles.hintItem}>
+                <Feather name="arrow-left" size={14} color={colors.accentDark} />
+                <Text style={styles.hintText}>Swipe left/right to browse</Text>
+                <Feather name="arrow-right" size={14} color={colors.accentDark} />
+              </View>
+              <Text style={styles.hintTextMuted}>Video on top. Tracking, sets, rest and countdowns below.</Text>
+            </View>
+
+            <View style={styles.videoZoneLabel}>
+              <Text style={styles.zoneLabel}>Video & technique</Text>
+              <Text style={styles.zoneHint}>Swipe up/down to move between video and tracking</Text>
+            </View>
+
+            <View style={styles.videoBox}>
+              <ExerciseVideo url={activeExercise.videoUrl} compact />
+            </View>
+
+            <View style={styles.trackingZoneLabel}>
+              <Text style={styles.zoneLabel}>Tracking</Text>
+              <Text style={styles.zoneHint}>Log sets, follow rest, then continue</Text>
             </View>
 
             <View style={styles.prescription}>
@@ -327,10 +365,6 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
                 loading={finishing}
                 style={styles.primaryNavButton}
               />
-            </View>
-
-            <View style={styles.videoBox}>
-              <ExerciseVideo url={activeExercise.videoUrl} compact />
             </View>
 
             {activeNotes ? (
@@ -441,6 +475,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentLight,
   },
   focusStatusDone: { backgroundColor: colors.accent },
+  coachHint: {
+    borderRadius: radius.lg,
+    backgroundColor: colors.accentLight,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    gap: 2,
+  },
+  hintItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  hintText: { ...typography.caption, color: colors.accentDarker, fontWeight: '700' },
+  hintTextMuted: { ...typography.caption, color: colors.accentDarker, textAlign: 'center', opacity: 0.8 },
+  videoZoneLabel: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: spacing.sm },
+  trackingZoneLabel: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: spacing.sm },
+  zoneLabel: { ...typography.label, color: colors.ink, textTransform: 'uppercase' },
+  zoneHint: { ...typography.caption, color: colors.inkMuted, flexShrink: 1, textAlign: 'right' },
   exCard: { marginBottom: spacing.sm },
   exDone: { backgroundColor: colors.accentLight, borderColor: colors.accentSurface },
   exHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
