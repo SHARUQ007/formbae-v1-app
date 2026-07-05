@@ -157,7 +157,7 @@ export type ProgressSummary = {
   planned: number;
   currentStreak: number;
   bestStreak: number;
-  bodyTrend?: Array<{ date: string; weight: number }>;
+  bodyTrend?: Array<{ date: string; weight: number; chest?: number; waist?: number; biceps?: number }>;
 };
 
 export type TrainerInfo = {
