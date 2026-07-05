@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Dimensions, PanResponder, ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { Animated, Dimensions, PanResponder, View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
@@ -301,11 +301,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         </View>
       ) : null}
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        scrollEnabled={!activeExercise}
-        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + spacing.sm }]}
-      >
+      <View style={[styles.scroll, styles.playerContent, { paddingBottom: insets.bottom + spacing.sm }]}>
         <View style={styles.progressCard}>
           <View style={styles.progressTop}>
             <Text style={styles.progressLabel}>
@@ -335,7 +331,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
               </View>
 
               {activePanel === 'video' ? (
-                <>
+                <View style={styles.panel}>
                   <View style={styles.videoBox}>
                     <ExerciseVideo key={`${activeExercise.exerciseId}_${replayNonce}`} url={activeExercise.videoUrl} compact />
                   </View>
@@ -359,9 +355,9 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                   </View>
 
                   <PrimaryButton title="Workout details" icon="list" onPress={() => setActivePanel('details')} style={styles.finish} />
-                </>
+                </View>
               ) : (
-                <>
+                <View style={[styles.panel, styles.detailsPanel]}>
                   <View style={styles.prescription}>
                     <View style={styles.prescriptionTile}>
                       <Text style={styles.prescriptionLabel}>Sets</Text>
@@ -421,22 +417,14 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                       <Text style={styles.notes}>{activeNotes}</Text>
                     </View>
                   ) : null}
-                </>
+                </View>
               )}
             </Card>
           </View>
         ) : (
           <EmptyState icon="coffee" title="Rest day" message="No movements for this day. Recover well!" />
         )}
-
-        <View style={styles.safetyRow}>
-          <Feather name="alert-circle" size={14} color={colors.inkMuted} />
-          <Text style={styles.safety}>
-            Warm up first and use good form. Stop and rest if you feel pain, dizziness, or discomfort, and consult a
-            healthcare professional if it continues.
-          </Text>
-        </View>
-      </ScrollView>
+      </View>
     </View>
   );
 }
@@ -554,13 +542,14 @@ const styles = StyleSheet.create({
   timerActions: { flexDirection: 'row', gap: spacing.sm },
   timerPill: { backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill },
   timerBtn: { color: colors.white, fontWeight: '700', fontSize: 13 },
-  scroll: { flexGrow: 1, paddingHorizontal: spacing.sm, paddingTop: 0 },
+  scroll: { paddingHorizontal: spacing.sm, paddingTop: 0 },
+  playerContent: { flex: 1 },
   progressCard: { marginBottom: spacing.xs, paddingHorizontal: spacing.xs },
   progressTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
   progressLabel: { ...typography.bodyBold, color: colors.ink },
   progressPct: { ...typography.bodyBold, color: colors.accent },
   gestureSurface: { flex: 1, width: '100%' },
-  focusCard: { flex: 1, marginBottom: spacing.xs, minHeight: Math.max(650, VIEWPORT_HEIGHT - 126), padding: spacing.sm },
+  focusCard: { flex: 1, marginBottom: spacing.xs, minHeight: Math.max(0, VIEWPORT_HEIGHT - 150), padding: spacing.sm },
   focusTop: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.xs },
   focusTitleWrap: { flex: 1 },
   focusKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 1 },
@@ -575,6 +564,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentLight,
   },
   focusStatusDone: { backgroundColor: colors.accent },
+  panel: { flex: 1, justifyContent: 'space-between' },
+  detailsPanel: { paddingTop: spacing.xs },
   coachHint: {
     borderRadius: radius.lg,
     backgroundColor: colors.accentLight,
@@ -631,7 +622,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   notes: { ...typography.body, color: colors.accentDarker, flex: 1 },
-  videoBox: { marginBottom: spacing.sm, alignItems: 'center' },
+  videoBox: { flex: 1, marginBottom: spacing.sm, alignItems: 'center', justifyContent: 'center' },
   videoActions: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   videoActionButton: { flex: 1 },
   exBtn: { marginTop: spacing.xs },
