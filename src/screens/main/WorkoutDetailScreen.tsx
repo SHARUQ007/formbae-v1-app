@@ -68,6 +68,8 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
   const [completed, setCompleted] = useState<Set<string>>(new Set());
   const [setProgress, setSetProgress] = useState<Record<string, number>>({});
   const [activeIndex, setActiveIndex] = useState(0);
+  const [activePanel, setActivePanel] = useState<'video' | 'details'>('video');
+  const [replayNonce, setReplayNonce] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
@@ -180,10 +182,12 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
 
   const moveToNext = () => {
     setActiveIndex((current) => Math.min(trackableExercises.length - 1, current + 1));
+    setActivePanel('video');
   };
 
   const moveToPrevious = () => {
     setActiveIndex((current) => Math.max(0, current - 1));
+    setActivePanel('video');
   };
 
   const completeActiveExercise = async (setsOverride = setProgress) => {
@@ -241,19 +245,32 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
 
   const swipeResponder = PanResponder.create({
     onMoveShouldSetPanResponderCapture: (_event, gesture) => {
-      const horizontal = Math.abs(gesture.dx) > 24 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2;
-      return horizontal;
+      const vertical = Math.abs(gesture.dy) > 26 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.25;
+      return vertical;
     },
     onMoveShouldSetPanResponder: (_event, gesture) => {
-      const horizontal = Math.abs(gesture.dx) > 36 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.35;
-      return horizontal;
+      const vertical = Math.abs(gesture.dy) > 36 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.25;
+      return vertical;
     },
     onPanResponderRelease: (_event, gesture) => {
-      if (gesture.dx < -64 && activeExerciseIndex < trackableExercises.length - 1) {
-        moveToNext();
+      if (gesture.dy > 64) {
+        if (activePanel === 'video') {
+          setActivePanel('details');
+          return;
+        }
+        if (activeExerciseIndex < trackableExercises.length - 1) {
+          moveToNext();
+        }
       }
-      if (gesture.dx > 64 && activeExerciseIndex > 0) {
-        moveToPrevious();
+      if (gesture.dy < -64) {
+        if (activePanel === 'details') {
+          setActivePanel('video');
+          return;
+        }
+        if (activeExerciseIndex > 0) {
+          moveToPrevious();
+          setActivePanel('details');
+        }
       }
     },
   });
@@ -310,7 +327,7 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
                   <Text style={styles.exerciseCounterText}>
                     {activeExerciseIndex + 1} / {trackableExercises.length}
                   </Text>
-                  <Text style={styles.exerciseCounterSub}>Swipe</Text>
+                  <Text style={styles.exerciseCounterSub}>{activePanel === 'video' ? 'Swipe down for details' : 'Swipe down for next'}</Text>
                 </View>
                 <TouchableOpacity
                   onPress={moveToNext}
@@ -338,83 +355,110 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
 
               <View style={styles.coachHint}>
                 <View style={styles.hintItem}>
-                  <Feather name="arrow-left" size={14} color={colors.accentDark} />
-                  <Text style={styles.hintText}>Swipe to browse exercises</Text>
-                  <Feather name="arrow-right" size={14} color={colors.accentDark} />
+                  <Feather name="arrow-down" size={14} color={colors.accentDark} />
+                  <Text style={styles.hintText}>{activePanel === 'video' ? 'Swipe down for sets, reps and rest' : 'Swipe down for next exercise'}</Text>
                 </View>
               </View>
 
-              <View style={styles.videoZoneLabel}>
-                <Text style={styles.zoneLabel}>Technique</Text>
-                <Text style={styles.zoneHint}>Video</Text>
-              </View>
+              {activePanel === 'video' ? (
+                <>
+                  <View style={styles.videoZoneLabel}>
+                    <Text style={styles.zoneLabel}>Technique</Text>
+                    <Text style={styles.zoneHint}>Video-first mode</Text>
+                  </View>
 
-              <View style={styles.videoBox}>
-                <ExerciseVideo url={activeExercise.videoUrl} compact />
-              </View>
+                  <View style={styles.videoBox}>
+                    <ExerciseVideo key={`${activeExercise.exerciseId}_${replayNonce}`} url={activeExercise.videoUrl} compact />
+                  </View>
 
-              <View style={styles.trackingZoneLabel}>
-                <Text style={styles.zoneLabel}>Tracking</Text>
-                <Text style={styles.zoneHint}>Sets + rest</Text>
-              </View>
+                  <View style={styles.videoActions}>
+                    <PrimaryButton
+                      title="Replay"
+                      icon="rotate-ccw"
+                      variant="secondary"
+                      onPress={() => setReplayNonce((value) => value + 1)}
+                      style={styles.videoActionButton}
+                    />
+                    <PrimaryButton
+                      title="Try another"
+                      icon="shuffle"
+                      variant="secondary"
+                      onPress={moveToNext}
+                      disabled={activeExerciseIndex >= trackableExercises.length - 1}
+                      style={styles.videoActionButton}
+                    />
+                  </View>
 
-              <View style={styles.prescription}>
-                <View style={styles.prescriptionTile}>
-                  <Text style={styles.prescriptionLabel}>Sets</Text>
-                  <Text style={styles.prescriptionValue}>{activeSets}</Text>
-                </View>
-                <View style={styles.prescriptionTile}>
-                  <Text style={styles.prescriptionLabel}>Reps / time</Text>
-                  <Text style={styles.prescriptionValue}>{displayValue(activeExercise.reps, '-')}</Text>
-                </View>
-                <View style={styles.prescriptionTile}>
-                  <Text style={styles.prescriptionLabel}>Rest</Text>
-                  <Text style={styles.prescriptionValue}>{displayValue(activeExercise.restSec, '0')}s</Text>
-                </View>
-              </View>
+                  <PrimaryButton title="See workout details" icon="arrow-down" onPress={() => setActivePanel('details')} style={styles.finish} />
+                </>
+              ) : (
+                <>
+                  <View style={styles.trackingZoneLabel}>
+                    <Text style={styles.zoneLabel}>Tracking</Text>
+                    <Text style={styles.zoneHint}>Sets + rest</Text>
+                  </View>
 
-              <View style={styles.setTracker}>
-                <View style={styles.setTrackerHead}>
-                  <Text style={styles.setTrackerTitle}>Set tracker</Text>
-                  <Text style={styles.setTrackerMeta}>
-                    {activeSetCount}/{activeSets} complete
-                  </Text>
-                </View>
-                <View style={styles.setDots}>
-                  {Array.from({ length: activeSets }).map((_, index) => {
-                    const done = index < activeSetCount;
-                    return (
-                      <View key={index} style={[styles.setDot, done && styles.setDotDone]}>
-                        <Text style={[styles.setDotText, done && styles.setDotTextDone]}>{index + 1}</Text>
-                      </View>
-                    );
-                  })}
-                </View>
-                <PrimaryButton
-                  title={activeDone ? 'Movement complete' : activeSetCount >= activeSets ? 'Mark complete' : `Log set ${activeSetCount + 1}`}
-                  icon={activeDone ? 'check' : 'plus'}
-                  onPress={activeSetCount >= activeSets ? markActiveComplete : onSetDone}
-                  disabled={activeDone}
-                  style={styles.exBtn}
-                />
-              </View>
+                  <View style={styles.prescription}>
+                    <View style={styles.prescriptionTile}>
+                      <Text style={styles.prescriptionLabel}>Sets</Text>
+                      <Text style={styles.prescriptionValue}>{activeSets}</Text>
+                    </View>
+                    <View style={styles.prescriptionTile}>
+                      <Text style={styles.prescriptionLabel}>Reps / time</Text>
+                      <Text style={styles.prescriptionValue}>{displayValue(activeExercise.reps, '-')}</Text>
+                    </View>
+                    <View style={styles.prescriptionTile}>
+                      <Text style={styles.prescriptionLabel}>Rest</Text>
+                      <Text style={styles.prescriptionValue}>{displayValue(activeExercise.restSec, '0')}s</Text>
+                    </View>
+                  </View>
 
-              <View style={styles.primaryNavRow}>
-                <PrimaryButton
-                  title={activeExerciseIndex >= trackableExercises.length - 1 ? 'Finish workout' : 'Next movement'}
-                  icon={activeExerciseIndex >= trackableExercises.length - 1 ? 'flag' : 'chevron-right'}
-                  onPress={activeExerciseIndex >= trackableExercises.length - 1 ? onFinish : moveToNext}
-                  loading={finishing}
-                  style={styles.primaryNavButton}
-                />
-              </View>
+                  <View style={styles.setTracker}>
+                    <View style={styles.setTrackerHead}>
+                      <Text style={styles.setTrackerTitle}>Set tracker</Text>
+                      <Text style={styles.setTrackerMeta}>
+                        {activeSetCount}/{activeSets} complete
+                      </Text>
+                    </View>
+                    <View style={styles.setDots}>
+                      {Array.from({ length: activeSets }).map((_, index) => {
+                        const done = index < activeSetCount;
+                        return (
+                          <View key={index} style={[styles.setDot, done && styles.setDotDone]}>
+                            <Text style={[styles.setDotText, done && styles.setDotTextDone]}>{index + 1}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                    <PrimaryButton
+                      title={activeDone ? 'Movement complete' : activeSetCount >= activeSets ? 'Mark complete' : `Log set ${activeSetCount + 1}`}
+                      icon={activeDone ? 'check' : 'plus'}
+                      onPress={activeSetCount >= activeSets ? markActiveComplete : onSetDone}
+                      disabled={activeDone}
+                      style={styles.exBtn}
+                    />
+                  </View>
 
-              {activeNotes ? (
-                <View style={styles.coachNote}>
-                  <Feather name="info" size={15} color={colors.accentDark} />
-                  <Text style={styles.notes}>{activeNotes}</Text>
-                </View>
-              ) : null}
+                  <View style={styles.primaryNavRow}>
+                    <PrimaryButton
+                      title={activeExerciseIndex >= trackableExercises.length - 1 ? 'Finish workout' : 'Next movement'}
+                      icon={activeExerciseIndex >= trackableExercises.length - 1 ? 'flag' : 'chevron-right'}
+                      onPress={activeExerciseIndex >= trackableExercises.length - 1 ? onFinish : moveToNext}
+                      loading={finishing}
+                      style={styles.primaryNavButton}
+                    />
+                  </View>
+
+                  <PrimaryButton title="Back to video" icon="arrow-up" variant="secondary" onPress={() => setActivePanel('video')} style={styles.finish} />
+
+                  {activeNotes ? (
+                    <View style={styles.coachNote}>
+                      <Feather name="info" size={15} color={colors.accentDark} />
+                      <Text style={styles.notes}>{activeNotes}</Text>
+                    </View>
+                  ) : null}
+                </>
+              )}
             </Card>
           </View>
         ) : (
@@ -647,6 +691,8 @@ const styles = StyleSheet.create({
   },
   notes: { ...typography.body, color: colors.accentDarker, flex: 1 },
   videoBox: { marginBottom: spacing.sm, alignItems: 'center' },
+  videoActions: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  videoActionButton: { flex: 1 },
   exBtn: { marginTop: spacing.xs },
   setTracker: { borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: spacing.sm, marginBottom: spacing.xs },
   setTrackerHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs },
