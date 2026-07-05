@@ -244,16 +244,17 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   };
 
   const swipeResponder = PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
     onMoveShouldSetPanResponderCapture: (_event, gesture) => {
-      const vertical = Math.abs(gesture.dy) > 26 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.25;
+      const vertical = Math.abs(gesture.dy) > 18 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.1;
       return vertical;
     },
     onMoveShouldSetPanResponder: (_event, gesture) => {
-      const vertical = Math.abs(gesture.dy) > 36 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.25;
+      const vertical = Math.abs(gesture.dy) > 22 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.1;
       return vertical;
     },
     onPanResponderRelease: (_event, gesture) => {
-      if (gesture.dy > 64) {
+      if (gesture.dy > 44) {
         if (activePanel === 'video') {
           setActivePanel('details');
           return;
@@ -262,7 +263,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
           moveToNext();
         }
       }
-      if (gesture.dy < -64) {
+      if (gesture.dy < -44) {
         if (activePanel === 'details') {
           setActivePanel('video');
           return;
@@ -297,7 +298,11 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         </View>
       ) : null}
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + spacing.xl }]}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={!activeExercise}
+        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + spacing.xl }]}
+      >
         <View style={styles.progressCard}>
           <View style={styles.progressTop}>
             <Text style={styles.progressLabel}>
@@ -311,7 +316,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         {trackableExercises.length === 0 ? (
           <EmptyState icon="coffee" title="Rest day" message="No exercises for this day. Recover well!" />
         ) : activeExercise ? (
-          <View {...swipeResponder.panHandlers}>
+          <View style={styles.gestureSurface} {...swipeResponder.panHandlers}>
             <Card style={StyleSheet.flatten([styles.focusCard, activeDone && styles.exDone])}>
               <View style={styles.topExerciseNav}>
                 <TouchableOpacity
@@ -595,6 +600,7 @@ const styles = StyleSheet.create({
   progressTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
   progressLabel: { ...typography.bodyBold, color: colors.ink },
   progressPct: { ...typography.bodyBold, color: colors.accent },
+  gestureSurface: { flex: 1, width: '100%' },
   focusCard: { marginBottom: spacing.sm, minHeight: Math.max(560, VIEWPORT_HEIGHT - 170), padding: spacing.md },
   topExerciseNav: {
     flexDirection: 'row',
