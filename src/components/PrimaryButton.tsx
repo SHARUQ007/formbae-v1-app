@@ -5,6 +5,7 @@ import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
 import { radius } from '../theme/radius';
 import { shadows } from '../theme/shadows';
+import { trackMobileInteraction } from '../services/activityService';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type Size = 'md' | 'lg' | 'sm';
@@ -36,6 +37,11 @@ export function PrimaryButton({
   const fg =
     variant === 'primary' ? colors.white : variant === 'danger' ? colors.error : colors.accentDark;
 
+  const handlePress = () => {
+    trackMobileInteraction(`/button/${title}`);
+    onPress();
+  };
+
   return (
     <TouchableOpacity
       style={[
@@ -46,7 +52,7 @@ export function PrimaryButton({
         isDisabled && styles.disabled,
         style,
       ]}
-      onPress={onPress}
+      onPress={handlePress}
       disabled={isDisabled}
       activeOpacity={0.85}
       accessibilityRole="button"

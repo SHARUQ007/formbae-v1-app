@@ -7,9 +7,23 @@ import { OnboardingNavigator } from './OnboardingNavigator';
 import { PaidTransitionNavigator } from './PaidTransitionNavigator';
 import { MainTabNavigator } from './MainTabNavigator';
 import { useAuthStore } from '../store/authStore';
+import { trackMobileActivity } from '../services/activityService';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+function getActiveRoutePath(state: ReturnType<NonNullable<React.ComponentRef<typeof NavigationContainer>['getRootState']>> | undefined): string {
+  if (!state?.routes?.length) return '/mobile/unknown';
+  const names: string[] = [];
+  let current: typeof state | undefined = state;
+  while (current?.routes?.length) {
+    const route = current.routes[current.index ?? 0];
+    if (!route) break;
+    names.push(route.name);
+    current = route.state as typeof state | undefined;
+  }
+  return `/mobile/${names.join('/') || 'unknown'}`;
+}
 
 export function RootNavigator() {
   const navigationRef = useRef<React.ComponentRef<typeof NavigationContainer<RootStackParamList>>>(null);
@@ -27,7 +41,19 @@ export function RootNavigator() {
   }, [ready, token]);
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        if (token) {
+          trackMobileActivity('page_view', getActiveRoutePath(navigationRef.current?.getRootState())).catch(() => undefined);
+        }
+      }}
+      onStateChange={(state) => {
+        if (token) {
+          trackMobileActivity('page_view', getActiveRoutePath(state)).catch(() => undefined);
+        }
+      }}
+    >
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="Auth" component={AuthNavigator} />
