@@ -280,7 +280,7 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
         <View style={styles.progressCard}>
           <View style={styles.progressTop}>
             <Text style={styles.progressLabel}>
-              {completedTrackableCount}/{trackableExercises.length} movements done
+              {completedTrackableCount}/{trackableExercises.length} done
             </Text>
             <Text style={styles.progressPct}>{Math.round(progress * 100)}%</Text>
           </View>
@@ -305,7 +305,7 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
                 <Text style={styles.exerciseCounterText}>
                   {activeExerciseIndex + 1} / {trackableExercises.length}
                 </Text>
-                <Text style={styles.exerciseCounterSub}>Swipe left/right</Text>
+                <Text style={styles.exerciseCounterSub}>Swipe</Text>
               </View>
               <TouchableOpacity
                 onPress={moveToNext}
@@ -334,15 +334,14 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
             <View style={styles.coachHint}>
               <View style={styles.hintItem}>
                 <Feather name="arrow-left" size={14} color={colors.accentDark} />
-                <Text style={styles.hintText}>Swipe left/right to browse</Text>
+                <Text style={styles.hintText}>Swipe to browse exercises</Text>
                 <Feather name="arrow-right" size={14} color={colors.accentDark} />
               </View>
-              <Text style={styles.hintTextMuted}>Video on top. Tracking, sets, rest and countdowns below.</Text>
             </View>
 
             <View style={styles.videoZoneLabel}>
-              <Text style={styles.zoneLabel}>Video & technique</Text>
-              <Text style={styles.zoneHint}>Swipe up/down to move between video and tracking</Text>
+              <Text style={styles.zoneLabel}>Technique</Text>
+              <Text style={styles.zoneHint}>Video</Text>
             </View>
 
             <View style={styles.videoBox}>
@@ -351,7 +350,7 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
 
             <View style={styles.trackingZoneLabel}>
               <Text style={styles.zoneLabel}>Tracking</Text>
-              <Text style={styles.zoneHint}>Log sets, follow rest, then continue</Text>
+              <Text style={styles.zoneHint}>Sets + rest</Text>
             </View>
 
             <View style={styles.prescription}>
@@ -519,7 +518,7 @@ function RewardOverlay({ reward, onDone }: { reward: RewardState; onDone: () => 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   centerPad: { paddingHorizontal: spacing.lg },
-  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+  header: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: 6 },
   headerText: { flex: 1 },
   headerTitle: { ...typography.title, color: colors.ink },
   headerSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
@@ -531,32 +530,32 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.lg,
     borderRadius: radius.lg,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    marginBottom: spacing.sm,
+    paddingVertical: 7,
+    marginBottom: 6,
   },
   timerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   timerText: { color: colors.white, ...typography.subtitle },
   timerActions: { flexDirection: 'row', gap: spacing.sm },
   timerPill: { backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill },
   timerBtn: { color: colors.white, fontWeight: '700', fontSize: 13 },
-  scroll: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
-  progressCard: { marginBottom: spacing.md },
-  progressTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  scroll: { paddingHorizontal: spacing.md, paddingTop: 2 },
+  progressCard: { marginBottom: spacing.sm },
+  progressTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
   progressLabel: { ...typography.bodyBold, color: colors.ink },
   progressPct: { ...typography.bodyBold, color: colors.accent },
-  focusCard: { marginBottom: spacing.sm, minHeight: Math.max(620, VIEWPORT_HEIGHT - 190) },
+  focusCard: { marginBottom: spacing.sm, minHeight: Math.max(560, VIEWPORT_HEIGHT - 170), padding: spacing.md },
   topExerciseNav: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
     borderRadius: radius.lg,
     backgroundColor: colors.panelMuted,
-    padding: spacing.sm,
+    padding: 6,
   },
   arrowButton: {
-    width: 40,
-    height: 40,
+    width: 34,
+    height: 34,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
@@ -568,13 +567,13 @@ const styles = StyleSheet.create({
   exerciseCounter: { alignItems: 'center', flex: 1 },
   exerciseCounterText: { ...typography.bodyBold, color: colors.ink },
   exerciseCounterSub: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
-  focusTop: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.sm },
-  focusKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 4 },
-  focusTitle: { ...typography.hero, color: colors.ink },
-  focusSub: { ...typography.caption, color: colors.inkMuted, marginTop: 4, textTransform: 'uppercase' },
+  focusTop: { flexDirection: 'row', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.xs },
+  focusKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 2 },
+  focusTitle: { ...typography.title, color: colors.ink },
+  focusSub: { ...typography.caption, color: colors.inkMuted, marginTop: 2, textTransform: 'uppercase' },
   focusStatus: {
-    width: 44,
-    height: 44,
+    width: 38,
+    height: 38,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
@@ -584,15 +583,15 @@ const styles = StyleSheet.create({
   coachHint: {
     borderRadius: radius.lg,
     backgroundColor: colors.accentLight,
-    padding: spacing.sm,
-    marginBottom: spacing.sm,
-    gap: 2,
+    paddingVertical: 7,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.xs,
   },
   hintItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   hintText: { ...typography.caption, color: colors.accentDarker, fontWeight: '700' },
   hintTextMuted: { ...typography.caption, color: colors.accentDarker, textAlign: 'center', opacity: 0.8 },
-  videoZoneLabel: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: spacing.sm },
-  trackingZoneLabel: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: spacing.sm },
+  videoZoneLabel: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: spacing.xs },
+  trackingZoneLabel: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: spacing.xs },
   zoneLabel: { ...typography.label, color: colors.ink, textTransform: 'uppercase' },
   zoneHint: { ...typography.caption, color: colors.inkMuted, flexShrink: 1, textAlign: 'right' },
   exCard: { marginBottom: spacing.sm },
@@ -620,13 +619,13 @@ const styles = StyleSheet.create({
   },
   sectionKicker: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase', marginBottom: 4 },
   sectionTitle: { ...typography.title, color: colors.white },
-  prescription: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  prescription: { flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.xs },
   prescriptionTile: {
     flex: 1,
     borderRadius: radius.lg,
     backgroundColor: colors.panelMuted,
-    padding: spacing.md,
-    minHeight: 76,
+    padding: spacing.sm,
+    minHeight: 58,
     justifyContent: 'center',
   },
   prescriptionLabel: { ...typography.caption, color: colors.inkMuted, marginBottom: 4 },
@@ -637,20 +636,20 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     backgroundColor: colors.accentLight,
     borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
   },
   notes: { ...typography.body, color: colors.accentDarker, flex: 1 },
-  videoBox: { marginBottom: spacing.md, alignItems: 'center' },
+  videoBox: { marginBottom: spacing.sm, alignItems: 'center' },
   exBtn: { marginTop: spacing.xs },
-  setTracker: { borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm },
-  setTrackerHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  setTracker: { borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, padding: spacing.sm, marginBottom: spacing.xs },
+  setTrackerHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs },
   setTrackerTitle: { ...typography.bodyBold, color: colors.ink },
   setTrackerMeta: { ...typography.caption, color: colors.inkMuted },
-  setDots: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
+  setDots: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.sm },
   setDot: {
-    width: 38,
-    height: 38,
+    width: 32,
+    height: 32,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
@@ -661,12 +660,12 @@ const styles = StyleSheet.create({
   setDotDone: { backgroundColor: colors.accent, borderColor: colors.accent },
   setDotText: { ...typography.bodyBold, color: colors.inkMuted },
   setDotTextDone: { color: colors.white },
-  primaryNavRow: { marginTop: spacing.sm, marginBottom: spacing.sm },
+  primaryNavRow: { marginTop: spacing.xs, marginBottom: spacing.xs },
   primaryNavButton: { width: '100%' },
   navRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   navButton: { flex: 1 },
-  finish: { marginTop: spacing.md },
-  safetyRow: { flexDirection: 'row', gap: 6, marginTop: spacing.md, alignItems: 'flex-start' },
+  finish: { marginTop: spacing.sm },
+  safetyRow: { flexDirection: 'row', gap: 6, marginTop: spacing.sm, alignItems: 'flex-start' },
   safety: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 17, fontStyle: 'italic' },
   rewardOverlay: {
     ...StyleSheet.absoluteFill,

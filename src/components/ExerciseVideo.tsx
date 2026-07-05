@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { ActivityIndicator, ImageBackground, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, Dimensions, ImageBackground, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { getYoutubeEmbedUrl, getYoutubeThumbnailUrl } from '../utils/video';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/radius';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
+
+const COMPACT_VIDEO_MAX_HEIGHT = Math.min(330, Math.round(Dimensions.get('window').height * 0.36));
 
 export function ExerciseVideo({ url, compact = false }: { url: string; compact?: boolean }) {
   const embed = getYoutubeEmbedUrl(url);
@@ -115,7 +117,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   posterCompact: {
-    maxHeight: 360,
+    maxHeight: COMPACT_VIDEO_MAX_HEIGHT,
   },
   posterImage: { borderRadius: radius.lg },
   scrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.48)' },
@@ -133,7 +135,7 @@ const styles = StyleSheet.create({
   posterAction: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 8 },
   posterActionText: { ...typography.caption, color: colors.white, fontWeight: '700' },
   videoWrap: { width: '100%', aspectRatio: 9 / 16, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' },
-  videoWrapCompact: { maxHeight: 360 },
+  videoWrapCompact: { maxHeight: COMPACT_VIDEO_MAX_HEIGHT },
   webview: { flex: 1, backgroundColor: '#000' },
   loading: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' },
   closeButton: {
