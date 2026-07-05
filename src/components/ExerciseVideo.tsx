@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { ActivityIndicator, ImageBackground, Linking, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, ImageBackground, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { getYoutubeEmbedUrl, getYoutubeThumbnailUrl, getYoutubeWatchUrl } from '../utils/video';
+import { getYoutubeEmbedUrl, getYoutubeThumbnailUrl } from '../utils/video';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/radius';
 import { spacing } from '../theme/spacing';
@@ -10,7 +10,6 @@ import { typography } from '../theme/typography';
 export function ExerciseVideo({ url }: { url: string }) {
   const embed = getYoutubeEmbedUrl(url);
   const thumbnail = getYoutubeThumbnailUrl(url);
-  const watchUrl = getYoutubeWatchUrl(url);
   const [play, setPlay] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -21,12 +20,6 @@ export function ExerciseVideo({ url }: { url: string }) {
       </View>
     );
   }
-
-  const openOnYoutube = async () => {
-    if (!watchUrl) return;
-    const ok = await Linking.canOpenURL(watchUrl);
-    if (ok) await Linking.openURL(watchUrl);
-  };
 
   if (!play || failed) {
     return (
@@ -49,11 +42,6 @@ export function ExerciseVideo({ url }: { url: string }) {
           >
             <Text style={styles.posterActionText}>{failed ? 'Try again' : 'Play'}</Text>
           </TouchableOpacity>
-          {watchUrl ? (
-            <TouchableOpacity style={styles.posterActionGhost} activeOpacity={0.85} onPress={openOnYoutube}>
-              <Text style={styles.posterActionText}>Open YouTube</Text>
-            </TouchableOpacity>
-          ) : null}
         </View>
       </ImageBackground>
     );
@@ -117,7 +105,8 @@ const styles = StyleSheet.create({
   },
   placeholderText: { ...typography.caption, color: colors.inkMuted, textAlign: 'center' },
   poster: {
-    height: 180,
+    width: '100%',
+    aspectRatio: 9 / 16,
     borderRadius: radius.lg,
     backgroundColor: '#0f2417',
     alignItems: 'center',
@@ -139,9 +128,8 @@ const styles = StyleSheet.create({
   posterText: { ...typography.bodyBold, color: colors.white, marginTop: 12, textAlign: 'center' },
   posterActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   posterAction: { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 8 },
-  posterActionGhost: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: radius.pill, paddingHorizontal: spacing.md, paddingVertical: 8 },
   posterActionText: { ...typography.caption, color: colors.white, fontWeight: '700' },
-  videoWrap: { height: 220, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' },
+  videoWrap: { width: '100%', aspectRatio: 9 / 16, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: '#000' },
   webview: { flex: 1, backgroundColor: '#000' },
   loading: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' },
   closeButton: {

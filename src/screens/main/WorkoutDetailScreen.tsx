@@ -6,7 +6,6 @@ import Feather from 'react-native-vector-icons/Feather';
 import { Card } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
-import { Badge } from '../../components/Badge';
 import { ExerciseVideo } from '../../components/ExerciseVideo';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { fetchWorkoutDay } from '../../services/workoutService';
@@ -27,6 +26,29 @@ import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutDetail'>;
+
+function getSectionLabel(notes: string, fallback: string) {
+  const section = notes.match(/(?:^|[|\n])\s*Section:\s*([^|\n]+)/i)?.[1]?.trim();
+  return section || fallback;
+}
+
+function isSectionMarker(notes: string) {
+  return /(?:^|[|\n])\s*Type:\s*Section/i.test(notes || '');
+}
+
+function cleanExerciseNotes(notes: string) {
+  return (notes || '')
+    .split('|')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .filter((part) => !/^(Type|Section|Meta Name|Meta Sets|Meta Reps|Meta Duration|Meta Rest|Display)\s*:/i.test(part))
+    .join(' · ');
+}
+
+function displayValue(value: string, fallback = '-') {
+  const cleaned = String(value || '').trim();
+  return cleaned || fallback;
+}
 
 export function WorkoutDetailScreen({ route, navigation }: Props) {
   const { planDayId, mode = 'standard' } = route.params;
@@ -98,7 +120,10 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
 
   const progress = useMemo(() => {
     if (!detail || detail.exercises.length === 0) return 0;
-    return completed.size / detail.exercises.length;
+    const trackable = detail.exercises.filter((exercise) => !isSectionMarker(exercise.notes));
+    if (!trackable.length) return 0;
+    const completedTrackable = trackable.filter((exercise) => completed.has(exercise.exerciseId)).length;
+    return completedTrackable / trackable.length;
   }, [detail, completed]);
 
   const onFinish = useCallback(async () => {
@@ -144,6 +169,9 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
     );
   }
 
+  const trackableExercises = detail.exercises.filter((exercise) => !isSectionMarker(exercise.notes));
+  const completedTrackableCount = trackableExercises.filter((exercise) => completed.has(exercise.exerciseId)).length;
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <Header onBack={() => navigation.goBack()} title={`Day ${detail.dayNumber}`} subtitle={detail.focus || detail.planTitle} />
@@ -169,7 +197,7 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
         <View style={styles.progressCard}>
           <View style={styles.progressTop}>
             <Text style={styles.progressLabel}>
-              {completed.size}/{detail.exercises.length} done
+              {completedTrackableCount}/{trackableExercises.length} movements done
             </Text>
             <Text style={styles.progressPct}>{Math.round(progress * 100)}%</Text>
           </View>
@@ -180,23 +208,53 @@ export function WorkoutDetailScreen({ route, navigation }: Props) {
           <EmptyState icon="coffee" title="Rest day" message="No exercises for this day. Recover well!" />
         ) : (
           detail.exercises.map((exercise, index) => {
+            const section = isSectionMarker(exercise.notes);
+            const cleanNotes = cleanExerciseNotes(exercise.notes);
+            const sectionLabel = getSectionLabel(exercise.notes, exercise.exerciseName);
+            if (section) {
+              return (
+                <View key={`${exercise.exerciseId}_${index}`} style={styles.sectionBreak}>
+                  <Text style={styles.sectionKicker}>Workout block</Text>
+                  <Text style={styles.sectionTitle}>{sectionLabel}</Text>
+                </View>
+              );
+            }
+
             const done = completed.has(exercise.exerciseId);
+            const movementNumber = detail.exercises.slice(0, index + 1).filter((item) => !isSectionMarker(item.notes)).length;
             return (
               <Card key={`${exercise.exerciseId}_${index}`} style={StyleSheet.flatten([styles.exCard, done && styles.exDone])}>
                 <View style={styles.exHeader}>
                   <View style={[styles.exNum, done && styles.exNumDone]}>
-                    {done ? <Feather name="check" size={16} color={colors.white} /> : <Text style={styles.exNumText}>{index + 1}</Text>}
+                    {done ? <Feather name="check" size={16} color={colors.white} /> : <Text style={styles.exNumText}>{movementNumber}</Text>}
                   </View>
-                  <Text style={styles.exName}>{exercise.exerciseName}</Text>
+                  <View style={styles.exHeaderText}>
+                    <Text style={styles.exName}>{exercise.exerciseName}</Text>
+                    <Text style={styles.exSub}>{getSectionLabel(exercise.notes, detail.focus || 'Workout')}</Text>
+                  </View>
                 </View>
 
-                <View style={styles.chips}>
-                  {exercise.sets ? <Badge label={`${exercise.sets} sets`} tone="neutral" icon="layers" /> : null}
-                  {exercise.reps ? <Badge label={`${exercise.reps} reps`} tone="neutral" icon="repeat" /> : null}
-                  {exercise.restSec ? <Badge label={`${exercise.restSec}s rest`} tone="neutral" icon="clock" /> : null}
+                <View style={styles.prescription}>
+                  <View style={styles.prescriptionTile}>
+                    <Text style={styles.prescriptionLabel}>Sets</Text>
+                    <Text style={styles.prescriptionValue}>{displayValue(exercise.sets, '1')}</Text>
+                  </View>
+                  <View style={styles.prescriptionTile}>
+                    <Text style={styles.prescriptionLabel}>Reps / time</Text>
+                    <Text style={styles.prescriptionValue}>{displayValue(exercise.reps || exercise.restSec, '-')}</Text>
+                  </View>
+                  <View style={styles.prescriptionTile}>
+                    <Text style={styles.prescriptionLabel}>Rest</Text>
+                    <Text style={styles.prescriptionValue}>{displayValue(exercise.restSec, '0')}s</Text>
+                  </View>
                 </View>
 
-                {exercise.notes ? <Text style={styles.notes}>{exercise.notes}</Text> : null}
+                {cleanNotes ? (
+                  <View style={styles.coachNote}>
+                    <Feather name="info" size={15} color={colors.accentDark} />
+                    <Text style={styles.notes}>{cleanNotes}</Text>
+                  </View>
+                ) : null}
 
                 <View style={styles.videoBox}>
                   <ExerciseVideo url={exercise.videoUrl} />
@@ -278,6 +336,7 @@ const styles = StyleSheet.create({
   exCard: { marginBottom: spacing.sm },
   exDone: { backgroundColor: colors.accentLight, borderColor: colors.accentSurface },
   exHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  exHeaderText: { flex: 1 },
   exNum: {
     width: 30,
     height: 30,
@@ -288,10 +347,39 @@ const styles = StyleSheet.create({
   },
   exNumDone: { backgroundColor: colors.accent },
   exNumText: { ...typography.bodyBold, color: colors.inkMuted },
-  exName: { ...typography.subtitle, color: colors.ink, flex: 1 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: spacing.sm },
-  notes: { ...typography.body, color: colors.inkMuted, fontStyle: 'italic', marginBottom: spacing.sm },
-  videoBox: { marginBottom: spacing.sm },
+  exName: { ...typography.subtitle, color: colors.ink },
+  exSub: { ...typography.caption, color: colors.inkMuted, marginTop: 2, textTransform: 'uppercase' },
+  sectionBreak: {
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: radius.xl,
+    backgroundColor: colors.accentDark,
+    padding: spacing.lg,
+  },
+  sectionKicker: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase', marginBottom: 4 },
+  sectionTitle: { ...typography.title, color: colors.white },
+  prescription: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  prescriptionTile: {
+    flex: 1,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panelMuted,
+    padding: spacing.md,
+    minHeight: 76,
+    justifyContent: 'center',
+  },
+  prescriptionLabel: { ...typography.caption, color: colors.inkMuted, marginBottom: 4 },
+  prescriptionValue: { ...typography.subtitle, color: colors.ink, fontWeight: '800' },
+  coachNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: colors.accentLight,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  notes: { ...typography.body, color: colors.accentDarker, flex: 1 },
+  videoBox: { marginBottom: spacing.md, alignItems: 'center' },
   exBtn: { marginTop: spacing.xs },
   finish: { marginTop: spacing.md },
   safetyRow: { flexDirection: 'row', gap: 6, marginTop: spacing.md, alignItems: 'flex-start' },
