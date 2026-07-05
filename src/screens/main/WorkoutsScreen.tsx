@@ -129,6 +129,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                 <PrimaryButton
                   title={todayDay?.completed ? 'Review today workout' : "Today's Workout"}
                   icon="activity"
+                  variant="inverted"
                   onPress={() =>
                     todayDay
                       ? navigation.navigate('WorkoutDetail', { planDayId: todayDay.planDayId, title: todayDay.focus, mode: 'standard' })
@@ -138,7 +139,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                 <PrimaryButton
                   title="Short on time workout"
                   icon="clock"
-                  variant="secondary"
+                  variant="heroSecondary"
                   onPress={() =>
                     todayDay
                       ? navigation.navigate('WorkoutDetail', { planDayId: todayDay.planDayId, title: todayDay.focus, mode: 'quick' })

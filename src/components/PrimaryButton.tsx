@@ -7,7 +7,7 @@ import { radius } from '../theme/radius';
 import { shadows } from '../theme/shadows';
 import { trackMobileInteraction } from '../services/activityService';
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'inverted' | 'heroSecondary';
 type Size = 'md' | 'lg' | 'sm';
 
 type Props = {
@@ -35,7 +35,11 @@ export function PrimaryButton({
 }: Props) {
   const isDisabled = !!loading || !!disabled;
   const fg =
-    variant === 'primary' ? colors.white : variant === 'danger' ? colors.error : colors.accentDark;
+    variant === 'primary' || variant === 'heroSecondary'
+      ? colors.white
+      : variant === 'danger'
+        ? colors.error
+        : colors.accentDark;
 
   const handlePress = () => {
     trackMobileInteraction(`/button/${title}`);
@@ -76,6 +80,8 @@ const variantStyles: Record<Variant, ViewStyle> = {
   secondary: { backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.borderStrong },
   ghost: { backgroundColor: 'transparent' },
   danger: { backgroundColor: colors.errorLight, borderWidth: 1, borderColor: '#f6caca' },
+  inverted: { backgroundColor: colors.white },
+  heroSecondary: { backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.36)' },
 };
 
 const styles = StyleSheet.create({
