@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, ScrollView, Text, StyleSheet, RefreshControl, View } from 'react-native';
+import { Image, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
@@ -20,9 +21,14 @@ import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutList'>;
 
+const TODAY_WORKOUT_KEY_PREFIX = 'formbae_today_workout:';
+
 function WorkoutDashboardScreen({ navigation }: Props) {
   const [days, setDays] = useState<PlanDay[]>([]);
   const [title, setTitle] = useState('My workout plan');
+  const [planId, setPlanId] = useState('');
+  const [selectedTodayPlanDayId, setSelectedTodayPlanDayId] = useState('');
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   const [progress, setProgress] = useState<ProgressSummary | null>(null);
   const [trainer, setTrainer] = useState<TrainerInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,8 +40,13 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     try {
       await flushWorkoutQueue();
       const data = await fetchWorkoutPlan();
-      const plan = (data.plan || data.today?.plan) as { days?: PlanDay[]; title?: string; selectedWorkoutMode?: string } | undefined;
-      setDays(plan?.days || []);
+      const plan = (data.plan || data.today?.plan) as { planId?: string; days?: PlanDay[]; title?: string; selectedWorkoutMode?: string } | undefined;
+      const loadedDays = plan?.days || [];
+      const loadedPlanId = plan?.planId || data.today?.plan?.planId || plan?.title || 'default';
+      const savedTodayId = await AsyncStorage.getItem(`${TODAY_WORKOUT_KEY_PREFIX}${loadedPlanId}`).catch(() => null);
+      setPlanId(loadedPlanId);
+      setSelectedTodayPlanDayId(savedTodayId && loadedDays.some((day) => day.planDayId === savedTodayId) ? savedTodayId : '');
+      setDays(loadedDays);
       setTitle(plan?.title || 'My workout plan');
       setProgress(data.today?.progress || null);
       setTrainer(data.today?.assignedTrainer || null);
@@ -59,8 +70,16 @@ function WorkoutDashboardScreen({ navigation }: Props) {
 
   const todayDay = useMemo(() => {
     if (!days.length) return null;
+    const selected = days.find((day) => day.planDayId === selectedTodayPlanDayId);
+    if (selected) return selected;
     return days.find((day) => !day.completed) || days[0];
-  }, [days]);
+  }, [days, selectedTodayPlanDayId]);
+
+  const onSwitchTodayWorkout = async (day: PlanDay) => {
+    setSelectedTodayPlanDayId(day.planDayId);
+    setSwitcherOpen(false);
+    await AsyncStorage.setItem(`${TODAY_WORKOUT_KEY_PREFIX}${planId || title || 'default'}`, day.planDayId).catch(() => undefined);
+  };
 
   if (loading) {
     return (
@@ -117,7 +136,13 @@ function WorkoutDashboardScreen({ navigation }: Props) {
             <Card style={styles.todayHero}>
               <View style={styles.todayTop}>
                 <Badge label="Today" tone={todayDay?.completed ? 'success' : 'accent'} icon={todayDay?.completed ? 'check' : 'zap'} />
-                <Text style={styles.todayDay}>Day {todayDay?.dayNumber || '-'}</Text>
+                <View style={styles.todayTopRight}>
+                  <Text style={styles.todayDay}>Day {todayDay?.dayNumber || '-'}</Text>
+                  <TouchableOpacity onPress={() => setSwitcherOpen(true)} style={styles.switchButton} accessibilityRole="button" accessibilityLabel="Switch today's workout">
+                    <Feather name="repeat" size={14} color={colors.white} />
+                    <Text style={styles.switchText}>Switch</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
               <Text style={styles.todayTitle}>{todayDay?.focus || 'Workout'}</Text>
               <Text style={styles.todayMeta}>
@@ -242,11 +267,72 @@ function WorkoutDashboardScreen({ navigation }: Props) {
           </>
         )}
       </ScrollView>
+      <WorkoutSwitchModal
+        visible={switcherOpen}
+        days={days}
+        selectedPlanDayId={todayDay?.planDayId || ''}
+        onSelect={onSwitchTodayWorkout}
+        onClose={() => setSwitcherOpen(false)}
+      />
     </ScreenContainer>
   );
 }
 
 export const WorkoutsScreen = WorkoutDashboardScreen;
+
+function WorkoutSwitchModal({
+  visible,
+  days,
+  selectedPlanDayId,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  days: PlanDay[];
+  selectedPlanDayId: string;
+  onSelect: (day: PlanDay) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalRoot}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} />
+        <View style={styles.switchSheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <View>
+              <Text style={styles.sheetKicker}>Switch today</Text>
+              <Text style={styles.sheetTitle}>Choose a workout</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Close">
+              <Feather name="x" size={20} color={colors.inkMuted} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.switchList}>
+            {days.map((day) => {
+              const selected = day.planDayId === selectedPlanDayId;
+              const count = day.exercises?.length ?? 0;
+              return (
+                <TouchableOpacity key={day.planDayId} onPress={() => onSelect(day)} style={[styles.switchRow, selected && styles.switchRowSelected]}>
+                  <View style={[styles.switchDayBadge, selected && styles.switchDayBadgeSelected]}>
+                    {selected ? <Feather name="check" size={16} color={colors.white} /> : <Text style={styles.switchDayText}>{day.dayNumber}</Text>}
+                  </View>
+                  <View style={styles.switchRowText}>
+                    <Text style={styles.switchRowTitle} numberOfLines={1}>{day.focus || 'Workout'}</Text>
+                    <Text style={styles.switchRowMeta}>
+                      Day {day.dayNumber} · {count} exercise{count === 1 ? '' : 's'}{day.completed ? ' · completed' : ''}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color={selected ? colors.accent : colors.inkSubtle} />
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 const styles = StyleSheet.create({
   scroll: { paddingBottom: spacing.xl },
@@ -268,7 +354,20 @@ const styles = StyleSheet.create({
   scoreLabel: { ...typography.caption, color: colors.accentDarker, marginTop: -2 },
   todayHero: { backgroundColor: colors.accent, borderColor: colors.accentDark, overflow: 'hidden' },
   todayTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  todayTopRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   todayDay: { ...typography.caption, color: colors.onAccentMuted, fontWeight: '700' },
+  switchButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.36)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  switchText: { ...typography.caption, color: colors.white, fontWeight: '800' },
   todayTitle: { ...typography.title, color: colors.white, marginTop: spacing.md },
   todayMeta: { ...typography.body, color: colors.onAccentMuted, marginTop: 4 },
   heroActions: { gap: spacing.sm, marginTop: spacing.lg },
@@ -324,4 +423,59 @@ const styles = StyleSheet.create({
   skeletonHero: { height: 260, borderRadius: radius.xl, marginBottom: spacing.md },
   skeletonDayTitle: { width: '72%', height: 16 },
   skeletonMeta: { width: '48%', height: 12, marginTop: spacing.sm },
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  modalBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.overlay },
+  switchSheet: {
+    maxHeight: '76%',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+  },
+  sheetHandle: {
+    width: 44,
+    height: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.borderStrong,
+    alignSelf: 'center',
+    marginBottom: spacing.md,
+  },
+  sheetHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.sm },
+  sheetKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
+  sheetTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
+  closeButton: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.panelMuted,
+  },
+  switchList: { gap: spacing.sm, paddingBottom: spacing.md },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radius.xl,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  switchRowSelected: { backgroundColor: colors.accentLight, borderColor: colors.accentSurface },
+  switchDayBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.panelMuted,
+  },
+  switchDayBadgeSelected: { backgroundColor: colors.accent },
+  switchDayText: { ...typography.bodyBold, color: colors.accentDark },
+  switchRowText: { flex: 1 },
+  switchRowTitle: { ...typography.bodyBold, color: colors.ink },
+  switchRowMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
 });
