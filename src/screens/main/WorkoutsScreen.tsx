@@ -6,6 +6,7 @@ import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../componen
 import { Badge } from '../../components/Badge';
 import { ErrorState, EmptyState } from '../../components/States';
 import { SkeletonBlock } from '../../components/Skeleton';
+import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
 import { StatTile } from '../../components/StatTile';
 import { fetchWorkoutPlan } from '../../services/workoutService';
@@ -113,36 +114,40 @@ function WorkoutDashboardScreen({ navigation }: Props) {
               </View>
             </View>
 
-            <View style={styles.sessionStack}>
-              <TouchableSessionCard
-                label={todayDay?.completed ? 'Ready to review' : "Today's workout"}
-                title={todayDay?.focus || 'Main session'}
-                description="Full plan with video guidance, set tracking, rest timer, and feedback."
-                icon="activity"
-                tone="dark"
-                meta={`Day ${todayDay?.dayNumber || '-'} · ${todayCount} exercise${todayCount === 1 ? '' : 's'}${trainer?.name ? ` · Coach ${trainer.name}` : ''}`}
-                cta={todayDay?.completed ? 'Review session' : 'Start main workout'}
-                onPress={() =>
-                  todayDay
-                    ? navigation.navigate('WorkoutDetail', { planDayId: todayDay.planDayId, title: todayDay.focus, mode: 'standard' })
-                    : undefined
-                }
-              />
-              <TouchableSessionCard
-                label="Short on time"
-                title="Minimum effective dose"
-                description="A compressed version for busy days. Keep the streak alive without losing the plan."
-                icon="clock"
-                tone="light"
-                meta="Fewer movements · Same day focus · Faster pacing"
-                cta="Start quick workout"
-                onPress={() =>
-                  todayDay
-                    ? navigation.navigate('WorkoutDetail', { planDayId: todayDay.planDayId, title: todayDay.focus, mode: 'quick' })
-                    : undefined
-                }
-              />
-            </View>
+            <Card style={styles.todayHero}>
+              <View style={styles.todayTop}>
+                <Badge label="Today" tone={todayDay?.completed ? 'success' : 'accent'} icon={todayDay?.completed ? 'check' : 'zap'} />
+                <Text style={styles.todayDay}>Day {todayDay?.dayNumber || '-'}</Text>
+              </View>
+              <Text style={styles.todayTitle}>{todayDay?.focus || 'Workout'}</Text>
+              <Text style={styles.todayMeta}>
+                {todayCount} exercise{todayCount === 1 ? '' : 's'}
+                {trainer?.name ? ` · Coach ${trainer.name}` : ''}
+              </Text>
+
+              <View style={styles.heroActions}>
+                <PrimaryButton
+                  title={todayDay?.completed ? 'Review today workout' : "Today's Workout"}
+                  icon="activity"
+                  variant="inverted"
+                  onPress={() =>
+                    todayDay
+                      ? navigation.navigate('WorkoutDetail', { planDayId: todayDay.planDayId, title: todayDay.focus, mode: 'standard' })
+                      : undefined
+                  }
+                />
+                <PrimaryButton
+                  title="Short on time workout"
+                  icon="clock"
+                  variant="heroSecondary"
+                  onPress={() =>
+                    todayDay
+                      ? navigation.navigate('WorkoutDetail', { planDayId: todayDay.planDayId, title: todayDay.focus, mode: 'quick' })
+                      : undefined
+                  }
+                />
+              </View>
+            </Card>
 
             <SectionTitle>Your coach</SectionTitle>
             {trainer ? (
@@ -243,45 +248,6 @@ function WorkoutDashboardScreen({ navigation }: Props) {
 
 export const WorkoutsScreen = WorkoutDashboardScreen;
 
-function TouchableSessionCard({
-  label,
-  title,
-  description,
-  meta,
-  cta,
-  icon,
-  tone,
-  onPress,
-}: {
-  label: string;
-  title: string;
-  description: string;
-  meta: string;
-  cta: string;
-  icon: string;
-  tone: 'dark' | 'light';
-  onPress: () => void;
-}) {
-  const dark = tone === 'dark';
-  return (
-    <Card onPress={onPress} style={StyleSheet.flatten([styles.sessionCard, dark ? styles.sessionCardDark : styles.sessionCardLight])}>
-      <View style={styles.sessionCardTop}>
-        <View style={[styles.sessionIcon, dark ? styles.sessionIconDark : styles.sessionIconLight]}>
-          <Feather name={icon} size={20} color={dark ? colors.inkStrong : colors.accentDark} />
-        </View>
-        <Text style={[styles.sessionLabel, dark && styles.sessionLabelDark]}>{label}</Text>
-      </View>
-      <Text style={[styles.sessionTitle, dark && styles.sessionTitleDark]}>{title}</Text>
-      <Text style={[styles.sessionDescription, dark && styles.sessionDescriptionDark]}>{description}</Text>
-      <Text style={[styles.sessionMeta, dark && styles.sessionMetaDark]}>{meta}</Text>
-      <View style={styles.sessionCta}>
-        <Text style={[styles.sessionCtaText, dark && styles.sessionCtaTextDark]}>{cta}</Text>
-        <Feather name="arrow-right" size={17} color={dark ? colors.white : colors.accentDark} />
-      </View>
-    </Card>
-  );
-}
-
 const styles = StyleSheet.create({
   scroll: { paddingBottom: spacing.xl },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
@@ -300,25 +266,12 @@ const styles = StyleSheet.create({
   },
   scoreValue: { fontSize: 19, fontWeight: '800', color: colors.accentDark },
   scoreLabel: { ...typography.caption, color: colors.accentDarker, marginTop: -2 },
-  sessionStack: { gap: spacing.sm },
-  sessionCard: { overflow: 'hidden' },
-  sessionCardDark: { backgroundColor: colors.inkStrong, borderColor: colors.ink },
-  sessionCardLight: { backgroundColor: colors.white, borderColor: colors.accentSurface },
-  sessionCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.md },
-  sessionIcon: { width: 42, height: 42, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center' },
-  sessionIconDark: { backgroundColor: colors.white },
-  sessionIconLight: { backgroundColor: colors.accentLight },
-  sessionLabel: { ...typography.overline, color: colors.accentDark, textTransform: 'uppercase', flex: 1, textAlign: 'right' },
-  sessionLabelDark: { color: colors.onAccentMuted },
-  sessionTitle: { ...typography.title, color: colors.ink },
-  sessionTitleDark: { color: colors.white },
-  sessionDescription: { ...typography.body, color: colors.inkMuted, marginTop: 4 },
-  sessionDescriptionDark: { color: colors.onAccentMuted },
-  sessionMeta: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.md },
-  sessionMetaDark: { color: colors.onAccentMuted },
-  sessionCta: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.md },
-  sessionCtaText: { ...typography.bodyBold, color: colors.accentDark },
-  sessionCtaTextDark: { color: colors.white },
+  todayHero: { backgroundColor: colors.accent, borderColor: colors.accentDark, overflow: 'hidden' },
+  todayTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  todayDay: { ...typography.caption, color: colors.onAccentMuted, fontWeight: '700' },
+  todayTitle: { ...typography.title, color: colors.white, marginTop: spacing.md },
+  todayMeta: { ...typography.body, color: colors.onAccentMuted, marginTop: 4 },
+  heroActions: { gap: spacing.sm, marginTop: spacing.lg },
   trainerCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md, padding: spacing.md },
   trainerPhotoWrap: {
     width: 58,
