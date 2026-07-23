@@ -12,6 +12,7 @@ import { ProgressBar } from '../../components/ProgressBar';
 import { StatTile } from '../../components/StatTile';
 import { fetchWorkoutPlan } from '../../services/workoutService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
+import { getSiteUrl } from '../../constants/config';
 import type { PlanDay, ProgressSummary, TrainerInfo } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
@@ -23,12 +24,21 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutList'>;
 
 const TODAY_WORKOUT_KEY_PREFIX = 'formbae_today_workout:';
 
+function resolveTrainerPhotoUrl(value?: string) {
+  const url = String(value || '').trim();
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith('/')) return `${getSiteUrl()}${url}`;
+  return url;
+}
+
 function WorkoutDashboardScreen({ navigation }: Props) {
   const [days, setDays] = useState<PlanDay[]>([]);
   const [title, setTitle] = useState('My workout plan');
   const [planId, setPlanId] = useState('');
   const [selectedTodayPlanDayId, setSelectedTodayPlanDayId] = useState('');
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [trainerPhotoFailed, setTrainerPhotoFailed] = useState(false);
   const [progress, setProgress] = useState<ProgressSummary | null>(null);
   const [trainer, setTrainer] = useState<TrainerInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,6 +60,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
       setTitle(plan?.title || 'My workout plan');
       setProgress(data.today?.progress || null);
       setTrainer(data.today?.assignedTrainer || null);
+      setTrainerPhotoFailed(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load your plan');
     } finally {
@@ -105,6 +116,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const doneCount = days.filter((d) => d.completed).length;
   const todayCount = todayDay?.exercises?.length ?? 0;
   const planProgress = days.length ? doneCount / days.length : 0;
+  const trainerPhoto = resolveTrainerPhotoUrl(trainer?.trainerPhotoUrl);
 
   return (
     <ScreenContainer>
@@ -178,8 +190,8 @@ function WorkoutDashboardScreen({ navigation }: Props) {
             {trainer ? (
               <Card variant="outline" style={styles.trainerCard} onPress={() => navigation.navigate('Coach')}>
                 <View style={styles.trainerPhotoWrap}>
-                  {trainer.trainerPhotoUrl ? (
-                    <Image source={{ uri: trainer.trainerPhotoUrl }} style={styles.trainerPhoto} resizeMode="cover" />
+                  {trainerPhoto && !trainerPhotoFailed ? (
+                    <Image source={{ uri: trainerPhoto }} style={styles.trainerPhoto} resizeMode="cover" onError={() => setTrainerPhotoFailed(true)} />
                   ) : (
                     <View style={styles.trainerFallback}>
                       <Text style={styles.trainerInitial}>{(trainer.name || 'T').slice(0, 1).toUpperCase()}</Text>
