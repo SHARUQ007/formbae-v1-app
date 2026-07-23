@@ -52,10 +52,11 @@ export function MainTabNavigator() {
         component={WorkoutsNavigator}
         options={({ route }) => {
           const focusedRoute = getFocusedRouteNameFromRoute(route);
+          const hideTabBar = focusedRoute === 'WorkoutDetail' || focusedRoute === 'WorkoutVideo';
           return {
             title: 'Workout',
             tabBarIcon: workoutIcon,
-            tabBarStyle: focusedRoute === 'WorkoutDetail' ? { display: 'none' } : premiumTabBarStyle,
+            tabBarStyle: hideTabBar ? { display: 'none' } : premiumTabBarStyle,
           };
         }}
       />

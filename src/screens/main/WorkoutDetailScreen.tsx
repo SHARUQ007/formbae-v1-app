@@ -19,7 +19,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
-import { ExerciseVideo } from '../../components/ExerciseVideo';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { fetchWorkoutDay } from '../../services/workoutService';
 import { submitWorkoutFeedback, type WorkoutFeedbackSentiment } from '../../services/workoutFeedbackService';
@@ -93,7 +92,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const [completed, setCompleted] = useState<Set<string>>(new Set());
   const [setProgress, setSetProgress] = useState<Record<string, number>>({});
   const [activeIndex, setActiveIndex] = useState(0);
-  const [replayNonce, setReplayNonce] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
@@ -217,7 +215,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
 
   const moveToExercise = (index: number) => {
     setActiveIndex(Math.max(0, Math.min(trackableExercises.length - 1, index)));
-    setReplayNonce((value) => value + 1);
   };
 
   const onFinish = useCallback(async () => {
@@ -387,19 +384,44 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.stepMedia, compactStep && styles.stepMediaCompact]}>
-          <ExerciseVideo
-            key={`${activeExercise.exerciseId}_${replayNonce}`}
-            url={activeExercise.videoUrl}
-            compact
-            style={[styles.stepVideoFrame, compactStep && styles.stepVideoFrameCompact]}
-          />
+        <TouchableOpacity
+          onPress={() => navigation.navigate('WorkoutVideo', {
+            title: activeExercise.exerciseName,
+            subtitle: getSectionLabel(activeExercise.notes, detail.focus || 'Workout'),
+            videoUrl: activeExercise.videoUrl,
+          })}
+          activeOpacity={0.86}
+          style={[styles.videoStepCard, compactStep && styles.videoStepCardCompact]}
+          accessibilityRole="button"
+          accessibilityLabel={`Open video for ${activeExercise.exerciseName}`}
+        >
+          <View style={styles.videoStepIcon}>
+            <Feather name="play" size={24} color={colors.white} />
+          </View>
+          <View style={styles.videoStepText}>
+            <Text style={styles.videoStepKicker}>Technique video</Text>
+            <Text style={styles.videoStepTitle} numberOfLines={2}>Watch form before logging sets</Text>
+            <Text style={styles.videoStepMeta} numberOfLines={1}>{activeExercise.exerciseName}</Text>
+          </View>
+          <Feather name="chevron-right" size={22} color={colors.accentDark} />
+        </TouchableOpacity>
+
+        <View style={[styles.stepCue, compactStep && styles.stepCueCompact]}>
+          <Feather name="target" size={16} color={colors.accentDark} />
+          <Text style={styles.stepCueText} numberOfLines={1}>Movement {activeExerciseIndex + 1} of {trackableExercises.length}</Text>
         </View>
 
         <View style={[styles.stepToolbar, compactStep && styles.stepToolbarCompact]}>
-          <TouchableOpacity onPress={() => setReplayNonce((value) => value + 1)} style={styles.stepTool}>
-            <Feather name="rotate-ccw" size={16} color={colors.accentDark} />
-            <Text style={styles.stepToolText}>Replay</Text>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('WorkoutVideo', {
+              title: activeExercise.exerciseName,
+              subtitle: getSectionLabel(activeExercise.notes, detail.focus || 'Workout'),
+              videoUrl: activeExercise.videoUrl,
+            })}
+            style={styles.stepTool}
+          >
+            <Feather name="play-circle" size={16} color={colors.accentDark} />
+            <Text style={styles.stepToolText}>Video</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={() => moveToExercise(activeExerciseIndex + 1)}
@@ -844,25 +866,51 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   stepFlowText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
-  stepMedia: {
-    flexShrink: 0,
+  videoStepCard: {
+    minHeight: 126,
+    borderRadius: 26,
+    backgroundColor: colors.inkStrong,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    marginTop: spacing.xs,
+  },
+  videoStepCardCompact: {
+    minHeight: 108,
+    borderRadius: 22,
+    padding: spacing.sm,
+  },
+  videoStepIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepMediaCompact: {
-    marginTop: -2,
+  videoStepText: { flex: 1 },
+  videoStepKicker: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
+  videoStepTitle: { ...typography.subtitle, color: colors.white, marginTop: 4 },
+  videoStepMeta: { ...typography.caption, color: colors.onAccentMuted, marginTop: 4 },
+  stepCue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderRadius: radius.lg,
+    backgroundColor: colors.accentLight,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 9,
+    marginTop: spacing.xs,
   },
-  stepVideoFrame: {
-    width: '100%',
-    height: 220,
-    maxHeight: 220,
-    aspectRatio: undefined,
-    borderRadius: 24,
+  stepCueCompact: {
+    paddingVertical: 7,
   },
-  stepVideoFrameCompact: {
-    height: 170,
-    maxHeight: 170,
-    borderRadius: 22,
+  stepCueText: {
+    ...typography.caption,
+    color: colors.accentDarker,
+    fontWeight: '800',
+    flex: 1,
   },
   stepToolbar: {
     flexDirection: 'row',
