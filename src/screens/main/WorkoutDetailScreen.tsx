@@ -147,6 +147,31 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const activeRest = Number(activeExercise?.restSec || 0);
   const activeNotes = cleanExerciseNotes(activeExercise?.notes || '');
   const copy = modeCopy(mode);
+  const workoutVideos = useMemo(
+    () => trackableExercises
+      .filter((exercise) => String(exercise.videoUrl || '').trim())
+      .map((exercise) => ({
+        id: exercise.exerciseId,
+        title: exercise.exerciseName,
+        subtitle: getSectionLabel(exercise.notes, detail?.focus || 'Workout'),
+        videoUrl: exercise.videoUrl,
+      })),
+    [detail?.focus, trackableExercises],
+  );
+
+  const openExerciseVideo = useCallback(
+    (exercise: WorkoutExerciseDetail) => {
+      const initialIndex = Math.max(0, workoutVideos.findIndex((item) => item.id === exercise.exerciseId));
+      navigation.navigate('WorkoutVideo', {
+        title: exercise.exerciseName,
+        subtitle: getSectionLabel(exercise.notes, detail?.focus || 'Workout'),
+        videoUrl: exercise.videoUrl,
+        videos: workoutVideos,
+        initialIndex,
+      });
+    },
+    [detail?.focus, navigation, workoutVideos],
+  );
 
   const persistSets = useCallback(
     async (next: Record<string, number>, completedSet = completed) => {
@@ -385,11 +410,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         </View>
 
         <TouchableOpacity
-          onPress={() => navigation.navigate('WorkoutVideo', {
-            title: activeExercise.exerciseName,
-            subtitle: getSectionLabel(activeExercise.notes, detail.focus || 'Workout'),
-            videoUrl: activeExercise.videoUrl,
-          })}
+          onPress={() => openExerciseVideo(activeExercise)}
           activeOpacity={0.86}
           style={[styles.videoStepCard, compactStep && styles.videoStepCardCompact]}
           accessibilityRole="button"
@@ -413,23 +434,11 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
 
         <View style={[styles.stepToolbar, compactStep && styles.stepToolbarCompact]}>
           <TouchableOpacity
-            onPress={() => navigation.navigate('WorkoutVideo', {
-              title: activeExercise.exerciseName,
-              subtitle: getSectionLabel(activeExercise.notes, detail.focus || 'Workout'),
-              videoUrl: activeExercise.videoUrl,
-            })}
-            style={styles.stepTool}
+            onPress={() => openExerciseVideo(activeExercise)}
+            style={styles.stepToolWide}
           >
             <Feather name="play-circle" size={16} color={colors.accentDark} />
-            <Text style={styles.stepToolText}>Video</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => moveToExercise(activeExerciseIndex + 1)}
-            disabled={activeExerciseIndex >= trackableExercises.length - 1}
-            style={[styles.stepTool, activeExerciseIndex >= trackableExercises.length - 1 && styles.stepToolDisabled]}
-          >
-            <Feather name="shuffle" size={16} color={activeExerciseIndex >= trackableExercises.length - 1 ? colors.inkSubtle : colors.accentDark} />
-            <Text style={[styles.stepToolText, activeExerciseIndex >= trackableExercises.length - 1 && styles.stepToolTextDisabled]}>Try another</Text>
+            <Text style={styles.stepToolText}>Open video</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setFeedbackOpen(true)} style={styles.stepTool}>
             <Feather name="message-circle" size={16} color={colors.accentDark} />
@@ -922,6 +931,19 @@ const styles = StyleSheet.create({
   },
   stepTool: {
     flex: 1,
+    minHeight: 42,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    backgroundColor: colors.accentLight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+  },
+  stepToolWide: {
+    flex: 1.25,
     minHeight: 42,
     borderRadius: radius.xl,
     borderWidth: 1,

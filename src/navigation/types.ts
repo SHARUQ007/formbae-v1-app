@@ -33,11 +33,18 @@ export type MainTabParamList = {
   Profile: undefined;
 };
 
+export type WorkoutVideoItem = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  videoUrl: string;
+};
+
 export type WorkoutStackParamList = {
   WorkoutList: undefined;
   Coach: undefined;
   WorkoutDetail: { planDayId: string; title: string; mode?: 'standard' | 'quick' };
-  WorkoutVideo: { title: string; subtitle?: string; videoUrl: string };
+  WorkoutVideo: { title: string; subtitle?: string; videoUrl: string; videos?: WorkoutVideoItem[]; initialIndex?: number };
 };
 
 export type ProfileStackParamList = {

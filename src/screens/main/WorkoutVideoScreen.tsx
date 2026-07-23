@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -13,7 +14,19 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutVideo'>;
 
 export function WorkoutVideoScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const { title, subtitle, videoUrl } = route.params;
+  const { title, subtitle, videoUrl, videos = [], initialIndex = 0 } = route.params;
+  const videoItems = useMemo(
+    () => videos.length ? videos : [{ id: videoUrl, title, subtitle, videoUrl }],
+    [subtitle, title, videoUrl, videos],
+  );
+  const [activeIndex, setActiveIndex] = useState(Math.max(0, Math.min(videoItems.length - 1, initialIndex)));
+  const activeVideo = videoItems[activeIndex] || videoItems[0];
+  const canTryAnother = videoItems.length > 1;
+
+  const tryAnother = () => {
+    if (!canTryAnother) return;
+    setActiveIndex((value) => (value + 1) % videoItems.length);
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -23,13 +36,30 @@ export function WorkoutVideoScreen({ route, navigation }: Props) {
         </TouchableOpacity>
         <View style={styles.headerText}>
           <Text style={styles.kicker}>Technique video</Text>
-          <Text style={styles.title} numberOfLines={2}>{title}</Text>
-          {subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text> : null}
+          <Text style={styles.title} numberOfLines={2}>{activeVideo.title}</Text>
+          {activeVideo.subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{activeVideo.subtitle}</Text> : null}
         </View>
       </View>
 
       <View style={styles.videoStage}>
-        <ExerciseVideo url={videoUrl} style={styles.videoFrame} />
+        <ExerciseVideo key={`${activeVideo.id}_${activeIndex}`} url={activeVideo.videoUrl} style={styles.videoFrame} />
+      </View>
+
+      <View style={styles.videoMetaCard}>
+        <View>
+          <Text style={styles.videoCount}>Video {activeIndex + 1} of {videoItems.length}</Text>
+          <Text style={styles.videoMetaTitle} numberOfLines={1}>{activeVideo.title}</Text>
+        </View>
+        <TouchableOpacity
+          onPress={tryAnother}
+          disabled={!canTryAnother}
+          style={[styles.tryButton, !canTryAnother && styles.tryButtonDisabled]}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !canTryAnother }}
+        >
+          <Feather name="shuffle" size={17} color={canTryAnother ? colors.accentDark : colors.inkSubtle} />
+          <Text style={[styles.tryText, !canTryAnother && styles.tryTextDisabled]}>Try another</Text>
+        </TouchableOpacity>
       </View>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.md }]}>
@@ -76,6 +106,39 @@ const styles = StyleSheet.create({
     maxHeight: '100%',
     borderRadius: 28,
   },
+  videoMetaCard: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  videoCount: { ...typography.caption, color: colors.inkMuted, marginBottom: 3 },
+  videoMetaTitle: { ...typography.bodyBold, color: colors.ink },
+  tryButton: {
+    minHeight: 42,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  tryButtonDisabled: {
+    backgroundColor: colors.panelMuted,
+    borderColor: colors.border,
+  },
+  tryText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
+  tryTextDisabled: { color: colors.inkSubtle },
   footer: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
