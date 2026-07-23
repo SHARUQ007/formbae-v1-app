@@ -12,6 +12,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -86,6 +87,8 @@ function modeCopy(mode: 'standard' | 'quick') {
 function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const { planDayId, mode = 'standard' } = route.params;
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const compactStep = windowHeight < 760;
   const [detail, setDetail] = useState<WorkoutDayDetail | null>(null);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
   const [setProgress, setSetProgress] = useState<Record<string, number>>({});
@@ -340,72 +343,71 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         </View>
       ) : null}
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing.xl }]}
-      >
-        <View style={styles.sessionHero}>
-          <View style={styles.heroTop}>
-            <Text style={styles.progressLabel}>Session progress</Text>
-            <Text style={styles.heroCount}>{completedTrackableCount}/{trackableExercises.length}</Text>
+      <View style={[styles.stepProgressCard, compactStep && styles.stepProgressCardCompact]}>
+        <View style={styles.progressTop}>
+          <Text style={styles.progressLabel}>Session progress</Text>
+          <Text style={styles.heroCount}>{completedTrackableCount}/{trackableExercises.length}</Text>
+        </View>
+        <View style={styles.progressTop}>
+          <Text style={styles.progressSubLabel}>Overall completion</Text>
+          <Text style={styles.progressPct}>{Math.round(progress * 100)}%</Text>
+        </View>
+        <ProgressBar value={progress} />
+      </View>
+
+      <View style={[styles.stepShell, compactStep && styles.stepShellCompact]}>
+        <View style={styles.stepHeader}>
+          <View style={styles.activeStep}>
+            <Text style={styles.activeStepText}>{activeExerciseIndex + 1}</Text>
           </View>
-          <View style={styles.progressBlock}>
-            <View style={styles.progressTop}>
-              <Text style={styles.progressSubLabel}>Overall completion</Text>
-              <Text style={styles.progressPct}>{Math.round(progress * 100)}%</Text>
-            </View>
-            <ProgressBar value={progress} />
+          <View style={styles.activeText}>
+            <Text style={styles.activeKicker} numberOfLines={1}>{getSectionLabel(activeExercise.notes, detail.focus || 'Workout')}</Text>
+            <Text style={styles.activeName} numberOfLines={2}>{activeExercise.exerciseName}</Text>
           </View>
+          <TouchableOpacity onPress={() => setFlowOpen(true)} style={styles.stepFlowButton} accessibilityRole="button" accessibilityLabel="Open workout flow">
+            <Text style={styles.stepFlowText}>{activeExerciseIndex + 1}/{trackableExercises.length}</Text>
+            <Feather name="list" size={16} color={colors.accentDark} />
+          </TouchableOpacity>
         </View>
 
-        <View style={styles.activeCard}>
-          <View style={styles.activeHeader}>
-            <View style={styles.activeStep}>
-              <Text style={styles.activeStepText}>{activeExerciseIndex + 1}</Text>
-            </View>
-            <View style={styles.activeText}>
-              <Text style={styles.activeKicker}>{getSectionLabel(activeExercise.notes, detail.focus || 'Workout')}</Text>
-              <Text style={styles.activeName}>{activeExercise.exerciseName}</Text>
-            </View>
-            <View style={[styles.activeStatus, activeDone && styles.activeStatusDone]}>
-              <Feather name={activeDone ? 'check' : 'play'} size={16} color={activeDone ? colors.white : colors.accent} />
-            </View>
-          </View>
-
-          <View style={styles.videoBox}>
-            <ExerciseVideo key={`${activeExercise.exerciseId}_${replayNonce}`} url={activeExercise.videoUrl} compact />
-          </View>
-
-          <View style={styles.videoActions}>
-            <PrimaryButton title="Replay" icon="rotate-ccw" variant="secondary" size="sm" onPress={() => setReplayNonce((value) => value + 1)} style={styles.videoActionButton} />
-            <PrimaryButton
-              title="Try another"
-              icon="shuffle"
-              variant="secondary"
-              size="sm"
-              onPress={() => moveToExercise(activeExerciseIndex + 1)}
-              disabled={activeExerciseIndex >= trackableExercises.length - 1}
-              style={styles.videoActionButton}
-            />
-          </View>
+        <View style={[styles.stepMedia, compactStep && styles.stepMediaCompact]}>
+          <ExerciseVideo key={`${activeExercise.exerciseId}_${replayNonce}`} url={activeExercise.videoUrl} compact />
         </View>
 
-        <View style={styles.prescription}>
+        <View style={[styles.stepToolbar, compactStep && styles.stepToolbarCompact]}>
+          <TouchableOpacity onPress={() => setReplayNonce((value) => value + 1)} style={styles.stepTool}>
+            <Feather name="rotate-ccw" size={16} color={colors.accentDark} />
+            <Text style={styles.stepToolText}>Replay</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => moveToExercise(activeExerciseIndex + 1)}
+            disabled={activeExerciseIndex >= trackableExercises.length - 1}
+            style={[styles.stepTool, activeExerciseIndex >= trackableExercises.length - 1 && styles.stepToolDisabled]}
+          >
+            <Feather name="shuffle" size={16} color={activeExerciseIndex >= trackableExercises.length - 1 ? colors.inkSubtle : colors.accentDark} />
+            <Text style={[styles.stepToolText, activeExerciseIndex >= trackableExercises.length - 1 && styles.stepToolTextDisabled]}>Try another</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setFeedbackOpen(true)} style={styles.stepTool}>
+            <Feather name="message-circle" size={16} color={colors.accentDark} />
+            <Text style={styles.stepToolText}>Feedback</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={[styles.stepMetaGrid, compactStep && styles.stepMetaGridCompact]}>
           <MetricTile label="Sets" value={String(activeSets)} />
           <MetricTile label="Reps / time" value={displayValue(activeExercise.reps)} />
           <MetricTile label="Rest" value={`${displayValue(activeExercise.restSec, '0')}s`} />
         </View>
 
-        <View style={styles.setTracker}>
+        <View style={[styles.stepSetPanel, compactStep && styles.stepSetPanelCompact]}>
           <View style={styles.setTrackerHead}>
             <View>
-              <Text style={styles.setTrackerTitle}>Log your sets</Text>
+              <Text style={styles.setTrackerTitle}>Set progress</Text>
               <Text style={styles.setTrackerMeta}>{activeSetCount}/{activeSets} complete</Text>
             </View>
-            <TouchableOpacity onPress={() => setFeedbackOpen(true)} style={styles.inlineFeedback}>
-              <Feather name="message-circle" size={17} color={colors.accentDark} />
-              <Text style={styles.inlineFeedbackText}>Feedback</Text>
-            </TouchableOpacity>
+            <View style={[styles.activeStatus, activeDone && styles.activeStatusDone]}>
+              <Feather name={activeDone ? 'check' : 'activity'} size={16} color={activeDone ? colors.white : colors.accent} />
+            </View>
           </View>
           <View style={styles.setDots}>
             {Array.from({ length: activeSets }).map((_, index) => {
@@ -426,41 +428,30 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         </View>
 
         {activeNotes ? (
-          <View style={styles.coachNote}>
-            <Feather name="info" size={16} color={colors.accentDark} />
-            <Text style={styles.notes}>{activeNotes}</Text>
+          <View style={[styles.stepNote, compactStep && styles.stepNoteCompact]}>
+            <Feather name="info" size={15} color={colors.accentDark} />
+            <Text style={styles.notes} numberOfLines={compactStep ? 1 : 2}>{activeNotes}</Text>
           </View>
         ) : null}
+      </View>
 
-        <View style={styles.navRow}>
-          <PrimaryButton
-            title="Previous"
-            icon="chevron-left"
-            variant="secondary"
-            onPress={() => moveToExercise(activeExerciseIndex - 1)}
-            disabled={activeExerciseIndex <= 0}
-            style={styles.navButton}
-          />
-          <PrimaryButton
-            title={activeExerciseIndex >= trackableExercises.length - 1 ? 'Finish' : 'Next movement'}
-            icon={activeExerciseIndex >= trackableExercises.length - 1 ? 'flag' : 'chevron-right'}
-            onPress={activeExerciseIndex >= trackableExercises.length - 1 ? onFinish : () => moveToExercise(activeExerciseIndex + 1)}
-            loading={finishing}
-            style={styles.navButton}
-          />
-        </View>
-
-        <TouchableOpacity onPress={() => setFlowOpen(true)} activeOpacity={0.84} style={styles.flowButton}>
-          <View style={styles.flowButtonIcon}>
-            <Feather name="list" size={18} color={colors.accentDark} />
-          </View>
-          <View style={styles.flowButtonText}>
-            <Text style={styles.flowButtonTitle}>Workout flow</Text>
-            <Text style={styles.flowButtonMeta}>{activeExerciseIndex + 1} of {trackableExercises.length} movements</Text>
-          </View>
-          <Feather name="chevron-up" size={20} color={colors.accent} />
-        </TouchableOpacity>
-      </ScrollView>
+      <View style={[styles.stepFooter, compactStep && styles.stepFooterCompact, { paddingBottom: insets.bottom + spacing.sm }]}>
+        <PrimaryButton
+          title="Previous"
+          icon="chevron-left"
+          variant="secondary"
+          onPress={() => moveToExercise(activeExerciseIndex - 1)}
+          disabled={activeExerciseIndex <= 0}
+          style={styles.navButton}
+        />
+        <PrimaryButton
+          title={activeExerciseIndex >= trackableExercises.length - 1 ? 'Finish' : 'Next movement'}
+          icon={activeExerciseIndex >= trackableExercises.length - 1 ? 'flag' : 'chevron-right'}
+          onPress={activeExerciseIndex >= trackableExercises.length - 1 ? onFinish : () => moveToExercise(activeExerciseIndex + 1)}
+          loading={finishing}
+          style={styles.navButton}
+        />
+      </View>
 
       <WorkoutFlowModal
         visible={flowOpen}
@@ -766,6 +757,132 @@ const styles = StyleSheet.create({
   timerActions: { flexDirection: 'row', gap: spacing.sm },
   timerPill: { backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill },
   timerBtn: { color: colors.white, fontWeight: '700', fontSize: 13 },
+  stepProgressCard: {
+    borderRadius: 22,
+    backgroundColor: colors.inkStrong,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  stepProgressCardCompact: {
+    paddingVertical: 10,
+    marginBottom: 6,
+  },
+  stepShell: {
+    flex: 1,
+    marginHorizontal: spacing.lg,
+    borderRadius: 28,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    overflow: 'hidden',
+  },
+  stepShellCompact: {
+    borderRadius: 24,
+    padding: spacing.sm,
+  },
+  stepHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  stepFlowButton: {
+    minWidth: 62,
+    height: 38,
+    borderRadius: radius.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    paddingHorizontal: spacing.sm,
+  },
+  stepFlowText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
+  stepMedia: {
+    flex: 1,
+    minHeight: 220,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepMediaCompact: {
+    minHeight: 150,
+  },
+  stepToolbar: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  stepToolbarCompact: {
+    marginTop: 6,
+  },
+  stepTool: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    backgroundColor: colors.accentLight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+  },
+  stepToolDisabled: {
+    backgroundColor: colors.panelMuted,
+    borderColor: colors.border,
+  },
+  stepToolText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
+  stepToolTextDisabled: { color: colors.inkSubtle },
+  stepMetaGrid: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  stepMetaGridCompact: {
+    marginTop: 6,
+  },
+  stepSetPanel: {
+    borderRadius: 22,
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  stepSetPanelCompact: {
+    padding: 10,
+    marginTop: 6,
+  },
+  stepNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+    backgroundColor: colors.accentLight,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 9,
+    marginTop: spacing.sm,
+  },
+  stepNoteCompact: {
+    paddingVertical: 7,
+    marginTop: 6,
+  },
+  stepFooter: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    backgroundColor: colors.bg,
+  },
+  stepFooterCompact: {
+    paddingTop: 6,
+  },
   scrollContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   sessionHero: {
     borderRadius: 24,
