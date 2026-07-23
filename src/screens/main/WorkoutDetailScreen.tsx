@@ -386,15 +386,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
               disabled={activeExerciseIndex >= trackableExercises.length - 1}
               style={styles.videoActionButton}
             />
-            <PrimaryButton
-              title="Next"
-              icon="chevron-right"
-              variant="secondary"
-              size="sm"
-              onPress={() => moveToExercise(activeExerciseIndex + 1)}
-              disabled={activeExerciseIndex >= trackableExercises.length - 1}
-              style={styles.videoActionButton}
-            />
           </View>
         </View>
 
