@@ -35,6 +35,7 @@ export type MainTabParamList = {
 
 export type WorkoutStackParamList = {
   WorkoutList: undefined;
+  Coach: undefined;
   WorkoutDetail: { planDayId: string; title: string; mode?: 'standard' | 'quick' };
 };
 

@@ -144,8 +144,9 @@ function WorkoutDashboardScreen({ navigation }: Props) {
               />
             </View>
 
+            <SectionTitle>Your coach</SectionTitle>
             {trainer ? (
-              <Card variant="outline" style={styles.trainerCard}>
+              <Card variant="outline" style={styles.trainerCard} onPress={() => navigation.navigate('Coach')}>
                 <View style={styles.trainerPhotoWrap}>
                   {trainer.trainerPhotoUrl ? (
                     <Image source={{ uri: trainer.trainerPhotoUrl }} style={styles.trainerPhoto} resizeMode="cover" />
@@ -163,10 +164,28 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                   </Text>
                 </View>
                 <View style={styles.trainerBadge}>
-                  <Feather name="shield" size={16} color={colors.accent} />
+                  <Feather name="chevron-right" size={20} color={colors.accent} />
                 </View>
               </Card>
-            ) : null}
+            ) : (
+              <Card variant="outline" style={styles.trainerCard} onPress={() => navigation.navigate('Coach')}>
+                <View style={styles.trainerPhotoWrap}>
+                  <View style={styles.trainerFallback}>
+                    <Feather name="user-plus" size={22} color={colors.accentDark} />
+                  </View>
+                </View>
+                <View style={styles.trainerInfo}>
+                  <Text style={styles.trainerLabel}>Your coach</Text>
+                  <Text style={styles.trainerName}>Coach not assigned yet</Text>
+                  <Text style={styles.trainerDescription} numberOfLines={2}>
+                    Open coach details to see assignment status and available options.
+                  </Text>
+                </View>
+                <View style={styles.trainerBadge}>
+                  <Feather name="chevron-right" size={20} color={colors.accent} />
+                </View>
+              </Card>
+            )}
 
             {progress ? (
               <View style={styles.statsRow}>
