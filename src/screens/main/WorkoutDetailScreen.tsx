@@ -378,6 +378,15 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
           <View style={styles.videoActions}>
             <PrimaryButton title="Replay" icon="rotate-ccw" variant="secondary" size="sm" onPress={() => setReplayNonce((value) => value + 1)} style={styles.videoActionButton} />
             <PrimaryButton
+              title="Try another"
+              icon="shuffle"
+              variant="secondary"
+              size="sm"
+              onPress={() => moveToExercise(activeExerciseIndex + 1)}
+              disabled={activeExerciseIndex >= trackableExercises.length - 1}
+              style={styles.videoActionButton}
+            />
+            <PrimaryButton
               title="Next"
               icon="chevron-right"
               variant="secondary"
