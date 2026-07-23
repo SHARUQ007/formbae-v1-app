@@ -356,6 +356,23 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       </View>
 
       <View style={[styles.stepShell, compactStep && styles.stepShellCompact]}>
+        <View style={styles.stepperRow}>
+          {trackableExercises.map((exercise, index) => {
+            const done = completed.has(exercise.exerciseId);
+            const current = index === activeExerciseIndex;
+            return (
+              <TouchableOpacity
+                key={exercise.exerciseId}
+                onPress={() => moveToExercise(index)}
+                activeOpacity={0.82}
+                style={[styles.stepperDot, done && styles.stepperDotDone, current && styles.stepperDotActive]}
+                accessibilityRole="button"
+                accessibilityLabel={`Open movement ${index + 1}`}
+              />
+            );
+          })}
+        </View>
+
         <View style={styles.stepHeader}>
           <View style={styles.activeStep}>
             <Text style={styles.activeStepText}>{activeExerciseIndex + 1}</Text>
@@ -371,7 +388,12 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         </View>
 
         <View style={[styles.stepMedia, compactStep && styles.stepMediaCompact]}>
-          <ExerciseVideo key={`${activeExercise.exerciseId}_${replayNonce}`} url={activeExercise.videoUrl} compact />
+          <ExerciseVideo
+            key={`${activeExercise.exerciseId}_${replayNonce}`}
+            url={activeExercise.videoUrl}
+            compact
+            style={[styles.stepVideoFrame, compactStep && styles.stepVideoFrameCompact]}
+          />
         </View>
 
         <View style={[styles.stepToolbar, compactStep && styles.stepToolbarCompact]}>
@@ -783,6 +805,25 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: spacing.sm,
   },
+  stepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: spacing.sm,
+  },
+  stepperDot: {
+    flex: 1,
+    height: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.border,
+  },
+  stepperDotDone: {
+    backgroundColor: colors.accentSurface,
+  },
+  stepperDotActive: {
+    height: 7,
+    backgroundColor: colors.accent,
+  },
   stepHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -804,21 +845,32 @@ const styles = StyleSheet.create({
   },
   stepFlowText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
   stepMedia: {
-    flex: 1,
-    minHeight: 220,
+    flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepMediaCompact: {
-    minHeight: 150,
+    marginTop: -2,
+  },
+  stepVideoFrame: {
+    width: '100%',
+    height: 220,
+    maxHeight: 220,
+    aspectRatio: undefined,
+    borderRadius: 24,
+  },
+  stepVideoFrameCompact: {
+    height: 170,
+    maxHeight: 170,
+    borderRadius: 22,
   },
   stepToolbar: {
     flexDirection: 'row',
     gap: spacing.xs,
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
   },
   stepToolbarCompact: {
-    marginTop: 6,
+    marginTop: 5,
   },
   stepTool: {
     flex: 1,
@@ -842,10 +894,10 @@ const styles = StyleSheet.create({
   stepMetaGrid: {
     flexDirection: 'row',
     gap: spacing.xs,
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
   },
   stepMetaGridCompact: {
-    marginTop: 6,
+    marginTop: 5,
   },
   stepSetPanel: {
     borderRadius: 22,
@@ -853,11 +905,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.sm,
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
   },
   stepSetPanelCompact: {
     padding: 10,
-    marginTop: 6,
+    marginTop: 5,
   },
   stepNote: {
     flexDirection: 'row',
@@ -867,11 +919,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     paddingHorizontal: spacing.sm,
     paddingVertical: 9,
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
   },
   stepNoteCompact: {
     paddingVertical: 7,
-    marginTop: 6,
+    marginTop: 5,
   },
   stepFooter: {
     flexDirection: 'row',
@@ -933,7 +985,7 @@ const styles = StyleSheet.create({
   prescription: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
   metricTile: {
     flex: 1,
-    minHeight: 74,
+    minHeight: 60,
     borderRadius: radius.xl,
     backgroundColor: colors.panelMuted,
     borderWidth: 1,
@@ -964,10 +1016,10 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   inlineFeedbackText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
-  setDots: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.md },
+  setDots: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.sm },
   setDot: {
-    width: 34,
-    height: 34,
+    width: 30,
+    height: 30,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',

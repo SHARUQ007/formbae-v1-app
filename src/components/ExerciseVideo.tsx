@@ -1,4 +1,5 @@
 import { ActivityIndicator, Dimensions, Text, View, StyleSheet } from 'react-native';
+import type { StyleProp, ViewStyle } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { getYoutubeEmbedUrl } from '../utils/video';
 import { colors } from '../theme/colors';
@@ -7,7 +8,7 @@ import { typography } from '../theme/typography';
 
 const COMPACT_VIDEO_MAX_HEIGHT = Math.min(560, Math.round(Dimensions.get('window').height * 0.62));
 
-function DirectExerciseVideo({ url, compact = false }: { url: string; compact?: boolean }) {
+function DirectExerciseVideo({ url, compact = false, style }: { url: string; compact?: boolean; style?: StyleProp<ViewStyle> }) {
   const embed = getYoutubeEmbedUrl(url);
 
   if (!embed) {
@@ -39,7 +40,7 @@ function DirectExerciseVideo({ url, compact = false }: { url: string; compact?: 
 </html>`;
 
   return (
-    <View style={[styles.videoWrap, compact && styles.videoWrapCompact]}>
+    <View style={[styles.videoWrap, compact && styles.videoWrapCompact, style]}>
       <WebView
         source={{ html, baseUrl: 'https://formbae.in' }}
         style={styles.webview}
