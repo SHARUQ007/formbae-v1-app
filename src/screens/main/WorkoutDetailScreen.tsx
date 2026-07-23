@@ -76,18 +76,10 @@ function modeCopy(mode: 'standard' | 'quick') {
   if (mode === 'quick') {
     return {
       eyebrow: 'Short on time',
-      title: 'Efficient session',
-      description: 'Do the essentials with tight rest and clean reps.',
-      badge: 'Quick',
-      icon: 'clock',
     };
   }
   return {
     eyebrow: "Today's workout",
-    title: 'Main session',
-    description: 'Follow the plan, log each set, and keep the pacing steady.',
-    badge: 'Standard',
-    icon: 'activity',
   };
 }
 
@@ -353,17 +345,12 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       >
         <View style={styles.sessionHero}>
           <View style={styles.heroTop}>
-            <View style={styles.modeBadge}>
-              <Feather name={copy.icon} size={15} color={colors.accentDark} />
-              <Text style={styles.modeBadgeText}>{copy.badge}</Text>
-            </View>
+            <Text style={styles.progressLabel}>Session progress</Text>
             <Text style={styles.heroCount}>{completedTrackableCount}/{trackableExercises.length}</Text>
           </View>
-          <Text style={styles.heroTitle}>{copy.title}</Text>
-          <Text style={styles.heroBody}>{copy.description}</Text>
           <View style={styles.progressBlock}>
             <View style={styles.progressTop}>
-              <Text style={styles.progressLabel}>Session progress</Text>
+              <Text style={styles.progressSubLabel}>Overall completion</Text>
               <Text style={styles.progressPct}>{Math.round(progress * 100)}%</Text>
             </View>
             <ProgressBar value={progress} />
@@ -722,28 +709,17 @@ const styles = StyleSheet.create({
   timerBtn: { color: colors.white, fontWeight: '700', fontSize: 13 },
   scrollContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   sessionHero: {
-    borderRadius: 28,
+    borderRadius: 24,
     backgroundColor: colors.inkStrong,
-    padding: spacing.lg,
+    padding: spacing.md,
     marginBottom: spacing.md,
   },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  modeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.white,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-  },
-  modeBadgeText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
   heroCount: { ...typography.bodyBold, color: colors.onAccentMuted },
-  heroTitle: { ...typography.hero, color: colors.white, marginTop: spacing.md },
-  heroBody: { ...typography.body, color: colors.onAccentMuted, marginTop: 4 },
-  progressBlock: { marginTop: spacing.lg },
+  progressBlock: { marginTop: spacing.sm },
   progressTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  progressLabel: { ...typography.caption, color: colors.onAccentMuted },
+  progressLabel: { ...typography.subtitle, color: colors.white },
+  progressSubLabel: { ...typography.caption, color: colors.onAccentMuted },
   progressPct: { ...typography.bodyBold, color: colors.white },
   activeCard: {
     borderRadius: 28,
