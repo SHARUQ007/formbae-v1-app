@@ -96,6 +96,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const [finishing, setFinishing] = useState(false);
   const [reward, setReward] = useState<RewardState>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [flowOpen, setFlowOpen] = useState(false);
   const [feedbackSentiment, setFeedbackSentiment] = useState<WorkoutFeedbackSentiment | null>(null);
   const [feedbackText, setFeedbackText] = useState('');
   const [feedbackSaving, setFeedbackSaving] = useState(false);
@@ -449,20 +450,29 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
           />
         </View>
 
-        <Text style={styles.listTitle}>Workout flow</Text>
-        <View style={styles.exerciseList}>
-          {trackableExercises.map((exercise, index) => (
-            <ExerciseRow
-              key={exercise.exerciseId}
-              exercise={exercise}
-              index={index}
-              active={exercise.exerciseId === activeExercise.exerciseId}
-              done={completed.has(exercise.exerciseId)}
-              onPress={() => moveToExercise(index)}
-            />
-          ))}
-        </View>
+        <TouchableOpacity onPress={() => setFlowOpen(true)} activeOpacity={0.84} style={styles.flowButton}>
+          <View style={styles.flowButtonIcon}>
+            <Feather name="list" size={18} color={colors.accentDark} />
+          </View>
+          <View style={styles.flowButtonText}>
+            <Text style={styles.flowButtonTitle}>Workout flow</Text>
+            <Text style={styles.flowButtonMeta}>{activeExerciseIndex + 1} of {trackableExercises.length} movements</Text>
+          </View>
+          <Feather name="chevron-up" size={20} color={colors.accent} />
+        </TouchableOpacity>
       </ScrollView>
+
+      <WorkoutFlowModal
+        visible={flowOpen}
+        exercises={trackableExercises}
+        activeExerciseId={activeExercise.exerciseId}
+        completed={completed}
+        onSelect={(index) => {
+          setFlowOpen(false);
+          moveToExercise(index);
+        }}
+        onClose={() => setFlowOpen(false)}
+      />
 
       <FeedbackModal
         visible={feedbackOpen}
@@ -539,6 +549,55 @@ function ExerciseRow({
       </View>
       <Feather name={active ? 'play-circle' : 'chevron-right'} size={19} color={active ? colors.accent : colors.inkSubtle} />
     </TouchableOpacity>
+  );
+}
+
+function WorkoutFlowModal({
+  visible,
+  exercises,
+  activeExerciseId,
+  completed,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  exercises: WorkoutExerciseDetail[];
+  activeExerciseId: string;
+  completed: Set<string>;
+  onSelect: (index: number) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalRoot}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} />
+        <View style={styles.flowSheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHead}>
+            <View>
+              <Text style={styles.sheetKicker}>Workout flow</Text>
+              <Text style={styles.sheetTitle}>Choose a movement</Text>
+              <Text style={styles.sheetSub}>{exercises.length} movements in this session</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Feather name="x" size={20} color={colors.inkMuted} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.exerciseList}>
+            {exercises.map((exercise, index) => (
+              <ExerciseRow
+                key={exercise.exerciseId}
+                exercise={exercise}
+                index={index}
+                active={exercise.exerciseId === activeExerciseId}
+                done={completed.has(exercise.exerciseId)}
+                onPress={() => onSelect(index)}
+              />
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -814,7 +873,27 @@ const styles = StyleSheet.create({
   notes: { ...typography.body, color: colors.accentDarker, flex: 1 },
   navRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
   navButton: { flex: 1 },
-  listTitle: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase', marginBottom: spacing.sm },
+  flowButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    backgroundColor: colors.white,
+    padding: spacing.md,
+  },
+  flowButtonIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accentLight,
+  },
+  flowButtonText: { flex: 1 },
+  flowButtonTitle: { ...typography.bodyBold, color: colors.ink },
+  flowButtonMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   exerciseList: { gap: spacing.sm },
   exerciseRow: {
     flexDirection: 'row',
@@ -845,6 +924,15 @@ const styles = StyleSheet.create({
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
   modalBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.overlay },
   feedbackSheet: {
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+  },
+  flowSheet: {
+    maxHeight: '76%',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     backgroundColor: colors.white,
