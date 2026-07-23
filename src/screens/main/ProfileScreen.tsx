@@ -141,7 +141,7 @@ export function ProfileScreen({ navigation }: Props) {
 
         <SectionTitle>Coaching</SectionTitle>
         <Card>
-          <ListRow icon="message-circle" label="Message your trainer" onPress={() => navigation.navigate('Trainer')} />
+          <ListRow icon="award" label="Your coach" value="Profile, chat, change" onPress={() => navigation.navigate('Trainer')} />
         </Card>
 
         <SectionTitle>Account & legal</SectionTitle>

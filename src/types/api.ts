@@ -168,6 +168,43 @@ export type TrainerInfo = {
   trainerGender?: string;
 };
 
+export type CoachChangeKind = 'none' | 'initial' | 'swap' | 'upgrade';
+
+export type CoachOption = {
+  trainerId: string;
+  name: string;
+  gender: string;
+  photoUrl: string;
+  expertise: string;
+  description: string;
+  detailedDescription: string;
+  languages: string[];
+  monthlyFee: string;
+  tier: string;
+  availableSlotCount: number;
+  nextSlotAt: string;
+  changeKind: CoachChangeKind;
+  blockedUntil: string;
+  requiresUpgrade: boolean;
+  canSelect: boolean;
+  reason: string;
+  upgradeAmountPaise: number;
+  paywallId: string;
+};
+
+export type CoachHubPayload = {
+  currentTrainer: CoachOption | null;
+  trainers: CoachOption[];
+  access: {
+    accessibleTrainerTier: string;
+    currentTrainerTier: string;
+    trainerAccessLabel: string;
+    trainerAccessRemainingWeeks: number;
+    swapLockedUntil: string;
+    upgradeLockedUntil: string;
+  };
+};
+
 export type CheckIn = {
   checkInId: string;
   date: string;
