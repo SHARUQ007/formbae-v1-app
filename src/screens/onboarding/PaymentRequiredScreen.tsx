@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, Linking, ScrollView, Text, TouchableOpacity, StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -24,22 +24,12 @@ export function PaymentRequiredScreen({ navigation }: Props) {
   const { user, status, refreshStatus } = useAuthStore();
   const [plans, setPlans] = useState<PaymentPlan[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
+  const [paywallId, setPaywallId] = useState<string>('monsoon-offer');
   const [paymentUrl, setPaymentUrl] = useState(getSiteUrl());
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
 
-  useEffect(() => {
-    fetchPaymentStatus()
-      .then((data) => {
-        setPlans(data.plans || []);
-        setSelectedId(data.plans?.[0]?.planId || '');
-        if (data.paymentUrl) setPaymentUrl(data.paymentUrl);
-      })
-      .catch(() => setPlans([]))
-      .finally(() => setLoading(false));
-  }, []);
-
-  const routeAfterPaid = (screen: string) => {
+  const routeAfterPaid = useCallback((screen: string) => {
     const rootNav = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
     const root = resolveRootRoute(screen as never);
     if (root === 'PaidTransition') {
@@ -51,7 +41,23 @@ export function PaymentRequiredScreen({ navigation }: Props) {
       return;
     }
     rootNav?.replace('PaidTransition', { screen: 'PaymentSync' });
-  };
+  }, [navigation]);
+
+  useEffect(() => {
+    fetchPaymentStatus()
+      .then((data) => {
+        if (data.hasPaid) {
+          routeAfterPaid('home');
+          return;
+        }
+        setPlans(data.plans || []);
+        setSelectedId(data.plans?.[0]?.planId || '');
+        setPaywallId(data.paywallId || data.plans?.[0]?.paywallId || 'monsoon-offer');
+        if (data.paymentUrl) setPaymentUrl(data.paymentUrl);
+      })
+      .catch(() => setPlans([]))
+      .finally(() => setLoading(false));
+  }, [routeAfterPaid]);
 
   const onPayNative = async () => {
     const plan = plans.find((p) => p.planId === selectedId) || plans[0];
@@ -64,7 +70,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
       const result = await runNativeCheckout({
         plan,
         user: { name: status?.name || user?.name || 'FormBae Trainee', mobile: status?.phone || user?.mobile || '' },
-        paywallId: 'monsoon-offer',
+        paywallId: plan.paywallId || paywallId,
       });
       if (result.cancelled) return;
       if (result.success) {
@@ -114,6 +120,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
                   <View style={styles.planText}>
                     <Text style={styles.planName}>{plan.label || plan.planName}</Text>
                     <Text style={styles.planPrice}>₹{(plan.amount / 100).toLocaleString('en-IN')}</Text>
+                    {plan.billing === 'recurring' ? <Text style={styles.planMeta}>Auto-pay renewal</Text> : null}
                   </View>
                   <View style={[styles.radio, selected && styles.radioSelected]}>
                     {selected ? <Feather name="check" size={14} color={colors.white} /> : null}
@@ -153,6 +160,7 @@ const styles = StyleSheet.create({
   planText: { flex: 1 },
   planName: { ...typography.bodyBold, color: colors.ink },
   planPrice: { ...typography.hero, color: colors.accent, marginTop: 4 },
+  planMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   radio: {
     width: 24,
     height: 24,

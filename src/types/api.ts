@@ -102,6 +102,10 @@ export type PaymentPlan = {
   amount: number;
   planDuration?: string;
   label?: string;
+  paywallId?: string;
+  flowSlug?: string;
+  billing?: 'one_time' | 'recurring';
+  recurringLabel?: string;
 };
 
 export type TodayPayload = {
