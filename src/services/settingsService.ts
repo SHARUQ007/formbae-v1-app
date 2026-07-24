@@ -16,16 +16,18 @@ export type MobileAccessStatus = {
   planName?: string;
 };
 
+export type MobileSettingsResponse = {
+  profile: Record<string, string> | null;
+  access: MobileAccessStatus | null;
+  notifications: {
+    workoutReminders: boolean;
+    weeklyCheckInReminders: boolean;
+    trainerMessageReminders: boolean;
+  };
+};
+
 export async function fetchSettings() {
-  return apiRequest<{
-    profile: Record<string, string> | null;
-    access: MobileAccessStatus | null;
-    notifications: {
-      workoutReminders: boolean;
-      weeklyCheckInReminders: boolean;
-      trainerMessageReminders: boolean;
-    };
-  }>('/settings');
+  return apiRequest<MobileSettingsResponse>('/settings');
 }
 
 export async function updateSettings(notifications: {

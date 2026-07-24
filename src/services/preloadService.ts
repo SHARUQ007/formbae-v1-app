@@ -65,8 +65,8 @@ export function loadCoachBundleCached(options?: { force?: boolean }) {
 export function preloadMainAppData() {
   Promise.allSettled([
     loadWorkoutPlanCached(),
-    loadProgressBundleCached(),
     loadDietDiaryCached(),
+    loadProgressBundleCached(),
     loadProfileSettingsCached(),
     loadCoachBundleCached(),
   ]).catch(() => undefined);

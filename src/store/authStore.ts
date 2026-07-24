@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loadToken, login as loginRequest, logout as logoutRequest } from '../services/authService';
 import { fetchUserStatus } from '../services/statusService';
 import { setUnauthorizedHandler } from '../services/apiClient';
@@ -7,6 +8,8 @@ import { invalidateCachedResource } from '../services/appCache';
 import { preloadMainAppData } from '../services/preloadService';
 import { flushWorkoutQueue } from '../store/workoutStore';
 import type { SessionUser, UserStatus } from '../types/api';
+
+const STATUS_CACHE_KEY = 'formbae_auth_status_v1';
 
 function runPostAuthInit() {
   // Fire-and-forget; never blocks or breaks the UI.
@@ -18,6 +21,27 @@ function runPostAuthInit() {
     weeklyCheckInReminders: true,
     trainerMessageReminders: true,
   }).catch(() => undefined);
+}
+
+async function loadCachedStatus(): Promise<UserStatus | null> {
+  try {
+    const raw = await AsyncStorage.getItem(STATUS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { status?: UserStatus; updatedAt?: number };
+    if (!parsed.status || !parsed.updatedAt) return null;
+    if (Date.now() - parsed.updatedAt > 24 * 60 * 60 * 1000) return null;
+    return parsed.status;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedStatus(status: UserStatus) {
+  AsyncStorage.setItem(STATUS_CACHE_KEY, JSON.stringify({ status, updatedAt: Date.now() })).catch(() => undefined);
+}
+
+function clearCachedStatus() {
+  AsyncStorage.removeItem(STATUS_CACHE_KEY).catch(() => undefined);
 }
 
 type AuthState = {
@@ -66,11 +90,26 @@ export function useAuthStore() {
         setState({ ready: true, token: null, user: null, status: null, loading: false });
         return;
       }
+      preloadMainAppData();
+      const cachedStatus = await loadCachedStatus();
+      if (cachedStatus) {
+        setState({ ready: true, token, status: cachedStatus, loading: false });
+        runPostAuthInit();
+        fetchUserStatus()
+          .then((freshStatus) => {
+            saveCachedStatus(freshStatus);
+            setState({ status: freshStatus });
+          })
+          .catch(() => undefined);
+        return;
+      }
       const status = await fetchUserStatus();
+      saveCachedStatus(status);
       setState({ ready: true, token, status, loading: false });
       runPostAuthInit();
     } catch {
       await logoutRequest();
+      clearCachedStatus();
       setState({ ready: true, token: null, user: null, status: null, loading: false });
     }
   }, []);
@@ -86,6 +125,7 @@ export function useAuthStore() {
         status: response.status,
         loading: false,
       });
+      saveCachedStatus(response.status);
       runPostAuthInit();
       return response;
     } catch (error) {
@@ -97,6 +137,7 @@ export function useAuthStore() {
 
   const refreshStatus = useCallback(async () => {
     const status = await fetchUserStatus();
+    saveCachedStatus(status);
     setState({ status });
     return status;
   }, []);
@@ -106,6 +147,7 @@ export function useAuthStore() {
       await logoutRequest();
     } finally {
       invalidateCachedResource();
+      clearCachedStatus();
       setState({ ready: true, token: null, user: null, status: null, loading: false, error: null });
     }
   }, []);
@@ -114,6 +156,7 @@ export function useAuthStore() {
     setUnauthorizedHandler(() => {
       logoutRequest().finally(() => {
         invalidateCachedResource();
+        clearCachedStatus();
         setState({ ready: true, token: null, user: null, status: null, loading: false, error: null });
       });
     });

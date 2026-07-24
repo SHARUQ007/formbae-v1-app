@@ -1,24 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
+  Easing,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image-picker';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
+import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { Badge } from '../../components/Badge';
 import { EmptyState } from '../../components/States';
 import {
   addDietDiaryEntry,
+  addTextDietDiaryEntry,
   deleteDietDiaryEntry,
   loadDietDiaryEntries,
   mergeRemoteDietDiaryEntries,
@@ -33,6 +40,7 @@ import { loadDietDiaryCached } from '../../services/preloadService';
 import type { MainTabParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
+import { shadows } from '../../theme/shadows';
 import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
 
@@ -57,7 +65,7 @@ function formatEntryTime(value: string) {
 }
 
 function imageSource(entry: DietDiaryEntry) {
-  const uri = resolveDietDiaryImageUrl(entry.remoteImageUrl || entry.uri);
+  const uri = resolveDietDiaryImageUrl(entry.remoteImageUrl || entry.uri || '');
   const token = getAuthToken();
   if (uri.startsWith('http') && token) {
     return { uri, headers: { Authorization: `Bearer ${token}` } };
@@ -65,12 +73,21 @@ function imageSource(entry: DietDiaryEntry) {
   return { uri };
 }
 
-export function DietScreen({ route, navigation }: Props) {
+export function DietScreen(props: Props) {
+  return <DietScreenContent {...props} />;
+}
+
+function DietScreenContent({ route, navigation }: Props) {
   const [entries, setEntries] = useState<DietDiaryEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedMeal, setSelectedMeal] = useState<MealType>('Lunch');
   const [preview, setPreview] = useState<DietDiaryEntry | null>(null);
+  const [textModalOpen, setTextModalOpen] = useState(false);
+  const [textEntry, setTextEntry] = useState('');
+  const [savedMeal, setSavedMeal] = useState<{ mealType: MealType; note: string } | null>(null);
+  const saveToastOpacity = useRef(new Animated.Value(0)).current;
+  const saveToastScale = useRef(new Animated.Value(0.86)).current;
   const handledCameraRequestRef = useRef<number | null>(null);
 
   const load = useCallback(async (options?: { force?: boolean }) => {
@@ -163,6 +180,64 @@ export function DietScreen({ route, navigation }: Props) {
     await saveAsset(result.assets?.[0]);
   };
 
+  const showSavedMealAnimation = useCallback((mealType: MealType, note: string) => {
+    setSavedMeal({ mealType, note });
+    saveToastOpacity.setValue(0);
+    saveToastScale.setValue(0.86);
+    Animated.sequence([
+      Animated.parallel([
+        Animated.timing(saveToastOpacity, {
+          toValue: 1,
+          duration: 180,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.spring(saveToastScale, {
+          toValue: 1,
+          friction: 5,
+          tension: 120,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.delay(850),
+      Animated.parallel([
+        Animated.timing(saveToastOpacity, {
+          toValue: 0,
+          duration: 220,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(saveToastScale, {
+          toValue: 0.96,
+          duration: 220,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]),
+    ]).start(() => setSavedMeal(null));
+  }, [saveToastOpacity, saveToastScale]);
+
+  const saveTextEntry = async () => {
+    const note = textEntry.trim();
+    if (!note) {
+      Alert.alert('Add your meal', 'Write what you ate so it can be added to your diary.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await addTextDietDiaryEntry(selectedMeal, note);
+      setTextEntry('');
+      setTextModalOpen(false);
+      displayBehavioralNotification('dietPhotoLogged', { mealType: selectedMeal }).catch(() => undefined);
+      await load();
+      showSavedMealAnimation(selectedMeal, note);
+    } catch (e) {
+      Alert.alert('Could not save meal', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await load({ force: true });
@@ -181,7 +256,8 @@ export function DietScreen({ route, navigation }: Props) {
   }, [route.params?.action, route.params?.requestId, route.params?.mealType, selectedMeal, navigation, addFromCamera]);
 
   const confirmDelete = (entry: DietDiaryEntry) => {
-    Alert.alert('Delete food photo?', 'This removes the photo from your diet diary on this device.', [
+    const isTextEntry = entry.kind === 'text' || !entry.uri;
+    Alert.alert(isTextEntry ? 'Delete meal note?' : 'Delete food photo?', `This removes the ${isTextEntry ? 'note' : 'photo'} from your diet diary on this device.`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -247,32 +323,61 @@ export function DietScreen({ route, navigation }: Props) {
 
         <View style={styles.actions}>
           <PrimaryButton title="Take food photo" icon="camera" onPress={() => addFromCamera()} loading={saving} />
-          <PrimaryButton title="Import from gallery" icon="image" variant="secondary" onPress={addFromLibrary} disabled={saving} />
+          <View style={styles.secondaryActionRow}>
+            <PrimaryButton title="Upload" icon="image" variant="secondary" onPress={addFromLibrary} disabled={saving} style={styles.secondaryAction} />
+            <PrimaryButton title="Text log" icon="edit-3" variant="secondary" onPress={() => setTextModalOpen(true)} disabled={saving} style={styles.secondaryAction} />
+          </View>
         </View>
 
         <SectionTitle>Diet diary</SectionTitle>
         {entries.length === 0 ? (
           <EmptyState
-            icon="camera"
-            title="No food photos yet"
-            message="Take a photo of your next meal and it will appear here."
-            actionLabel="Add first photo"
-            onAction={() => addFromCamera()}
+            icon="edit-3"
+            title="No meals logged yet"
+            message="Add a meal photo or write what you ate when you missed the photo."
+            actionLabel="Log first meal"
+            onAction={() => setTextModalOpen(true)}
           />
         ) : (
           <View style={styles.grid}>
-            {entries.map((entry) => (
-              <TouchableOpacity key={entry.id} activeOpacity={0.85} style={styles.photoCard} onPress={() => setPreview(entry)}>
-                <Image source={imageSource(entry)} style={styles.photo} resizeMode="cover" />
-                <View style={styles.photoMeta}>
-                  <View style={styles.photoMealRow}>
-                    <Text style={styles.photoMeal}>{entry.mealType}</Text>
-                    {entry.syncError ? <Feather name="cloud-off" size={13} color={colors.warn} /> : null}
+            {entries.map((entry) => {
+              const isTextEntry = entry.kind === 'text' || !entry.uri;
+              return (
+                <TouchableOpacity
+                  key={entry.id}
+                  activeOpacity={0.85}
+                  style={[styles.diaryCard, isTextEntry && styles.textCard]}
+                  onPress={() => setPreview(entry)}
+                >
+                  {isTextEntry ? (
+                    <View style={styles.textCardBody}>
+                      <View style={styles.foodCardHeader}>
+                        <View style={styles.foodIcon}>
+                          <MaterialCommunityIcon name="silverware-fork-knife" size={22} color={colors.accent} />
+                        </View>
+                      </View>
+                      <View style={styles.foodCardContent}>
+                        <Text style={styles.foodLabel}>Food item</Text>
+                        <Text style={styles.foodName} numberOfLines={3}>{entry.note}</Text>
+                      </View>
+                      <View style={styles.foodCardFooter}>
+                        <Feather name="clock" size={13} color={colors.accentDark} />
+                        <Text style={styles.foodFooterText}>{entry.mealType}</Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <Image source={imageSource(entry)} style={styles.photo} resizeMode="cover" />
+                  )}
+                  <View style={styles.photoMeta}>
+                    <View style={styles.photoMealRow}>
+                      <Text style={styles.photoMeal}>{entry.mealType}</Text>
+                      {entry.syncError ? <Feather name="cloud-off" size={13} color={colors.warn} /> : null}
+                    </View>
+                    <Text style={styles.photoTime}>{formatEntryTime(entry.createdAt)}</Text>
                   </View>
-                  <Text style={styles.photoTime}>{formatEntryTime(entry.createdAt)}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
       </ScrollView>
@@ -280,14 +385,24 @@ export function DietScreen({ route, navigation }: Props) {
       <Modal visible={!!preview} transparent animationType="fade" onRequestClose={() => setPreview(null)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            {preview ? <Image source={imageSource(preview)} style={styles.previewImage} resizeMode="cover" /> : null}
+            {preview?.uri ? (
+              <Image source={imageSource(preview)} style={styles.previewImage} resizeMode="cover" />
+            ) : preview ? (
+              <View style={styles.previewNote}>
+                <View style={styles.previewFoodIcon}>
+                  <MaterialCommunityIcon name="silverware-fork-knife" size={28} color={colors.accent} />
+                </View>
+                <Text style={styles.previewNoteLabel}>Food item logged</Text>
+                <Text style={styles.previewNoteText}>{preview.note}</Text>
+              </View>
+            ) : null}
             {preview ? (
               <View style={styles.previewBody}>
                 <View>
                   <Text style={styles.previewTitle}>{preview.mealType}</Text>
                   <Text style={styles.previewTime}>{formatEntryTime(preview.createdAt)}</Text>
                 </View>
-                <TouchableOpacity onPress={() => confirmDelete(preview)} style={styles.deleteButton} accessibilityRole="button" accessibilityLabel="Delete diary photo">
+                <TouchableOpacity onPress={() => confirmDelete(preview)} style={styles.deleteButton} accessibilityRole="button" accessibilityLabel="Delete diary entry">
                   <Feather name="trash-2" size={20} color={colors.error} />
                 </TouchableOpacity>
               </View>
@@ -296,6 +411,58 @@ export function DietScreen({ route, navigation }: Props) {
           </View>
         </View>
       </Modal>
+
+      <Modal visible={textModalOpen} transparent animationType="slide" onRequestClose={() => setTextModalOpen(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalBackdrop}>
+          <View style={styles.textModalCard}>
+            <View style={styles.textModalHeader}>
+              <View>
+                <Text style={styles.textModalEyebrow}>{selectedMeal}</Text>
+                <Text style={styles.textModalTitle}>What did you eat?</Text>
+              </View>
+              <TouchableOpacity onPress={() => setTextModalOpen(false)} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Close meal text entry">
+                <Feather name="x" size={22} color={colors.inkMuted} />
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              value={textEntry}
+              onChangeText={setTextEntry}
+              placeholder="Example: 2 eggs, toast, banana and coffee"
+              placeholderTextColor={colors.inkSubtle}
+              multiline
+              textAlignVertical="top"
+              style={styles.textInput}
+              maxLength={280}
+              autoFocus
+            />
+            <Text style={styles.characterCount}>{textEntry.trim().length}/280</Text>
+            <View style={styles.textModalActions}>
+              <PrimaryButton title="Cancel" variant="secondary" onPress={() => setTextModalOpen(false)} disabled={saving} style={styles.modalActionButton} />
+              <PrimaryButton title="Add to diary" icon="check" onPress={saveTextEntry} loading={saving} style={styles.modalActionButton} />
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {savedMeal ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.saveToast,
+            {
+              opacity: saveToastOpacity,
+              transform: [{ scale: saveToastScale }],
+            },
+          ]}
+        >
+          <View style={styles.saveToastIcon}>
+            <Feather name="check" size={34} color={colors.white} />
+          </View>
+          <Text style={styles.saveToastTitle}>Meal logged</Text>
+          <Text style={styles.saveToastMeal}>{savedMeal.mealType}</Text>
+          <Text style={styles.saveToastNote} numberOfLines={2}>{savedMeal.note}</Text>
+        </Animated.View>
+      ) : null}
     </ScreenContainer>
   );
 }
@@ -323,8 +490,10 @@ const styles = StyleSheet.create({
   mealHint: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   mealHintSelected: { color: colors.onAccentMuted },
   actions: { gap: spacing.sm, marginTop: spacing.lg },
+  secondaryActionRow: { flexDirection: 'row', gap: spacing.sm },
+  secondaryAction: { flex: 1, paddingHorizontal: spacing.sm },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  photoCard: {
+  diaryCard: {
     width: '48%',
     backgroundColor: colors.panel,
     borderRadius: radius.lg,
@@ -332,6 +501,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  textCard: { backgroundColor: colors.panel, borderColor: colors.borderStrong },
+  textCardBody: { minHeight: 176, padding: spacing.md, justifyContent: 'space-between', backgroundColor: colors.accentLight },
+  foodCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  foodIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.lg,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.sm,
+  },
+  foodCardContent: { marginTop: spacing.md },
+  foodLabel: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
+  foodName: { ...typography.subtitle, color: colors.ink, marginTop: spacing.xs },
+  foodCardFooter: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.md },
+  foodFooterText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
   photo: { width: '100%', aspectRatio: 1 },
   photoMeta: { padding: spacing.sm },
   photoMealRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.xs },
@@ -340,9 +526,65 @@ const styles = StyleSheet.create({
   modalBackdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'center', padding: spacing.lg },
   modalCard: { backgroundColor: colors.panel, borderRadius: radius.xl, overflow: 'hidden' },
   previewImage: { width: '100%', aspectRatio: 1 },
+  previewNote: { minHeight: 240, padding: spacing.xl, gap: spacing.md, justifyContent: 'center', backgroundColor: colors.accentLight },
+  previewFoodIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: radius.lg,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.sm,
+  },
+  previewNoteLabel: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
+  previewNoteText: { ...typography.title, color: colors.accentDarker },
   previewBody: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.lg },
   previewTitle: { ...typography.title, color: colors.ink },
   previewTime: { ...typography.body, color: colors.inkMuted, marginTop: 2 },
   deleteButton: { width: 44, height: 44, borderRadius: radius.pill, backgroundColor: colors.errorLight, alignItems: 'center', justifyContent: 'center' },
   closePreview: { marginHorizontal: spacing.lg, marginBottom: spacing.lg },
+  textModalCard: { backgroundColor: colors.panel, borderRadius: radius.xl, padding: spacing.lg, gap: spacing.md },
+  textModalHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md },
+  textModalEyebrow: { ...typography.overline, color: colors.accent },
+  textModalTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
+  iconButton: { width: 42, height: 42, borderRadius: radius.pill, backgroundColor: colors.panelMuted, alignItems: 'center', justifyContent: 'center' },
+  textInput: {
+    minHeight: 132,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    ...typography.body,
+    color: colors.ink,
+    backgroundColor: colors.bg,
+  },
+  characterCount: { ...typography.caption, color: colors.inkMuted, textAlign: 'right' },
+  textModalActions: { flexDirection: 'row', gap: spacing.sm },
+  modalActionButton: { flex: 1 },
+  saveToast: {
+    position: 'absolute',
+    left: spacing.xl,
+    right: spacing.xl,
+    top: '38%',
+    alignItems: 'center',
+    borderRadius: radius.xl,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    padding: spacing.xl,
+    ...shadows.lg,
+  },
+  saveToastIcon: {
+    width: 74,
+    height: 74,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+    ...shadows.accent,
+  },
+  saveToastTitle: { ...typography.hero, color: colors.ink, textAlign: 'center' },
+  saveToastMeal: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginTop: spacing.xs },
+  saveToastNote: { ...typography.body, color: colors.inkMuted, textAlign: 'center', marginTop: spacing.sm },
 });

@@ -13,6 +13,8 @@ export function ProfileNavigator() {
   return (
     <Stack.Navigator
       screenOptions={{
+        headerTitle: '',
+        headerBackTitle: '',
         headerTintColor: colors.accentDark,
         headerStyle: { backgroundColor: colors.bg },
         headerShadowVisible: false,
@@ -20,10 +22,10 @@ export function ProfileNavigator() {
       }}
     >
       <Stack.Screen name="ProfileMain" component={ProfileScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ title: 'Edit profile' }} />
-      <Stack.Screen name="Trainer" component={TrainerScreen} options={{ title: 'Your trainer' }} />
-      <Stack.Screen name="Legal" component={LegalScreen} options={{ title: 'Legal & support' }} />
-      <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ title: 'Delete account' }} />
+      <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+      <Stack.Screen name="Trainer" component={TrainerScreen} />
+      <Stack.Screen name="Legal" component={LegalScreen} />
+      <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
     </Stack.Navigator>
   );
 }

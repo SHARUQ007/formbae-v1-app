@@ -7,7 +7,8 @@ const DIR = `${RNFS.DocumentDirectoryPath}/diet-diary`;
 
 export type DietDiaryEntry = {
   id: string;
-  uri: string;
+  kind?: 'photo' | 'text';
+  uri?: string;
   createdAt: string;
   mealType: MealType;
   note?: string;
@@ -101,6 +102,22 @@ export async function addDietDiaryEntry(asset: Asset, mealType: MealType, note?:
   return entry;
 }
 
+export async function addTextDietDiaryEntry(mealType: MealType, note: string) {
+  const text = note.trim();
+  if (!text) throw new Error('Add what you ate first.');
+  const entry: DietDiaryEntry = {
+    id: makeId(),
+    kind: 'text',
+    mealType,
+    note: text,
+    createdAt: new Date().toISOString(),
+    storedLocally: false,
+  };
+  const entries = await readEntries();
+  await writeEntries([entry, ...entries]);
+  return entry;
+}
+
 export async function updateDietDiaryEntry(entryId: string, patch: Partial<DietDiaryEntry>) {
   const entries = await readEntries();
   const next = entries.map((entry) => (entry.id === entryId ? { ...entry, ...patch } : entry));
@@ -126,8 +143,10 @@ export async function mergeRemoteDietDiaryEntries(
     const existing = byRemoteId.get(remote.entryId) || (remote.clientId ? byLocalId.get(remote.clientId) : undefined);
     if (existing) {
       Object.assign(existing, {
+        kind: remote.imageUrl ? 'photo' : existing.kind || 'text',
         remoteId: remote.entryId,
         remoteImageUrl: remote.imageUrl,
+        uri: remote.imageUrl || existing.uri,
         mealType: remote.mealType,
         note: remote.note,
         createdAt: remote.createdAt || existing.createdAt,
@@ -137,6 +156,7 @@ export async function mergeRemoteDietDiaryEntries(
     } else {
       merged.push({
         id: remote.clientId || remote.entryId,
+        kind: remote.imageUrl ? 'photo' : 'text',
         uri: remote.imageUrl,
         remoteId: remote.entryId,
         remoteImageUrl: remote.imageUrl,
@@ -159,7 +179,7 @@ export async function deleteDietDiaryEntry(entryId: string) {
   const next = entries.filter((item) => item.id !== entryId);
   await writeEntries(next);
 
-  if (entry?.storedLocally && entry.uri.startsWith('file://')) {
+  if (entry?.storedLocally && entry.uri?.startsWith('file://')) {
     const path = entry.uri.replace(/^file:\/\//, '');
     const exists = await RNFS.exists(path).catch(() => false);
     if (exists) await RNFS.unlink(path).catch(() => undefined);

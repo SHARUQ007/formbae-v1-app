@@ -1,31 +1,29 @@
-import { useState } from 'react';
-import { Alert, Linking, ScrollView, Text, StyleSheet, Switch, TouchableOpacity, View, RefreshControl } from 'react-native';
+import { useMemo, useState } from 'react';
+import { Alert, Linking, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Feather from 'react-native-vector-icons/Feather';
+import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { Avatar } from '../../components/Avatar';
-import { Badge } from '../../components/Badge';
-import { ListRow } from '../../components/ListRow';
-import { Divider } from '../../components/Divider';
 import { LoadingState, ErrorState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
-import { cancelMobileSubscription, fetchSettings, updateSettings } from '../../services/settingsService';
+import { peekCachedResource } from '../../services/appCache';
+import { cancelMobileSubscription, fetchSettings, updateSettings, type MobileSettingsResponse } from '../../services/settingsService';
 import { syncReminders } from '../../services/notificationService';
-import { loadProfileSettingsCached } from '../../services/preloadService';
+import { CACHE_KEYS, loadProfileSettingsCached } from '../../services/preloadService';
 import { titleCase } from '../../utils/format';
 import { useAuthStore } from '../../store/authStore';
 import type { ProfileStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
+import { radius } from '../../theme/radius';
+import { shadows } from '../../theme/shadows';
 import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'ProfileMain'>;
 
-type NotificationPrefs = {
-  workoutReminders: boolean;
-  weeklyCheckInReminders: boolean;
-  trainerMessageReminders: boolean;
-};
+type NotificationPrefs = MobileSettingsResponse['notifications'];
 
 function parseJsonRecord(raw?: string) {
   if (!raw) return {} as Record<string, string>;
@@ -53,26 +51,37 @@ function parseLanguages(raw?: string) {
 
 function formatAccessWindow(access: NonNullable<Awaited<ReturnType<typeof fetchSettings>>['access']>) {
   if (access.premiumStartDate && access.premiumEndDate) return `${access.premiumStartDate} to ${access.premiumEndDate}`;
-  return 'No active paid window';
+  return 'No active window';
+}
+
+function compactValue(value?: string) {
+  const trimmed = String(value || '').trim();
+  return trimmed.length ? trimmed : 'Not set';
 }
 
 export function ProfileScreen({ navigation }: Props) {
   const { logout, status } = useAuthStore();
+  const cached = useMemo(() => peekCachedResource<MobileSettingsResponse>(CACHE_KEYS.profileSettings), []);
   const [cancelling, setCancelling] = useState(false);
-  const [notifications, setNotifications] = useState<NotificationPrefs>({
-    workoutReminders: true,
-    weeklyCheckInReminders: true,
-    trainerMessageReminders: true,
-  });
+  const [notifications, setNotifications] = useState<NotificationPrefs>(
+    cached?.notifications ?? {
+      workoutReminders: true,
+      weeklyCheckInReminders: true,
+      trainerMessageReminders: true,
+    },
+  );
 
-  const { data, loading, error, reload, refresh, refreshing } = useAsync(async (mode) => {
+  const { data, loading, error, reload, refresh, refreshing } = useAsync<MobileSettingsResponse>(async (mode) => {
     const settings = await loadProfileSettingsCached({ force: mode === 'refresh' });
     setNotifications(settings.notifications);
     syncReminders(settings.notifications).catch(() => undefined);
     return settings;
   });
 
+  const current = data || cached;
+
   const toggle = async (key: keyof NotificationPrefs, value: boolean) => {
+    const previous = notifications;
     const next = { ...notifications, [key]: value };
     setNotifications(next);
     try {
@@ -80,20 +89,20 @@ export function ProfileScreen({ navigation }: Props) {
       await loadProfileSettingsCached({ force: true }).catch(() => undefined);
       await syncReminders(next).catch(() => undefined);
     } catch {
-      setNotifications(notifications);
+      setNotifications(previous);
     }
   };
 
-  if (loading) {
+  if (loading && !current) {
     return (
       <ScreenContainer>
         <ScreenTitle>Profile</ScreenTitle>
-        <LoadingState message="Loading your profile…" />
+        <LoadingState message="Loading your profile..." />
       </ScreenContainer>
     );
   }
 
-  if (error || !data) {
+  if ((error || !current) && !cached) {
     return (
       <ScreenContainer>
         <ScreenTitle>Profile</ScreenTitle>
@@ -102,27 +111,28 @@ export function ProfileScreen({ navigation }: Props) {
     );
   }
 
-  const profile = (data.profile ?? {}) as Record<string, string>;
-  const access = data.access ?? {};
-  const planName = typeof access.planName === 'string' ? access.planName : '';
+  const profile = (current?.profile ?? {}) as Record<string, string>;
+  const access = current?.access ?? {};
   const lifestyle = parseJsonRecord(profile.lifestyleJson);
   const languages = parseLanguages(profile.languagePreferencesJson);
   const workoutSetting = lifestyle.workoutSetting === 'home' ? 'Home' : lifestyle.workoutSetting === 'gym' ? 'Gym' : '';
   const accessActive = access.tier === 'premium' || status?.hasPaid;
+  const accessLabel = String(access.label || (accessActive ? 'Active' : 'Payment required'));
+  const planName = typeof access.planName === 'string' ? access.planName : '';
 
-  const details: Array<[string, string]> = [
-    ['Profile icon', titleCase(profile.avatarIcon)],
-    ['Goal', titleCase(profile.fitnessGoal)],
-    ['Gender', titleCase(profile.gender)],
-    ['Age', profile.age],
-    ['Height', profile.height ? `${profile.height} cm` : ''],
-    ['Weight', profile.weight ? `${profile.weight} kg` : ''],
-    ['Diet', titleCase(profile.dietPref)],
-    ['Training days', profile.trainingDays],
-    ['Workout preference', workoutSetting],
-    ['Languages', languages.join(', ')],
-    ['Injuries / notes', profile.allergies],
-  ].filter(([, v]) => v && v.trim().length > 0) as Array<[string, string]>;
+  const metricCards = [
+    { icon: 'target', label: 'Goal', value: titleCase(profile.fitnessGoal) },
+    { icon: 'calendar', label: 'Training', value: profile.trainingDays ? `${profile.trainingDays}/week` : '' },
+    { icon: 'map-pin', label: 'Workout', value: workoutSetting },
+    { icon: 'coffee', label: 'Diet', value: titleCase(profile.dietPref) },
+  ];
+
+  const bodyStats = [
+    { label: 'Age', value: profile.age },
+    { label: 'Height', value: profile.height ? `${profile.height} cm` : '' },
+    { label: 'Weight', value: profile.weight ? `${profile.weight} kg` : '' },
+    { label: 'Gender', value: titleCase(profile.gender) },
+  ];
 
   const requestRefund = async () => {
     const url = 'mailto:team@formbae.in?subject=5-day%20refund%20request';
@@ -166,88 +176,101 @@ export function ProfileScreen({ navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
       >
         <ScreenTitle>Profile</ScreenTitle>
+        {loading && cached ? <Text style={styles.syncing}>Refreshing latest details...</Text> : null}
 
-        <Card>
-          <View style={styles.headerRow}>
-            <Avatar name={status?.name} size={60} />
-            <View style={styles.headerText}>
-              <Text style={styles.name}>{status?.name || 'FormBae Trainee'}</Text>
-              <Text style={styles.phone}>{status?.phone || ''}</Text>
-            </View>
+        <View style={styles.heroCard}>
+          <View style={styles.heroTop}>
+            <Avatar name={status?.name} size={68} />
+            <TouchableOpacity style={styles.iconAction} onPress={() => navigation.navigate('EditProfile')} accessibilityRole="button" accessibilityLabel="Edit profile">
+              <Feather name="edit-3" size={20} color={colors.accentDark} />
+            </TouchableOpacity>
           </View>
-          <View style={styles.badgeRow}>
-            {accessActive ? (
-              <Badge label={`Active plan${planName ? ` · ${planName}` : ''}`} tone="success" icon="check-circle" />
-            ) : (
-              <Badge label="Payment required" tone="warn" icon="alert-circle" />
-            )}
+          <Text style={styles.name}>{status?.name || 'FormBae Trainee'}</Text>
+          <Text style={styles.phone}>{status?.phone || status?.email || ''}</Text>
+          <View style={styles.heroBadge}>
+            <Feather name={accessActive ? 'shield' : 'alert-circle'} size={16} color={accessActive ? colors.accentDark : colors.warn} />
+            <Text style={[styles.heroBadgeText, !accessActive && styles.warnText]}>{accessLabel}{planName ? ` · ${planName}` : ''}</Text>
           </View>
-        </Card>
+        </View>
 
-        <SectionTitle>Your details</SectionTitle>
-        <Card>
-          <ListRow icon="edit-3" label="Edit profile" onPress={() => navigation.navigate('EditProfile')} />
-          {details.length > 0 ? <Divider inset={54} /> : null}
-          {details.length > 0 ? (
-            details.map(([label, value], i) => (
-              <View key={label}>
-                {i > 0 ? <Divider /> : null}
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>{label}</Text>
-                  <Text style={styles.detailValue}>{value}</Text>
-                </View>
+        <SectionTitle>Plan snapshot</SectionTitle>
+        <View style={styles.metricGrid}>
+          {metricCards.map((item) => (
+            <View key={item.label} style={styles.metricCard}>
+              <View style={styles.metricIcon}>
+                <Feather name={item.icon} size={18} color={colors.accent} />
               </View>
-            ))
-          ) : (
-            <Text style={styles.muted}>Complete your questionnaire to see your fitness summary here.</Text>
-          )}
+              <Text style={styles.metricLabel}>{item.label}</Text>
+              <Text style={styles.metricValue} numberOfLines={2}>{compactValue(item.value)}</Text>
+            </View>
+          ))}
+        </View>
+
+        <SectionTitle>Body profile</SectionTitle>
+        <Card>
+          <View style={styles.bodyGrid}>
+            {bodyStats.map((item) => (
+              <View key={item.label} style={styles.bodyTile}>
+                <Text style={styles.bodyLabel}>{item.label}</Text>
+                <Text style={styles.bodyValue}>{compactValue(item.value)}</Text>
+              </View>
+            ))}
+          </View>
+          {languages.length || profile.allergies ? <View style={styles.profileNotes} /> : null}
+          {languages.length ? <InfoLine icon="message-circle" label="Languages" value={languages.join(', ')} /> : null}
+          {profile.allergies ? <InfoLine icon="file-text" label="Notes" value={profile.allergies} /> : null}
         </Card>
 
         <SectionTitle>Access & refund</SectionTitle>
-        <Card>
-          <View style={styles.accessGrid}>
-            <InfoTile label="Status" value={access.label || (accessActive ? 'Active' : 'Open')} />
-            <InfoTile label="Current window" value={formatAccessWindow(access)} />
-            <InfoTile label="Days remaining" value={accessActive ? String(access.premiumDaysRemaining ?? 0) : '0'} />
-          </View>
-          <View style={styles.refundBox}>
-            <Text style={styles.refundTitle}>5-day refund policy</Text>
-            <Text style={styles.refundText}>
-              Eligible purchases can be refunded within 5 days when you email team@formbae.in with your payment details.
-            </Text>
-            <View style={styles.refundActions}>
-              <TouchableOpacity activeOpacity={0.75} style={styles.secondaryPill} onPress={requestRefund}>
-                <Text style={styles.secondaryPillText}>Email refund request</Text>
-              </TouchableOpacity>
-              {accessActive ? (
-                <TouchableOpacity activeOpacity={0.75} style={styles.dangerPill} onPress={confirmCancel} disabled={cancelling}>
-                  <Text style={styles.dangerPillText}>{cancelling ? 'Cancelling…' : 'Cancel access'}</Text>
-                </TouchableOpacity>
-              ) : null}
+        <View style={styles.accessCard}>
+          <View style={styles.accessHeader}>
+            <View style={styles.accessIcon}>
+              <Feather name="credit-card" size={24} color={colors.white} />
+            </View>
+            <View style={styles.accessText}>
+              <Text style={styles.accessTitle}>{accessActive ? 'Access active' : 'Access required'}</Text>
+              <Text style={styles.accessSubtitle}>{accessLabel}</Text>
             </View>
           </View>
-        </Card>
+          <View style={styles.accessTiles}>
+            <MiniTile label="Window" value={formatAccessWindow(access)} />
+            <MiniTile label="Days left" value={accessActive ? String(access.premiumDaysRemaining ?? 0) : '0'} />
+          </View>
+          <View style={styles.refundPanel}>
+            <View style={styles.refundIcon}>
+              <MaterialCommunityIcon name="receipt-text-check-outline" size={22} color={colors.accentDark} />
+            </View>
+            <View style={styles.refundCopy}>
+              <Text style={styles.refundTitle}>5-day refund window</Text>
+              <Text style={styles.refundText}>Email payment details within 5 days for eligible purchases.</Text>
+            </View>
+          </View>
+          <View style={styles.accessActions}>
+            <TouchableOpacity activeOpacity={0.8} style={styles.refundButton} onPress={requestRefund}>
+              <Feather name="mail" size={16} color={colors.accentDark} />
+              <Text style={styles.refundButtonText}>Refund email</Text>
+            </TouchableOpacity>
+            {accessActive ? (
+              <TouchableOpacity activeOpacity={0.8} style={styles.cancelButton} onPress={confirmCancel} disabled={cancelling}>
+                <Feather name="x-circle" size={16} color={colors.error} />
+                <Text style={styles.cancelButtonText}>{cancelling ? 'Cancelling...' : 'Cancel'}</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
 
         <SectionTitle>Notifications</SectionTitle>
         <Card>
-          <Text style={styles.muted}>Daily workout reminders run from the app. Trainer/admin SMS pause controls still apply on web.</Text>
-          <ToggleRow label="Workout reminders" value={notifications.workoutReminders} onChange={(v) => toggle('workoutReminders', v)} />
-          <Divider />
-          <ToggleRow label="Weekly check-in reminders" value={notifications.weeklyCheckInReminders} onChange={(v) => toggle('weeklyCheckInReminders', v)} />
-          <Divider />
-          <ToggleRow label="Trainer message reminders" value={notifications.trainerMessageReminders} onChange={(v) => toggle('trainerMessageReminders', v)} />
+          <ToggleRow icon="activity" label="Workout reminders" value={notifications.workoutReminders} onChange={(v) => toggle('workoutReminders', v)} />
+          <ToggleRow icon="calendar" label="Weekly check-ins" value={notifications.weeklyCheckInReminders} onChange={(v) => toggle('weeklyCheckInReminders', v)} />
+          <ToggleRow icon="message-circle" label="Trainer messages" value={notifications.trainerMessageReminders} onChange={(v) => toggle('trainerMessageReminders', v)} />
         </Card>
 
-        <SectionTitle>Coaching</SectionTitle>
+        <SectionTitle>Account</SectionTitle>
         <Card>
-          <ListRow icon="award" label="Your coach" value="Profile, chat, change" onPress={() => navigation.navigate('Trainer')} />
-        </Card>
-
-        <SectionTitle>Account & legal</SectionTitle>
-        <Card>
-          <ListRow icon="file-text" label="Legal & support" onPress={() => navigation.navigate('Legal')} />
-          <Divider inset={54} />
-          <ListRow icon="trash-2" label="Delete account" tone="danger" onPress={() => navigation.navigate('DeleteAccount')} />
+          <ActionRow icon="award" label="Your coach" value="Profile, chat, change" onPress={() => navigation.navigate('Trainer')} />
+          <ActionRow icon="file-text" label="Legal & support" onPress={() => navigation.navigate('Legal')} />
+          <ActionRow icon="trash-2" label="Delete account" tone="danger" onPress={() => navigation.navigate('DeleteAccount')} />
         </Card>
 
         <PrimaryButton title="Log out" icon="log-out" variant="secondary" onPress={() => logout()} style={styles.logout} />
@@ -257,49 +280,131 @@ export function ProfileScreen({ navigation }: Props) {
   );
 }
 
-function ToggleRow({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+function InfoLine({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return (
+    <View style={styles.infoLine}>
+      <Feather name={icon} size={16} color={colors.accent} />
+      <View style={styles.infoText}>
+        <Text style={styles.infoLabel}>{label}</Text>
+        <Text style={styles.infoValue}>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
+function MiniTile({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.miniTile}>
+      <Text style={styles.miniLabel}>{label}</Text>
+      <Text style={styles.miniValue} numberOfLines={2}>{value || '-'}</Text>
+    </View>
+  );
+}
+
+function ToggleRow({ icon, label, value, onChange }: { icon: string; label: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
     <View style={styles.toggleRow}>
+      <View style={styles.rowIcon}>
+        <Feather name={icon} size={17} color={colors.accent} />
+      </View>
       <Text style={styles.toggleLabel}>{label}</Text>
       <Switch value={value} onValueChange={onChange} trackColor={{ true: colors.accent, false: colors.borderStrong }} />
     </View>
   );
 }
 
+function ActionRow({ icon, label, value, tone, onPress }: { icon: string; label: string; value?: string; tone?: 'danger'; onPress: () => void }) {
+  return (
+    <TouchableOpacity activeOpacity={0.82} onPress={onPress} style={styles.actionRow}>
+      <View style={[styles.rowIcon, tone === 'danger' && styles.dangerIcon]}>
+        <Feather name={icon} size={17} color={tone === 'danger' ? colors.error : colors.accent} />
+      </View>
+      <View style={styles.actionText}>
+        <Text style={[styles.actionLabel, tone === 'danger' && styles.dangerText]}>{label}</Text>
+        {value ? <Text style={styles.actionValue}>{value}</Text> : null}
+      </View>
+      <Feather name="chevron-right" size={20} color={colors.inkSubtle} />
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
   scroll: { paddingBottom: spacing.xl },
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  headerText: { flex: 1 },
-  name: { ...typography.title, color: colors.ink },
-  phone: { ...typography.body, color: colors.inkMuted, marginTop: 2 },
-  badgeRow: { marginTop: spacing.md },
-  detailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm },
-  detailLabel: { ...typography.body, color: colors.inkMuted },
-  detailValue: { ...typography.bodyBold, color: colors.ink, flexShrink: 1, textAlign: 'right', paddingLeft: spacing.md },
-  muted: { ...typography.body, color: colors.inkMuted },
-  accessGrid: { gap: spacing.sm },
-  infoTile: { borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted, borderRadius: 18, padding: spacing.md },
+  syncing: { ...typography.caption, color: colors.inkSubtle, marginTop: -spacing.sm, marginBottom: spacing.md },
+  heroCard: {
+    borderRadius: radius.xl,
+    backgroundColor: colors.accentDark,
+    padding: spacing.lg,
+    ...shadows.lg,
+  },
+  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  iconAction: { width: 46, height: 46, borderRadius: radius.pill, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  name: { ...typography.hero, color: colors.white, marginTop: spacing.md },
+  phone: { ...typography.body, color: colors.onAccentMuted, marginTop: 2 },
+  heroBadge: {
+    marginTop: spacing.md,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderRadius: radius.pill,
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  heroBadgeText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
+  warnText: { color: colors.warn },
+  metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  metricCard: {
+    width: '48%',
+    minHeight: 132,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.xl,
+    backgroundColor: colors.panel,
+    padding: spacing.md,
+  },
+  metricIcon: { width: 38, height: 38, borderRadius: radius.md, backgroundColor: colors.accentLight, alignItems: 'center', justifyContent: 'center' },
+  metricLabel: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.md },
+  metricValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
+  bodyGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  bodyTile: { width: '48%', borderRadius: radius.lg, backgroundColor: colors.panelMuted, padding: spacing.md },
+  bodyLabel: { ...typography.caption, color: colors.inkMuted },
+  bodyValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
+  profileNotes: { height: 1, backgroundColor: colors.border, marginVertical: spacing.md },
+  infoLine: { flexDirection: 'row', gap: spacing.sm, paddingVertical: spacing.sm },
+  infoText: { flex: 1 },
   infoLabel: { ...typography.caption, color: colors.inkMuted },
-  infoValue: { ...typography.bodyBold, color: colors.ink, marginTop: 3 },
-  refundBox: { marginTop: spacing.md, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: 18, padding: spacing.md, backgroundColor: colors.accentLight },
+  infoValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
+  accessCard: { borderRadius: radius.xl, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, padding: spacing.md, ...shadows.card },
+  accessHeader: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
+  accessIcon: { width: 54, height: 54, borderRadius: radius.lg, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  accessText: { flex: 1 },
+  accessTitle: { ...typography.title, color: colors.ink },
+  accessSubtitle: { ...typography.body, color: colors.inkMuted, marginTop: 2 },
+  accessTiles: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  miniTile: { flex: 1, borderRadius: radius.lg, backgroundColor: colors.panelMuted, padding: spacing.md },
+  miniLabel: { ...typography.caption, color: colors.inkMuted },
+  miniValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
+  refundPanel: { flexDirection: 'row', gap: spacing.sm, borderRadius: radius.lg, backgroundColor: colors.accentLight, padding: spacing.md, marginTop: spacing.md },
+  refundIcon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  refundCopy: { flex: 1 },
   refundTitle: { ...typography.bodyBold, color: colors.ink },
-  refundText: { ...typography.caption, color: colors.inkMuted, marginTop: 4, lineHeight: 18 },
-  refundActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
-  secondaryPill: { borderRadius: 999, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.white, paddingHorizontal: spacing.md, paddingVertical: 10 },
-  secondaryPillText: { ...typography.caption, color: colors.accentDark },
-  dangerPill: { borderRadius: 999, borderWidth: 1, borderColor: colors.errorLight, backgroundColor: colors.white, paddingHorizontal: spacing.md, paddingVertical: 10 },
-  dangerPillText: { ...typography.caption, color: colors.error },
-  toggleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.sm, minHeight: 44 },
-  toggleLabel: { ...typography.body, color: colors.ink, flex: 1, paddingRight: spacing.md },
+  refundText: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  accessActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
+  refundButton: { flexDirection: 'row', gap: spacing.xs, alignItems: 'center', borderRadius: radius.pill, backgroundColor: colors.accentLight, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  refundButtonText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
+  cancelButton: { flexDirection: 'row', gap: spacing.xs, alignItems: 'center', borderRadius: radius.pill, backgroundColor: colors.errorLight, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  cancelButtonText: { ...typography.caption, color: colors.error, fontWeight: '800' },
+  toggleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, minHeight: 52 },
+  rowIcon: { width: 36, height: 36, borderRadius: radius.md, backgroundColor: colors.accentLight, alignItems: 'center', justifyContent: 'center' },
+  dangerIcon: { backgroundColor: colors.errorLight },
+  toggleLabel: { ...typography.bodyBold, color: colors.ink, flex: 1 },
+  actionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, minHeight: 56 },
+  actionText: { flex: 1 },
+  actionLabel: { ...typography.bodyBold, color: colors.ink },
+  actionValue: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  dangerText: { color: colors.error },
   logout: { marginTop: spacing.lg },
   version: { ...typography.caption, textAlign: 'center', color: colors.inkSubtle, marginTop: spacing.md },
 });
-
-function InfoTile({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.infoTile}>
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue}>{value || '—'}</Text>
-    </View>
-  );
-}

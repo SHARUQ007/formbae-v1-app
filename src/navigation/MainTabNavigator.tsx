@@ -2,7 +2,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { BottomTabBarButtonProps, BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { getFocusedRouteNameFromRoute, useNavigation } from '@react-navigation/native';
 import { useCallback, useEffect, useState } from 'react';
-import { AppState, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, InteractionManager, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { WorkoutsNavigator } from './WorkoutsNavigator';
@@ -85,12 +85,12 @@ async function resolveContextualTarget(): Promise<ContextualTarget> {
       loadDietDiaryEntries().catch(() => []),
     ]);
     const mealType = currentMealType();
-    const hasCurrentMealPhoto = dietEntries.some((entry) => isToday(entry.createdAt) && entry.mealType === mealType);
-    if (isMealWindow() && !hasCurrentMealPhoto) {
+    const hasCurrentMealLog = dietEntries.some((entry) => isToday(entry.createdAt) && entry.mealType === mealType);
+    if (isMealWindow() && !hasCurrentMealLog) {
       return {
         kind: 'diet',
         label: mealType,
-        detail: 'Log photo',
+        detail: 'Log meal',
         icon: 'camera',
         mealType,
       };
@@ -148,18 +148,21 @@ function ContextualActionButton({ accessibilityState }: BottomTabBarButtonProps)
   }, []);
 
   useEffect(() => {
-    refreshTarget();
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    const task = InteractionManager.runAfterInteractions(() => {
+      idleTimer = setTimeout(refreshTarget, 800);
+    });
     const timer = setInterval(refreshTarget, 60_000);
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') refreshTarget();
     });
-    const unsubFocus = navigation.addListener('state', refreshTarget);
     return () => {
+      task.cancel();
+      if (idleTimer) clearTimeout(idleTimer);
       clearInterval(timer);
       sub.remove();
-      unsubFocus();
     };
-  }, [navigation, refreshTarget]);
+  }, [refreshTarget]);
 
   const onPress = async () => {
     const nextTarget = await resolveContextualTarget();
@@ -203,7 +206,7 @@ export function MainTabNavigator() {
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        lazy: false,
+        lazy: true,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.inkSubtle,
         tabBarStyle: premiumTabBarStyle,
