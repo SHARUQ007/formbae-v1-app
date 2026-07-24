@@ -11,7 +11,8 @@ import { PrimaryButton } from '../../components/PrimaryButton';
 import { FormInput } from '../../components/FormInput';
 import { ProgressBar } from '../../components/ProgressBar';
 import { StatTile } from '../../components/StatTile';
-import { fetchWorkoutPlan, requestAiPlanRefresh } from '../../services/workoutService';
+import { requestAiPlanRefresh } from '../../services/workoutService';
+import { loadWorkoutDayCached, loadWorkoutPlanCached } from '../../services/preloadService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
 import { getSiteUrl } from '../../constants/config';
 import type { AiPlanRefresh, PlanDay, ProgressSummary, TrainerInfo } from '../../types/api';
@@ -66,23 +67,29 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options?: { force?: boolean }) => {
     setError(null);
     try {
       await flushWorkoutQueue();
-      const data = await fetchWorkoutPlan();
+      const data = await loadWorkoutPlanCached({ force: options?.force });
       const plan = (data.plan || data.today?.plan) as { planId?: string; days?: PlanDay[]; title?: string; selectedWorkoutMode?: string } | undefined;
       const loadedDays = plan?.days || [];
       const loadedPlanId = plan?.planId || data.today?.plan?.planId || plan?.title || 'default';
       const savedTodayId = await AsyncStorage.getItem(`${TODAY_WORKOUT_KEY_PREFIX}${loadedPlanId}`).catch(() => null);
+      const selectedDayId = savedTodayId && loadedDays.some((day) => day.planDayId === savedTodayId) ? savedTodayId : '';
+      const warmDay = loadedDays.find((day) => day.planDayId === selectedDayId) || loadedDays.find((day) => !day.completed) || loadedDays[0];
       setPlanId(loadedPlanId);
-      setSelectedTodayPlanDayId(savedTodayId && loadedDays.some((day) => day.planDayId === savedTodayId) ? savedTodayId : '');
+      setSelectedTodayPlanDayId(selectedDayId);
       setDays(loadedDays);
       setTitle(plan?.title || 'My workout plan');
       setProgress(data.today?.progress || null);
       setTrainer(data.today?.assignedTrainer || null);
       setAiPlanRefresh(data.aiPlanRefresh || null);
       setTrainerPhotoFailed(false);
+      if (warmDay?.planDayId) {
+        loadWorkoutDayCached(warmDay.planDayId, 'standard').catch(() => undefined);
+        loadWorkoutDayCached(warmDay.planDayId, 'quick').catch(() => undefined);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load your plan');
     } finally {
@@ -91,13 +98,15 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   }, []);
 
   useEffect(() => {
-    const unsub = navigation.addListener('focus', load);
+    const unsub = navigation.addListener('focus', () => {
+      load();
+    });
     return unsub;
   }, [navigation, load]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await load({ force: true });
     setRefreshing(false);
   };
 
@@ -112,6 +121,12 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     setSelectedTodayPlanDayId(day.planDayId);
     setSwitcherOpen(false);
     await AsyncStorage.setItem(`${TODAY_WORKOUT_KEY_PREFIX}${planId || title || 'default'}`, day.planDayId).catch(() => undefined);
+  };
+
+  const openWorkoutDetail = (day: PlanDay | null, mode: 'standard' | 'quick') => {
+    if (!day) return;
+    loadWorkoutDayCached(day.planDayId, mode).catch(() => undefined);
+    navigation.navigate('WorkoutDetail', { planDayId: day.planDayId, title: day.focus, mode });
   };
 
   const submitBiweeklyRefresh = async () => {
@@ -145,7 +160,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
       });
       setRefreshModalOpen(false);
       setRefreshAnswers(emptyRefreshAnswers);
-      await load();
+      await load({ force: true });
       Alert.alert('New plan built', `${aiPlanRefresh.trainerName || 'Your AI trainer'} rebuilt your workout plan for the next two weeks.`);
     } catch (e) {
       Alert.alert('Could not build plan', e instanceof Error ? e.message : 'Please try again.');
@@ -229,21 +244,13 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                   title={todayDay?.completed ? 'Review today workout' : "Today's Workout"}
                   icon="activity"
                   variant="inverted"
-                  onPress={() =>
-                    todayDay
-                      ? navigation.navigate('WorkoutDetail', { planDayId: todayDay.planDayId, title: todayDay.focus, mode: 'standard' })
-                      : undefined
-                  }
+                  onPress={() => openWorkoutDetail(todayDay, 'standard')}
                 />
                 <PrimaryButton
                   title="Short on time workout"
                   icon="clock"
                   variant="heroSecondary"
-                  onPress={() =>
-                    todayDay
-                      ? navigation.navigate('WorkoutDetail', { planDayId: todayDay.planDayId, title: todayDay.focus, mode: 'quick' })
-                      : undefined
-                  }
+                  onPress={() => openWorkoutDetail(todayDay, 'quick')}
                 />
               </View>
             </Card>
@@ -342,7 +349,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                 return (
                   <Card
                     key={day.planDayId}
-                    onPress={() => navigation.navigate('WorkoutDetail', { planDayId: day.planDayId, title: day.focus, mode: 'standard' })}
+                    onPress={() => openWorkoutDetail(day, 'standard')}
                     style={StyleSheet.flatten([styles.dayCard, isToday && styles.todayPlanCard])}
                   >
                     <View style={[styles.dayBadge, day.completed && styles.dayBadgeDone]}>

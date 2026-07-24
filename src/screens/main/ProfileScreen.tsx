@@ -11,6 +11,7 @@ import { LoadingState, ErrorState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { cancelMobileSubscription, fetchSettings, updateSettings } from '../../services/settingsService';
 import { syncReminders } from '../../services/notificationService';
+import { loadProfileSettingsCached } from '../../services/preloadService';
 import { titleCase } from '../../utils/format';
 import { useAuthStore } from '../../store/authStore';
 import type { ProfileStackParamList } from '../../navigation/types';
@@ -64,8 +65,8 @@ export function ProfileScreen({ navigation }: Props) {
     trainerMessageReminders: true,
   });
 
-  const { data, loading, error, reload, refresh, refreshing } = useAsync(async () => {
-    const settings = await fetchSettings();
+  const { data, loading, error, reload, refresh, refreshing } = useAsync(async (mode) => {
+    const settings = await loadProfileSettingsCached({ force: mode === 'refresh' });
     setNotifications(settings.notifications);
     syncReminders(settings.notifications).catch(() => undefined);
     return settings;
@@ -76,6 +77,7 @@ export function ProfileScreen({ navigation }: Props) {
     setNotifications(next);
     try {
       await updateSettings({ [key]: value });
+      await loadProfileSettingsCached({ force: true }).catch(() => undefined);
       await syncReminders(next).catch(() => undefined);
     } catch {
       setNotifications(notifications);
@@ -142,6 +144,7 @@ export function ProfileScreen({ navigation }: Props) {
             setCancelling(true);
             try {
               const result = await cancelMobileSubscription();
+              await loadProfileSettingsCached({ force: true }).catch(() => undefined);
               await reload();
               Alert.alert('Subscription cancelled', result.message);
             } catch (e) {

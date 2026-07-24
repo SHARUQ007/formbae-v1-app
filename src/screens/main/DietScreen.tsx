@@ -25,9 +25,10 @@ import {
   type DietDiaryEntry,
   type MealType,
 } from '../../store/dietDiaryStore';
-import { deleteRemoteDietDiaryEntry, fetchDietDiary, resolveDietDiaryImageUrl, uploadDietDiaryEntry } from '../../services/dietDiaryService';
+import { deleteRemoteDietDiaryEntry, resolveDietDiaryImageUrl, uploadDietDiaryEntry } from '../../services/dietDiaryService';
 import { getAuthToken } from '../../services/apiClient';
 import { displayBehavioralNotification } from '../../services/notificationService';
+import { loadDietDiaryCached } from '../../services/preloadService';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
 import { spacing } from '../../theme/spacing';
@@ -67,11 +68,11 @@ export function DietScreen() {
   const [selectedMeal, setSelectedMeal] = useState<MealType>('Lunch');
   const [preview, setPreview] = useState<DietDiaryEntry | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options?: { force?: boolean }) => {
     const local = await loadDietDiaryEntries();
     setEntries(local);
     try {
-      const remote = await fetchDietDiary();
+      const remote = await loadDietDiaryCached({ force: options?.force });
       setEntries(await mergeRemoteDietDiaryEntries(remote.entries));
     } catch {
       // Offline/local-only mode is still useful for the diary.
@@ -108,7 +109,7 @@ export function DietScreen() {
           syncedAt: new Date().toISOString(),
           syncError: undefined,
         });
-        await load();
+        await load({ force: true });
       } catch (uploadError) {
         await updateDietDiaryEntry(localEntry.id, {
           syncError: uploadError instanceof Error ? uploadError.message : 'Could not sync photo yet.',
@@ -159,7 +160,7 @@ export function DietScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load();
+    await load({ force: true });
     setRefreshing(false);
   };
 
@@ -175,7 +176,7 @@ export function DietScreen() {
           }
           await deleteDietDiaryEntry(entry.id);
           setPreview(null);
-          await load();
+          await load({ force: true });
         },
       },
     ]);

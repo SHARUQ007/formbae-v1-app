@@ -3,12 +3,15 @@ import { loadToken, login as loginRequest, logout as logoutRequest } from '../se
 import { fetchUserStatus } from '../services/statusService';
 import { setUnauthorizedHandler } from '../services/apiClient';
 import { registerForRemotePush, syncReminders } from '../services/notificationService';
+import { invalidateCachedResource } from '../services/appCache';
+import { preloadMainAppData } from '../services/preloadService';
 import { flushWorkoutQueue } from '../store/workoutStore';
 import type { SessionUser, UserStatus } from '../types/api';
 
 function runPostAuthInit() {
   // Fire-and-forget; never blocks or breaks the UI.
   flushWorkoutQueue().catch(() => undefined);
+  preloadMainAppData();
   registerForRemotePush().catch(() => undefined);
   syncReminders({
     workoutReminders: true,
@@ -102,13 +105,17 @@ export function useAuthStore() {
     try {
       await logoutRequest();
     } finally {
+      invalidateCachedResource();
       setState({ ready: true, token: null, user: null, status: null, loading: false, error: null });
     }
   }, []);
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
-      logoutRequest().finally(() => setState({ ready: true, token: null, user: null, status: null, loading: false, error: null }));
+      logoutRequest().finally(() => {
+        invalidateCachedResource();
+        setState({ ready: true, token: null, user: null, status: null, loading: false, error: null });
+      });
     });
   }, []);
 

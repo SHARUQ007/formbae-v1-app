@@ -1,4 +1,5 @@
 import { apiRequest } from './apiClient';
+import { invalidateCachedResource } from './appCache';
 
 export type MobileAccessStatus = {
   tier?: string;
@@ -32,21 +33,27 @@ export async function updateSettings(notifications: {
   weeklyCheckInReminders?: boolean;
   trainerMessageReminders?: boolean;
 }) {
-  return apiRequest<{ ok: boolean; notifications: Record<string, boolean> }>('/settings', {
+  const response = await apiRequest<{ ok: boolean; notifications: Record<string, boolean> }>('/settings', {
     method: 'PATCH',
     body: notifications,
   });
+  invalidateCachedResource('profileSettings');
+  return response;
 }
 
 export async function updateProfile(body: Record<string, string>) {
-  return apiRequest<{ ok: boolean; profile: Record<string, string> }>('/me/profile', {
+  const response = await apiRequest<{ ok: boolean; profile: Record<string, string> }>('/me/profile', {
     method: 'PATCH',
     body,
   });
+  invalidateCachedResource('profileSettings');
+  return response;
 }
 
 export async function cancelMobileSubscription() {
-  return apiRequest<{ ok: boolean; message: string }>('/user/subscription/cancel', {
+  const response = await apiRequest<{ ok: boolean; message: string }>('/user/subscription/cancel', {
     method: 'POST',
   });
+  invalidateCachedResource('profileSettings');
+  return response;
 }

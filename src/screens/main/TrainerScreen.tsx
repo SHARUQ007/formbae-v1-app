@@ -19,8 +19,9 @@ import { Badge } from '../../components/Badge';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
-import { fetchMessages, sendMessage } from '../../services/messageService';
-import { changeCoach, fetchCoachHub } from '../../services/trainerService';
+import { sendMessage } from '../../services/messageService';
+import { changeCoach } from '../../services/trainerService';
+import { loadCoachBundleCached } from '../../services/preloadService';
 import { useAuthStore } from '../../store/authStore';
 import { getSiteUrl } from '../../constants/config';
 import { formatMessageTime } from '../../utils/format';
@@ -68,14 +69,9 @@ export function TrainerScreen() {
   const [changingId, setChangingId] = useState('');
   const { refreshStatus } = useAuthStore();
 
-  const { data, loading, error, reload, refresh, refreshing, setData } = useAsync(async () => {
-    const [msgs, coachHub] = await Promise.all([fetchMessages(), fetchCoachHub()]);
-    return {
-      messages: [...msgs.messages].sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || '')),
-      planId: msgs.planId,
-      coachHub,
-    };
-  });
+  const { data, loading, error, reload, refresh, refreshing, setData } = useAsync((mode) =>
+    loadCoachBundleCached({ force: mode === 'refresh' }),
+  );
 
   const currentCoach = data?.coachHub.currentTrainer ?? data?.coachHub.trainers[0] ?? null;
   const selectedCoach = useMemo(
@@ -92,6 +88,7 @@ export function TrainerScreen() {
       setText('');
       if (res.message) {
         setData((prev) => (prev ? { ...prev, messages: [...prev.messages, res.message] } : prev));
+        loadCoachBundleCached({ force: true }).catch(() => undefined);
       } else {
         await reload();
       }
@@ -122,6 +119,7 @@ export function TrainerScreen() {
             try {
               await changeCoach(coach.trainerId);
               await refreshStatus().catch(() => undefined);
+              await loadCoachBundleCached({ force: true }).catch(() => undefined);
               await reload();
               setTab('about');
             } catch (e) {

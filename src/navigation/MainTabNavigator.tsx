@@ -40,6 +40,7 @@ export function MainTabNavigator() {
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
+        lazy: false,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.inkSubtle,
         tabBarStyle: premiumTabBarStyle,

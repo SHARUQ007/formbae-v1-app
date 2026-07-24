@@ -1,4 +1,5 @@
 import { apiRequest } from './apiClient';
+import { invalidateCachedResource } from './appCache';
 import type { CheckIn } from '../types/api';
 
 export async function fetchCheckIns() {
@@ -12,5 +13,7 @@ export async function submitCheckIn(body: {
   difficultyLevel?: string;
   notes?: string;
 }) {
-  return apiRequest<{ ok: boolean; checkIn: CheckIn }>('/check-ins', { method: 'POST', body });
+  const response = await apiRequest<{ ok: boolean; checkIn: CheckIn }>('/check-ins', { method: 'POST', body });
+  invalidateCachedResource('progressBundle');
+  return response;
 }

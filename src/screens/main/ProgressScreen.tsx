@@ -8,8 +8,9 @@ import { StatTile } from '../../components/StatTile';
 import { Badge } from '../../components/Badge';
 import { LoadingState, ErrorState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
-import { fetchProgress, logProgress } from '../../services/progressService';
-import { fetchCheckIns, submitCheckIn } from '../../services/checkInService';
+import { logProgress } from '../../services/progressService';
+import { submitCheckIn } from '../../services/checkInService';
+import { loadProgressBundleCached } from '../../services/preloadService';
 import { displayBehavioralNotification } from '../../services/notificationService';
 import { formatDate } from '../../utils/format';
 import type { CheckIn, ProgressSummary } from '../../types/api';
@@ -21,10 +22,9 @@ import { typography } from '../../theme/typography';
 type Loaded = { progress: ProgressSummary; checkIns: CheckIn[]; dueThisWeek: boolean };
 
 export function ProgressScreen() {
-  const { data, loading, error, reload, refresh, refreshing } = useAsync<Loaded>(async () => {
-    const [p, c] = await Promise.all([fetchProgress(), fetchCheckIns()]);
-    return { progress: p, checkIns: c.checkIns, dueThisWeek: c.dueThisWeek };
-  });
+  const { data, loading, error, reload, refresh, refreshing } = useAsync<Loaded>((mode) =>
+    loadProgressBundleCached({ force: mode === 'refresh' }),
+  );
 
   const [weight, setWeight] = useState('');
   const [chest, setChest] = useState('');
@@ -49,6 +49,7 @@ export function ProgressScreen() {
       setChest('');
       setWaist('');
       setBiceps('');
+      await loadProgressBundleCached({ force: true });
       await reload();
     } catch (e) {
       Alert.alert('Could not save', e instanceof Error ? e.message : 'Please try again.');
@@ -69,6 +70,7 @@ export function ProgressScreen() {
       setEnergy('');
       setDifficulty('');
       setCompletion('');
+      await loadProgressBundleCached({ force: true });
       await reload();
       displayBehavioralNotification('checkInSubmitted').catch(() => undefined);
       Alert.alert('Check-in sent', 'Your trainer will review your weekly check-in.');

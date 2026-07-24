@@ -12,7 +12,7 @@ type AsyncState<T> = {
  * Standardized data-fetching state machine used across screens for
  * consistent loading / error / retry / pull-to-refresh behavior.
  */
-export function useAsync<T>(fn: () => Promise<T>, deps: unknown[] = []) {
+export function useAsync<T>(fn: (mode: 'initial' | 'refresh') => Promise<T>, deps: unknown[] = []) {
   const [state, setState] = useState<AsyncState<T>>({
     data: null,
     loading: true,
@@ -38,7 +38,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[] = []) {
       error: null,
     }));
     try {
-      const data = await fnRef.current();
+      const data = await fnRef.current(mode);
       if (!mounted.current) return;
       setState({ data, loading: false, error: null, refreshing: false });
     } catch (error) {

@@ -1,5 +1,6 @@
 import type { Asset } from 'react-native-image-picker';
 import { apiRequest, getApiUrl } from './apiClient';
+import { invalidateCachedResource } from './appCache';
 import type { MealType } from '../store/dietDiaryStore';
 
 export type RemoteDietDiaryEntry = {
@@ -27,7 +28,7 @@ export async function uploadDietDiaryEntry(params: {
     throw new Error('Photo data is unavailable for upload.');
   }
 
-  return apiRequest<{ ok: boolean; entry: RemoteDietDiaryEntry }>('/diet/diary', {
+  const response = await apiRequest<{ ok: boolean; entry: RemoteDietDiaryEntry }>('/diet/diary', {
     method: 'POST',
     timeoutMs: 30000,
     body: {
@@ -39,10 +40,14 @@ export async function uploadDietDiaryEntry(params: {
       imageBase64: params.asset.base64,
     },
   });
+  invalidateCachedResource('dietDiary');
+  return response;
 }
 
 export async function deleteRemoteDietDiaryEntry(entryId: string) {
-  return apiRequest<{ ok: boolean }>(`/diet/diary/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
+  const response = await apiRequest<{ ok: boolean }>(`/diet/diary/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
+  invalidateCachedResource('dietDiary');
+  return response;
 }
 
 export function resolveDietDiaryImageUrl(imageUrl: string) {

@@ -20,7 +20,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
-import { fetchWorkoutDay } from '../../services/workoutService';
+import { loadWorkoutDayCached } from '../../services/preloadService';
 import { submitWorkoutFeedback, type WorkoutFeedbackSentiment } from '../../services/workoutFeedbackService';
 import {
   completeWithQueue,
@@ -111,7 +111,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchWorkoutDay(planDayId, mode);
+      const data = await loadWorkoutDayCached(planDayId, mode);
       setDetail(data);
       const saved = await loadWorkoutProgress(planDayId);
       setCompleted(new Set(saved.completedExerciseIds));

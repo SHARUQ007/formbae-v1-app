@@ -1,4 +1,5 @@
 import { apiRequest } from './apiClient';
+import { invalidateCachedResource } from './appCache';
 import type { AnalysisReport, CoachHubPayload, TrainerRecommendation } from '../types/api';
 
 export async function fetchRecommendedTrainer() {
@@ -21,8 +22,12 @@ export async function fetchCoachHub() {
 }
 
 export async function changeCoach(trainerId: string) {
-  return apiRequest<{ ok: boolean; trainer: CoachHubPayload['currentTrainer'] }>('/trainer/change', {
+  const response = await apiRequest<{ ok: boolean; trainer: CoachHubPayload['currentTrainer'] }>('/trainer/change', {
     method: 'POST',
     body: { trainerId },
   });
+  invalidateCachedResource('coachBundle');
+  invalidateCachedResource('workoutPlan');
+  invalidateCachedResource('workoutDay');
+  return response;
 }
