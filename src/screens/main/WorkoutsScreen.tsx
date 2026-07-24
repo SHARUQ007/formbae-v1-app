@@ -264,13 +264,11 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                 </View>
                 <View style={styles.aiRefreshMetaRow}>
                   <Badge label={`${aiPlanRefresh.planAgeDays}d old`} tone="accent" icon="calendar" />
-                  <Badge label={`${aiPlanRefresh.allowance.remaining}/${aiPlanRefresh.allowance.limit} redesigns left`} tone="neutral" icon="zap" />
                 </View>
                 <PrimaryButton
                   title="Answer and rebuild plan"
                   icon="edit-3"
                   onPress={() => setRefreshModalOpen(true)}
-                  disabled={!aiPlanRefresh.allowance.allowed}
                   style={styles.aiRefreshButton}
                 />
               </Card>
