@@ -6,6 +6,10 @@ export type AiPlanRefreshKey =
   | 'repeatedSkipPattern'
   | 'repeatedSkipReason'
   | 'repeatedSkipDetails'
+  | 'temporaryDisruption'
+  | 'temporaryDisruptionDetails'
+  | 'nextTwoWeeksOutlook'
+  | 'nextTwoWeeksDetails'
   | 'missedWorkoutTypes'
   | 'missedReason'
   | 'missedReasonDetails'
@@ -42,6 +46,10 @@ export const emptyAiPlanRefreshAnswers: AiPlanRefreshAnswers = {
   repeatedSkipPattern: '',
   repeatedSkipReason: '',
   repeatedSkipDetails: '',
+  temporaryDisruption: '',
+  temporaryDisruptionDetails: '',
+  nextTwoWeeksOutlook: '',
+  nextTwoWeeksDetails: '',
   missedWorkoutTypes: '',
   missedReason: '',
   missedReasonDetails: '',
@@ -242,6 +250,42 @@ export function buildAiPlanRefreshQuestions(context: AiPlanRefreshContext = {}) 
   }
 
   questions.push(...AI_PLAN_REFRESH_QUESTIONS.slice(1));
+  questions.splice(1, 0,
+    {
+      key: 'temporaryDisruption',
+      title: 'Was anything temporary affecting last block?',
+      detail: 'Travel, sickness, work pressure, or family events should be noted without automatically changing the whole next plan.',
+      notesKey: 'temporaryDisruptionDetails',
+      notesPlaceholder: 'Example: traveled for 5 days, was sick, work deadline, no gym access, family event.',
+      options: [
+        'No, it was my normal routine',
+        'Travel',
+        'Sick or recovering',
+        'Work or exams',
+        'Family or personal event',
+        'No equipment access',
+        'Sleep or stress spike',
+        'Other temporary reason',
+      ],
+    },
+    {
+      key: 'nextTwoWeeksOutlook',
+      title: 'How will the next two weeks look?',
+      detail: "This is more important than last week's miss. Pick what the next plan should be built around.",
+      notesKey: 'nextTwoWeeksDetails',
+      notesPlaceholder: 'Mention travel dates, days available, gym access, time per session, illness/recovery, or schedule changes.',
+      options: [
+        'Normal routine',
+        'More time than usual',
+        'Less time than usual',
+        'Traveling',
+        'Busy or unpredictable',
+        'Recovering from sickness or pain',
+        'Mostly home workouts',
+        'Mostly gym workouts',
+      ],
+    },
+  );
   return questions;
 }
 
@@ -270,7 +314,7 @@ export function buildAiPlanRefreshPayload(answers: AiPlanRefreshAnswers): Record
   const currentPriority =
     'CURRENT TWO-WEEK CHECK-IN HAS TOP PRIORITY. If these answers conflict with onboarding/profile/old feedback, follow these latest answers while keeping safety constraints.';
   return {
-    currentActivity: `Biweekly completion pattern: ${answers.completionPattern}. Specific plan days missed or problematic: ${answers.missedSpecificDays}. Repeated skipped pattern: ${answers.repeatedSkipPattern}. Specific workout types missed: ${answers.missedWorkoutTypes}.`,
+    currentActivity: `Biweekly completion pattern: ${answers.completionPattern}. Temporary disruption last block: ${answers.temporaryDisruption}. ${answers.temporaryDisruptionDetails}. Next two weeks outlook: ${answers.nextTwoWeeksOutlook}. ${answers.nextTwoWeeksDetails}. Specific plan days missed or problematic: ${answers.missedSpecificDays}. Repeated skipped pattern: ${answers.repeatedSkipPattern}. Specific workout types missed: ${answers.missedWorkoutTypes}.`,
     intensity: answers.difficulty,
     trainingDays: answers.schedule,
     recovery: answers.recovery,
@@ -287,6 +331,10 @@ export function buildAiPlanRefreshPayload(answers: AiPlanRefreshAnswers): Record
     biweeklyRepeatedSkipPattern: answers.repeatedSkipPattern,
     biweeklyRepeatedSkipReason: answers.repeatedSkipReason,
     biweeklyRepeatedSkipDetails: answers.repeatedSkipDetails,
+    biweeklyTemporaryDisruption: answers.temporaryDisruption,
+    biweeklyTemporaryDisruptionDetails: answers.temporaryDisruptionDetails,
+    biweeklyNextTwoWeeksOutlook: answers.nextTwoWeeksOutlook,
+    biweeklyNextTwoWeeksDetails: answers.nextTwoWeeksDetails,
     biweeklySkippedWorkoutTypes: answers.missedWorkoutTypes,
     biweeklyMissedReason: answers.missedReason,
     biweeklyMissedReasonDetails: answers.missedReasonDetails,
@@ -297,6 +345,6 @@ export function buildAiPlanRefreshPayload(answers: AiPlanRefreshAnswers): Record
     biweeklyNextFocus: answers.nextFocus,
     biweeklyImprovementNotes: answers.improvementNotes,
     biweeklyImprovementDetails: answers.improvementDetails,
-    currentAnswersPriority: currentPriority,
+    currentAnswersPriority: `${currentPriority} Do not overcorrect for missed workouts caused by temporary travel, sickness, or one-off life events unless the user's nextTwoWeeksOutlook says that constraint will continue. Build primarily for the next two weeks.`,
   };
 }

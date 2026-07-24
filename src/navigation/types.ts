@@ -43,6 +43,7 @@ export type WorkoutVideoItem = {
 export type WorkoutStackParamList = {
   WorkoutList: undefined;
   Coach: undefined;
+  PlanRefresh: undefined;
   WorkoutDetail: { planDayId: string; title: string; mode?: 'standard' | 'quick' };
   WorkoutVideo: { title: string; subtitle?: string; videoUrl: string; videos?: WorkoutVideoItem[]; initialIndex?: number };
 };

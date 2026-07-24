@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, View } from 'react-native';
+import { Image, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
@@ -8,10 +8,8 @@ import { Badge } from '../../components/Badge';
 import { ErrorState, EmptyState } from '../../components/States';
 import { SkeletonBlock } from '../../components/Skeleton';
 import { PrimaryButton } from '../../components/PrimaryButton';
-import { FormInput } from '../../components/FormInput';
 import { ProgressBar } from '../../components/ProgressBar';
 import { StatTile } from '../../components/StatTile';
-import { requestAiPlanRefresh } from '../../services/workoutService';
 import { loadWorkoutDayCached, loadWorkoutPlanCached } from '../../services/preloadService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
 import { getSiteUrl } from '../../constants/config';
@@ -21,17 +19,6 @@ import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
-import {
-  AI_PLAN_REFRESH_QUESTIONS,
-  buildAiPlanRefreshPayload,
-  buildAiPlanRefreshQuestions,
-  emptyAiPlanRefreshAnswers,
-  isAiPlanRefreshComplete,
-  splitRefreshSelections,
-  toggleRefreshSelection,
-  type AiPlanRefreshAnswers,
-  type AiPlanRefreshKey,
-} from '../../constants/aiPlanRefreshQuestionnaire';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutList'>;
 
@@ -45,10 +32,6 @@ function resolveTrainerPhotoUrl(value?: string) {
   return url;
 }
 
-function isRestLikeFocus(value?: string) {
-  return /^(rest|recovery|off|reset|deload)$/i.test(String(value || '').trim());
-}
-
 function WorkoutDashboardScreen({ navigation }: Props) {
   const [days, setDays] = useState<PlanDay[]>([]);
   const [title, setTitle] = useState('My workout plan');
@@ -59,10 +42,6 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [progress, setProgress] = useState<ProgressSummary | null>(null);
   const [trainer, setTrainer] = useState<TrainerInfo | null>(null);
   const [aiPlanRefresh, setAiPlanRefresh] = useState<AiPlanRefresh | null>(null);
-  const [refreshModalOpen, setRefreshModalOpen] = useState(false);
-  const [refreshAnswers, setRefreshAnswers] = useState<AiPlanRefreshAnswers>(emptyAiPlanRefreshAnswers);
-  const [refreshStep, setRefreshStep] = useState(0);
-  const [refreshSaving, setRefreshSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -116,23 +95,6 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     if (selected) return selected;
     return days.find((day) => !day.completed) || days[0];
   }, [days, selectedTodayPlanDayId]);
-  const aiRefreshQuestions = useMemo(() => {
-    const missedDays = days
-      .filter((day) => !day.completed && !isRestLikeFocus(day.focus) && !isRestLikeFocus(day.notes))
-      .map((day) => ({ dayNumber: String(day.dayNumber || ''), focus: String(day.focus || 'Workout') }));
-    const focusCounts = new Map<string, number>();
-    for (const day of missedDays) {
-      const focus = day.focus.trim();
-      if (!focus) continue;
-      focusCounts.set(focus, (focusCounts.get(focus) || 0) + 1);
-    }
-    const repeatedMissedFocuses = Array.from(focusCounts.entries())
-      .filter(([, count]) => count > 1 || missedDays.length >= 3)
-      .sort((a, b) => b[1] - a[1])
-      .map(([focus]) => focus);
-    return buildAiPlanRefreshQuestions({ missedDays, repeatedMissedFocuses });
-  }, [days]);
-
   const onSwitchTodayWorkout = async (day: PlanDay) => {
     setSelectedTodayPlanDayId(day.planDayId);
     setSwitcherOpen(false);
@@ -143,37 +105,6 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     if (!day) return;
     loadWorkoutDayCached(day.planDayId, mode).catch(() => undefined);
     navigation.navigate('WorkoutDetail', { planDayId: day.planDayId, title: day.focus, mode });
-  };
-
-  const submitBiweeklyRefresh = async () => {
-    const compactAnswers = Object.fromEntries(
-      Object.entries(refreshAnswers).map(([key, value]) => [key, value.trim()]),
-    ) as AiPlanRefreshAnswers;
-    if (!isAiPlanRefreshComplete(compactAnswers, aiRefreshQuestions)) {
-      Alert.alert('Complete the check-in', 'Complete each step so Ava can rebuild the next two-week plan properly.');
-      return;
-    }
-    if (!aiPlanRefresh?.planId) {
-      Alert.alert('Plan not ready', 'Refresh your workout screen and try again.');
-      return;
-    }
-
-    setRefreshSaving(true);
-    try {
-      await requestAiPlanRefresh({
-        planId: aiPlanRefresh.planId,
-        aiTrainerAnswers: buildAiPlanRefreshPayload(compactAnswers),
-      });
-      setRefreshModalOpen(false);
-      setRefreshAnswers(emptyAiPlanRefreshAnswers);
-      setRefreshStep(0);
-      await load({ force: true });
-      Alert.alert('New plan built', `${aiPlanRefresh.trainerName || 'Your AI trainer'} rebuilt your workout plan for the next two weeks.`);
-    } catch (e) {
-      Alert.alert('Could not build plan', e instanceof Error ? e.message : 'Please try again.');
-    } finally {
-      setRefreshSaving(false);
-    }
   };
 
   if (loading) {
@@ -282,10 +213,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                 <PrimaryButton
                   title="Answer and rebuild plan"
                   icon="edit-3"
-                  onPress={() => {
-                    setRefreshStep(0);
-                    setRefreshModalOpen(true);
-                  }}
+                  onPress={() => navigation.navigate('PlanRefresh')}
                   style={styles.aiRefreshButton}
                 />
               </Card>
@@ -391,20 +319,6 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         onSelect={onSwitchTodayWorkout}
         onClose={() => setSwitcherOpen(false)}
       />
-      <AiPlanRefreshModal
-        visible={refreshModalOpen}
-        trainerName={aiPlanRefresh?.trainerName || 'Ava'}
-        answers={refreshAnswers}
-        questions={aiRefreshQuestions}
-        step={refreshStep}
-        saving={refreshSaving}
-        onChange={(key, value) => setRefreshAnswers((current) => ({ ...current, [key]: value }))}
-        onStepChange={setRefreshStep}
-        onSubmit={submitBiweeklyRefresh}
-        onClose={() => {
-          if (!refreshSaving) setRefreshModalOpen(false);
-        }}
-      />
     </ScreenContainer>
   );
 }
@@ -458,125 +372,6 @@ function WorkoutSwitchModal({
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-function AiPlanRefreshModal({
-  visible,
-  trainerName,
-  answers,
-  questions,
-  step,
-  saving,
-  onChange,
-  onStepChange,
-  onSubmit,
-  onClose,
-}: {
-  visible: boolean;
-  trainerName: string;
-  answers: AiPlanRefreshAnswers;
-  questions: typeof AI_PLAN_REFRESH_QUESTIONS;
-  step: number;
-  saving: boolean;
-  onChange: (key: AiPlanRefreshKey, value: string) => void;
-  onStepChange: (step: number) => void;
-  onSubmit: () => void;
-  onClose: () => void;
-}) {
-  const question = questions[step] || questions[0];
-  const selected = splitRefreshSelections(answers[question.key]);
-  const stepCount = questions.length;
-  const canContinue = Boolean(answers[question.key]?.trim());
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.modalRoot}>
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} />
-        <View style={styles.refreshSheet}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHeader}>
-            <View style={styles.refreshSheetTitleWrap}>
-              <Text style={styles.sheetKicker}>New two-week plan</Text>
-              <Text style={styles.sheetTitle}>{trainerName} check-in</Text>
-              <Text style={styles.refreshIntro}>Latest answers get priority while Ava keeps your profile and previous plan in context.</Text>
-            </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Close" disabled={saving}>
-              <Feather name="x" size={20} color={colors.inkMuted} />
-            </TouchableOpacity>
-          </View>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.refreshForm}>
-            <View style={styles.refreshProgressRow}>
-              <Text style={styles.refreshStepLabel}>Step {step + 1} of {stepCount}</Text>
-              <Text style={styles.refreshStepLabel}>{Math.round(((step + 1) / stepCount) * 100)}%</Text>
-            </View>
-            <View style={styles.refreshProgressTrack}>
-              {questions.map((item, index) => (
-                <View key={item.key} style={[styles.refreshProgressSegment, index <= step && styles.refreshProgressSegmentActive]} />
-              ))}
-            </View>
-            <View style={styles.refreshQuestionCard}>
-              <Text style={styles.refreshQuestionTitle}>{question.title}</Text>
-              <Text style={styles.refreshQuestionDetail}>{question.detail}</Text>
-              <View style={styles.refreshOptions}>
-                {question.options.map((option) => {
-                  const isSelected = question.multiple ? selected.includes(option) : answers[question.key] === option;
-                  return (
-                    <TouchableOpacity
-                      key={option}
-                      style={[styles.refreshOption, isSelected && styles.refreshOptionSelected]}
-                      onPress={() => onChange(question.key, toggleRefreshSelection(answers[question.key], option, question.multiple))}
-                      accessibilityRole="button"
-                    >
-                      <Text style={[styles.refreshOptionText, isSelected && styles.refreshOptionTextSelected]}>{option}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-              {question.notesKey ? (
-                <FormInput
-                  label="Add detail"
-                  value={answers[question.notesKey]}
-                  onChangeText={(value) => onChange(question.notesKey!, value)}
-                  placeholder={question.notesPlaceholder}
-                  multiline
-                  autoCapitalize="sentences"
-                />
-              ) : null}
-            </View>
-            <View style={styles.refreshActions}>
-              <TouchableOpacity
-                style={[styles.refreshBackButton, (saving || step === 0) && styles.refreshButtonDisabled]}
-                onPress={() => onStepChange(Math.max(0, step - 1))}
-                disabled={saving || step === 0}
-                accessibilityRole="button"
-              >
-                <Text style={styles.refreshBackText}>Back</Text>
-              </TouchableOpacity>
-              {step < stepCount - 1 ? (
-                <TouchableOpacity
-                  style={[styles.refreshNextButton, !canContinue && styles.refreshButtonDisabled]}
-                  onPress={() => {
-                    if (!canContinue) {
-                      Alert.alert('Pick an option', 'Choose the closest answer before moving ahead.');
-                      return;
-                    }
-                    onStepChange(Math.min(stepCount - 1, step + 1));
-                  }}
-                  disabled={saving}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.refreshNextText}>Next</Text>
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.refreshSubmitWrap}>
-                  <PrimaryButton title="Build my next plan" icon="refresh-cw" onPress={onSubmit} loading={saving} disabled={!canContinue} />
-                </View>
-              )}
-            </View>
           </ScrollView>
         </View>
       </View>
@@ -702,15 +497,6 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingBottom: spacing.lg,
   },
-  refreshSheet: {
-    maxHeight: '88%',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    backgroundColor: colors.white,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.lg,
-  },
   sheetHandle: {
     width: 44,
     height: 5,
@@ -720,61 +506,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   sheetHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.sm },
-  refreshSheetTitleWrap: { flex: 1 },
   sheetKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
   sheetTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
-  refreshIntro: { ...typography.caption, color: colors.inkMuted, marginTop: 4, lineHeight: 18 },
-  refreshForm: { paddingBottom: spacing.lg, gap: spacing.md },
-  refreshProgressRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  refreshStepLabel: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
-  refreshProgressTrack: { flexDirection: 'row', gap: 5 },
-  refreshProgressSegment: { flex: 1, height: 5, borderRadius: radius.pill, backgroundColor: colors.accentLight },
-  refreshProgressSegmentActive: { backgroundColor: colors.accent },
-  refreshQuestionCard: {
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.accentSurface,
-    backgroundColor: colors.panel,
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  refreshQuestionTitle: { ...typography.title, color: colors.ink },
-  refreshQuestionDetail: { ...typography.caption, color: colors.inkMuted, lineHeight: 19 },
-  refreshOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  refreshOption: {
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.white,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  refreshOptionSelected: { borderColor: colors.accent, backgroundColor: colors.accentLight },
-  refreshOptionText: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
-  refreshOptionTextSelected: { color: colors.accentDark },
-  refreshActions: { flexDirection: 'row', gap: spacing.sm },
-  refreshBackButton: {
-    flex: 0.75,
-    minHeight: 52,
-    borderRadius: radius.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.accentLight,
-  },
-  refreshNextButton: {
-    flex: 1.25,
-    minHeight: 52,
-    borderRadius: radius.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accent,
-  },
-  refreshSubmitWrap: { flex: 1.25 },
-  refreshButtonDisabled: { opacity: 0.5 },
-  refreshBackText: { ...typography.button, color: colors.accentDark },
-  refreshNextText: { ...typography.button, color: colors.white },
   closeButton: {
     width: 38,
     height: 38,
