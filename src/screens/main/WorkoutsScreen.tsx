@@ -24,6 +24,7 @@ import { typography } from '../../theme/typography';
 import {
   AI_PLAN_REFRESH_QUESTIONS,
   buildAiPlanRefreshPayload,
+  buildAiPlanRefreshQuestions,
   emptyAiPlanRefreshAnswers,
   isAiPlanRefreshComplete,
   splitRefreshSelections,
@@ -42,6 +43,10 @@ function resolveTrainerPhotoUrl(value?: string) {
   if (/^https?:\/\//i.test(url)) return url;
   if (url.startsWith('/')) return `${getSiteUrl()}${url}`;
   return url;
+}
+
+function isRestLikeFocus(value?: string) {
+  return /^(rest|recovery|off|reset|deload)$/i.test(String(value || '').trim());
 }
 
 function WorkoutDashboardScreen({ navigation }: Props) {
@@ -111,6 +116,22 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     if (selected) return selected;
     return days.find((day) => !day.completed) || days[0];
   }, [days, selectedTodayPlanDayId]);
+  const aiRefreshQuestions = useMemo(() => {
+    const missedDays = days
+      .filter((day) => !day.completed && !isRestLikeFocus(day.focus) && !isRestLikeFocus(day.notes))
+      .map((day) => ({ dayNumber: String(day.dayNumber || ''), focus: String(day.focus || 'Workout') }));
+    const focusCounts = new Map<string, number>();
+    for (const day of missedDays) {
+      const focus = day.focus.trim();
+      if (!focus) continue;
+      focusCounts.set(focus, (focusCounts.get(focus) || 0) + 1);
+    }
+    const repeatedMissedFocuses = Array.from(focusCounts.entries())
+      .filter(([, count]) => count > 1 || missedDays.length >= 3)
+      .sort((a, b) => b[1] - a[1])
+      .map(([focus]) => focus);
+    return buildAiPlanRefreshQuestions({ missedDays, repeatedMissedFocuses });
+  }, [days]);
 
   const onSwitchTodayWorkout = async (day: PlanDay) => {
     setSelectedTodayPlanDayId(day.planDayId);
@@ -128,7 +149,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     const compactAnswers = Object.fromEntries(
       Object.entries(refreshAnswers).map(([key, value]) => [key, value.trim()]),
     ) as AiPlanRefreshAnswers;
-    if (!isAiPlanRefreshComplete(compactAnswers)) {
+    if (!isAiPlanRefreshComplete(compactAnswers, aiRefreshQuestions)) {
       Alert.alert('Complete the check-in', 'Complete each step so Ava can rebuild the next two-week plan properly.');
       return;
     }
@@ -374,6 +395,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         visible={refreshModalOpen}
         trainerName={aiPlanRefresh?.trainerName || 'Ava'}
         answers={refreshAnswers}
+        questions={aiRefreshQuestions}
         step={refreshStep}
         saving={refreshSaving}
         onChange={(key, value) => setRefreshAnswers((current) => ({ ...current, [key]: value }))}
@@ -447,6 +469,7 @@ function AiPlanRefreshModal({
   visible,
   trainerName,
   answers,
+  questions,
   step,
   saving,
   onChange,
@@ -457,6 +480,7 @@ function AiPlanRefreshModal({
   visible: boolean;
   trainerName: string;
   answers: AiPlanRefreshAnswers;
+  questions: typeof AI_PLAN_REFRESH_QUESTIONS;
   step: number;
   saving: boolean;
   onChange: (key: AiPlanRefreshKey, value: string) => void;
@@ -464,9 +488,9 @@ function AiPlanRefreshModal({
   onSubmit: () => void;
   onClose: () => void;
 }) {
-  const question = AI_PLAN_REFRESH_QUESTIONS[step];
+  const question = questions[step] || questions[0];
   const selected = splitRefreshSelections(answers[question.key]);
-  const stepCount = AI_PLAN_REFRESH_QUESTIONS.length;
+  const stepCount = questions.length;
   const canContinue = Boolean(answers[question.key]?.trim());
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -490,7 +514,7 @@ function AiPlanRefreshModal({
               <Text style={styles.refreshStepLabel}>{Math.round(((step + 1) / stepCount) * 100)}%</Text>
             </View>
             <View style={styles.refreshProgressTrack}>
-              {AI_PLAN_REFRESH_QUESTIONS.map((item, index) => (
+              {questions.map((item, index) => (
                 <View key={item.key} style={[styles.refreshProgressSegment, index <= step && styles.refreshProgressSegmentActive]} />
               ))}
             </View>

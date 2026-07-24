@@ -1,5 +1,11 @@
 export type AiPlanRefreshKey =
   | 'completionPattern'
+  | 'missedSpecificDays'
+  | 'missedSpecificDayReason'
+  | 'missedSpecificDayDetails'
+  | 'repeatedSkipPattern'
+  | 'repeatedSkipReason'
+  | 'repeatedSkipDetails'
   | 'missedWorkoutTypes'
   | 'missedReason'
   | 'missedReasonDetails'
@@ -23,8 +29,19 @@ export type AiPlanRefreshQuestion = {
   notesPlaceholder?: string;
 };
 
+export type AiPlanRefreshContext = {
+  missedDays?: Array<{ dayNumber: string; focus: string }>;
+  repeatedMissedFocuses?: string[];
+};
+
 export const emptyAiPlanRefreshAnswers: AiPlanRefreshAnswers = {
   completionPattern: '',
+  missedSpecificDays: '',
+  missedSpecificDayReason: '',
+  missedSpecificDayDetails: '',
+  repeatedSkipPattern: '',
+  repeatedSkipReason: '',
+  repeatedSkipDetails: '',
   missedWorkoutTypes: '',
   missedReason: '',
   missedReasonDetails: '',
@@ -36,6 +53,19 @@ export const emptyAiPlanRefreshAnswers: AiPlanRefreshAnswers = {
   improvementNotes: '',
   improvementDetails: '',
 };
+
+const MISSED_REASON_OPTIONS = [
+  'No time',
+  'Too hard',
+  'Too easy or boring',
+  'Pain or discomfort',
+  'Low energy or poor sleep',
+  'Equipment unavailable',
+  'Did not understand exercises',
+  'Travel or work',
+  'Lost motivation',
+  'Other',
+];
 
 export const AI_PLAN_REFRESH_QUESTIONS: AiPlanRefreshQuestion[] = [
   {
@@ -76,18 +106,7 @@ export const AI_PLAN_REFRESH_QUESTIONS: AiPlanRefreshQuestion[] = [
     multiple: true,
     notesKey: 'missedReasonDetails',
     notesPlaceholder: 'Add any specific reason, exercise, day, equipment issue, or schedule problem.',
-    options: [
-      'No time',
-      'Too hard',
-      'Too easy or boring',
-      'Pain or discomfort',
-      'Low energy or poor sleep',
-      'Equipment unavailable',
-      'Did not understand exercises',
-      'Travel or work',
-      'Lost motivation',
-      'Other',
-    ],
+    options: MISSED_REASON_OPTIONS,
   },
   {
     key: 'difficulty',
@@ -164,6 +183,68 @@ export const AI_PLAN_REFRESH_QUESTIONS: AiPlanRefreshQuestion[] = [
   },
 ];
 
+export function buildAiPlanRefreshQuestions(context: AiPlanRefreshContext = {}) {
+  const missedDays = (context.missedDays || []).filter((day) => day.dayNumber || day.focus).slice(0, 8);
+  const repeatedMissedFocuses = (context.repeatedMissedFocuses || []).filter(Boolean).slice(0, 5);
+  const questions: AiPlanRefreshQuestion[] = [AI_PLAN_REFRESH_QUESTIONS[0]];
+
+  if (missedDays.length) {
+    questions.push({
+      key: 'missedSpecificDays',
+      title: 'Which planned days were hardest to complete?',
+      detail: 'We noticed these plan days were not marked complete. Pick the ones that were actually a problem.',
+      multiple: true,
+      options: [
+        'None of these',
+        ...missedDays.map((day) => `Day ${day.dayNumber} - ${day.focus || 'Workout'}`),
+      ],
+    });
+    questions.push({
+      key: 'missedSpecificDayReason',
+      title: 'Why were those days missed?',
+      detail: 'This helps the next plan change the exact days or workout style that broke down.',
+      multiple: true,
+      notesKey: 'missedSpecificDayDetails',
+      notesPlaceholder: 'Add the exact day, workout, exercise, time issue, pain area, or equipment problem.',
+      options: MISSED_REASON_OPTIONS,
+    });
+  }
+
+  if (repeatedMissedFocuses.length) {
+    questions.push({
+      key: 'repeatedSkipPattern',
+      title: 'We noticed a pattern in missed workouts.',
+      detail: 'These workout types appeared in your missed days. Pick what felt accurate.',
+      multiple: true,
+      options: [
+        'No clear pattern',
+        ...repeatedMissedFocuses.map((focus) => `${focus} workouts were hard to finish`),
+      ],
+    });
+    questions.push({
+      key: 'repeatedSkipReason',
+      title: 'What should change for that pattern?',
+      detail: 'The next plan can replace, simplify, shorten, move, or progress those workouts differently.',
+      multiple: true,
+      notesKey: 'repeatedSkipDetails',
+      notesPlaceholder: 'Example: lower-body days are too long, cardio feels boring, upper body hurts shoulder, etc.',
+      options: [
+        'Make it shorter',
+        'Make it easier',
+        'Change exercise selection',
+        'Move it to another day',
+        'Add more coaching cues',
+        'Replace with quick version',
+        'Keep it but progress slower',
+        'Other',
+      ],
+    });
+  }
+
+  questions.push(...AI_PLAN_REFRESH_QUESTIONS.slice(1));
+  return questions;
+}
+
 export function splitRefreshSelections(value: string) {
   return value
     .split(',')
@@ -173,32 +254,39 @@ export function splitRefreshSelections(value: string) {
 
 export function toggleRefreshSelection(currentValue: string, option: string, multiple?: boolean) {
   if (!multiple) return option;
-  if (option === 'None') return currentValue === 'None' ? '' : 'None';
-  const current = splitRefreshSelections(currentValue).filter((entry) => entry !== 'None');
+  const isNoneOption = option === 'None' || option === 'None of these' || option === 'No clear pattern';
+  if (isNoneOption) return currentValue === option ? '' : option;
+  const current = splitRefreshSelections(currentValue).filter((entry) => entry !== 'None' && entry !== 'None of these' && entry !== 'No clear pattern');
   return current.includes(option)
     ? current.filter((entry) => entry !== option).join(', ')
     : [...current, option].join(', ');
 }
 
-export function isAiPlanRefreshComplete(answers: AiPlanRefreshAnswers) {
-  return AI_PLAN_REFRESH_QUESTIONS.every((question) => Boolean(answers[question.key]?.trim()));
+export function isAiPlanRefreshComplete(answers: AiPlanRefreshAnswers, questions = AI_PLAN_REFRESH_QUESTIONS) {
+  return questions.every((question) => Boolean(answers[question.key]?.trim()));
 }
 
 export function buildAiPlanRefreshPayload(answers: AiPlanRefreshAnswers): Record<string, string> {
   const currentPriority =
     'CURRENT TWO-WEEK CHECK-IN HAS TOP PRIORITY. If these answers conflict with onboarding/profile/old feedback, follow these latest answers while keeping safety constraints.';
   return {
-    currentActivity: `Biweekly completion pattern: ${answers.completionPattern}. Specific workout types missed: ${answers.missedWorkoutTypes}.`,
+    currentActivity: `Biweekly completion pattern: ${answers.completionPattern}. Specific plan days missed or problematic: ${answers.missedSpecificDays}. Repeated skipped pattern: ${answers.repeatedSkipPattern}. Specific workout types missed: ${answers.missedWorkoutTypes}.`,
     intensity: answers.difficulty,
     trainingDays: answers.schedule,
     recovery: answers.recovery,
-    limitations: `${answers.recovery}. Recovery notes: ${answers.recoveryNotes}. Reasons workouts were missed: ${answers.missedReason}. Missed-workout detail: ${answers.missedReasonDetails}.`,
+    limitations: `${answers.recovery}. Recovery notes: ${answers.recoveryNotes}. Reasons specific days were missed: ${answers.missedSpecificDayReason}. ${answers.missedSpecificDayDetails}. Reasons workout types were missed: ${answers.missedReason}. ${answers.missedReasonDetails}. Repeated-pattern reason: ${answers.repeatedSkipReason}. ${answers.repeatedSkipDetails}.`,
     focusAreas: answers.nextFocus,
     preferredExercises: `Keep or emphasize anything consistent with: ${answers.nextFocus}. Additional improvement request: ${answers.improvementNotes}. ${answers.improvementDetails}.`,
-    dislikedExercises: `Reduce, replace, or simplify workout types/exercises the user skipped: ${answers.missedWorkoutTypes}. Reasons: ${answers.missedReason}. ${answers.missedReasonDetails}.`,
+    dislikedExercises: `Reduce, replace, or simplify workout days/types/exercises the user skipped: ${answers.missedSpecificDays}; ${answers.missedWorkoutTypes}; ${answers.repeatedSkipPattern}. Reasons: ${answers.missedSpecificDayReason}; ${answers.missedReason}; ${answers.repeatedSkipReason}. ${answers.missedReasonDetails} ${answers.repeatedSkipDetails}.`,
     coachingStyle: 'Biweekly AI plan refresh. Be practical, concise, progressive, and fit both the web and mobile workout views.',
     accountabilityPreference: answers.improvementNotes,
     biweeklyCompletionPattern: answers.completionPattern,
+    biweeklyMissedSpecificDays: answers.missedSpecificDays,
+    biweeklyMissedSpecificDayReason: answers.missedSpecificDayReason,
+    biweeklyMissedSpecificDayDetails: answers.missedSpecificDayDetails,
+    biweeklyRepeatedSkipPattern: answers.repeatedSkipPattern,
+    biweeklyRepeatedSkipReason: answers.repeatedSkipReason,
+    biweeklyRepeatedSkipDetails: answers.repeatedSkipDetails,
     biweeklySkippedWorkoutTypes: answers.missedWorkoutTypes,
     biweeklyMissedReason: answers.missedReason,
     biweeklyMissedReasonDetails: answers.missedReasonDetails,
