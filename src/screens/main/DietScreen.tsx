@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Image,
@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image-picker';
+import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
@@ -29,6 +30,7 @@ import { deleteRemoteDietDiaryEntry, resolveDietDiaryImageUrl, uploadDietDiaryEn
 import { getAuthToken } from '../../services/apiClient';
 import { displayBehavioralNotification } from '../../services/notificationService';
 import { loadDietDiaryCached } from '../../services/preloadService';
+import type { MainTabParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
 import { spacing } from '../../theme/spacing';
@@ -40,6 +42,8 @@ const meals: Array<{ type: MealType; icon: string; hint: string }> = [
   { type: 'Dinner', icon: 'moon', hint: 'End balanced' },
   { type: 'Snack', icon: 'coffee', hint: 'Small bites' },
 ];
+
+type Props = BottomTabScreenProps<MainTabParamList, 'Diet'>;
 
 function formatEntryTime(value: string) {
   const date = new Date(value);
@@ -61,12 +65,13 @@ function imageSource(entry: DietDiaryEntry) {
   return { uri };
 }
 
-export function DietScreen() {
+export function DietScreen({ route, navigation }: Props) {
   const [entries, setEntries] = useState<DietDiaryEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedMeal, setSelectedMeal] = useState<MealType>('Lunch');
   const [preview, setPreview] = useState<DietDiaryEntry | null>(null);
+  const handledCameraRequestRef = useRef<number | null>(null);
 
   const load = useCallback(async (options?: { force?: boolean }) => {
     const local = await loadDietDiaryEntries();
@@ -88,13 +93,13 @@ export function DietScreen() {
     return entries.filter((entry) => new Date(entry.createdAt).toDateString() === today).length;
   }, [entries]);
 
-  const saveAsset = async (asset?: Asset) => {
+  const saveAsset = useCallback(async (asset?: Asset, mealType: MealType = selectedMeal) => {
     if (!asset?.uri) return;
     setSaving(true);
     try {
-      const localEntry = await addDietDiaryEntry(asset, selectedMeal);
+      const localEntry = await addDietDiaryEntry(asset, mealType);
       await load();
-      displayBehavioralNotification('dietPhotoLogged', { mealType: selectedMeal }).catch(() => undefined);
+      displayBehavioralNotification('dietPhotoLogged', { mealType }).catch(() => undefined);
       try {
         const uploaded = await uploadDietDiaryEntry({
           clientId: localEntry.id,
@@ -121,9 +126,9 @@ export function DietScreen() {
     } finally {
       setSaving(false);
     }
-  };
+  }, [load, selectedMeal]);
 
-  const addFromCamera = async () => {
+  const addFromCamera = useCallback(async (mealType: MealType = selectedMeal) => {
     const result = await launchCamera({
       mediaType: 'photo',
       cameraType: 'back',
@@ -138,8 +143,8 @@ export function DietScreen() {
       Alert.alert('Camera unavailable', result.errorMessage);
       return;
     }
-    await saveAsset(result.assets?.[0]);
-  };
+    await saveAsset(result.assets?.[0], mealType);
+  }, [saveAsset, selectedMeal]);
 
   const addFromLibrary = async () => {
     const result = await launchImageLibrary({
@@ -163,6 +168,17 @@ export function DietScreen() {
     await load({ force: true });
     setRefreshing(false);
   };
+
+  useEffect(() => {
+    const requestId = route.params?.action === 'camera' ? route.params.requestId : undefined;
+    if (!requestId || handledCameraRequestRef.current === requestId) return;
+    handledCameraRequestRef.current = requestId;
+    const mealType = route.params?.mealType || selectedMeal;
+    setSelectedMeal(mealType);
+    navigation.setParams({ action: undefined, requestId: undefined, mealType: undefined });
+    const timer = setTimeout(() => addFromCamera(mealType), 250);
+    return () => clearTimeout(timer);
+  }, [route.params?.action, route.params?.requestId, route.params?.mealType, selectedMeal, navigation, addFromCamera]);
 
   const confirmDelete = (entry: DietDiaryEntry) => {
     Alert.alert('Delete food photo?', 'This removes the photo from your diet diary on this device.', [
@@ -230,7 +246,7 @@ export function DietScreen() {
         </View>
 
         <View style={styles.actions}>
-          <PrimaryButton title="Take food photo" icon="camera" onPress={addFromCamera} loading={saving} />
+          <PrimaryButton title="Take food photo" icon="camera" onPress={() => addFromCamera()} loading={saving} />
           <PrimaryButton title="Import from gallery" icon="image" variant="secondary" onPress={addFromLibrary} disabled={saving} />
         </View>
 
@@ -241,7 +257,7 @@ export function DietScreen() {
             title="No food photos yet"
             message="Take a photo of your next meal and it will appear here."
             actionLabel="Add first photo"
-            onAction={addFromCamera}
+            onAction={() => addFromCamera()}
           />
         ) : (
           <View style={styles.grid}>

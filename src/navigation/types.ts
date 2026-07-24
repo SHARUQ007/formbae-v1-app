@@ -1,3 +1,5 @@
+import type { NavigatorScreenParams } from '@react-navigation/native';
+
 export type RootStackParamList = {
   Splash: undefined;
   Auth: undefined;
@@ -27,10 +29,11 @@ export type PaidStackParamList = {
 };
 
 export type MainTabParamList = {
-  Workouts: undefined;
-  Diet: undefined;
+  Workouts: NavigatorScreenParams<WorkoutStackParamList> | undefined;
+  Diet: { action?: 'camera'; requestId?: number; mealType?: 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack' } | undefined;
+  Action: undefined;
   Progress: undefined;
-  Profile: undefined;
+  Profile: NavigatorScreenParams<ProfileStackParamList> | undefined;
 };
 
 export type WorkoutVideoItem = {
