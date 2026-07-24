@@ -18,7 +18,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { PrimaryButton } from '../../components/PrimaryButton';
-import { ProgressBar } from '../../components/ProgressBar';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { loadWorkoutDayCached } from '../../services/preloadService';
 import { submitWorkoutFeedback, type WorkoutFeedbackSentiment } from '../../services/workoutFeedbackService';
@@ -133,12 +132,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     [detail],
   );
 
-  const completedTrackableCount = useMemo(
-    () => trackableExercises.filter((exercise) => completed.has(exercise.exerciseId)).length,
-    [completed, trackableExercises],
-  );
-
-  const progress = trackableExercises.length ? completedTrackableCount / trackableExercises.length : 0;
   const activeExercise = trackableExercises[Math.min(activeIndex, Math.max(0, trackableExercises.length - 1))] || null;
   const activeExerciseIndex = activeExercise ? trackableExercises.findIndex((exercise) => exercise.exerciseId === activeExercise.exerciseId) : 0;
   const activeDone = activeExercise ? completed.has(activeExercise.exerciseId) : false;
@@ -365,18 +358,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         </View>
       ) : null}
 
-      <View style={[styles.stepProgressCard, compactStep && styles.stepProgressCardCompact]}>
-        <View style={styles.progressTop}>
-          <Text style={styles.progressLabel}>Session progress</Text>
-          <Text style={styles.heroCount}>{completedTrackableCount}/{trackableExercises.length}</Text>
-        </View>
-        <View style={styles.progressTop}>
-          <Text style={styles.progressSubLabel}>Overall completion</Text>
-          <Text style={styles.progressPct}>{Math.round(progress * 100)}%</Text>
-        </View>
-        <ProgressBar value={progress} />
-      </View>
-
       <View style={[styles.stepShell, compactStep && styles.stepShellCompact]}>
         <View style={styles.stepperRow}>
           {trackableExercises.map((exercise, index) => {
@@ -427,36 +408,13 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
           <Feather name="chevron-right" size={22} color={colors.accentDark} />
         </TouchableOpacity>
 
-        <View style={[styles.stepCue, compactStep && styles.stepCueCompact]}>
-          <Feather name="target" size={16} color={colors.accentDark} />
-          <Text style={styles.stepCueText} numberOfLines={1}>Movement {activeExerciseIndex + 1} of {trackableExercises.length}</Text>
-        </View>
-
-        <View style={[styles.stepToolbar, compactStep && styles.stepToolbarCompact]}>
-          <TouchableOpacity
-            onPress={() => openExerciseVideo(activeExercise)}
-            style={styles.stepToolWide}
-          >
-            <Feather name="play-circle" size={16} color={colors.accentDark} />
-            <Text style={styles.stepToolText}>Open video</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setFeedbackOpen(true)} style={styles.stepTool}>
-            <Feather name="message-circle" size={16} color={colors.accentDark} />
-            <Text style={styles.stepToolText}>Feedback</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={[styles.stepMetaGrid, compactStep && styles.stepMetaGridCompact]}>
-          <MetricTile label="Sets" value={String(activeSets)} />
-          <MetricTile label="Reps / time" value={displayValue(activeExercise.reps)} />
-          <MetricTile label="Rest" value={`${displayValue(activeExercise.restSec, '0')}s`} />
-        </View>
-
         <View style={[styles.stepSetPanel, compactStep && styles.stepSetPanelCompact]}>
           <View style={styles.setTrackerHead}>
             <View>
-              <Text style={styles.setTrackerTitle}>Set progress</Text>
-              <Text style={styles.setTrackerMeta}>{activeSetCount}/{activeSets} complete</Text>
+              <Text style={styles.setTrackerTitle}>{activeSetCount}/{activeSets} sets complete</Text>
+              <Text style={styles.setTrackerMeta}>
+                {activeSets} sets · {displayValue(activeExercise.reps)} · {displayValue(activeExercise.restSec, '0')}s rest
+              </Text>
             </View>
             <View style={[styles.activeStatus, activeDone && styles.activeStatusDone]}>
               <Feather name={activeDone ? 'check' : 'activity'} size={16} color={activeDone ? colors.white : colors.accent} />
@@ -556,15 +514,6 @@ function Header({
         {subtitle ? <Text style={styles.headerSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
       </View>
       {right}
-    </View>
-  );
-}
-
-function MetricTile({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.metricTile}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue} numberOfLines={2}>{value}</Text>
     </View>
   );
 }
@@ -810,18 +759,6 @@ const styles = StyleSheet.create({
   timerActions: { flexDirection: 'row', gap: spacing.sm },
   timerPill: { backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill },
   timerBtn: { color: colors.white, fontWeight: '700', fontSize: 13 },
-  stepProgressCard: {
-    borderRadius: 22,
-    backgroundColor: colors.inkStrong,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  stepProgressCardCompact: {
-    paddingVertical: 10,
-    marginBottom: 6,
-  },
   stepShell: {
     flex: 1,
     marginHorizontal: spacing.lg,
@@ -902,73 +839,6 @@ const styles = StyleSheet.create({
   videoStepKicker: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
   videoStepTitle: { ...typography.subtitle, color: colors.white, marginTop: 4 },
   videoStepMeta: { ...typography.caption, color: colors.onAccentMuted, marginTop: 4 },
-  stepCue: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    borderRadius: radius.lg,
-    backgroundColor: colors.accentLight,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 9,
-    marginTop: spacing.xs,
-  },
-  stepCueCompact: {
-    paddingVertical: 7,
-  },
-  stepCueText: {
-    ...typography.caption,
-    color: colors.accentDarker,
-    fontWeight: '800',
-    flex: 1,
-  },
-  stepToolbar: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-  },
-  stepToolbarCompact: {
-    marginTop: 5,
-  },
-  stepTool: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.accentSurface,
-    backgroundColor: colors.accentLight,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingHorizontal: 8,
-  },
-  stepToolWide: {
-    flex: 1.25,
-    minHeight: 42,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.accentSurface,
-    backgroundColor: colors.accentLight,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingHorizontal: 8,
-  },
-  stepToolDisabled: {
-    backgroundColor: colors.panelMuted,
-    borderColor: colors.border,
-  },
-  stepToolText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
-  stepToolTextDisabled: { color: colors.inkSubtle },
-  stepMetaGrid: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-  },
-  stepMetaGridCompact: {
-    marginTop: 5,
-  },
   stepSetPanel: {
     borderRadius: 22,
     backgroundColor: colors.panelMuted,
@@ -1013,12 +883,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  heroCount: { ...typography.bodyBold, color: colors.onAccentMuted },
   progressBlock: { marginTop: spacing.sm },
-  progressTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  progressLabel: { ...typography.subtitle, color: colors.white },
-  progressSubLabel: { ...typography.caption, color: colors.onAccentMuted },
-  progressPct: { ...typography.bodyBold, color: colors.white },
   activeCard: {
     borderRadius: 28,
     backgroundColor: colors.white,
@@ -1053,18 +918,6 @@ const styles = StyleSheet.create({
   videoActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   videoActionButton: { flex: 1 },
   prescription: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
-  metricTile: {
-    flex: 1,
-    minHeight: 60,
-    borderRadius: radius.xl,
-    backgroundColor: colors.panelMuted,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.sm,
-    justifyContent: 'center',
-  },
-  metricLabel: { ...typography.caption, color: colors.inkMuted, marginBottom: 5 },
-  metricValue: { ...typography.bodyBold, color: colors.ink, fontWeight: '800' },
   setTracker: {
     borderRadius: 26,
     borderWidth: 1,
