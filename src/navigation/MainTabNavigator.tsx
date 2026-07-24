@@ -219,7 +219,7 @@ export function MainTabNavigator() {
         component={WorkoutsNavigator}
         options={({ route }) => {
           const focusedRoute = getFocusedRouteNameFromRoute(route);
-          const hideTabBar = focusedRoute === 'WorkoutDetail' || focusedRoute === 'WorkoutVideo' || focusedRoute === 'PlanRefresh';
+          const hideTabBar = focusedRoute === 'WorkoutSummary' || focusedRoute === 'WorkoutDetail' || focusedRoute === 'WorkoutVideo' || focusedRoute === 'PlanRefresh';
           return {
             title: 'Workout',
             tabBarIcon: workoutIcon,

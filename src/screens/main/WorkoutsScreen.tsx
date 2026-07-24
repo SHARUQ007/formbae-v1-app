@@ -107,6 +107,12 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     navigation.navigate('WorkoutDetail', { planDayId: day.planDayId, title: day.focus, mode });
   };
 
+  const openWorkoutSummary = (day: PlanDay | null, mode: 'standard' | 'quick') => {
+    if (!day) return;
+    loadWorkoutDayCached(day.planDayId, mode).catch(() => undefined);
+    navigation.navigate('WorkoutSummary', { planDayId: day.planDayId, title: day.focus, mode });
+  };
+
   if (loading) {
     return (
       <ScreenContainer>
@@ -182,13 +188,13 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                   title={todayDay?.completed ? 'Review today workout' : "Today's Workout"}
                   icon="activity"
                   variant="inverted"
-                  onPress={() => openWorkoutDetail(todayDay, 'standard')}
+                  onPress={() => openWorkoutSummary(todayDay, 'standard')}
                 />
                 <PrimaryButton
                   title="Short on time workout"
                   icon="clock"
                   variant="heroSecondary"
-                  onPress={() => openWorkoutDetail(todayDay, 'quick')}
+                  onPress={() => openWorkoutSummary(todayDay, 'quick')}
                 />
               </View>
             </Card>

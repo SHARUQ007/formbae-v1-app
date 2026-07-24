@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ScreenContainer, Card, SectionTitle } from '../../components/Card';
 import { FormInput } from '../../components/FormInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
@@ -15,8 +16,17 @@ import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'EditProfile'>;
+type ChipOption = { value: string; label: string; icon?: string };
 
 const AVATAR_OPTIONS = ['panther', 'wolf', 'eagle', 'shark', 'rabbit', 'cobra'];
+const AVATAR_OPTION_META: Record<string, { label: string; icon: string }> = {
+  panther: { label: 'Panther', icon: 'cat' },
+  wolf: { label: 'Wolf', icon: 'dog' },
+  eagle: { label: 'Eagle', icon: 'bird' },
+  shark: { label: 'Shark', icon: 'fish' },
+  rabbit: { label: 'Rabbit', icon: 'rabbit' },
+  cobra: { label: 'Cobra', icon: 'snake' },
+};
 const LANGUAGE_OPTIONS = ['English', 'Hindi', 'Tamil', 'Telugu', 'Kannada', 'Malayalam', 'Marathi', 'Bengali', 'Gujarati', 'Punjabi', 'Urdu'];
 const GENDER_OPTIONS = ['male', 'female', 'other'];
 const TRAINING_DAYS_OPTIONS = ['1', '2', '3', '4', '5', '6', '7'];
@@ -126,7 +136,11 @@ export function EditProfileScreen({ navigation }: Props) {
         <SectionTitle>Basic details</SectionTitle>
         <Card>
           <Text style={styles.fieldLabel}>Profile icon</Text>
-          <ChipGroup values={AVATAR_OPTIONS} selected={form.avatarIcon || 'panther'} onSelect={(value) => set('avatarIcon', value)} />
+          <ChipGroup
+            options={AVATAR_OPTIONS.map((value) => ({ value, ...AVATAR_OPTION_META[value] }))}
+            selected={form.avatarIcon || 'panther'}
+            onSelect={(value) => set('avatarIcon', value)}
+          />
           <FormInput label="Name" icon="user" value={form.name || ''} onChangeText={(value) => set('name', value)} placeholder="Leave empty to keep current name" autoCapitalize="words" />
           <FormInput label="Age" value={form.age || ''} onChangeText={(value) => set('age', value)} placeholder="Age" keyboardType="numeric" />
           <Text style={styles.fieldLabel}>Gender</Text>
@@ -175,6 +189,9 @@ const styles = StyleSheet.create({
   fieldLabel: { ...typography.label, color: colors.inkMuted, marginBottom: 8, marginTop: 2 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
   chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.borderStrong,
@@ -182,6 +199,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 10,
   },
+  avatarChip: { minWidth: 124, paddingVertical: spacing.sm },
+  chipIcon: { width: 30, height: 30, borderRadius: radius.pill, backgroundColor: colors.panelMuted, alignItems: 'center', justifyContent: 'center' },
+  chipIconSelected: { backgroundColor: colors.white },
   chipSelected: { borderColor: colors.accent, backgroundColor: colors.accentLight },
   chipText: { ...typography.caption, color: colors.inkMuted },
   chipTextSelected: { color: colors.accentDark },
@@ -194,17 +214,27 @@ function ChipGroup({
   onSelect,
 }: {
   values?: string[];
-  options?: Array<{ value: string; label: string }>;
+  options?: ChipOption[];
   selected: string;
   onSelect: (value: string) => void;
 }) {
-  const entries = options ?? (values ?? []).map((value) => ({ value, label: titleCase(value) }));
+  const entries: ChipOption[] = options ?? (values ?? []).map((value) => ({ value, label: titleCase(value) }));
   return (
     <View style={styles.chipWrap}>
       {entries.map((entry) => {
         const isSelected = selected === entry.value;
         return (
-          <TouchableOpacity key={entry.value} activeOpacity={0.75} style={[styles.chip, isSelected && styles.chipSelected]} onPress={() => onSelect(entry.value)}>
+          <TouchableOpacity
+            key={entry.value}
+            activeOpacity={0.75}
+            style={[styles.chip, entry.icon && styles.avatarChip, isSelected && styles.chipSelected]}
+            onPress={() => onSelect(entry.value)}
+          >
+            {entry.icon ? (
+              <View style={[styles.chipIcon, isSelected && styles.chipIconSelected]}>
+                <MaterialCommunityIcon name={entry.icon} size={19} color={isSelected ? colors.accentDark : colors.inkMuted} />
+              </View>
+            ) : null}
             <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>{entry.label}</Text>
           </TouchableOpacity>
         );

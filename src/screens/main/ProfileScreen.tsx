@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react';
-import { Alert, Linking, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
-import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { Avatar } from '../../components/Avatar';
@@ -49,9 +48,19 @@ function parseLanguages(raw?: string) {
   return [];
 }
 
+function formatAccessDate(value?: string | null) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 function formatAccessWindow(access: NonNullable<Awaited<ReturnType<typeof fetchSettings>>['access']>) {
-  if (access.premiumStartDate && access.premiumEndDate) return `${access.premiumStartDate} to ${access.premiumEndDate}`;
-  return 'No active window';
+  const start = formatAccessDate(access.premiumStartDate);
+  const end = formatAccessDate(access.premiumEndDate);
+  if (start && end) return `${start} - ${end}`;
+  if (end) return `Until ${end}`;
+  return 'No active paid access';
 }
 
 function compactValue(value?: string) {
@@ -134,13 +143,6 @@ export function ProfileScreen({ navigation }: Props) {
     { label: 'Gender', value: titleCase(profile.gender) },
   ];
 
-  const requestRefund = async () => {
-    const url = 'mailto:team@formbae.in?subject=5-day%20refund%20request';
-    const supported = await Linking.canOpenURL(url);
-    if (supported) await Linking.openURL(url);
-    else Alert.alert('Refund request', 'Email team@formbae.in with your payment details within 5 days of payment.');
-  };
-
   const confirmCancel = () => {
     Alert.alert(
       'Cancel subscription?',
@@ -180,7 +182,7 @@ export function ProfileScreen({ navigation }: Props) {
 
         <View style={styles.heroCard}>
           <View style={styles.heroTop}>
-            <Avatar name={status?.name} size={68} />
+            <Avatar name={status?.name} iconId={profile.avatarIcon} size={68} />
             <TouchableOpacity style={styles.iconAction} onPress={() => navigation.navigate('EditProfile')} accessibilityRole="button" accessibilityLabel="Edit profile">
               <Feather name="edit-3" size={20} color={colors.accentDark} />
             </TouchableOpacity>
@@ -236,24 +238,22 @@ export function ProfileScreen({ navigation }: Props) {
             <MiniTile label="Window" value={formatAccessWindow(access)} />
             <MiniTile label="Days left" value={accessActive ? String(access.premiumDaysRemaining ?? 0) : '0'} />
           </View>
-          <View style={styles.refundPanel}>
-            <View style={styles.refundIcon}>
-              <MaterialCommunityIcon name="receipt-text-check-outline" size={22} color={colors.accentDark} />
+          <View style={styles.managePanel}>
+            <View style={styles.manageHeader}>
+              <View style={styles.manageIcon}>
+                <Feather name="settings" size={20} color={colors.accentDark} />
+              </View>
+              <View style={styles.manageCopy}>
+                <Text style={styles.manageTitle}>Manage subscription</Text>
+                <Text style={styles.manageText}>
+                  Refund requests: <Text style={styles.supportEmail}>team@formbae.in</Text>. Send your payment ID or mobile number within 5 days of payment for review.
+                </Text>
+              </View>
             </View>
-            <View style={styles.refundCopy}>
-              <Text style={styles.refundTitle}>5-day refund window</Text>
-              <Text style={styles.refundText}>Email payment details within 5 days for eligible purchases.</Text>
-            </View>
-          </View>
-          <View style={styles.accessActions}>
-            <TouchableOpacity activeOpacity={0.8} style={styles.refundButton} onPress={requestRefund}>
-              <Feather name="mail" size={16} color={colors.accentDark} />
-              <Text style={styles.refundButtonText}>Refund email</Text>
-            </TouchableOpacity>
             {accessActive ? (
               <TouchableOpacity activeOpacity={0.8} style={styles.cancelButton} onPress={confirmCancel} disabled={cancelling}>
                 <Feather name="x-circle" size={16} color={colors.error} />
-                <Text style={styles.cancelButtonText}>{cancelling ? 'Cancelling...' : 'Cancel'}</Text>
+                <Text style={styles.cancelButtonText}>{cancelling ? 'Cancelling...' : 'Cancel subscription'}</Text>
               </TouchableOpacity>
             ) : null}
           </View>
@@ -386,15 +386,23 @@ const styles = StyleSheet.create({
   miniTile: { flex: 1, borderRadius: radius.lg, backgroundColor: colors.panelMuted, padding: spacing.md },
   miniLabel: { ...typography.caption, color: colors.inkMuted },
   miniValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
-  refundPanel: { flexDirection: 'row', gap: spacing.sm, borderRadius: radius.lg, backgroundColor: colors.accentLight, padding: spacing.md, marginTop: spacing.md },
-  refundIcon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
-  refundCopy: { flex: 1 },
-  refundTitle: { ...typography.bodyBold, color: colors.ink },
-  refundText: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  accessActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
-  refundButton: { flexDirection: 'row', gap: spacing.xs, alignItems: 'center', borderRadius: radius.pill, backgroundColor: colors.accentLight, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  refundButtonText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
-  cancelButton: { flexDirection: 'row', gap: spacing.xs, alignItems: 'center', borderRadius: radius.pill, backgroundColor: colors.errorLight, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  managePanel: { borderRadius: radius.lg, backgroundColor: colors.accentLight, padding: spacing.md, marginTop: spacing.md, gap: spacing.md },
+  manageHeader: { flexDirection: 'row', gap: spacing.sm },
+  manageIcon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  manageCopy: { flex: 1 },
+  manageTitle: { ...typography.bodyBold, color: colors.ink },
+  manageText: { ...typography.caption, color: colors.inkMuted, marginTop: 2, lineHeight: 20 },
+  supportEmail: { color: colors.accentDark, fontWeight: '800' },
+  cancelButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    alignItems: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: colors.errorLight,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
   cancelButtonText: { ...typography.caption, color: colors.error, fontWeight: '800' },
   toggleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, minHeight: 52 },
   rowIcon: { width: 36, height: 36, borderRadius: radius.md, backgroundColor: colors.accentLight, alignItems: 'center', justifyContent: 'center' },
