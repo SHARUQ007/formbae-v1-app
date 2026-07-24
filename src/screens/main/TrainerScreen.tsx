@@ -54,13 +54,6 @@ function formatUnlockDate(value: string) {
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
-function formatSlot(value: string) {
-  if (!value) return 'No open slot this week';
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return 'Slot available';
-  return `Next slot ${date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}, ${date.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}`;
-}
-
 export function TrainerScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const [tab, setTab] = useState<CoachTab>('about');
@@ -228,13 +221,7 @@ export function TrainerScreen() {
             contentContainerStyle={styles.scroll}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
           >
-            <Card variant="accent" style={styles.accessCard}>
-              <Text style={styles.accessTitle}>Your coach access</Text>
-              <Text style={styles.accessBody}>
-                {data.coachHub.access.accessibleTrainerTier.toUpperCase()} access
-                {data.coachHub.access.trainerAccessLabel ? ` · ${data.coachHub.access.trainerAccessLabel}` : ''}
-              </Text>
-            </Card>
+            <ChangeCoachHeader onBack={() => setTab('about')} />
             <View style={styles.coachList}>
               {data.coachHub.trainers.map((coach) => (
                 <CoachOptionCard
@@ -287,7 +274,6 @@ function CoachAbout({ coach, onMessage, onChange }: { coach: CoachOption; onMess
         <View style={styles.quickGrid}>
           <InfoTile icon="tag" label="Type" value={coach.expertise || 'Personal trainer'} />
           <InfoTile icon="credit-card" label="Monthly" value={formatPrice(coach.monthlyFee)} />
-          <InfoTile icon="calendar" label="Availability" value={formatSlot(coach.nextSlotAt)} />
           <InfoTile icon="globe" label="Languages" value={coach.languages.length ? coach.languages.join(', ') : 'Not specified'} />
         </View>
       </Card>
@@ -298,6 +284,20 @@ function CoachAbout({ coach, onMessage, onChange }: { coach: CoachOption; onMess
         <PrimaryButton title="Change coach" icon="repeat" variant="secondary" onPress={onChange} style={styles.actionButton} />
       </View>
     </>
+  );
+}
+
+function ChangeCoachHeader({ onBack }: { onBack: () => void }) {
+  return (
+    <View style={styles.changeHeader}>
+      <TouchableOpacity onPress={onBack} style={styles.changeBackButton} accessibilityRole="button" accessibilityLabel="Back to coach profile">
+        <Feather name="chevron-left" size={22} color={colors.ink} />
+      </TouchableOpacity>
+      <View style={styles.changeHeaderText}>
+        <Text style={styles.changeTitle}>Pick your trainer</Text>
+        <Text style={styles.changeSubtitle}>Choose from trainers currently shown to users.</Text>
+      </View>
+    </View>
   );
 }
 
@@ -346,7 +346,6 @@ function CoachOptionCard({
             {current ? <Badge label="Current" tone="success" icon="check" /> : null}
           </View>
           <Text style={styles.optionMeta} numberOfLines={1}>{coach.expertise}</Text>
-          <Text style={styles.optionAvailability} numberOfLines={1}>{formatSlot(coach.nextSlotAt)}</Text>
         </View>
       </View>
       <Text style={styles.optionDescription} numberOfLines={2}>{coach.description || coach.detailedDescription || 'Coach profile details will appear here.'}</Text>
@@ -410,6 +409,25 @@ const styles = StyleSheet.create({
   infoValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
   actionRow: { flexDirection: 'row', gap: spacing.sm },
   actionButton: { flex: 1 },
+  changeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  changeBackButton: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.pill,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  changeHeaderText: { flex: 1 },
+  changeTitle: { ...typography.title, color: colors.ink },
+  changeSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   thread: { flex: 1 },
   threadContent: { paddingBottom: spacing.md },
   bubbleRow: { marginTop: spacing.sm, flexDirection: 'row' },
@@ -446,9 +464,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendDisabled: { opacity: 0.5 },
-  accessCard: { marginBottom: spacing.md },
-  accessTitle: { ...typography.subtitle, color: colors.ink },
-  accessBody: { ...typography.body, color: colors.inkMuted, marginTop: 4 },
   coachList: { gap: spacing.sm },
   optionCard: {
     borderRadius: 24,
@@ -464,7 +479,6 @@ const styles = StyleSheet.create({
   optionNameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   optionName: { ...typography.subtitle, color: colors.ink, flex: 1 },
   optionMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
-  optionAvailability: { ...typography.caption, color: colors.accentDark, marginTop: 3 },
   optionDescription: { ...typography.body, color: colors.inkMuted, marginTop: spacing.sm },
   optionFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.md },
   optionPrice: { ...typography.bodyBold, color: colors.ink },
