@@ -135,9 +135,6 @@ export function PlanRefreshScreen({ navigation }: Props) {
             <View key={question.key} style={[styles.progressSegment, index <= step && styles.progressSegmentActive]} />
           ))}
         </View>
-        <Text style={styles.helperText}>
-          One-off travel or sickness is context, not a permanent rule. Build this around what the next two weeks will actually look like.
-        </Text>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
@@ -256,7 +253,6 @@ const styles = StyleSheet.create({
   progressTrack: { flexDirection: 'row', gap: 4, marginTop: spacing.sm },
   progressSegment: { flex: 1, height: 5, borderRadius: radius.pill, backgroundColor: colors.white },
   progressSegmentActive: { backgroundColor: colors.accent },
-  helperText: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: spacing.sm },
   scroll: { paddingBottom: spacing.lg },
   questionCard: {
     borderRadius: radius.xl,
