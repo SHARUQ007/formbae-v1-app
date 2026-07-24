@@ -192,6 +192,8 @@ function QuestionStep({
   onChange: (key: AiPlanRefreshKey, value: string) => void;
 }) {
   const selected = splitRefreshSelections(answers[question.key]);
+  const notesValue = question.notesKey ? answers[question.notesKey] : '';
+  const shouldShowNotes = Boolean(question.notesKey && (selected.some((option) => /other/i.test(option)) || notesValue.trim()));
   return (
     <View style={styles.questionCard}>
       <Text style={styles.questionTitle}>{question.title}</Text>
@@ -211,9 +213,9 @@ function QuestionStep({
           );
         })}
       </View>
-      {question.notesKey ? (
+      {question.notesKey && shouldShowNotes ? (
         <FormInput
-          label="Add detail if useful"
+          label="Tell us more"
           value={answers[question.notesKey]}
           onChangeText={(value) => onChange(question.notesKey!, value)}
           placeholder={question.notesPlaceholder}

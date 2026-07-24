@@ -143,6 +143,7 @@ export const AI_PLAN_REFRESH_QUESTIONS: AiPlanRefreshQuestion[] = [
       'Joint pain',
       'Low sleep or high stress',
       'Need lower impact',
+      'Other / add detail',
     ],
   },
   {
@@ -283,6 +284,7 @@ export function buildAiPlanRefreshQuestions(context: AiPlanRefreshContext = {}) 
         'Recovering from sickness or pain',
         'Mostly home workouts',
         'Mostly gym workouts',
+        'Other / add detail',
       ],
     },
   );
