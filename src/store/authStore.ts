@@ -72,7 +72,7 @@ export function useAuthStore() {
     }
   }, []);
 
-  const login = useCallback(async (mobile: string, name?: string, createIfMissing = false) => {
+  const login = useCallback(async (mobile: string, name?: string, createIfMissing = true) => {
     setState({ loading: true, error: null });
     try {
       const response = await loginRequest(mobile, name, createIfMissing);

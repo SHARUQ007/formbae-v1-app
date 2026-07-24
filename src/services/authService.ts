@@ -21,7 +21,7 @@ export async function clearToken() {
   await Keychain.resetGenericPassword({ service: SERVICE });
 }
 
-export async function login(mobile: string, name?: string, createIfMissing = false) {
+export async function login(mobile: string, name?: string, createIfMissing = true) {
   const response = await apiRequest<LoginResponse>('/auth/login', {
     method: 'POST',
     body: { mobile, name, createIfMissing },

@@ -30,7 +30,7 @@ export function LoginScreen({ navigation, route }: Props) {
       return;
     }
     try {
-      const response = await login(digits, name || undefined, isSignup);
+      const response = await login(digits, name || undefined, true);
       const rootNav = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
       const root = resolveRootRoute(response.status.recommendedNextScreen);
       if (root === 'Onboarding') {
@@ -53,9 +53,10 @@ export function LoginScreen({ navigation, route }: Props) {
       <KeyboardScreen>
         <View style={styles.hero}>
           <LogoMark size={64} />
-          <Text style={styles.title}>{isSignup ? 'Create your account' : 'Welcome back'}</Text>
+          <Text style={styles.title}>{isSignup ? 'Create your account' : 'Continue with phone'}</Text>
           <Text style={styles.subtitle}>
-            Use the same phone number you used on FormBae. If you paid on the website, we&apos;ll sync your plan right after login.
+            Enter your phone number. If you are new, we will create your account and start your fitness analysis before the paywall.
+            If you already paid, we will sync your plan after login.
           </Text>
         </View>
 
@@ -79,7 +80,7 @@ export function LoginScreen({ navigation, route }: Props) {
           </View>
         ) : null}
 
-        <PrimaryButton title={isSignup ? 'Continue' : 'Log in'} icon="arrow-right" onPress={onSubmit} loading={loading} style={styles.cta} />
+        <PrimaryButton title="Continue" icon="arrow-right" onPress={onSubmit} loading={loading} style={styles.cta} />
         <Text style={styles.legal}>By continuing you agree to FormBae&apos;s Terms and Privacy Policy.</Text>
       </KeyboardScreen>
     </ScreenContainer>
