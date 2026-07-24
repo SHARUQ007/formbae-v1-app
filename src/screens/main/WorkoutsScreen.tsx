@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
@@ -8,12 +8,13 @@ import { Badge } from '../../components/Badge';
 import { ErrorState, EmptyState } from '../../components/States';
 import { SkeletonBlock } from '../../components/Skeleton';
 import { PrimaryButton } from '../../components/PrimaryButton';
+import { FormInput } from '../../components/FormInput';
 import { ProgressBar } from '../../components/ProgressBar';
 import { StatTile } from '../../components/StatTile';
-import { fetchWorkoutPlan } from '../../services/workoutService';
+import { fetchWorkoutPlan, requestAiPlanRefresh } from '../../services/workoutService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
 import { getSiteUrl } from '../../constants/config';
-import type { PlanDay, ProgressSummary, TrainerInfo } from '../../types/api';
+import type { AiPlanRefresh, PlanDay, ProgressSummary, TrainerInfo } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
@@ -23,6 +24,22 @@ import { typography } from '../../theme/typography';
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutList'>;
 
 const TODAY_WORKOUT_KEY_PREFIX = 'formbae_today_workout:';
+
+type RefreshAnswers = {
+  progressUpdate: string;
+  difficulty: string;
+  availability: string;
+  bodyAndRecovery: string;
+  nextFocus: string;
+};
+
+const emptyRefreshAnswers: RefreshAnswers = {
+  progressUpdate: '',
+  difficulty: '',
+  availability: '',
+  bodyAndRecovery: '',
+  nextFocus: '',
+};
 
 function resolveTrainerPhotoUrl(value?: string) {
   const url = String(value || '').trim();
@@ -41,6 +58,10 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [trainerPhotoFailed, setTrainerPhotoFailed] = useState(false);
   const [progress, setProgress] = useState<ProgressSummary | null>(null);
   const [trainer, setTrainer] = useState<TrainerInfo | null>(null);
+  const [aiPlanRefresh, setAiPlanRefresh] = useState<AiPlanRefresh | null>(null);
+  const [refreshModalOpen, setRefreshModalOpen] = useState(false);
+  const [refreshAnswers, setRefreshAnswers] = useState<RefreshAnswers>(emptyRefreshAnswers);
+  const [refreshSaving, setRefreshSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -60,6 +81,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
       setTitle(plan?.title || 'My workout plan');
       setProgress(data.today?.progress || null);
       setTrainer(data.today?.assignedTrainer || null);
+      setAiPlanRefresh(data.aiPlanRefresh || null);
       setTrainerPhotoFailed(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load your plan');
@@ -90,6 +112,46 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     setSelectedTodayPlanDayId(day.planDayId);
     setSwitcherOpen(false);
     await AsyncStorage.setItem(`${TODAY_WORKOUT_KEY_PREFIX}${planId || title || 'default'}`, day.planDayId).catch(() => undefined);
+  };
+
+  const submitBiweeklyRefresh = async () => {
+    const compactAnswers = Object.fromEntries(
+      Object.entries(refreshAnswers).map(([key, value]) => [key, value.trim()]),
+    ) as Record<keyof RefreshAnswers, string>;
+    if (!compactAnswers.progressUpdate || !compactAnswers.difficulty || !compactAnswers.availability || !compactAnswers.bodyAndRecovery || !compactAnswers.nextFocus) {
+      Alert.alert('Complete the check-in', 'Answer all 5 questions so Ava can rebuild the next two-week plan properly.');
+      return;
+    }
+    if (!aiPlanRefresh?.planId) {
+      Alert.alert('Plan not ready', 'Refresh your workout screen and try again.');
+      return;
+    }
+
+    setRefreshSaving(true);
+    try {
+      await requestAiPlanRefresh({
+        planId: aiPlanRefresh.planId,
+        aiTrainerAnswers: {
+          currentActivity: compactAnswers.progressUpdate,
+          intensity: compactAnswers.difficulty,
+          trainingDays: compactAnswers.availability,
+          recovery: compactAnswers.bodyAndRecovery,
+          limitations: compactAnswers.bodyAndRecovery,
+          focusAreas: compactAnswers.nextFocus,
+          preferredExercises: compactAnswers.nextFocus,
+          dislikedExercises: compactAnswers.difficulty,
+          coachingStyle: `Biweekly plan refresh requested for the next 2 weeks. Keep coaching practical and adapt from the user's latest answers.`,
+        },
+      });
+      setRefreshModalOpen(false);
+      setRefreshAnswers(emptyRefreshAnswers);
+      await load();
+      Alert.alert('New plan built', `${aiPlanRefresh.trainerName || 'Your AI trainer'} rebuilt your workout plan for the next two weeks.`);
+    } catch (e) {
+      Alert.alert('Could not build plan', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setRefreshSaving(false);
+    }
   };
 
   if (loading) {
@@ -185,6 +247,34 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                 />
               </View>
             </Card>
+
+            {aiPlanRefresh?.due ? (
+              <Card variant="accent" style={styles.aiRefreshCard}>
+                <View style={styles.aiRefreshHead}>
+                  <View style={styles.aiRefreshIcon}>
+                    <Feather name="refresh-cw" size={20} color={colors.accentDark} />
+                  </View>
+                  <View style={styles.aiRefreshCopy}>
+                    <Text style={styles.aiRefreshKicker}>2-week AI update</Text>
+                    <Text style={styles.aiRefreshTitle}>{aiPlanRefresh.trainerName || 'Ava'} can build your next plan</Text>
+                    <Text style={styles.aiRefreshText}>
+                      Answer 5 quick questions so your next workout block reflects your schedule, recovery, progress and preferences.
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.aiRefreshMetaRow}>
+                  <Badge label={`${aiPlanRefresh.planAgeDays}d old`} tone="accent" icon="calendar" />
+                  <Badge label={`${aiPlanRefresh.allowance.remaining}/${aiPlanRefresh.allowance.limit} redesigns left`} tone="neutral" icon="zap" />
+                </View>
+                <PrimaryButton
+                  title="Answer and rebuild plan"
+                  icon="edit-3"
+                  onPress={() => setRefreshModalOpen(true)}
+                  disabled={!aiPlanRefresh.allowance.allowed}
+                  style={styles.aiRefreshButton}
+                />
+              </Card>
+            ) : null}
 
             <SectionTitle>Your coach</SectionTitle>
             {trainer ? (
@@ -286,6 +376,17 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         onSelect={onSwitchTodayWorkout}
         onClose={() => setSwitcherOpen(false)}
       />
+      <AiPlanRefreshModal
+        visible={refreshModalOpen}
+        trainerName={aiPlanRefresh?.trainerName || 'Ava'}
+        answers={refreshAnswers}
+        saving={refreshSaving}
+        onChange={(key, value) => setRefreshAnswers((current) => ({ ...current, [key]: value }))}
+        onSubmit={submitBiweeklyRefresh}
+        onClose={() => {
+          if (!refreshSaving) setRefreshModalOpen(false);
+        }}
+      />
     </ScreenContainer>
   );
 }
@@ -346,6 +447,88 @@ function WorkoutSwitchModal({
   );
 }
 
+function AiPlanRefreshModal({
+  visible,
+  trainerName,
+  answers,
+  saving,
+  onChange,
+  onSubmit,
+  onClose,
+}: {
+  visible: boolean;
+  trainerName: string;
+  answers: RefreshAnswers;
+  saving: boolean;
+  onChange: (key: keyof RefreshAnswers, value: string) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalRoot}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} />
+        <View style={styles.refreshSheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <View style={styles.refreshSheetTitleWrap}>
+              <Text style={styles.sheetKicker}>New two-week plan</Text>
+              <Text style={styles.sheetTitle}>{trainerName} check-in</Text>
+              <Text style={styles.refreshIntro}>Your answers are used as input for the next AI-generated workout block.</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Close" disabled={saving}>
+              <Feather name="x" size={20} color={colors.inkMuted} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.refreshForm}>
+            <FormInput
+              label="What changed in the last two weeks?"
+              value={answers.progressUpdate}
+              onChangeText={(value) => onChange('progressUpdate', value)}
+              placeholder="Progress, missed sessions, energy, strength, weight, confidence..."
+              multiline
+              autoCapitalize="sentences"
+            />
+            <FormInput
+              label="How hard did the current plan feel?"
+              value={answers.difficulty}
+              onChangeText={(value) => onChange('difficulty', value)}
+              placeholder="Too easy, just right, too hard, which exercises you liked or disliked..."
+              multiline
+              autoCapitalize="sentences"
+            />
+            <FormInput
+              label="What schedule can you follow now?"
+              value={answers.availability}
+              onChangeText={(value) => onChange('availability', value)}
+              placeholder="Days per week, workout duration, home/gym access, travel..."
+              multiline
+              autoCapitalize="sentences"
+            />
+            <FormInput
+              label="Any pain, injury, fatigue or recovery notes?"
+              value={answers.bodyAndRecovery}
+              onChangeText={(value) => onChange('bodyAndRecovery', value)}
+              placeholder="Soreness, knee/back/shoulder pain, sleep, stress, recovery..."
+              multiline
+              autoCapitalize="sentences"
+            />
+            <FormInput
+              label="What should the next two weeks focus on?"
+              value={answers.nextFocus}
+              onChangeText={(value) => onChange('nextFocus', value)}
+              placeholder="Fat loss, strength, stamina, glutes, posture, consistency..."
+              multiline
+              autoCapitalize="sentences"
+            />
+            <PrimaryButton title="Build my next plan" icon="refresh-cw" onPress={onSubmit} loading={saving} />
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
   scroll: { paddingBottom: spacing.xl },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
@@ -383,6 +566,24 @@ const styles = StyleSheet.create({
   todayTitle: { ...typography.title, color: colors.white, marginTop: spacing.md },
   todayMeta: { ...typography.body, color: colors.onAccentMuted, marginTop: 4 },
   heroActions: { gap: spacing.sm, marginTop: spacing.lg },
+  aiRefreshCard: { marginTop: spacing.md },
+  aiRefreshHead: { flexDirection: 'row', gap: spacing.md },
+  aiRefreshIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+  },
+  aiRefreshCopy: { flex: 1 },
+  aiRefreshKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
+  aiRefreshTitle: { ...typography.subtitle, color: colors.ink, marginTop: 2 },
+  aiRefreshText: { ...typography.caption, color: colors.inkMuted, marginTop: 4, lineHeight: 18 },
+  aiRefreshMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
+  aiRefreshButton: { marginTop: spacing.md },
   trainerCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md, padding: spacing.md },
   trainerPhotoWrap: {
     width: 58,
@@ -446,6 +647,15 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingBottom: spacing.lg,
   },
+  refreshSheet: {
+    maxHeight: '88%',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+  },
   sheetHandle: {
     width: 44,
     height: 5,
@@ -455,8 +665,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   sheetHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.sm },
+  refreshSheetTitleWrap: { flex: 1 },
   sheetKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
   sheetTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
+  refreshIntro: { ...typography.caption, color: colors.inkMuted, marginTop: 4, lineHeight: 18 },
+  refreshForm: { paddingBottom: spacing.lg },
   closeButton: {
     width: 38,
     height: 38,

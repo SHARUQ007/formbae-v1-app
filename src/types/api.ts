@@ -107,13 +107,32 @@ export type PaymentPlan = {
 export type TodayPayload = {
   plan?: {
     planId: string;
+    trainerId?: string;
     title: string;
+    createdAt?: string;
+    weekStartDate?: string;
     days?: PlanDay[];
   };
   messages?: Message[];
   workoutLogs?: WorkoutLog[];
   progress?: ProgressSummary;
   assignedTrainer?: TrainerInfo;
+};
+
+export type AiPlanRefresh = {
+  due: boolean;
+  intervalDays: number;
+  planAgeDays: number;
+  planId: string;
+  trainerId: string;
+  trainerName: string;
+  isAiTrainer: boolean;
+  allowance: {
+    used: number;
+    limit: number;
+    remaining: number;
+    allowed: boolean;
+  };
 };
 
 export type PlanDay = {
