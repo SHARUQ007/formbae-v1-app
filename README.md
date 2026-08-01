@@ -124,13 +124,13 @@ App/
 
 Diet Diary sync uses `GET/POST/DELETE /api/mobile/diet/diary`.
 
-Set this on the live frontend server for durable photo file storage:
+Set this on the live backend server for durable photo storage:
 
 | Variable | Description |
 |----------|-------------|
-| `DIET_DIARY_STORAGE_DIR` | Writable directory for diet diary images, e.g. `/var/lib/formbae/diet-diary` |
+| `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET_NAME` | Backend-only Cloudflare R2 credentials used for diet diary photos |
 
-If it is not set, the BFF falls back to storing small image data URLs in `AppSettings` so the feature still works, but production should use a writable persistent directory or equivalent mounted volume.
+If R2 is not set, the backend falls back to storing small image data URLs in `AppSettings` so the feature still works, but production should use R2.
 
 ### Enabling remote push (FCM/APNs) — optional
 
@@ -152,7 +152,7 @@ Local reminders work out of the box. To enable server-sent push:
 | Empty workout plan | Trainer must publish active plan in admin/trainer dashboard |
 | Payment fails in app | Verify `RAZORPAY_KEY_ID` / server `RAZORPAY_KEY_SECRET`; web fallback always available |
 | No videos | Exercise must have a YouTube URL/key on the plan; app also offers Open YouTube fallback |
-| Diet photo not saved remotely | Check live frontend `DIET_DIARY_STORAGE_DIR` permissions and network connectivity |
+| Diet photo not saved remotely | Check live backend R2 env variables and Render network connectivity |
 | iOS build missing pods | `cd ios && bundle exec pod install` |
 
 ## Typecheck

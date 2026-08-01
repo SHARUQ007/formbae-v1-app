@@ -65,6 +65,9 @@ function shouldUseBackendDirect(path: string, method = 'GET') {
     if (method === 'GET') return true;
     if (method === 'POST') return true;
   }
+  if (path.startsWith('/diet/diary/photo/')) {
+    return true;
+  }
   if (path.startsWith('/diet/diary/') && method === 'DELETE') {
     return true;
   }

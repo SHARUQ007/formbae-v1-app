@@ -1,5 +1,5 @@
 import type { Asset } from 'react-native-image-picker';
-import { apiRequest, getApiUrl } from './apiClient';
+import { apiRequest, getDirectApiUrl } from './apiClient';
 import { invalidateCachedResource } from './appCache';
 import type { MealType } from '../store/dietDiaryStore';
 
@@ -54,5 +54,5 @@ export function resolveDietDiaryImageUrl(imageUrl: string) {
   if (!imageUrl || imageUrl.startsWith('file:') || imageUrl.startsWith('content:') || imageUrl.startsWith('data:') || imageUrl.startsWith('http')) {
     return imageUrl;
   }
-  return getApiUrl(imageUrl.replace(/^\/api\/mobile/, ''));
+  return getDirectApiUrl(imageUrl.replace(/^\/api\/mobile/, ''));
 }
