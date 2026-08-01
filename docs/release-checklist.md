@@ -11,7 +11,7 @@
 - Strategy: bump `versionName` on user-facing releases; always bump build/`versionCode`.
 
 ## Environment
-- `BACKEND_API_BASE_URL` → production FastAPI backend origin (e.g. `https://formbae-backend.onrender.com`). Set in `.env` before building; `react-native-config` bakes it into the build.
+- `BACKEND_API_BASE_URL` → production FastAPI backend origin (e.g. `https://formbae-v1-backend.onrender.com`). Set in `.env` before building; `react-native-config` bakes it into the build.
 - `SITE_URL` → `https://formbae.in`.
 - Confirm `.env` is NOT committed (git-ignored); keep `.env.example` updated.
 
