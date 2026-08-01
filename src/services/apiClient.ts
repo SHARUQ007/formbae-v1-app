@@ -60,13 +60,10 @@ export function getApiUrl(path: string) {
   return `${getApiBaseUrl()}${API_PREFIX}${path}`;
 }
 
-function shouldUseBackendDirect(path: string, method = 'GET', body?: unknown) {
+function shouldUseBackendDirect(path: string, method = 'GET') {
   if (path === '/diet/diary') {
     if (method === 'GET') return true;
-    if (method === 'POST') {
-      const maybeBody = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
-      return !maybeBody.imageBase64;
-    }
+    if (method === 'POST') return true;
   }
   if (path.startsWith('/diet/diary/') && method === 'DELETE') {
     return true;
@@ -113,7 +110,7 @@ async function doFetch(url: string, init: RequestInit, timeoutMs: number, extern
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = options.method || 'GET';
-  const useBackendDirect = shouldUseBackendDirect(path, method, options.body);
+  const useBackendDirect = shouldUseBackendDirect(path, method);
   const directUrl = `${useBackendDirect ? getBackendApiBaseUrl() : getApiBaseUrl()}${API_PREFIX}${path}`;
   const fallbackUrl = getApiUrl(path);
   const shouldTryFallback = directUrl !== fallbackUrl;
