@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   Alert,
@@ -41,6 +41,7 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutDetail'>;
 
 type RewardType = 'set' | 'movement' | 'workout' | 'feedback';
 type RewardState = { id: number; type: RewardType; title: string; subtitle: string } | null;
+type SetLog = { setNumber: number; reps: string; weight: string; durationSec?: number };
 
 function getSectionLabel(notes: string, fallback: string) {
   const section = notes.match(/(?:^|[|\n])\s*Section:\s*([^|\n]+)/i)?.[1]?.trim();
@@ -65,10 +66,37 @@ function displayValue(value: string, fallback = '-') {
   return cleaned || fallback;
 }
 
+function defaultRepsFromPrescription(value: string) {
+  const range = String(value || '').match(/(\d+)\s*[-–]\s*(\d+)/);
+  if (range?.[2]) return range[2];
+  const exact = String(value || '').match(/(\d+)/);
+  return exact?.[1] || '';
+}
+
+function isWeightedExercise(exercise?: WorkoutExerciseDetail | null) {
+  if (!exercise) return false;
+  const text = `${exercise.exerciseName} ${exercise.reps} ${exercise.notes}`.toLowerCase();
+  if (/\b(sec|secs|second|seconds|min|mins|minute|minutes|km|meter|metre|mile|cardio|treadmill|walk|run|plank|hold|stretch|mobility|bodyweight)\b/.test(text)) return false;
+  return /\b(dumbbell|barbell|kettlebell|machine|cable|smith|press|row|curl|deadlift|squat|lunge|raise|extension|pulldown|thrust)\b/.test(text);
+}
+
+function adjustNumberText(value: string, delta: number, step = 1) {
+  const current = Number(String(value || '').replace(/[^\d.]/g, '')) || 0;
+  const next = Math.max(0, current + delta * step);
+  return Number.isInteger(next) ? String(next) : next.toFixed(1).replace(/\.0$/, '');
+}
+
 function wait(ms: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function formatTimer(seconds: number) {
+  const safe = Math.max(0, Math.round(seconds));
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
 function modeCopy(mode: 'standard' | 'quick') {
@@ -78,7 +106,7 @@ function modeCopy(mode: 'standard' | 'quick') {
     };
   }
   return {
-    eyebrow: "Today's workout",
+    eyebrow: "Today's Workout",
   };
 }
 
@@ -90,19 +118,41 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const [detail, setDetail] = useState<WorkoutDayDetail | null>(null);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
   const [setProgress, setSetProgress] = useState<Record<string, number>>({});
+  const [setLogs, setSetLogs] = useState<Record<string, SetLog[]>>({});
+  const [repInput, setRepInput] = useState('');
+  const [weightInput, setWeightInput] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
+  const [movementStarted, setMovementStarted] = useState(false);
+  const [setEntryOpen, setSetEntryOpen] = useState(false);
+  const [setPaused, setSetPaused] = useState(false);
+  const [setElapsed, setSetElapsed] = useState(0);
+  const [pendingNextIndex, setPendingNextIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
   const [reward, setReward] = useState<RewardState>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [flowOpen, setFlowOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
   const [feedbackSentiment, setFeedbackSentiment] = useState<WorkoutFeedbackSentiment | null>(null);
   const [feedbackText, setFeedbackText] = useState('');
   const [feedbackSaving, setFeedbackSaving] = useState(false);
   const { status } = useAuthStore();
+  const pendingNextIndexRef = useRef<number | null>(null);
+
+  useLayoutEffect(() => {
+    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+  }, [navigation]);
+
   const timer = useRestTimer(() => {
     displayLocalNotification('Rest complete', 'Time for your next set.').catch(() => undefined);
+    const nextIndex = pendingNextIndexRef.current;
+    pendingNextIndexRef.current = null;
+    setPendingNextIndex(null);
+    if (nextIndex !== null) {
+      setActiveIndex(nextIndex);
+      setMovementStarted(false);
+    }
   });
   const clearReward = useCallback(() => setReward(null), []);
 
@@ -115,7 +165,14 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       const saved = await loadWorkoutProgress(planDayId);
       setCompleted(new Set(saved.completedExerciseIds));
       setSetProgress(saved.setProgressByExercise || {});
+      setSetLogs(saved.setLogsByExercise || {});
       setActiveIndex(0);
+      setMovementStarted(false);
+      setSetEntryOpen(false);
+      setSetPaused(false);
+      setSetElapsed(0);
+      setPendingNextIndex(null);
+      pendingNextIndexRef.current = null;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load workout');
     } finally {
@@ -127,19 +184,40 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (!movementStarted || setPaused || timer.running) return undefined;
+    const interval = setInterval(() => {
+      setSetElapsed((value) => value + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [movementStarted, setPaused, timer.running]);
+
   const trackableExercises = useMemo(
     () => (detail?.exercises ?? []).filter((exercise) => !isSectionMarker(exercise.notes)),
     [detail],
   );
 
   const activeExercise = trackableExercises[Math.min(activeIndex, Math.max(0, trackableExercises.length - 1))] || null;
+  const activeExerciseId = activeExercise?.exerciseId || '';
+  const activeExerciseReps = activeExercise?.reps || '';
   const activeExerciseIndex = activeExercise ? trackableExercises.findIndex((exercise) => exercise.exerciseId === activeExercise.exerciseId) : 0;
   const activeDone = activeExercise ? completed.has(activeExercise.exerciseId) : false;
   const activeSets = Math.max(1, Number(activeExercise?.sets || 1));
   const activeSetCount = activeExercise ? Math.min(activeSets, setProgress[activeExercise.exerciseId] || 0) : 0;
+  const activeSetNumber = Math.min(activeSets, activeSetCount + 1);
   const activeRest = Number(activeExercise?.restSec || 0);
   const activeNotes = cleanExerciseNotes(activeExercise?.notes || '');
+  const activeNeedsWeight = isWeightedExercise(activeExercise);
+  const activeSetLogs = useMemo(() => (activeExerciseId ? setLogs[activeExerciseId] || [] : []), [activeExerciseId, setLogs]);
+  const activeLastLog = activeSetLogs[activeSetCount - 1];
   const copy = modeCopy(mode);
+  const restTargetIndex = pendingNextIndex ?? pendingNextIndexRef.current;
+  const restTargetExercise = restTargetIndex !== null && restTargetIndex !== undefined ? trackableExercises[restTargetIndex] : null;
+  const restTargetLabel = restTargetIndex === activeExerciseIndex && activeExercise
+    ? `Set ${Math.min(activeSets, activeSetCount + 1)} of ${activeExercise.exerciseName}`
+    : restTargetExercise?.exerciseName || 'finish workout';
+  const completedCount = completed.size;
+  const progressPct = trackableExercises.length ? Math.min(100, Math.round((completedCount / trackableExercises.length) * 100)) : 0;
   const workoutVideos = useMemo(
     () => trackableExercises
       .filter((exercise) => String(exercise.videoUrl || '').trim())
@@ -166,24 +244,36 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     [detail?.focus, navigation, workoutVideos],
   );
 
+  useEffect(() => {
+    if (!activeExerciseId || activeDone) {
+      setRepInput('');
+      setWeightInput('');
+      return;
+    }
+    const existing = activeSetLogs.find((log) => log.setNumber === activeSetNumber);
+    setRepInput(existing?.reps || defaultRepsFromPrescription(activeExerciseReps));
+    setWeightInput(existing?.weight || '');
+  }, [activeDone, activeExerciseId, activeExerciseReps, activeSetLogs, activeSetNumber]);
+
   const persistSets = useCallback(
-    async (next: Record<string, number>, completedSet = completed) => {
+    async (next: Record<string, number>, completedSet = completed, logsOverride = setLogs) => {
       await saveWorkoutProgress({
         planDayId,
         completedExerciseIds: Array.from(completedSet),
         setProgressByExercise: next,
+        setLogsByExercise: logsOverride,
         updatedAt: new Date().toISOString(),
       });
     },
-    [completed, planDayId],
+    [completed, planDayId, setLogs],
   );
 
-  const completeActiveExercise = async (setsOverride = setProgress) => {
+  const completeActiveExercise = async (setsOverride = setProgress, logsOverride = setLogs) => {
     if (!activeExercise || !detail || completed.has(activeExercise.exerciseId)) return;
     const nextCompleted = new Set(completed);
     nextCompleted.add(activeExercise.exerciseId);
     setCompleted(nextCompleted);
-    await persistSets(setsOverride, nextCompleted);
+    await persistSets(setsOverride, nextCompleted, logsOverride);
     await completeWithQueue({
       planId: detail.planId,
       planDayId: detail.planDayId,
@@ -193,47 +283,118 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     });
   };
 
-  const onSetDone = async () => {
+  const moveToExercise = (index: number) => {
+    timer.stop();
+    setPendingNextIndex(null);
+    pendingNextIndexRef.current = null;
+    setMovementStarted(false);
+    setSetEntryOpen(false);
+    setSetPaused(false);
+    setSetElapsed(0);
+    setActiveIndex(Math.max(0, Math.min(trackableExercises.length - 1, index)));
+  };
+
+  const startMovement = () => {
+    setMovementStarted(true);
+    setSetPaused(false);
+    setSetElapsed(0);
+    setReward({
+      id: Date.now(),
+      type: 'set',
+      title: 'Set started',
+      subtitle: `Set ${activeSetNumber} is now active.`,
+    });
+  };
+
+  const completeActiveSet = () => {
     if (!activeExercise) return;
-    const nextCount = Math.min(activeSets, activeSetCount + 1);
-    const nextSets = { ...setProgress, [activeExercise.exerciseId]: nextCount };
+    setSetPaused(true);
+    setSetEntryOpen(true);
+  };
+
+  const logCurrentSetAndAdvance = async () => {
+    if (!activeExercise) return;
+    const nextSetCount = Math.min(activeSets, activeSetCount + 1);
+    const nextLog: SetLog = {
+      setNumber: nextSetCount,
+      reps: repInput.trim() || defaultRepsFromPrescription(activeExercise.reps),
+      weight: activeNeedsWeight ? weightInput.trim() : '',
+      durationSec: setElapsed,
+    };
+    const previousLogs = setLogs[activeExercise.exerciseId] || [];
+    const nextLogsForExercise = [
+      ...previousLogs.filter((log) => log.setNumber !== nextSetCount),
+      nextLog,
+    ].sort((a, b) => a.setNumber - b.setNumber);
+    const nextLogs = { ...setLogs, [activeExercise.exerciseId]: nextLogsForExercise };
+    const nextSets = { ...setProgress, [activeExercise.exerciseId]: nextSetCount };
+
     setSetProgress(nextSets);
-    await persistSets(nextSets);
-    if (activeRest > 0) timer.start(activeRest);
-    if (nextCount >= activeSets) {
-      setReward({
-        id: Date.now(),
-        type: 'movement',
-        title: 'Movement complete',
-        subtitle: `${activeExercise.exerciseName} done.`,
-      });
-      await completeActiveExercise(nextSets);
+    setSetLogs(nextLogs);
+    setMovementStarted(false);
+    setSetPaused(false);
+    setSetEntryOpen(false);
+
+    const movementComplete = nextSetCount >= activeSets;
+    setReward({
+      id: Date.now(),
+      type: movementComplete ? 'movement' : 'set',
+      title: movementComplete ? 'Movement complete' : `Set ${nextSetCount} logged`,
+      subtitle: movementComplete
+        ? `${activeExercise.exerciseName} done.`
+        : `${activeSets - nextSetCount} set${activeSets - nextSetCount === 1 ? '' : 's'} left.`,
+    });
+
+    if (movementComplete) {
+      await completeActiveExercise(nextSets, nextLogs);
     } else {
-      setReward({
-        id: Date.now(),
-        type: 'set',
-        title: `Set ${nextCount} logged`,
-        subtitle: `${activeSets - nextCount} set${activeSets - nextCount === 1 ? '' : 's'} left.`,
-      });
+      await persistSets(nextSets, completed, nextLogs);
+    }
+
+    const nextIndex = movementComplete ? activeExerciseIndex + 1 : activeExerciseIndex;
+    if (movementComplete && nextIndex >= trackableExercises.length) return;
+    if (activeRest > 0) {
+      pendingNextIndexRef.current = nextIndex;
+      setPendingNextIndex(nextIndex);
+      timer.start(activeRest);
+    } else {
+      moveToExercise(nextIndex);
+    }
+    setSetElapsed(0);
+  };
+
+  const skipRest = () => {
+    const nextIndex = pendingNextIndexRef.current ?? pendingNextIndex;
+    timer.stop();
+    pendingNextIndexRef.current = null;
+    setPendingNextIndex(null);
+    if (nextIndex !== null) {
+      setActiveIndex(nextIndex);
+      setMovementStarted(false);
+      setSetPaused(false);
+      setSetElapsed(0);
     }
   };
 
-  const markActiveComplete = async () => {
-    if (!activeExercise) return;
-    const nextSets = { ...setProgress, [activeExercise.exerciseId]: activeSets };
-    setSetProgress(nextSets);
-    setReward({
-      id: Date.now(),
-      type: 'movement',
-      title: 'Movement complete',
-      subtitle: `${activeExercise.exerciseName} done.`,
-    });
-    await completeActiveExercise(nextSets);
+  const primaryCta = () => {
+    if (timer.running) return skipRest();
+    if (activeDone) {
+      if (activeExerciseIndex >= trackableExercises.length - 1) return onFinish();
+      return moveToExercise(activeExerciseIndex + 1);
+    }
+    if (!movementStarted) return startMovement();
+    return completeActiveSet();
   };
 
-  const moveToExercise = (index: number) => {
-    setActiveIndex(Math.max(0, Math.min(trackableExercises.length - 1, index)));
-  };
+  const primaryTitle = timer.running
+    ? 'Skip rest'
+    : activeDone
+      ? activeExerciseIndex >= trackableExercises.length - 1
+        ? 'Finish workout'
+        : 'Next movement'
+      : movementStarted
+        ? 'Complete set'
+        : 'Begin set';
 
   const onFinish = useCallback(async () => {
     if (!detail) return;
@@ -328,7 +489,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       <Header
         onBack={() => navigation.goBack()}
         title={copy.eyebrow}
-        subtitle={`Day ${detail.dayNumber} - ${detail.focus || detail.planTitle}`}
         right={
           <TouchableOpacity
             onPress={() => setFeedbackOpen(true)}
@@ -341,24 +501,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         }
       />
 
-      {timer.running ? (
-        <View style={styles.timerBar}>
-          <View style={styles.timerLeft}>
-            <Feather name="clock" size={18} color={colors.white} />
-            <Text style={styles.timerText}>Rest {timer.remaining}s</Text>
-          </View>
-          <View style={styles.timerActions}>
-            <TouchableOpacity onPress={() => timer.addTime(15)} style={styles.timerPill}>
-              <Text style={styles.timerBtn}>+15s</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={timer.stop} style={styles.timerPill}>
-              <Text style={styles.timerBtn}>Skip</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : null}
-
-      <View style={[styles.stepShell, compactStep && styles.stepShellCompact]}>
+      <View style={styles.sessionProgress}>
         <View style={styles.stepperRow}>
           {trackableExercises.map((exercise, index) => {
             const done = completed.has(exercise.exerciseId);
@@ -375,93 +518,156 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
             );
           })}
         </View>
-
-        <View style={styles.stepHeader}>
-          <View style={styles.activeStep}>
-            <Text style={styles.activeStepText}>{activeExerciseIndex + 1}</Text>
-          </View>
-          <View style={styles.activeText}>
-            <Text style={styles.activeKicker} numberOfLines={1}>{getSectionLabel(activeExercise.notes, detail.focus || 'Workout')}</Text>
-            <Text style={styles.activeName} numberOfLines={2}>{activeExercise.exerciseName}</Text>
-          </View>
-          <TouchableOpacity onPress={() => setFlowOpen(true)} style={styles.stepFlowButton} accessibilityRole="button" accessibilityLabel="Open workout flow">
-            <Text style={styles.stepFlowText}>{activeExerciseIndex + 1}/{trackableExercises.length}</Text>
-            <Feather name="list" size={16} color={colors.accentDark} />
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity
-          onPress={() => openExerciseVideo(activeExercise)}
-          activeOpacity={0.86}
-          style={[styles.videoStepCard, compactStep && styles.videoStepCardCompact]}
-          accessibilityRole="button"
-          accessibilityLabel={`Open video for ${activeExercise.exerciseName}`}
-        >
-          <View style={styles.videoStepIcon}>
-            <Feather name="play" size={24} color={colors.white} />
-          </View>
-          <View style={styles.videoStepText}>
-            <Text style={styles.videoStepKicker}>Technique video</Text>
-            <Text style={styles.videoStepTitle} numberOfLines={2}>Watch form before logging sets</Text>
-            <Text style={styles.videoStepMeta} numberOfLines={1}>{activeExercise.exerciseName}</Text>
-          </View>
-          <Feather name="chevron-right" size={22} color={colors.accentDark} />
-        </TouchableOpacity>
-
-        <View style={[styles.stepSetPanel, compactStep && styles.stepSetPanelCompact]}>
-          <View style={styles.setTrackerHead}>
-            <View>
-              <Text style={styles.setTrackerTitle}>{activeSetCount}/{activeSets} sets complete</Text>
-              <Text style={styles.setTrackerMeta}>
-                {activeSets} sets · {displayValue(activeExercise.reps)} · {displayValue(activeExercise.restSec, '0')}s rest
-              </Text>
-            </View>
-            <View style={[styles.activeStatus, activeDone && styles.activeStatusDone]}>
-              <Feather name={activeDone ? 'check' : 'activity'} size={16} color={activeDone ? colors.white : colors.accent} />
-            </View>
-          </View>
-          <View style={styles.setDots}>
-            {Array.from({ length: activeSets }).map((_, index) => {
-              const done = index < activeSetCount;
-              return (
-                <View key={index} style={[styles.setDot, done && styles.setDotDone]}>
-                  <Text style={[styles.setDotText, done && styles.setDotTextDone]}>{index + 1}</Text>
-                </View>
-              );
-            })}
-          </View>
-          <PrimaryButton
-            title={activeDone ? 'Movement complete' : activeSetCount >= activeSets ? 'Mark complete' : `Log set ${activeSetCount + 1}`}
-            icon={activeDone ? 'check' : 'plus'}
-            onPress={activeSetCount >= activeSets ? markActiveComplete : onSetDone}
-            disabled={activeDone}
-          />
-        </View>
-
-        {activeNotes ? (
-          <View style={[styles.stepNote, compactStep && styles.stepNoteCompact]}>
-            <Feather name="info" size={15} color={colors.accentDark} />
-            <Text style={styles.notes} numberOfLines={compactStep ? 1 : 2}>{activeNotes}</Text>
-          </View>
-        ) : null}
       </View>
 
-      <View style={[styles.stepFooter, compactStep && styles.stepFooterCompact, { paddingBottom: insets.bottom + spacing.sm }]}>
-        <PrimaryButton
-          title="Previous"
-          icon="chevron-left"
-          variant="secondary"
-          onPress={() => moveToExercise(activeExerciseIndex - 1)}
-          disabled={activeExerciseIndex <= 0}
-          style={styles.navButton}
-        />
-        <PrimaryButton
-          title={activeExerciseIndex >= trackableExercises.length - 1 ? 'Finish' : 'Next movement'}
-          icon={activeExerciseIndex >= trackableExercises.length - 1 ? 'flag' : 'chevron-right'}
-          onPress={activeExerciseIndex >= trackableExercises.length - 1 ? onFinish : () => moveToExercise(activeExerciseIndex + 1)}
-          loading={finishing}
-          style={styles.navButton}
-        />
+      {timer.running ? (
+        <View style={[styles.executionShell, compactStep && styles.executionShellCompact]}>
+          <View style={styles.restCard}>
+            <View style={styles.restIcon}>
+              <Feather name="clock" size={30} color={colors.white} />
+            </View>
+            <Text style={styles.restKicker}>Rest</Text>
+            <Text style={styles.restTimer}>{formatTimer(timer.remaining)}</Text>
+            <Text style={styles.restText} numberOfLines={2}>
+              Next: {restTargetLabel}
+            </Text>
+            <View style={styles.restActions}>
+              <TouchableOpacity onPress={() => timer.addTime(15)} style={styles.restSmallButton} accessibilityRole="button" accessibilityLabel="Add fifteen seconds">
+                <Text style={styles.restSmallButtonText}>+15s</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={skipRest} style={styles.restSmallButton} accessibilityRole="button" accessibilityLabel="Skip rest">
+                <Text style={styles.restSmallButtonText}>Skip</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      ) : (
+        <View style={[styles.executionShell, compactStep && styles.executionShellCompact]}>
+          <View style={styles.movementHead}>
+            <View style={styles.activeStep}>
+              <Text style={styles.activeStepText}>{activeExerciseIndex + 1}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setFlowOpen(true)} style={styles.stepFlowButton} accessibilityRole="button" accessibilityLabel="Open workout flow">
+              <Text style={styles.stepFlowText}>{activeExerciseIndex + 1}/{trackableExercises.length}</Text>
+              <Feather name="list" size={16} color={colors.accentDark} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.activeName} adjustsFontSizeToFit minimumFontScale={0.82}>{activeExercise.exerciseName}</Text>
+
+          {!activeDone ? (
+            <View style={styles.setLogPanel}>
+              <View style={styles.setLogHeader}>
+                <View>
+                  <Text style={styles.setLogTitle}>{movementStarted ? formatTimer(setElapsed) : `Set ${activeSetNumber} of ${activeSets}`}</Text>
+                  <Text style={styles.setLogMeta}>
+                    {movementStarted
+                      ? setPaused
+                        ? 'Paused. Resume when ready or complete the set.'
+                        : `Set ${activeSetNumber} in progress.`
+                      : 'Start the set when you are ready.'}
+                  </Text>
+                </View>
+                <View style={styles.setLogBadge}>
+                  <Feather name={movementStarted ? setPaused ? 'pause' : 'timer' : 'activity'} size={16} color={colors.accentDark} />
+                </View>
+              </View>
+
+              <Text style={styles.setCompactMeta} numberOfLines={1}>
+                {displayValue(activeExercise.reps)} · {displayValue(activeExercise.restSec, '0')}s rest · {activeSetCount}/{activeSets} logged
+              </Text>
+
+              {activeLastLog ? (
+                <Text style={styles.lastLogText} numberOfLines={1}>
+                  Last set: {activeLastLog.reps || '-'} reps{activeLastLog.weight ? ` · ${activeLastLog.weight} kg` : ''}{activeLastLog.durationSec ? ` · ${formatTimer(activeLastLog.durationSec)}` : ''}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            onPress={() => openExerciseVideo(activeExercise)}
+            activeOpacity={0.86}
+            style={styles.videoStepCard}
+            accessibilityRole="button"
+            accessibilityLabel={`Open video for ${activeExercise.exerciseName}`}
+          >
+            <View style={styles.videoStepIcon}>
+              <Feather name="play" size={24} color={colors.white} />
+            </View>
+            <View style={styles.videoStepText}>
+              <Text style={styles.videoStepKicker}>Technique video</Text>
+              <Text style={styles.videoStepTitle} numberOfLines={1}>Watch form</Text>
+            </View>
+            <Feather name="chevron-right" size={22} color={colors.accentDark} />
+          </TouchableOpacity>
+
+          {activeNotes ? (
+            <View style={styles.stepNote}>
+              <Feather name="info" size={15} color={colors.accentDark} />
+              <Text style={styles.notes} numberOfLines={3}>{activeNotes}</Text>
+            </View>
+          ) : null}
+        </View>
+      )}
+
+      <View style={[styles.actionDock, { paddingBottom: insets.bottom + spacing.sm }]}>
+        {movementStarted && !timer.running ? (
+          <View style={styles.activeActionRow}>
+            <TouchableOpacity
+              activeOpacity={0.86}
+              onPress={() => setSetPaused((value) => !value)}
+              style={styles.pauseSessionButton}
+              accessibilityRole="button"
+              accessibilityLabel={setPaused ? 'Resume set' : 'Pause set'}
+            >
+              <Feather name={setPaused ? 'play' : 'pause'} size={22} color={colors.accentDark} />
+              <Text style={styles.pauseSessionText}>{setPaused ? 'Resume' : 'Pause'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.86}
+              onPress={completeActiveSet}
+              style={styles.completeSessionButton}
+              accessibilityRole="button"
+              accessibilityLabel="Complete set"
+            >
+              <Text style={styles.completeSessionText}>Complete</Text>
+              <Feather name="check" size={22} color={colors.white} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            activeOpacity={0.86}
+            onPress={primaryCta}
+            disabled={finishing}
+            style={[styles.primarySessionButton, timer.running && styles.restPrimaryButton, activeDone && styles.donePrimaryButton]}
+            accessibilityRole="button"
+            accessibilityLabel={primaryTitle}
+          >
+            <View style={styles.primarySessionIcon}>
+              <Feather name={timer.running ? 'skip-forward' : activeDone && activeExerciseIndex >= trackableExercises.length - 1 ? 'flag' : 'play'} size={24} color={colors.accentDark} />
+            </View>
+            <View style={styles.primarySessionLabelBlock}>
+              <Text style={styles.primarySessionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>{finishing ? 'Finishing...' : primaryTitle}</Text>
+              {!timer.running && !activeDone ? <Text style={styles.primarySessionSubText}>Set {activeSetNumber} of {activeSets}</Text> : null}
+            </View>
+            <Feather name="arrow-right" size={22} color={colors.white} />
+          </TouchableOpacity>
+        )}
+        <View style={styles.secondaryActionRow}>
+          <TouchableOpacity onPress={() => setFeedbackOpen(true)} style={styles.secondarySessionButton} accessibilityRole="button" accessibilityLabel="Workout feedback">
+            <Feather name="message-square" size={17} color={colors.accentDark} />
+            <Text style={styles.secondarySessionText}>Feedback</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setStatsOpen(true)} style={styles.secondarySessionButton} accessibilityRole="button" accessibilityLabel="Open workout stats">
+            <Feather name="bar-chart-2" size={17} color={colors.accentDark} />
+            <Text style={styles.secondarySessionText}>Stats</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setFlowOpen(true)} style={styles.secondarySessionButton} accessibilityRole="button" accessibilityLabel="Open workout flow">
+            <Feather name="list" size={17} color={colors.accentDark} />
+            <Text style={styles.secondarySessionText}>All moves</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <WorkoutFlowModal
@@ -476,6 +682,16 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         onClose={() => setFlowOpen(false)}
       />
 
+      <WorkoutStatsModal
+        visible={statsOpen}
+        exercises={trackableExercises}
+        completed={completed}
+        setProgress={setProgress}
+        setLogs={setLogs}
+        progressPct={progressPct}
+        onClose={() => setStatsOpen(false)}
+      />
+
       <FeedbackModal
         visible={feedbackOpen}
         sentiment={feedbackSentiment}
@@ -486,6 +702,27 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         onSentiment={setFeedbackSentiment}
         onText={setFeedbackText}
         onSubmit={submitFeedback}
+      />
+
+      <SetEntryModal
+        visible={setEntryOpen}
+        exerciseName={activeExercise.exerciseName}
+        setNumber={activeSetNumber}
+        setTotal={activeSets}
+        elapsed={setElapsed}
+        reps={repInput}
+        weight={weightInput}
+        needsWeight={activeNeedsWeight}
+        targetReps={displayValue(activeExercise.reps, '0')}
+        onReps={setRepInput}
+        onWeight={setWeightInput}
+        onAdjustReps={(delta) => setRepInput((value) => adjustNumberText(value, delta))}
+        onAdjustWeight={(delta) => setWeightInput((value) => adjustNumberText(value, delta, 2.5))}
+        onCancel={() => {
+          setSetEntryOpen(false);
+          setSetPaused(false);
+        }}
+        onSave={logCurrentSetAndAdvance}
       />
     </View>
   );
@@ -594,6 +831,96 @@ function WorkoutFlowModal({
   );
 }
 
+function WorkoutStatsModal({
+  visible,
+  exercises,
+  completed,
+  setProgress,
+  setLogs,
+  progressPct,
+  onClose,
+}: {
+  visible: boolean;
+  exercises: WorkoutExerciseDetail[];
+  completed: Set<string>;
+  setProgress: Record<string, number>;
+  setLogs: Record<string, SetLog[]>;
+  progressPct: number;
+  onClose: () => void;
+}) {
+  const totalSets = exercises.reduce((sum, exercise) => sum + Math.max(1, Number(exercise.sets || 1)), 0);
+  const loggedSets = exercises.reduce((sum, exercise) => sum + Math.min(Math.max(1, Number(exercise.sets || 1)), setProgress[exercise.exerciseId] || 0), 0);
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalRoot}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} />
+        <View style={styles.statsSheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHead}>
+            <View>
+              <Text style={styles.sheetKicker}>Workout stats</Text>
+              <Text style={styles.sheetTitle}>Progress so far</Text>
+              <Text style={styles.sheetSub}>{loggedSets}/{totalSets} sets logged · {progressPct}% complete</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <Feather name="x" size={20} color={colors.inkMuted} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.statsSummaryRow}>
+            <View style={styles.statsSummaryCard}>
+              <Text style={styles.statsSummaryValue}>{completed.size}/{exercises.length}</Text>
+              <Text style={styles.statsSummaryLabel}>Movements</Text>
+            </View>
+            <View style={styles.statsSummaryCard}>
+              <Text style={styles.statsSummaryValue}>{loggedSets}/{totalSets}</Text>
+              <Text style={styles.statsSummaryLabel}>Sets</Text>
+            </View>
+            <View style={styles.statsSummaryCard}>
+              <Text style={styles.statsSummaryValue}>{progressPct}%</Text>
+              <Text style={styles.statsSummaryLabel}>Done</Text>
+            </View>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.statsList}>
+            {exercises.map((exercise, index) => {
+              const total = Math.max(1, Number(exercise.sets || 1));
+              const logged = Math.min(total, setProgress[exercise.exerciseId] || 0);
+              const logs = setLogs[exercise.exerciseId] || [];
+              const done = completed.has(exercise.exerciseId);
+              return (
+                <View key={exercise.exerciseId} style={[styles.statsExerciseCard, done && styles.statsExerciseCardDone]}>
+                  <View style={styles.statsExerciseHead}>
+                    <View style={[styles.exerciseNum, done && styles.exerciseNumDone]}>
+                      {done ? <Feather name="check" size={15} color={colors.white} /> : <Text style={styles.exerciseNumText}>{index + 1}</Text>}
+                    </View>
+                    <View style={styles.exerciseRowText}>
+                      <Text style={styles.exerciseRowTitle} numberOfLines={1}>{exercise.exerciseName}</Text>
+                      <Text style={styles.exerciseRowMeta} numberOfLines={1}>{logged}/{total} sets · {displayValue(exercise.reps)} · {displayValue(exercise.restSec, '0')}s rest</Text>
+                    </View>
+                  </View>
+                  {logs.length ? (
+                    <View style={styles.loggedSetList}>
+                      {logs.map((log) => (
+                        <View key={log.setNumber} style={styles.loggedSetPill}>
+                          <Text style={styles.loggedSetText}>
+                            Set {log.setNumber}: {log.reps || '-'} reps{log.weight ? ` · ${log.weight} kg` : ''}{log.durationSec ? ` · ${formatTimer(log.durationSec)}` : ''}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 function FeedbackModal({
   visible,
   sentiment,
@@ -665,6 +992,122 @@ function FeedbackModal({
           />
 
           <PrimaryButton title="Send feedback" icon="send" onPress={onSubmit} loading={saving} disabled={!sentiment} />
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function SetEntryModal({
+  visible,
+  exerciseName,
+  setNumber,
+  setTotal,
+  elapsed,
+  reps,
+  weight,
+  needsWeight,
+  targetReps,
+  onReps,
+  onWeight,
+  onAdjustReps,
+  onAdjustWeight,
+  onCancel,
+  onSave,
+}: {
+  visible: boolean;
+  exerciseName: string;
+  setNumber: number;
+  setTotal: number;
+  elapsed: number;
+  reps: string;
+  weight: string;
+  needsWeight: boolean;
+  targetReps: string;
+  onReps: (value: string) => void;
+  onWeight: (value: string) => void;
+  onAdjustReps: (delta: number) => void;
+  onAdjustWeight: (delta: number) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalRoot}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onCancel} />
+        <View style={styles.setEntrySheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHead}>
+            <View style={styles.setEntryHeadText}>
+              <Text style={styles.sheetKicker}>Log set {setNumber} of {setTotal}</Text>
+              <Text style={styles.sheetTitle} numberOfLines={1}>{exerciseName}</Text>
+              <Text style={styles.sheetSub}>Time under work: {formatTimer(elapsed)}</Text>
+            </View>
+            <TouchableOpacity onPress={onCancel} style={styles.closeButton}>
+              <Feather name="x" size={20} color={colors.inkMuted} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.setEntryTarget}>
+            <Feather name="target" size={18} color={colors.accentDark} />
+            <Text style={styles.setEntryTargetText}>Target: {targetReps}</Text>
+          </View>
+
+          <View style={styles.sheetInputStack}>
+            <View style={styles.sheetInputGroup}>
+              <Text style={styles.logInputLabel}>Reps completed</Text>
+              <View style={styles.sheetStepperInputRow}>
+                <TouchableOpacity onPress={() => onAdjustReps(-1)} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Decrease reps">
+                  <Feather name="minus" size={20} color={colors.accentDark} />
+                </TouchableOpacity>
+                <TextInput
+                  value={reps}
+                  onChangeText={onReps}
+                  keyboardType="number-pad"
+                  placeholder={targetReps}
+                  placeholderTextColor={colors.inkSubtle}
+                  style={styles.sheetLogInput}
+                  textAlign="center"
+                />
+                <TouchableOpacity onPress={() => onAdjustReps(1)} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Increase reps">
+                  <Feather name="plus" size={20} color={colors.accentDark} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {needsWeight ? (
+              <View style={styles.sheetInputGroup}>
+                <Text style={styles.logInputLabel}>Weight used</Text>
+                <View style={styles.sheetStepperInputRow}>
+                  <TouchableOpacity onPress={() => onAdjustWeight(-1)} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Decrease weight">
+                    <Feather name="minus" size={20} color={colors.accentDark} />
+                  </TouchableOpacity>
+                  <TextInput
+                    value={weight}
+                    onChangeText={onWeight}
+                    keyboardType="decimal-pad"
+                    placeholder="0 kg"
+                    placeholderTextColor={colors.inkSubtle}
+                    style={styles.sheetLogInput}
+                    textAlign="center"
+                  />
+                  <TouchableOpacity onPress={() => onAdjustWeight(1)} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Increase weight">
+                    <Feather name="plus" size={20} color={colors.accentDark} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.sheetActionRow}>
+            <TouchableOpacity onPress={onCancel} style={styles.sheetSecondaryButton} accessibilityRole="button" accessibilityLabel="Resume set">
+              <Text style={styles.sheetSecondaryText}>Resume</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onSave} style={styles.sheetSaveButton} accessibilityRole="button" accessibilityLabel="Save set">
+              <Text style={styles.sheetSaveText}>Save set</Text>
+              <Feather name="arrow-right" size={20} color={colors.white} />
+            </TouchableOpacity>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -759,6 +1202,271 @@ const styles = StyleSheet.create({
   timerActions: { flexDirection: 'row', gap: spacing.sm },
   timerPill: { backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.pill },
   timerBtn: { color: colors.white, fontWeight: '700', fontSize: 13 },
+  sessionProgress: {
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  sessionProgressText: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing.xs,
+  },
+  sessionProgressLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
+  executionShell: {
+    flex: 1,
+    marginHorizontal: spacing.lg,
+    borderRadius: 30,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+  },
+  executionShellCompact: {
+    padding: spacing.md,
+    borderRadius: 26,
+  },
+  restCard: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 28,
+    backgroundColor: colors.accentDarker,
+    padding: spacing.lg,
+  },
+  restIcon: {
+    width: 76,
+    height: 76,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    marginBottom: spacing.lg,
+  },
+  restKicker: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
+  restTimer: { fontSize: 78, lineHeight: 86, fontWeight: '900', color: colors.white, marginTop: spacing.sm },
+  restText: { ...typography.body, color: colors.onAccentMuted, textAlign: 'center', marginTop: spacing.sm },
+  restActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
+  restSmallButton: {
+    minWidth: 96,
+    minHeight: 46,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
+  },
+  restSmallButtonText: { ...typography.bodyBold, color: colors.white },
+  movementHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  prescriptionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  prescriptionPill: {
+    flex: 1,
+    minHeight: 76,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm,
+  },
+  prescriptionLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
+  prescriptionValue: { ...typography.subtitle, color: colors.ink, marginTop: 4 },
+  setLogPanel: {
+    borderRadius: 24,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+  },
+  setLogHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  setLogTitle: { ...typography.subtitle, color: colors.ink },
+  setLogMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  setLogBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
+  },
+  setRunRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  setRunMetric: {
+    flex: 1,
+    minHeight: 62,
+    borderRadius: radius.lg,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 9,
+  },
+  setRunLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
+  setRunValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
+  setCompactMeta: { ...typography.bodyBold, color: colors.accentDark, marginTop: spacing.xs },
+  logInputRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  logInputGroup: {
+    flex: 1,
+    minWidth: 0,
+  },
+  logInputGroupSplit: {
+    flexBasis: 0,
+  },
+  logInputLabel: { ...typography.caption, color: colors.accentDark, fontWeight: '900', marginBottom: 6 },
+  stepperInputRow: {
+    minHeight: 48,
+    borderRadius: radius.pill,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  stepperButton: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.panelMuted,
+  },
+  logInput: {
+    flex: 1,
+    minWidth: 42,
+    paddingHorizontal: 4,
+    paddingVertical: 0,
+    ...typography.subtitle,
+    color: colors.ink,
+  },
+  lastLogText: { ...typography.caption, color: colors.accentDark, fontWeight: '800', marginTop: spacing.xs },
+  statusPanel: {
+    borderRadius: 24,
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginTop: spacing.sm,
+  },
+  statusTitle: { ...typography.subtitle, color: colors.ink },
+  statusMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  actionDock: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    backgroundColor: colors.bg,
+  },
+  primarySessionButton: {
+    height: 78,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    borderWidth: 4,
+    borderColor: colors.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+    shadowColor: colors.accentDark,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  restPrimaryButton: { backgroundColor: colors.accentDark },
+  donePrimaryButton: { backgroundColor: colors.accent },
+  primarySessionIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.pill,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  primarySessionText: { fontSize: 20, lineHeight: 25, fontWeight: '900', color: colors.white, maxWidth: '58%' },
+  primarySessionLabelBlock: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    maxWidth: '58%',
+  },
+  primarySessionSubText: { ...typography.caption, color: colors.onAccentMuted, fontWeight: '800', marginTop: 1 },
+  activeActionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  pauseSessionButton: {
+    flex: 0.9,
+    minHeight: 74,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  pauseSessionText: { fontSize: 18, lineHeight: 23, fontWeight: '900', color: colors.accentDark },
+  completeSessionButton: {
+    flex: 1.25,
+    minHeight: 74,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    borderWidth: 4,
+    borderColor: colors.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    shadowColor: colors.accentDark,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.24,
+    shadowRadius: 16,
+    elevation: 7,
+  },
+  completeSessionText: { fontSize: 19, lineHeight: 24, fontWeight: '900', color: colors.white },
+  secondaryActionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  secondarySessionButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  secondarySessionText: { ...typography.caption, color: colors.accentDark, fontWeight: '900' },
   stepShell: {
     flex: 1,
     marginHorizontal: spacing.lg,
@@ -813,14 +1521,14 @@ const styles = StyleSheet.create({
   },
   stepFlowText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
   videoStepCard: {
-    minHeight: 126,
+    minHeight: 104,
     borderRadius: 26,
     backgroundColor: colors.inkStrong,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
     padding: spacing.md,
-    marginTop: spacing.xs,
+    marginTop: spacing.md,
   },
   videoStepCardCompact: {
     minHeight: 108,
@@ -904,7 +1612,7 @@ const styles = StyleSheet.create({
   activeStepText: { ...typography.subtitle, color: colors.accentDark, fontWeight: '800' },
   activeText: { flex: 1 },
   activeKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
-  activeName: { ...typography.title, color: colors.ink, marginTop: 1 },
+  activeName: { fontSize: 31, lineHeight: 37, fontWeight: '900', color: colors.ink, marginTop: spacing.sm },
   activeStatus: {
     width: 36,
     height: 36,
@@ -914,6 +1622,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentLight,
   },
   activeStatusDone: { backgroundColor: colors.accent },
+  activeStatusLive: { backgroundColor: colors.warn },
   videoBox: { alignItems: 'center', justifyContent: 'center' },
   videoActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   videoActionButton: { flex: 1 },
@@ -1023,6 +1732,90 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingBottom: spacing.lg,
   },
+  setEntrySheet: {
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+  },
+  setEntryHeadText: { flex: 1 },
+  setEntryTarget: {
+    minHeight: 48,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+  },
+  setEntryTargetText: { ...typography.bodyBold, color: colors.accentDark },
+  sheetInputStack: {
+    gap: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  sheetInputGroup: {
+    gap: 6,
+  },
+  sheetStepperInputRow: {
+    minHeight: 64,
+    borderRadius: radius.xl,
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xs,
+  },
+  sheetStepperButton: {
+    width: 52,
+    height: 52,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+  },
+  sheetLogInput: {
+    flex: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 0,
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '900',
+    color: colors.ink,
+  },
+  sheetActionRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  sheetSecondaryButton: {
+    flex: 0.82,
+    minHeight: 58,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetSecondaryText: { ...typography.bodyBold, color: colors.inkMuted },
+  sheetSaveButton: {
+    flex: 1.18,
+    minHeight: 58,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  sheetSaveText: { ...typography.bodyBold, color: colors.white },
   flowSheet: {
     maxHeight: '76%',
     borderTopLeftRadius: 30,
@@ -1032,6 +1825,64 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     paddingBottom: spacing.lg,
   },
+  statsSheet: {
+    maxHeight: '82%',
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+  },
+  statsSummaryRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  statsSummaryCard: {
+    flex: 1,
+    minHeight: 74,
+    borderRadius: radius.lg,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    padding: spacing.sm,
+    justifyContent: 'center',
+  },
+  statsSummaryValue: { ...typography.subtitle, color: colors.accentDark },
+  statsSummaryLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '800', marginTop: 2 },
+  statsList: { gap: spacing.sm, paddingBottom: spacing.md },
+  statsExerciseCard: {
+    borderRadius: radius.xl,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  statsExerciseCardDone: {
+    backgroundColor: colors.accentLight,
+    borderColor: colors.accentSurface,
+  },
+  statsExerciseHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  loggedSetList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  loggedSetPill: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  loggedSetText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
   sheetHandle: {
     width: 44,
     height: 5,

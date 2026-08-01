@@ -149,9 +149,9 @@ function DietScreenContent({ route, navigation }: Props) {
     const result = await launchCamera({
       mediaType: 'photo',
       cameraType: 'back',
-      quality: 0.8,
-      maxWidth: 1600,
-      maxHeight: 1600,
+      quality: 0.7,
+      maxWidth: 1280,
+      maxHeight: 1280,
       includeBase64: true,
       saveToPhotos: false,
     });
@@ -167,9 +167,9 @@ function DietScreenContent({ route, navigation }: Props) {
     const result = await launchImageLibrary({
       mediaType: 'photo',
       selectionLimit: 1,
-      quality: 0.9,
-      maxWidth: 1600,
-      maxHeight: 1600,
+      quality: 0.7,
+      maxWidth: 1280,
+      maxHeight: 1280,
       includeBase64: true,
     });
     if (result.didCancel) return;

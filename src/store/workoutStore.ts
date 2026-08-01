@@ -8,6 +8,7 @@ export type WorkoutProgress = {
   planDayId: string;
   completedExerciseIds: string[];
   setProgressByExercise?: Record<string, number>;
+  setLogsByExercise?: Record<string, Array<{ setNumber: number; reps: string; weight: string; durationSec?: number }>>;
   updatedAt: string;
 };
 

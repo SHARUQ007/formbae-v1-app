@@ -62,12 +62,23 @@ export function loadCoachBundleCached(options?: { force?: boolean }) {
   );
 }
 
+let preloadPromise: Promise<unknown[]> | null = null;
+let lastPreloadStartedAt = 0;
+
 export function preloadMainAppData() {
-  Promise.allSettled([
+  const now = Date.now();
+  if (preloadPromise && now - lastPreloadStartedAt < 10_000) {
+    return preloadPromise;
+  }
+  lastPreloadStartedAt = now;
+  preloadPromise = Promise.allSettled([
     loadWorkoutPlanCached(),
     loadDietDiaryCached(),
     loadProgressBundleCached(),
     loadProfileSettingsCached(),
     loadCoachBundleCached(),
-  ]).catch(() => undefined);
+  ]).finally(() => {
+    preloadPromise = null;
+  });
+  return preloadPromise;
 }

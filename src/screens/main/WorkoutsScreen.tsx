@@ -78,6 +78,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
 
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
+      navigation.getParent()?.setOptions({ tabBarStyle: undefined });
       load();
     });
     return unsub;
@@ -104,12 +105,14 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const openWorkoutDetail = (day: PlanDay | null, mode: 'standard' | 'quick') => {
     if (!day) return;
     loadWorkoutDayCached(day.planDayId, mode).catch(() => undefined);
+    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
     navigation.navigate('WorkoutDetail', { planDayId: day.planDayId, title: day.focus, mode });
   };
 
   const openWorkoutSummary = (day: PlanDay | null, mode: 'standard' | 'quick') => {
     if (!day) return;
     loadWorkoutDayCached(day.planDayId, mode).catch(() => undefined);
+    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
     navigation.navigate('WorkoutSummary', { planDayId: day.planDayId, title: day.focus, mode });
   };
 

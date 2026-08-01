@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
+import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Badge } from '../../components/Badge';
 import { ScreenContainer, ScreenHeader } from '../../components/Card';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { loadWorkoutDayCached } from '../../services/preloadService';
 import type { WorkoutStackParamList } from '../../navigation/types';
 import type { WorkoutDayDetail, WorkoutExerciseDetail } from '../../types/api';
-import { buildWorkoutSummary, cleanWorkoutNotes } from '../../utils/workoutSummary';
+import { buildWorkoutSummary } from '../../utils/workoutSummary';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
 import { shadows } from '../../theme/shadows';
@@ -32,20 +33,22 @@ function modeLabel(mode: 'standard' | 'quick') {
 }
 
 function exerciseMeta(exercise: WorkoutExerciseDetail) {
-  const parts = [
-    `${displayValue(exercise.sets, '1')} sets`,
-    displayValue(exercise.reps, 'guided reps'),
-    `${displayValue(exercise.restSec, '0')}s rest`,
-  ];
+  const parts = [`${displayValue(exercise.sets, '1')} sets`, displayValue(exercise.reps, 'guided reps')];
   return parts.join(' · ');
 }
 
 export function WorkoutSummaryScreen({ route, navigation }: Props) {
   const { planDayId, mode = 'standard' } = route.params;
   const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, spacing.sm);
+  const footerHeight = 102 + bottomInset;
   const [detail, setDetail] = useState<WorkoutDayDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
+    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+  }, [navigation]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,43 +108,54 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
     );
   }
 
-  const dayNotes = cleanWorkoutNotes(detail.notes);
-
   return (
-    <ScreenContainer withBottomInset>
+    <View style={[styles.root, { paddingTop: insets.top + spacing.md }]}>
       <ScreenHeader title={modeLabel(mode)} subtitle={`Day ${detail.dayNumber} - ${detail.focus || detail.planTitle}`} onBack={() => navigation.goBack()} />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 118 }]}>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.scroll, { paddingBottom: footerHeight + spacing.md }]}
+      >
         <View style={styles.hero}>
           <View style={styles.heroTop}>
-            <Badge label={mode === 'quick' ? 'Fast track' : 'Full session'} tone="accent" icon={mode === 'quick' ? 'clock' : 'activity'} />
-            <Text style={styles.heroDay}>Day {detail.dayNumber}</Text>
+            <View style={styles.heroCopy}>
+              <Badge label={mode === 'quick' ? 'Quick' : 'Full'} tone="accent" icon={mode === 'quick' ? 'clock' : 'activity'} />
+              <Text style={styles.heroTitle}>{detail.focus || detail.planTitle}</Text>
+              <Text style={styles.heroSubline}>{exercises.length} moves · {summary.intensity}</Text>
+            </View>
+            <View style={styles.heroGraphic}>
+              <View style={styles.graphicRing}>
+                <MaterialCommunityIcon name={mode === 'quick' ? 'run' : 'weight-lifter'} size={46} color={colors.white} />
+              </View>
+            </View>
           </View>
-          <Text style={styles.heroTitle}>{detail.focus || detail.planTitle}</Text>
-          <Text style={styles.heroText}>{summary.overview}</Text>
-          <View style={styles.estimateGrid}>
-            <Metric icon="clock" label="Duration" value={summary.duration} />
-            <Metric icon="zap" label="Calories" value={summary.calories} />
-            <Metric icon="trending-up" label="Muscle gain" value={summary.muscleGain} />
-            <Metric icon="bar-chart-2" label="Intensity" value={summary.intensity} />
+          <View style={styles.metricStrip}>
+            <Metric icon="timer-outline" label="Time" value={summary.duration} />
+            <Metric icon="fire" label="Burn" value={summary.calories} />
           </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Muscles worked</Text>
+        <View style={styles.cardSection}>
+          <View style={styles.sectionHead}>
+            <MaterialCommunityIcon name="arm-flex" size={20} color={colors.accentDark} />
+            <Text style={styles.sectionTitle}>Muscles</Text>
+          </View>
           <View style={styles.chips}>
-            {summary.muscles.map((muscle) => (
+            {summary.muscles.slice(0, 5).map((muscle) => (
               <View key={muscle} style={styles.muscleChip}>
-                <Feather name="target" size={14} color={colors.accentDark} />
                 <Text style={styles.muscleText}>{muscle}</Text>
               </View>
             ))}
           </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Why this helps</Text>
+        <View style={[styles.cardSection, styles.planPreviewSection]}>
+          <View style={styles.sectionHead}>
+            <MaterialCommunityIcon name="chart-line" size={20} color={colors.accentDark} />
+            <Text style={styles.sectionTitle}>Why it matters</Text>
+          </View>
           <View style={styles.benefitList}>
-            {summary.benefits.map((benefit) => (
+            {summary.benefits.slice(0, 2).map((benefit) => (
               <View key={benefit} style={styles.benefitRow}>
                 <View style={styles.checkDot}>
                   <Feather name="check" size={13} color={colors.white} />
@@ -152,17 +166,14 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
           </View>
         </View>
 
-        {dayNotes ? (
-          <View style={styles.noteBox}>
-            <Feather name="info" size={16} color={colors.accentDark} />
-            <Text style={styles.noteText}>{dayNotes}</Text>
+        <View style={styles.cardSection}>
+          <View style={styles.sectionHead}>
+            <MaterialCommunityIcon name="dumbbell" size={20} color={colors.accentDark} />
+            <Text style={styles.sectionTitle}>Plan preview</Text>
+            <Text style={styles.exerciseCount}>{exercises.length} moves</Text>
           </View>
-        ) : null}
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Exercise flow</Text>
           <View style={styles.exerciseList}>
-            {exercises.map((exercise, index) => (
+            {exercises.slice(0, 5).map((exercise, index) => (
               <View key={`${exercise.exerciseId}-${index}`} style={styles.exerciseRow}>
                 <View style={styles.exerciseIndex}>
                   <Text style={styles.exerciseIndexText}>{index + 1}</Text>
@@ -173,142 +184,174 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
                 </View>
               </View>
             ))}
+            {exercises.length > 5 ? <Text style={styles.moreExercises}>+ {exercises.length - 5} more inside the workout</Text> : null}
           </View>
         </View>
       </ScrollView>
 
-      <View style={[styles.startDock, { paddingBottom: insets.bottom + spacing.sm }]}>
+      <View style={[styles.startDock, { height: footerHeight, paddingBottom: bottomInset }]}>
         <TouchableOpacity activeOpacity={0.86} onPress={startWorkout} style={styles.startButton} accessibilityRole="button" accessibilityLabel={`Start ${modeLabel(mode)}`}>
           <View style={styles.startIcon}>
-            <Feather name="play" size={26} color={colors.accentDark} />
+            <Feather name="play" size={24} color={colors.accentDark} />
           </View>
-          <Text style={styles.startText}>Start</Text>
+          <Text style={styles.startText}>Start workout</Text>
+          <Feather name="arrow-right" size={22} color={colors.white} />
         </TouchableOpacity>
       </View>
-    </ScreenContainer>
+    </View>
   );
 }
 
 function Metric({ icon, label, value }: { icon: string; label: string; value: string }) {
   return (
     <View style={styles.metric}>
-      <Feather name={icon} size={16} color={colors.accentDark} />
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue} numberOfLines={2}>{value}</Text>
+      <MaterialCommunityIcon name={icon} size={20} color={colors.accentDark} />
+      <View style={styles.metricCopy}>
+        <Text style={styles.metricLabel}>{label}</Text>
+        <Text style={styles.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{value}</Text>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { gap: spacing.md },
+  root: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: colors.bg,
+    paddingHorizontal: spacing.lg,
+  },
+  scrollView: { flex: 1, minHeight: 0 },
+  scroll: { gap: spacing.sm },
   hero: {
-    borderRadius: 30,
+    borderRadius: 28,
     backgroundColor: colors.accentDarker,
     padding: spacing.lg,
     ...shadows.lg,
   },
-  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  heroDay: { ...typography.caption, color: colors.onAccentMuted, fontWeight: '800' },
-  heroTitle: { ...typography.hero, color: colors.white, marginTop: spacing.md },
-  heroText: { ...typography.body, color: colors.onAccentMuted, marginTop: spacing.sm, lineHeight: 24 },
-  estimateGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.lg },
-  metric: {
-    width: '48%',
-    minHeight: 104,
-    borderRadius: radius.xl,
-    backgroundColor: colors.white,
-    padding: spacing.md,
+  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  heroCopy: { flex: 1 },
+  heroTitle: { fontSize: 21, lineHeight: 26, fontWeight: '800', color: colors.white, marginTop: spacing.sm },
+  heroSubline: { ...typography.bodyBold, color: colors.onAccentMuted, marginTop: spacing.xs },
+  heroGraphic: {
+    width: 104,
+    height: 104,
+    borderRadius: 34,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
   },
-  metricLabel: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.sm },
-  metricValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
-  section: {
-    borderRadius: radius.xl,
+  graphicRing: {
+    width: 78,
+    height: 78,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+  },
+  metricStrip: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
+  metric: {
+    flex: 1,
+    minHeight: 56,
+    borderRadius: radius.pill,
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  metricCopy: { flex: 1, minWidth: 0 },
+  metricLabel: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '800', textTransform: 'uppercase' },
+  metricValue: { fontSize: 14, lineHeight: 17, color: colors.ink, marginTop: 1, fontWeight: '800' },
+  cardSection: {
+    borderRadius: 22,
     backgroundColor: colors.panel,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.md,
+    padding: spacing.lg,
   },
-  sectionTitle: { ...typography.subtitle, color: colors.ink, marginBottom: spacing.sm },
+  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.sm },
+  sectionTitle: { ...typography.bodyBold, color: colors.ink, flex: 1 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   muscleChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
     borderRadius: radius.pill,
     backgroundColor: colors.accentLight,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
   },
   muscleText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
-  benefitList: { gap: spacing.sm },
+  benefitList: { gap: spacing.xs },
   benefitRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
   checkDot: {
-    width: 22,
-    height: 22,
+    width: 20,
+    height: 20,
     borderRadius: radius.pill,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 1,
   },
-  benefitText: { ...typography.body, color: colors.inkMuted, flex: 1, lineHeight: 23 },
-  noteBox: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    borderRadius: radius.xl,
-    backgroundColor: colors.accentLight,
-    padding: spacing.md,
+  benefitText: { ...typography.body, color: colors.inkMuted, flex: 1, lineHeight: 22 },
+  exerciseCount: { ...typography.caption, color: colors.inkSubtle, fontWeight: '800' },
+  exerciseList: { gap: spacing.xs },
+  planPreviewSection: {
+    minHeight: 270,
   },
-  noteText: { ...typography.caption, color: colors.accentDark, flex: 1, lineHeight: 20 },
-  exerciseList: { gap: spacing.sm },
   exerciseRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    borderRadius: radius.xl,
+    borderRadius: radius.lg,
     backgroundColor: colors.panelMuted,
     padding: spacing.md,
   },
   exerciseIndex: {
-    width: 42,
-    height: 42,
+    width: 34,
+    height: 34,
     borderRadius: radius.md,
     backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  exerciseIndexText: { ...typography.subtitle, color: colors.accentDark },
+  exerciseIndexText: { ...typography.bodyBold, color: colors.accentDark },
   exerciseCopy: { flex: 1 },
-  exerciseName: { ...typography.bodyBold, color: colors.ink },
+  exerciseName: { ...typography.subtitle, color: colors.ink, lineHeight: 22 },
   exerciseMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  moreExercises: { ...typography.caption, color: colors.inkSubtle, textAlign: 'center', marginTop: spacing.xs },
   startDock: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
     alignItems: 'center',
-    paddingTop: spacing.md,
-    backgroundColor: 'rgba(248,252,249,0.94)',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+    backgroundColor: 'rgba(248,252,249,0.97)',
+    zIndex: 20,
+    elevation: 20,
   },
   startButton: {
-    width: 118,
-    height: 118,
+    width: '100%',
+    height: 84,
     borderRadius: radius.pill,
+    flexDirection: 'row',
+    gap: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accent,
-    borderWidth: 8,
+    borderWidth: 4,
     borderColor: colors.white,
     ...shadows.accent,
   },
   startIcon: {
-    width: 42,
-    height: 42,
+    width: 48,
+    height: 48,
     borderRadius: radius.pill,
     backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.xs,
   },
-  startText: { ...typography.button, color: colors.white },
+  startText: { fontSize: 20, lineHeight: 25, fontWeight: '900', color: colors.white },
 });

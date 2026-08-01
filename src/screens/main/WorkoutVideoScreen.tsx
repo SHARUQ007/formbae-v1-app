@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -15,6 +15,10 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutVideo'>;
 export function WorkoutVideoScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { title, subtitle, videoUrl, videos = [], initialIndex = 0 } = route.params;
+  useLayoutEffect(() => {
+    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+  }, [navigation]);
+
   const videoItems = useMemo(
     () => videos.length ? videos : [{ id: videoUrl, title, subtitle, videoUrl }],
     [subtitle, title, videoUrl, videos],

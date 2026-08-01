@@ -2,7 +2,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { BottomTabBarButtonProps, BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { getFocusedRouteNameFromRoute, useNavigation } from '@react-navigation/native';
 import { useCallback, useEffect, useState } from 'react';
-import { AppState, InteractionManager, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { WorkoutsNavigator } from './WorkoutsNavigator';
@@ -20,6 +20,29 @@ import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
+
+type IdleCallbackHandle = ReturnType<typeof setTimeout> | number;
+type IdleGlobal = typeof globalThis & {
+  requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+  cancelIdleCallback?: (handle: number) => void;
+};
+
+function scheduleIdleTask(callback: () => void, timeout = 800): IdleCallbackHandle {
+  const requestIdle = (globalThis as IdleGlobal).requestIdleCallback;
+  if (typeof requestIdle === 'function') {
+    return requestIdle(callback, { timeout });
+  }
+  return setTimeout(callback, timeout);
+}
+
+function cancelIdleTask(handle: IdleCallbackHandle) {
+  const cancelIdle = (globalThis as IdleGlobal).cancelIdleCallback;
+  if (typeof cancelIdle === 'function' && typeof handle === 'number') {
+    cancelIdle(handle);
+    return;
+  }
+  clearTimeout(handle as ReturnType<typeof setTimeout>);
+}
 
 type TabIconProps = { color: string; focused: boolean };
 
@@ -148,17 +171,13 @@ function ContextualActionButton({ accessibilityState }: BottomTabBarButtonProps)
   }, []);
 
   useEffect(() => {
-    let idleTimer: ReturnType<typeof setTimeout> | undefined;
-    const task = InteractionManager.runAfterInteractions(() => {
-      idleTimer = setTimeout(refreshTarget, 800);
-    });
+    const idleTask = scheduleIdleTask(refreshTarget, 800);
     const timer = setInterval(refreshTarget, 60_000);
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') refreshTarget();
     });
     return () => {
-      task.cancel();
-      if (idleTimer) clearTimeout(idleTimer);
+      cancelIdleTask(idleTask);
       clearInterval(timer);
       sub.remove();
     };
