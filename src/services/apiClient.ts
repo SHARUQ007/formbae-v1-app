@@ -1,4 +1,4 @@
-import { API_PREFIX, getApiBaseUrl, getBackendApiBaseUrl } from '../constants/config';
+import { API_PREFIX, getBackendApiBaseUrl } from '../constants/config';
 
 export class ApiError extends Error {
   status: number;
@@ -24,27 +24,6 @@ type RequestOptions = {
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_RETRIES = 2;
-const DIRECT_BACKEND_PATHS = [
-  '/activity',
-  '/auth/login',
-  '/legal',
-  '/me',
-  '/me/profile',
-  '/me/status',
-  '/messages',
-  '/notifications/config',
-  '/notifications/register',
-  '/progress',
-  '/settings',
-  '/trainer/change',
-  '/trainer/options',
-  '/workouts/complete',
-  '/workouts/day',
-  '/workouts/feedback',
-  '/workouts/plan',
-  '/workouts/today',
-];
-
 let authToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
 
@@ -57,29 +36,11 @@ export function getAuthToken() {
 }
 
 export function getApiUrl(path: string) {
-  return `${getApiBaseUrl()}${API_PREFIX}${path}`;
-}
-
-function shouldUseBackendDirect(path: string, method = 'GET') {
-  if (path === '/diet/diary') {
-    if (method === 'GET') return true;
-    if (method === 'POST') return true;
-  }
-  if (path.startsWith('/diet/diary/photo/')) {
-    return true;
-  }
-  if (path.startsWith('/diet/diary/') && method === 'DELETE') {
-    return true;
-  }
-  if (path.startsWith('/trainer/') && path !== '/trainer/recommended') {
-    return true;
-  }
-  return DIRECT_BACKEND_PATHS.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+  return `${getBackendApiBaseUrl()}${API_PREFIX}${path}`;
 }
 
 export function getDirectApiUrl(path: string) {
-  const baseUrl = shouldUseBackendDirect(path) ? getBackendApiBaseUrl() : getApiBaseUrl();
-  return `${baseUrl}${API_PREFIX}${path}`;
+  return `${getBackendApiBaseUrl()}${API_PREFIX}${path}`;
 }
 
 export function setUnauthorizedHandler(handler: () => void) {
@@ -113,10 +74,7 @@ async function doFetch(url: string, init: RequestInit, timeoutMs: number, extern
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = options.method || 'GET';
-  const useBackendDirect = shouldUseBackendDirect(path, method);
-  const directUrl = `${useBackendDirect ? getBackendApiBaseUrl() : getApiBaseUrl()}${API_PREFIX}${path}`;
-  const fallbackUrl = getApiUrl(path);
-  const shouldTryFallback = directUrl !== fallbackUrl;
+  const url = getApiUrl(path);
   const headers: Record<string, string> = {
     Accept: 'application/json',
     'Content-Type': 'application/json',
@@ -138,81 +96,11 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     let response: Response;
     try {
-      response = await doFetch(directUrl, init, timeoutMs, options.signal);
-    } catch (error) {
-      const aborted = error instanceof Error && error.name === 'AbortError';
-      if (shouldTryFallback) {
-        return apiRequestWithUrl<T>(fallbackUrl, path, options, init, timeoutMs, maxRetries);
-      }
-      lastError = new ApiError(
-        aborted ? 'Request timed out. Check your connection.' : 'Network error. Check your connection and API URL.',
-        0,
-        undefined,
-        true,
-      );
-      if (attempt < maxRetries) {
-        await sleep(400 * (attempt + 1));
-        continue;
-      }
-      throw lastError;
-    }
-
-    const text = await response.text();
-    let payload: unknown = null;
-    if (text) {
-      try {
-        payload = JSON.parse(text);
-      } catch {
-        payload = text;
-      }
-    }
-
-    if (response.status === 401) {
-      onUnauthorized?.();
-      throw new ApiError('Session expired. Please log in again.', 401, payload);
-    }
-
-    if (response.status >= 500 && attempt < maxRetries) {
-      lastError = new ApiError(`Server error (${response.status})`, response.status, payload);
-      await sleep(400 * (attempt + 1));
-      continue;
-    }
-
-    if (!response.ok) {
-      if (shouldTryFallback && [404, 405, 501].includes(response.status)) {
-        return apiRequestWithUrl<T>(fallbackUrl, path, options, init, timeoutMs, maxRetries);
-      }
-      const message =
-        payload && typeof payload === 'object' && 'error' in payload
-          ? String((payload as { error: unknown }).error)
-          : `Request failed (${response.status})`;
-      throw new ApiError(message, response.status, payload);
-    }
-
-    return payload as T;
-  }
-
-  throw lastError ?? new ApiError('Request failed', 0, undefined, true);
-}
-
-async function apiRequestWithUrl<T>(
-  url: string,
-  path: string,
-  options: RequestOptions,
-  init: RequestInit,
-  timeoutMs: number,
-  maxRetries: number,
-): Promise<T> {
-  let lastError: ApiError | null = null;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-    let response: Response;
-    try {
       response = await doFetch(url, init, timeoutMs, options.signal);
     } catch (error) {
       const aborted = error instanceof Error && error.name === 'AbortError';
       lastError = new ApiError(
-        aborted ? 'Request timed out. Check your connection.' : `Network error for ${path}.`,
+        aborted ? 'Request timed out. Check your connection.' : 'Network error. Check your connection and API URL.',
         0,
         undefined,
         true,

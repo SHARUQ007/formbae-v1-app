@@ -1,6 +1,5 @@
 import RazorpayCheckout from 'react-native-razorpay';
 import { apiRequest } from './apiClient';
-import { getRazorpayKeyId } from '../constants/config';
 import type { PaymentPlan, UserStatus } from '../types/api';
 
 export async function fetchPaymentStatus() {
@@ -132,9 +131,9 @@ export async function runNativeCheckout(params: {
     return { success: false, error: error instanceof Error ? error.message : 'Could not start payment' };
   }
 
-  const keyId = checkoutTarget.keyId || getRazorpayKeyId();
+  const keyId = checkoutTarget.keyId;
   if (!keyId) {
-    return { success: false, error: 'Payment is not configured. Please try the web checkout.' };
+    return { success: false, error: 'Payment is not configured. Please try again shortly.' };
   }
 
   const options = {

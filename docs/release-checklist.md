@@ -11,8 +11,7 @@
 - Strategy: bump `versionName` on user-facing releases; always bump build/`versionCode`.
 
 ## Environment
-- `API_BASE_URL` → production Next.js origin (e.g. `https://formbae.in`). Set in `.env` before building; `react-native-config` bakes it into the build.
-- `RAZORPAY_KEY_ID` → **live** key for production builds.
+- `BACKEND_API_BASE_URL` → production FastAPI backend origin (e.g. `https://formbae-backend.onrender.com`). Set in `.env` before building; `react-native-config` bakes it into the build.
 - `SITE_URL` → `https://formbae.in`.
 - Confirm `.env` is NOT committed (git-ignored); keep `.env.example` updated.
 
@@ -24,7 +23,7 @@
 
 ## Android release build
 1. `cd App && npm install`
-2. Set `.env` (production `API_BASE_URL`, live `RAZORPAY_KEY_ID`).
+2. Set `.env` (production `BACKEND_API_BASE_URL`, `SITE_URL`).
 3. Create/keep an upload keystore; configure signing in `android/app/build.gradle` (`signingConfigs.release`) via `~/.gradle/gradle.properties` (never commit the keystore).
 4. `cd android && ./gradlew clean bundleRelease` → `app/build/outputs/bundle/release/app-release.aab`.
 5. Upload the `.aab` to Play Console. Target SDK is 36 (meets current Play requirement).

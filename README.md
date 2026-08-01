@@ -13,14 +13,13 @@ Bare React Native (no Expo) customer app for FormBae — workout plan, trainer m
 - `react-native-webview` — exercise video playback (YouTube embeds)
 - `react-native-image-picker` + `react-native-fs` — diet diary camera/gallery capture + local photo storage
 - `react-native-linear-gradient`, `react-native-vector-icons`, `react-native-svg`
-- API: Next.js BFF at `{API_BASE_URL}/api/mobile/*` (see `docs/mobile-api.md`)
+- API: FastAPI backend at `{BACKEND_API_BASE_URL}/api/mobile/*` (see `docs/mobile-api.md`)
 
 ## Prerequisites
 
 - Node.js ≥ 22
 - Xcode + CocoaPods (iOS)
 - Android Studio + SDK (Android)
-- FormBae **frontend** dev server running (`cd frontend && npm run dev`)
 - FormBae **backend** running (`cd backend && uvicorn app.main:app --reload`)
 
 ## Setup
@@ -35,15 +34,15 @@ cp .env.example .env
 
 | Variable | Description |
 |----------|-------------|
-| `API_BASE_URL` | Next.js origin reachable from device/emulator |
+| `BACKEND_API_BASE_URL` | FastAPI backend origin reachable from device/emulator |
 | `SITE_URL` | Public site for web payment fallback |
 
 **Emulator defaults:**
 
-- Android emulator → `http://10.0.2.2:3000` (maps to host `localhost`)
-- iOS simulator → `http://127.0.0.1:3000`
+- Android emulator → `http://10.0.2.2:8000` (maps to host `localhost`)
+- iOS simulator → `http://127.0.0.1:8000`
 
-**Physical device:** use your machine LAN IP, e.g. `http://192.168.1.10:3000`.
+**Physical device:** use your machine LAN IP, e.g. `http://192.168.1.10:8000`.
 
 ## Run
 
@@ -102,7 +101,7 @@ App/
 
 ## Features
 
-- **Native Razorpay checkout** — create order → SDK → verify → instant unlock, with web fallback
+- **Native Razorpay checkout** — backend creates order/subscription → SDK opens checkout → backend verifies → instant unlock, with web fallback link
 - **Workout player** — per-exercise video (YouTube), rest timer with +15s/skip, per-exercise completion, finish workout
 - **Diet diary** — bottom-tab diet area with camera/gallery food photos, meal labels, local-first storage, and backend sync
 - **Offline-safe workouts** — completions persist locally and flush automatically when back online
@@ -115,7 +114,7 @@ App/
 - **react-native-config:** rebuild after changing `.env`
 - **react-native-vector-icons:** Feather icons; fonts linked in `android/app/build.gradle`
 - **react-native-keychain:** requires device/simulator (not plain web)
-- **react-native-razorpay:** set `RAZORPAY_KEY_ID` in `.env`; iOS needs `pod install`
+- **react-native-razorpay:** the backend returns the public checkout key with each order/subscription; iOS needs `pod install`
 - **@notifee/react-native:** Android 13+ needs `POST_NOTIFICATIONS` (declared in manifest, prompted at runtime)
 - **react-native-webview:** used for exercise videos; iOS needs `pod install`
 - **react-native-image-picker / react-native-fs:** used for Diet Diary food photos; iOS needs camera/photo usage strings and `pod install`
@@ -146,11 +145,11 @@ Local reminders work out of the box. To enable server-sent push:
 
 | Issue | Fix |
 |-------|-----|
-| Network error on API | Check `API_BASE_URL`, frontend running, same Wi‑Fi for physical device |
+| Network error on API | Check `BACKEND_API_BASE_URL`, backend running, same Wi‑Fi for physical device |
 | 401 after login | `SESSION_SECRET` must match between app server and token signing |
 | Login 404 | Use signup flow (`createIfMissing`) or complete web payment first |
 | Empty workout plan | Trainer must publish active plan in admin/trainer dashboard |
-| Payment fails in app | Verify `RAZORPAY_KEY_ID` / server `RAZORPAY_KEY_SECRET`; web fallback always available |
+| Payment fails in app | Verify backend `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET`; web fallback always available |
 | No videos | Exercise must have a YouTube URL/key on the plan; app also offers Open YouTube fallback |
 | Diet photo not saved remotely | Check live backend R2 env variables and Render network connectivity |
 | iOS build missing pods | `cd ios && bundle exec pod install` |
