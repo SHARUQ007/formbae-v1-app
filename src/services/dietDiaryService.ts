@@ -13,8 +13,25 @@ export type RemoteDietDiaryEntry = {
   imageUrl: string;
 };
 
+export type DietCoachFeedback = {
+  weekStartDate: string;
+  generatedAt: string;
+  title: string;
+  summary: string;
+  nextFocus: string;
+  highlights: string[];
+  stats: {
+    loggedItems: number;
+    daysLogged: number;
+    memoryEntries: number;
+    photoEntries: number;
+    mealCounts: Record<string, number>;
+    recentFoods: string[];
+  };
+};
+
 export async function fetchDietDiary() {
-  return apiRequest<{ entries: RemoteDietDiaryEntry[] }>('/diet/diary');
+  return apiRequest<{ entries: RemoteDietDiaryEntry[]; feedback?: DietCoachFeedback }>('/diet/diary');
 }
 
 export async function uploadDietDiaryEntry(params: {

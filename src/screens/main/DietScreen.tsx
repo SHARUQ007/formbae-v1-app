@@ -33,7 +33,13 @@ import {
   type DietDiaryEntry,
   type MealType,
 } from '../../store/dietDiaryStore';
-import { deleteRemoteDietDiaryEntry, resolveDietDiaryImageUrl, uploadDietDiaryEntry, uploadTextDietDiaryEntry } from '../../services/dietDiaryService';
+import {
+  deleteRemoteDietDiaryEntry,
+  resolveDietDiaryImageUrl,
+  uploadDietDiaryEntry,
+  uploadTextDietDiaryEntry,
+  type DietCoachFeedback,
+} from '../../services/dietDiaryService';
 import { getAuthToken } from '../../services/apiClient';
 import { displayBehavioralNotification } from '../../services/notificationService';
 import { loadDietDiaryCached } from '../../services/preloadService';
@@ -164,6 +170,7 @@ function DietScreenContent({ route, navigation }: Props) {
   const [saving, setSaving] = useState(false);
   const [selectedMeal, setSelectedMeal] = useState<MealType>('Lunch');
   const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [dietFeedback, setDietFeedback] = useState<DietCoachFeedback | null>(null);
   const [preview, setPreview] = useState<DietDiaryEntry | null>(null);
   const [textModalOpen, setTextModalOpen] = useState(false);
   const [textEntry, setTextEntry] = useState('');
@@ -178,6 +185,7 @@ function DietScreenContent({ route, navigation }: Props) {
     setEntries(local);
     try {
       const remote = await loadDietDiaryCached({ force: options?.force });
+      setDietFeedback(remote.feedback ?? null);
       setEntries(await mergeRemoteDietDiaryEntries(remote.entries));
     } catch {
       // Offline/local-only mode is still useful for the diary.
@@ -435,6 +443,32 @@ function DietScreenContent({ route, navigation }: Props) {
           </View>
         </Card>
 
+        {dietFeedback ? (
+          <View style={styles.coachFeedbackCard}>
+            <View style={styles.coachFeedbackHeader}>
+              <View style={styles.coachFeedbackIcon}>
+                <Feather name="message-circle" size={21} color={colors.white} />
+              </View>
+              <View style={styles.coachFeedbackTitleBlock}>
+                <Text style={styles.coachFeedbackEyebrow}>Weekly diet feedback</Text>
+                <Text style={styles.coachFeedbackTitle}>Ava reviewed your logs</Text>
+              </View>
+            </View>
+            <Text style={styles.coachFeedbackSummary}>{dietFeedback.summary}</Text>
+            <View style={styles.coachFeedbackStats}>
+              {dietFeedback.highlights.slice(0, 3).map((highlight) => (
+                <View key={highlight} style={styles.coachFeedbackPill}>
+                  <Text style={styles.coachFeedbackPillText}>{highlight}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={styles.coachFeedbackFocus}>
+              <Text style={styles.coachFeedbackFocusLabel}>Next focus</Text>
+              <Text style={styles.coachFeedbackFocusText}>{dietFeedback.nextFocus}</Text>
+            </View>
+          </View>
+        ) : null}
+
         <View style={styles.dateNavigator}>
           <TouchableOpacity
             onPress={() => setSelectedDate((value) => shiftDate(value, -1))}
@@ -679,6 +713,44 @@ const styles = StyleSheet.create({
   heroTitle: { ...typography.title, color: colors.accentDarker },
   heroCopy: { ...typography.body, color: colors.accentDarker, marginTop: 2 },
   heroStats: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  coachFeedbackCard: {
+    marginTop: spacing.md,
+    borderRadius: radius.xl,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    gap: spacing.md,
+    ...shadows.sm,
+  },
+  coachFeedbackHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  coachFeedbackIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.pill,
+    backgroundColor: colors.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  coachFeedbackTitleBlock: { flex: 1 },
+  coachFeedbackEyebrow: { ...typography.overline, color: colors.inkMuted, textTransform: 'uppercase' },
+  coachFeedbackTitle: { ...typography.subtitle, color: colors.ink, marginTop: 2 },
+  coachFeedbackSummary: { ...typography.body, color: colors.inkMuted },
+  coachFeedbackStats: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  coachFeedbackPill: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentLight,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  coachFeedbackPillText: { ...typography.caption, color: colors.ink, fontWeight: '800' },
+  coachFeedbackFocus: {
+    borderRadius: radius.lg,
+    backgroundColor: colors.black,
+    padding: spacing.md,
+  },
+  coachFeedbackFocusLabel: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
+  coachFeedbackFocusText: { ...typography.bodyBold, color: colors.white, marginTop: spacing.xs },
   dateNavigator: {
     flexDirection: 'row',
     alignItems: 'center',
