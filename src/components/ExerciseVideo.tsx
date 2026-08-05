@@ -8,7 +8,7 @@ import { typography } from '../theme/typography';
 
 const COMPACT_VIDEO_MAX_HEIGHT = Math.min(560, Math.round(Dimensions.get('window').height * 0.62));
 
-function DirectExerciseVideo({ url, compact = false, style }: { url: string; compact?: boolean; style?: StyleProp<ViewStyle> }) {
+function DirectExerciseVideo({ url, compact = false, fill = false, style }: { url: string; compact?: boolean; fill?: boolean; style?: StyleProp<ViewStyle> }) {
   const embed = getYoutubeEmbedUrl(url);
 
   if (!embed) {
@@ -40,7 +40,7 @@ function DirectExerciseVideo({ url, compact = false, style }: { url: string; com
 </html>`;
 
   return (
-    <View style={[styles.videoWrap, compact && styles.videoWrapCompact, style]}>
+    <View style={[fill ? styles.videoWrapFill : styles.videoWrap, compact && styles.videoWrapCompact, style]}>
       <WebView
         source={{ html, baseUrl: 'https://formbae.in' }}
         style={styles.webview}
@@ -80,6 +80,7 @@ const styles = StyleSheet.create({
   },
   placeholderText: { ...typography.caption, color: colors.inkMuted, textAlign: 'center' },
   videoWrap: { width: '100%', aspectRatio: 9 / 16, borderRadius: 26, overflow: 'hidden', backgroundColor: '#000' },
+  videoWrapFill: { width: '100%', flex: 1, borderRadius: 26, overflow: 'hidden', backgroundColor: '#000' },
   videoWrapCompact: { maxHeight: COMPACT_VIDEO_MAX_HEIGHT },
   webview: { flex: 1, backgroundColor: '#000' },
   loading: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' },
