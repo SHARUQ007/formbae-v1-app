@@ -770,13 +770,33 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
             </ScrollView>
           ) : (
             <>
-              <View style={styles.liveTimerCard}>
-                <Text style={styles.liveTimer}>{formatTimer(setElapsed)}</Text>
-                <Text style={styles.liveTimerMeta}>{setPaused ? 'Paused' : `Set ${activeSetNumber} of ${activeSets}`}</Text>
+              <View style={styles.liveWorkoutCard}>
+                <View style={styles.liveTimerHeader}>
+                  <View>
+                    <Text style={styles.liveTimerLabel}>{setPaused ? 'Paused' : 'Current set'}</Text>
+                    <Text style={styles.liveTimerMeta}>Set {activeSetNumber} of {activeSets}</Text>
+                  </View>
+                  <Text style={styles.liveTimer}>{formatTimer(setElapsed)}</Text>
+                </View>
+                <View style={styles.liveProgressTrack}>
+                  <View style={[styles.liveProgressFill, { width: `${Math.min(100, Math.max(10, (activeSetNumber / activeSets) * 100))}%` }]} />
+                </View>
+                <View style={styles.liveMetricRow}>
+                  <View style={styles.liveMetricPill}>
+                    <Text style={styles.liveMetricLabel}>Target</Text>
+                    <Text style={styles.liveMetricValue}>{displayValue(activeExercise.reps)}</Text>
+                  </View>
+                  <View style={styles.liveMetricPill}>
+                    <Text style={styles.liveMetricLabel}>Rest next</Text>
+                    <Text style={styles.liveMetricValue}>{displayValue(activeExercise.restSec, '0')}s</Text>
+                  </View>
+                </View>
               </View>
               <View style={styles.instructionCard}>
                 <View style={styles.instructionHead}>
-                  <Feather name="info" size={20} color={colors.accentDark} />
+                  <View style={styles.instructionIcon}>
+                    <Feather name="info" size={18} color={colors.white} />
+                  </View>
                   <Text style={styles.instructionTitle}>Instructions</Text>
                 </View>
                 <Text style={styles.instructionText}>
@@ -790,7 +810,9 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel={`Open video for ${activeExercise.exerciseName}`}
               >
-                <Feather name="play-circle" size={22} color={colors.white} />
+                <View style={styles.videoMiniIcon}>
+                  <Feather name="play" size={17} color={colors.white} />
+                </View>
                 <Text style={styles.videoMiniText}>{activeVideoResolving ? 'Finding video' : 'Technique video'}</Text>
                 <Feather name="chevron-right" size={20} color={colors.white} />
               </TouchableOpacity>
@@ -1645,15 +1667,25 @@ const styles = StyleSheet.create({
   },
   videoStepTitleLarge: { fontSize: 25, lineHeight: 30, fontWeight: '900', color: colors.white, marginTop: 4 },
   videoStepCardCompactActive: {
-    minHeight: 76,
-    borderRadius: 24,
+    minHeight: 68,
+    borderRadius: 20,
     backgroundColor: colors.inkStrong,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     marginTop: spacing.md,
+  },
+  videoMiniIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.5)',
   },
   videoMiniText: { ...typography.bodyBold, color: colors.white, flex: 1 },
   prepGrid: {
@@ -1727,29 +1759,70 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   cueText: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 19 },
-  liveTimerCard: {
-    borderRadius: 30,
+  liveWorkoutCard: {
+    borderRadius: 28,
     backgroundColor: colors.accentDarker,
     padding: spacing.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: spacing.lg,
+    gap: spacing.md,
+    marginTop: spacing.md,
   },
-  liveTimer: { fontSize: 72, lineHeight: 78, fontWeight: '900', color: colors.white },
-  liveTimerMeta: { ...typography.bodyBold, color: colors.onAccentMuted, marginTop: spacing.xs },
+  liveTimerHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  liveTimerLabel: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
+  liveTimer: { fontSize: 48, lineHeight: 52, fontWeight: '900', color: colors.white },
+  liveTimerMeta: { ...typography.bodyBold, color: colors.white, marginTop: 2 },
+  liveProgressTrack: {
+    height: 8,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    overflow: 'hidden',
+  },
+  liveProgressFill: {
+    height: '100%',
+    borderRadius: radius.pill,
+    backgroundColor: colors.white,
+  },
+  liveMetricRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  liveMetricPill: {
+    flex: 1,
+    minHeight: 56,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  liveMetricLabel: { ...typography.caption, color: colors.onAccentMuted, fontWeight: '800' },
+  liveMetricValue: { ...typography.subtitle, color: colors.white, marginTop: 1 },
   instructionCard: {
     flex: 1,
-    minHeight: 180,
-    borderRadius: 30,
-    backgroundColor: colors.accentLight,
+    minHeight: 166,
+    borderRadius: 28,
+    backgroundColor: colors.panelMuted,
     borderWidth: 1,
-    borderColor: colors.accentSurface,
+    borderColor: colors.border,
     padding: spacing.lg,
     marginTop: spacing.md,
   },
   instructionHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
-  instructionTitle: { ...typography.subtitle, color: colors.accentDark },
-  instructionText: { fontSize: 22, lineHeight: 31, fontWeight: '700', color: colors.accentDarker },
+  instructionIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+  },
+  instructionTitle: { ...typography.subtitle, color: colors.ink },
+  instructionText: { fontSize: 20, lineHeight: 29, fontWeight: '600', color: colors.ink },
   videoStepCard: {
     minHeight: 104,
     borderRadius: 26,
