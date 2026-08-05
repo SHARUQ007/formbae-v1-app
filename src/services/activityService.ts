@@ -5,6 +5,8 @@ type ActivityType = 'page_view' | 'interaction';
 
 const STORAGE_PREFIX = 'formbae:mobile-activity';
 const INTERACTION_COOLDOWN_MS = 60 * 1000;
+const seenPageViews = new Set<string>();
+const recentInteractions = new Map<string, number>();
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
@@ -16,8 +18,18 @@ function normalizePath(path: string) {
 }
 
 async function shouldSkip(path: string, activityType: ActivityType) {
-  const storageKey = `${STORAGE_PREFIX}:${todayKey()}:${activityType}:${path}`;
+  const memoryKey = `${todayKey()}:${activityType}:${path}`;
   const now = Date.now();
+  if (activityType === 'page_view') {
+    if (seenPageViews.has(memoryKey)) return true;
+    seenPageViews.add(memoryKey);
+  } else {
+    const previous = recentInteractions.get(memoryKey);
+    if (previous && now - previous < INTERACTION_COOLDOWN_MS) return true;
+    recentInteractions.set(memoryKey, now);
+  }
+
+  const storageKey = `${STORAGE_PREFIX}:${todayKey()}:${activityType}:${path}`;
   const previous = await AsyncStorage.getItem(storageKey);
   if (!previous) {
     await AsyncStorage.setItem(storageKey, String(now));

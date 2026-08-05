@@ -1,6 +1,6 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { SplashScreen } from '../screens/auth/SplashScreen';
 import { AuthNavigator } from './AuthNavigator';
 import { OnboardingNavigator } from './OnboardingNavigator';
@@ -27,7 +27,18 @@ function getActiveRoutePath(state: ReturnType<NonNullable<React.ComponentRef<typ
 
 export function RootNavigator() {
   const navigationRef = useRef<React.ComponentRef<typeof NavigationContainer<RootStackParamList>>>(null);
+  const pageViewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTrackedPathRef = useRef('');
   const { ready, token } = useAuthStore();
+
+  const queuePageView = useCallback((path: string) => {
+    if (!token || path === lastTrackedPathRef.current) return;
+    if (pageViewTimerRef.current) clearTimeout(pageViewTimerRef.current);
+    pageViewTimerRef.current = setTimeout(() => {
+      lastTrackedPathRef.current = path;
+      trackMobileActivity('page_view', path).catch(() => undefined);
+    }, 350);
+  }, [token]);
 
   useEffect(() => {
     if (!ready || token) return;
@@ -40,17 +51,21 @@ export function RootNavigator() {
     });
   }, [ready, token]);
 
+  useEffect(() => () => {
+    if (pageViewTimerRef.current) clearTimeout(pageViewTimerRef.current);
+  }, []);
+
   return (
     <NavigationContainer
       ref={navigationRef}
       onReady={() => {
         if (token) {
-          trackMobileActivity('page_view', getActiveRoutePath(navigationRef.current?.getRootState())).catch(() => undefined);
+          queuePageView(getActiveRoutePath(navigationRef.current?.getRootState()));
         }
       }}
       onStateChange={(state) => {
         if (token) {
-          trackMobileActivity('page_view', getActiveRoutePath(state)).catch(() => undefined);
+          queuePageView(getActiveRoutePath(state));
         }
       }}
     >

@@ -24,6 +24,7 @@ type RequestOptions = {
 
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_RETRIES = 2;
+const inflightGetRequests = new Map<string, Promise<unknown>>();
 let authToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
 
@@ -72,7 +73,7 @@ async function doFetch(url: string, init: RequestInit, timeoutMs: number, extern
   }
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+async function performApiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = options.method || 'GET';
   const url = getApiUrl(path);
   const headers: Record<string, string> = {
@@ -149,4 +150,21 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   throw lastError ?? new ApiError('Request failed', 0, undefined, true);
+}
+
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const method = options.method || 'GET';
+  const token = options.token !== undefined ? options.token : authToken;
+  const canDedupe = method === 'GET' && !options.signal;
+  const dedupeKey = canDedupe ? `${token || 'public'}:${getApiUrl(path)}` : '';
+  if (dedupeKey) {
+    const existing = inflightGetRequests.get(dedupeKey);
+    if (existing) return existing as Promise<T>;
+    const promise = performApiRequest<T>(path, options).finally(() => {
+      inflightGetRequests.delete(dedupeKey);
+    });
+    inflightGetRequests.set(dedupeKey, promise);
+    return promise;
+  }
+  return performApiRequest<T>(path, options);
 }
