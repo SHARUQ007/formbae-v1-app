@@ -14,6 +14,7 @@ export function ProfileNavigator() {
     <Stack.Navigator
       screenOptions={{
         headerTitle: '',
+        headerBackButtonDisplayMode: 'minimal',
         headerBackTitle: '',
         headerTintColor: colors.accentDark,
         headerStyle: { backgroundColor: colors.bg },
