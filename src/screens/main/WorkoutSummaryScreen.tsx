@@ -37,10 +37,13 @@ function exerciseMeta(exercise: WorkoutExerciseDetail) {
   return parts.join(' · ');
 }
 
+const CTA_BASE_HEIGHT = 118;
+
 export function WorkoutSummaryScreen({ route, navigation }: Props) {
   const { planDayId, mode = 'standard', initialDetail } = route.params;
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, spacing.sm);
+  const ctaSpace = CTA_BASE_HEIGHT + bottomInset;
   const [detail, setDetail] = useState<WorkoutDayDetail | null>(initialDetail || null);
   const [loading, setLoading] = useState(!initialDetail);
   const [error, setError] = useState<string | null>(null);
@@ -91,19 +94,23 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
     navigation.navigate('WorkoutDetail', { planDayId: detail.planDayId, title: detail.focus, mode });
   };
 
+  if (loading) {
+    return (
+      <View style={[styles.root, styles.centerStateRoot, { paddingTop: insets.top + spacing.md, paddingBottom: bottomInset + spacing.lg }]}>
+        <LoadingState message="Preparing workout summary..." />
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.root, { paddingTop: insets.top + spacing.md }]}>
       <ScreenHeader title={modeLabel(mode)} subtitle={headerSubtitle} onBack={() => navigation.goBack()} />
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, { paddingBottom: ctaSpace }]}
       >
-        {loading ? (
-          <View style={styles.statePanel}>
-            <LoadingState message="Preparing workout summary..." />
-          </View>
-        ) : error || !detail || !summary ? (
+        {error || !detail || !summary ? (
           <View style={styles.statePanel}>
             <ErrorState message={error || 'Workout summary not found'} onRetry={load} />
           </View>
@@ -188,23 +195,23 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
         )}
       </ScrollView>
 
-      <View style={[styles.startDock, { paddingBottom: bottomInset }]}>
-        <TouchableOpacity
-          activeOpacity={0.86}
-          onPress={startWorkout}
-          disabled={!canStartWorkout}
-          style={[styles.startButton, !canStartWorkout && styles.startButtonDisabled]}
-          accessibilityRole="button"
-          accessibilityState={{ disabled: !canStartWorkout }}
-          accessibilityLabel={startLabel}
-        >
-          <View style={styles.startIcon}>
-            <Feather name={loading ? 'loader' : 'play'} size={24} color={colors.accentDark} />
-          </View>
-          <Text style={styles.startText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{startLabel}</Text>
-          {canStartWorkout ? <Feather name="arrow-right" size={22} color={colors.white} /> : <View style={styles.startSpacer} />}
-        </TouchableOpacity>
-      </View>
+      {canStartWorkout ? (
+        <View pointerEvents="box-none" style={[styles.fixedCtaLayer, { paddingBottom: bottomInset }]}>
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={startWorkout}
+            style={styles.fixedCtaButton}
+            accessibilityRole="button"
+            accessibilityLabel={startLabel}
+          >
+            <View style={styles.fixedCtaIcon}>
+              <Feather name="play" size={24} color={colors.accentDark} />
+            </View>
+            <Text style={styles.fixedCtaText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>Start workout</Text>
+            <Feather name="arrow-right" size={24} color={colors.white} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -227,8 +234,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     paddingHorizontal: spacing.lg,
   },
+  centerStateRoot: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   scrollView: { flex: 1, minHeight: 0 },
-  scroll: { flexGrow: 1, gap: spacing.sm, paddingBottom: spacing.md },
+  scroll: { flexGrow: 1, gap: spacing.sm },
   statePanel: {
     flexGrow: 1,
     minHeight: 420,
@@ -335,16 +346,19 @@ const styles = StyleSheet.create({
   exerciseName: { ...typography.subtitle, color: colors.ink, lineHeight: 22 },
   exerciseMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   moreExercises: { ...typography.caption, color: colors.inkSubtle, textAlign: 'center', marginTop: spacing.xs },
-  startDock: {
-    minHeight: 110,
-    alignItems: 'center',
+  fixedCtaLayer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    minHeight: CTA_BASE_HEIGHT,
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.lg,
     justifyContent: 'center',
-    paddingTop: spacing.sm,
-    backgroundColor: 'rgba(248,252,249,0.97)',
+    backgroundColor: 'rgba(247,250,247,0.98)',
   },
-  startButton: {
-    width: '100%',
-    height: 84,
+  fixedCtaButton: {
+    height: 78,
     borderRadius: radius.pill,
     flexDirection: 'row',
     gap: spacing.md,
@@ -355,11 +369,7 @@ const styles = StyleSheet.create({
     borderColor: colors.white,
     ...shadows.accent,
   },
-  startButtonDisabled: {
-    backgroundColor: colors.accentDark,
-    opacity: 0.72,
-  },
-  startIcon: {
+  fixedCtaIcon: {
     width: 48,
     height: 48,
     borderRadius: radius.pill,
@@ -367,9 +377,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  startText: { fontSize: 20, lineHeight: 25, fontWeight: '900', color: colors.white },
-  startSpacer: {
-    width: 22,
-    height: 22,
-  },
+  fixedCtaText: { fontSize: 20, lineHeight: 25, fontWeight: '900', color: colors.white },
 });

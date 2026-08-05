@@ -32,6 +32,12 @@ function resolveTrainerPhotoUrl(value?: string) {
   return url;
 }
 
+function waitForNextFrame() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
 function WorkoutDashboardScreen({ navigation }: Props) {
   const [days, setDays] = useState<PlanDay[]>([]);
   const [title, setTitle] = useState('My workout plan');
@@ -116,10 +122,10 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     try {
       const initialDetail = await loadWorkoutDayCached(day.planDayId, mode);
       navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+      await waitForNextFrame();
       navigation.navigate('WorkoutSummary', { planDayId: day.planDayId, title: day.focus, mode, initialDetail });
     } catch {
-      navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
-      navigation.navigate('WorkoutSummary', { planDayId: day.planDayId, title: day.focus, mode });
+      setError('Could not prepare workout summary. Please try again.');
     } finally {
       setSummaryOpening(false);
     }
