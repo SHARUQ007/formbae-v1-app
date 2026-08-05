@@ -52,8 +52,8 @@ export function resolveTargetFromSnapshot(snapshot: Omit<ContextualSnapshot, 'ta
     return {
       kind: 'diet',
       label: mealType,
-      detail: 'Log meal',
-      icon: 'camera',
+      detail: 'Food memory',
+      icon: 'edit-3',
       mealType,
     };
   }

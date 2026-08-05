@@ -115,6 +115,7 @@ export function ProgressScreen() {
   const waistDelta = latest?.waist && first?.waist ? latest.waist - first.waist : 0;
   const completionRate = progress.planned ? progress.completed / progress.planned : 0;
   const reward = rewardMessage(progress);
+  const progressPoints = progress.completed * 25 + progress.currentStreak * 10;
 
   return (
     <KeyboardScreen>
@@ -172,6 +173,7 @@ export function ProgressScreen() {
 
           <SectionTitle>Snapshot</SectionTitle>
           <View style={styles.snapshotGrid}>
+            <RewardTile icon="zap" label="Points" value={`${progressPoints}`} helper="Workout + streak score" />
             <RewardTile icon="award" label="Best streak" value={`${progress.bestStreak}d`} helper="Longest run" />
             <RewardTile icon="activity" label="Completion" value={`${Math.round(completionRate * 100)}%`} helper={`${progress.completed} workouts logged`} />
             <RewardTile icon="battery-charging" label="Energy avg" value={avgEnergy ? `${avgEnergy}/10` : '-'} helper="From check-ins" />
