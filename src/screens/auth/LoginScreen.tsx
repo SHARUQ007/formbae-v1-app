@@ -24,9 +24,9 @@ export function LoginScreen({ navigation, route }: Props) {
   const isSignup = route.params?.mode === 'signup';
 
   const onSubmit = async () => {
-    const digits = mobile.replace(/\D/g, '');
-    if (digits.length !== 10) {
-      Alert.alert('Enter mobile', 'Please enter your 10-digit Indian mobile number.');
+    const digits = normalizeIndianMobile(mobile);
+    if (!digits) {
+      Alert.alert('Enter mobile', 'Please enter a valid Indian mobile number.');
       return;
     }
     try {
@@ -68,9 +68,8 @@ export function LoginScreen({ navigation, route }: Props) {
           icon="phone"
           value={mobile}
           onChangeText={setMobile}
-          placeholder="10-digit mobile number"
+          placeholder="10-digit number or +91 number"
           keyboardType="phone-pad"
-          maxLength={10}
         />
 
         {error ? (
@@ -85,6 +84,15 @@ export function LoginScreen({ navigation, route }: Props) {
       </KeyboardScreen>
     </ScreenContainer>
   );
+}
+
+function normalizeIndianMobile(value: string) {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length === 10) return digits;
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length > 10 && digits.endsWith(digits.slice(-10))) return digits.slice(-10);
+  return '';
 }
 
 const styles = StyleSheet.create({
