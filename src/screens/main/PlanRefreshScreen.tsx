@@ -10,6 +10,7 @@ import { loadWorkoutPlanCached } from '../../services/preloadService';
 import { requestAiPlanRefresh } from '../../services/workoutService';
 import type { AiPlanRefresh, PlanDay } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
+import { hiddenTabBarStyle } from '../../navigation/tabBarStyle';
 import {
   buildAiPlanRefreshPayload,
   buildAiPlanRefreshQuestions,
@@ -42,7 +43,7 @@ export function PlanRefreshScreen({ navigation }: Props) {
   const [saving, setSaving] = useState(false);
 
   useLayoutEffect(() => {
-    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+    navigation.getParent()?.setOptions({ tabBarStyle: hiddenTabBarStyle });
   }, [navigation]);
 
   const load = useCallback(async () => {

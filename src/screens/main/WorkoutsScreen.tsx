@@ -15,6 +15,7 @@ import { flushWorkoutQueue } from '../../store/workoutStore';
 import { getSiteUrl } from '../../constants/config';
 import type { AiPlanRefresh, PlanDay, ProgressSummary, TrainerInfo } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
+import { appTabBarStyle, hiddenTabBarStyle } from '../../navigation/tabBarStyle';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
@@ -100,7 +101,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
 
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
-      navigation.getParent()?.setOptions({ tabBarStyle: undefined });
+      navigation.getParent()?.setOptions({ tabBarStyle: appTabBarStyle });
       load();
     });
     return unsub;
@@ -127,7 +128,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const openWorkoutDetail = (day: PlanDay | null, mode: 'standard' | 'quick') => {
     if (!day) return;
     loadWorkoutDayCached(day.planDayId, mode).catch(() => undefined);
-    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+    navigation.getParent()?.setOptions({ tabBarStyle: hiddenTabBarStyle });
     navigation.navigate('WorkoutDetail', { planDayId: day.planDayId, title: day.focus, mode });
   };
 
@@ -135,7 +136,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     if (!day || summaryOpening) return;
     setSummaryOpening(true);
     const initialDetail = await withTimeout(loadWorkoutDayCached(day.planDayId, mode), 4500);
-    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+    navigation.getParent()?.setOptions({ tabBarStyle: hiddenTabBarStyle });
     await waitForNextFrame();
     navigation.navigate('WorkoutSummary', {
       planDayId: day.planDayId,

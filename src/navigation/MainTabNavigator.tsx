@@ -11,6 +11,7 @@ import { ActionHubScreen } from '../screens/main/ActionHubScreen';
 import { ProgressScreen } from '../screens/main/ProgressScreen';
 import { ProfileNavigator } from './ProfileNavigator';
 import type { MainTabParamList } from './types';
+import { appTabBarStyle, hiddenTabBarStyle } from './tabBarStyle';
 import { resolveContextualSnapshot, type ContextualTarget } from '../utils/contextualAction';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/radius';
@@ -50,20 +51,6 @@ const dietIcon = ({ color, focused }: TabIconProps) => (
 );
 const progressIcon = ({ color, focused }: TabIconProps) => <Icon name="bar-chart-2" size={focused ? 24 : 22} color={color} />;
 const profileIcon = ({ color, focused }: TabIconProps) => <Icon name="user" size={focused ? 24 : 22} color={color} />;
-
-const premiumTabBarStyle = {
-  height: 70,
-  marginHorizontal: 16,
-  marginBottom: 12,
-  borderRadius: 26,
-  borderTopWidth: 0,
-  borderColor: colors.border,
-  borderWidth: 1,
-  backgroundColor: colors.white,
-  paddingTop: 7,
-  paddingBottom: 8,
-  ...shadows.md,
-};
 
 function ContextualActionButton({ accessibilityState, onPress }: BottomTabBarButtonProps) {
   const [target, setTarget] = useState<ContextualTarget>({
@@ -115,7 +102,7 @@ export function MainTabNavigator() {
         lazy: true,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.inkSubtle,
-        tabBarStyle: premiumTabBarStyle,
+        tabBarStyle: appTabBarStyle,
         tabBarItemStyle: { borderRadius: 22 },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '700', marginTop: 2 },
       }}
@@ -129,7 +116,7 @@ export function MainTabNavigator() {
           return {
             title: 'Workout',
             tabBarIcon: workoutIcon,
-            tabBarStyle: hideTabBar ? { display: 'none' } : premiumTabBarStyle,
+            tabBarStyle: hideTabBar ? hiddenTabBarStyle : appTabBarStyle,
           };
         }}
       />

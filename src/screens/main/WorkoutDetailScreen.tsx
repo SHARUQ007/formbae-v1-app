@@ -30,6 +30,7 @@ import { displayBehavioralNotification, displayLocalNotification } from '../../s
 import { useAuthStore } from '../../store/authStore';
 import type { WorkoutDayDetail, WorkoutExerciseDetail } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
+import { hiddenTabBarStyle } from '../../navigation/tabBarStyle';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
@@ -136,7 +137,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const pendingNextIndexRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
-    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+    navigation.getParent()?.setOptions({ tabBarStyle: hiddenTabBarStyle });
   }, [navigation]);
 
   const timer = useRestTimer(() => {

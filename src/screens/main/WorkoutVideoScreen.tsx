@@ -5,6 +5,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ExerciseVideo } from '../../components/ExerciseVideo';
 import type { WorkoutStackParamList } from '../../navigation/types';
+import { hiddenTabBarStyle } from '../../navigation/tabBarStyle';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
 import { spacing } from '../../theme/spacing';
@@ -16,7 +17,7 @@ export function WorkoutVideoScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { title, subtitle, videoUrl, videos = [], initialIndex = 0 } = route.params;
   useLayoutEffect(() => {
-    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+    navigation.getParent()?.setOptions({ tabBarStyle: hiddenTabBarStyle });
   }, [navigation]);
 
   const videoItems = useMemo(
