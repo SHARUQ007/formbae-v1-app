@@ -5,7 +5,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
 import { Badge } from '../../components/Badge';
-import { ErrorState, EmptyState } from '../../components/States';
+import { ErrorState, EmptyState, LoadingState } from '../../components/States';
 import { SkeletonBlock } from '../../components/Skeleton';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
@@ -38,6 +38,21 @@ function waitForNextFrame() {
   });
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(null), ms);
+    promise
+      .then((value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      })
+      .catch(() => {
+        clearTimeout(timeout);
+        resolve(null);
+      });
+  });
+}
+
 function WorkoutDashboardScreen({ navigation }: Props) {
   const [days, setDays] = useState<PlanDay[]>([]);
   const [title, setTitle] = useState('My workout plan');
@@ -51,6 +66,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [summaryOpening, setSummaryOpening] = useState(false);
 
   const load = useCallback(async (options?: { force?: boolean }) => {
     setError(null);
@@ -117,10 +133,18 @@ function WorkoutDashboardScreen({ navigation }: Props) {
 
   const openWorkoutSummary = async (day: PlanDay | null, mode: 'standard' | 'quick') => {
     if (!day) return;
+    setSummaryOpening(true);
+    const initialDetail = await withTimeout(loadWorkoutDayCached(day.planDayId, mode), 4500);
     navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
     await waitForNextFrame();
-    navigation.navigate('WorkoutSummary', { planDayId: day.planDayId, title: day.focus, mode });
-    loadWorkoutDayCached(day.planDayId, mode).catch(() => undefined);
+    navigation.navigate('WorkoutSummary', {
+      planDayId: day.planDayId,
+      title: day.focus,
+      mode,
+      ...(initialDetail ? { initialDetail } : {}),
+    });
+    await waitForNextFrame();
+    setSummaryOpening(false);
   };
 
   if (loading) {
@@ -335,6 +359,11 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         onSelect={onSwitchTodayWorkout}
         onClose={() => setSwitcherOpen(false)}
       />
+      <Modal visible={summaryOpening} transparent={false} animationType="none">
+        <ScreenContainer withBottomInset style={styles.summaryLoadingScreen}>
+          <LoadingState message="Preparing workout..." />
+        </ScreenContainer>
+      </Modal>
     </ScreenContainer>
   );
 }
@@ -396,6 +425,10 @@ function WorkoutSwitchModal({
 }
 
 const styles = StyleSheet.create({
+  summaryLoadingScreen: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   scroll: { paddingBottom: spacing.xl },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
   headerText: { flex: 1 },
