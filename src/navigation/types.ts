@@ -1,4 +1,5 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
+import type { WorkoutDayDetail } from '../types/api';
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -47,7 +48,7 @@ export type WorkoutStackParamList = {
   WorkoutList: undefined;
   Coach: undefined;
   PlanRefresh: undefined;
-  WorkoutSummary: { planDayId: string; title: string; mode?: 'standard' | 'quick' };
+  WorkoutSummary: { planDayId: string; title: string; mode?: 'standard' | 'quick'; initialDetail?: WorkoutDayDetail };
   WorkoutDetail: { planDayId: string; title: string; mode?: 'standard' | 'quick' };
   WorkoutVideo: { title: string; subtitle?: string; videoUrl: string; videos?: WorkoutVideoItem[]; initialIndex?: number };
 };

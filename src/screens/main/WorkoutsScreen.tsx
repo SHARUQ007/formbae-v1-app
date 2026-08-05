@@ -5,7 +5,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
 import { Badge } from '../../components/Badge';
-import { ErrorState, EmptyState } from '../../components/States';
+import { ErrorState, EmptyState, LoadingState } from '../../components/States';
 import { SkeletonBlock } from '../../components/Skeleton';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
@@ -45,6 +45,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [summaryOpening, setSummaryOpening] = useState(false);
 
   const load = useCallback(async (options?: { force?: boolean }) => {
     setError(null);
@@ -109,11 +110,19 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     navigation.navigate('WorkoutDetail', { planDayId: day.planDayId, title: day.focus, mode });
   };
 
-  const openWorkoutSummary = (day: PlanDay | null, mode: 'standard' | 'quick') => {
+  const openWorkoutSummary = async (day: PlanDay | null, mode: 'standard' | 'quick') => {
     if (!day) return;
-    loadWorkoutDayCached(day.planDayId, mode).catch(() => undefined);
-    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
-    navigation.navigate('WorkoutSummary', { planDayId: day.planDayId, title: day.focus, mode });
+    setSummaryOpening(true);
+    try {
+      const initialDetail = await loadWorkoutDayCached(day.planDayId, mode);
+      navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+      navigation.navigate('WorkoutSummary', { planDayId: day.planDayId, title: day.focus, mode, initialDetail });
+    } catch {
+      navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+      navigation.navigate('WorkoutSummary', { planDayId: day.planDayId, title: day.focus, mode });
+    } finally {
+      setSummaryOpening(false);
+    }
   };
 
   if (loading) {
@@ -328,6 +337,11 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         onSelect={onSwitchTodayWorkout}
         onClose={() => setSwitcherOpen(false)}
       />
+      <Modal visible={summaryOpening} transparent={false} animationType="fade">
+        <ScreenContainer withBottomInset style={styles.summaryLoadingScreen}>
+          <LoadingState message="Preparing workout..." />
+        </ScreenContainer>
+      </Modal>
     </ScreenContainer>
   );
 }
@@ -389,6 +403,10 @@ function WorkoutSwitchModal({
 }
 
 const styles = StyleSheet.create({
+  summaryLoadingScreen: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   scroll: { paddingBottom: spacing.xl },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
   headerText: { flex: 1 },

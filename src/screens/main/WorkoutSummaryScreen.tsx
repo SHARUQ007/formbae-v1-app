@@ -38,11 +38,11 @@ function exerciseMeta(exercise: WorkoutExerciseDetail) {
 }
 
 export function WorkoutSummaryScreen({ route, navigation }: Props) {
-  const { planDayId, mode = 'standard' } = route.params;
+  const { planDayId, mode = 'standard', initialDetail } = route.params;
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, spacing.sm);
-  const [detail, setDetail] = useState<WorkoutDayDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [detail, setDetail] = useState<WorkoutDayDetail | null>(initialDetail || null);
+  const [loading, setLoading] = useState(!initialDetail);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -59,8 +59,9 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
   }, [mode, planDayId]);
 
   useEffect(() => {
+    if (initialDetail?.planDayId === planDayId) return;
     load();
-  }, [load]);
+  }, [initialDetail?.planDayId, load, planDayId]);
 
   const exercises = useMemo(
     () => (detail?.exercises ?? []).filter((exercise) => !isSectionMarker(exercise.notes)),
