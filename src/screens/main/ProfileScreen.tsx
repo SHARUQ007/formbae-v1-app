@@ -223,8 +223,7 @@ export function ProfileScreen({ navigation }: Props) {
             </View>
           </View>
           <View style={styles.accessRows}>
-            <PlainRow label="Access window" value={formatAccessWindow(access)} />
-            <PlainRow label="Days left" value={accessActive ? String(access.premiumDaysRemaining ?? 0) : '0'} isLast />
+            <PlainRow label="Access window" value={formatAccessWindow(access)} isLast />
           </View>
           <View style={styles.managePanel}>
             <View style={styles.manageHeader}>
