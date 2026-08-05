@@ -139,6 +139,8 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
           ? String((payload as { error: unknown }).error)
           : payload && typeof payload === 'object' && 'detail' in payload
             ? String((payload as { detail: unknown }).detail)
+          : response.status === 404
+            ? 'App connection is using an old API URL. Please update and try again.'
           : `Request failed (${response.status})`;
       throw new ApiError(message, response.status, payload);
     }
