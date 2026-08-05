@@ -1,8 +1,7 @@
 import { View, Text, StyleSheet } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { PrimaryButton } from './PrimaryButton';
-import { LottieAnimation } from './LottieAnimation';
-import { appLottie } from '../assets/lottie';
+import { MotionAnimation } from './MotionAnimation';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { radius } from '../theme/radius';
@@ -11,7 +10,7 @@ import { typography } from '../theme/typography';
 export function LoadingState({ message = 'Loading…' }: { message?: string }) {
   return (
     <View style={styles.loadingWrap} accessibilityLabel={message} accessibilityLiveRegion="polite">
-      <LottieAnimation source={appLottie.loadingPulse} size={108} />
+      <MotionAnimation kind="loading" size={108} />
       <Text style={styles.loadingText}>{message}</Text>
     </View>
   );
@@ -46,7 +45,7 @@ export function EmptyState({
   return (
     <View style={styles.wrap}>
       {icon === 'inbox' ? (
-        <LottieAnimation source={appLottie.emptySpark} size={92} />
+        <MotionAnimation kind="empty" size={92} />
       ) : (
         <View style={[styles.iconCircle, { backgroundColor: colors.accentLight }]}>
           <Feather name={icon} size={26} color={colors.accent} />
