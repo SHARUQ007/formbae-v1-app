@@ -57,6 +57,17 @@ const meals: Array<{ type: MealType; icon: string; label: string; hint: string }
   { type: 'Snack', icon: 'moon', label: 'Night', hint: 'Late bites' },
 ];
 
+const confettiColors = ['#050505', '#ffffff', '#d9d6ce', '#8f8b82'];
+const confettiPieces = Array.from({ length: 32 }, (_, index) => ({
+  id: `confetti-${index}`,
+  left: 6 + ((index * 23) % 88),
+  drift: ((index % 7) - 3) * 12,
+  size: 7 + (index % 4) * 3,
+  color: confettiColors[index % confettiColors.length],
+  delay: 0.02 + (index % 8) * 0.035,
+  rotate: index % 2 === 0 ? '1' : '-1',
+}));
+
 type Props = BottomTabScreenProps<MainTabParamList, 'Diet'>;
 
 function formatEntryTime(value: string) {
@@ -178,6 +189,7 @@ function DietScreenContent({ route, navigation }: Props) {
   const [memorySessionPoints, setMemorySessionPoints] = useState(0);
   const saveToastOpacity = useRef(new Animated.Value(0)).current;
   const saveToastScale = useRef(new Animated.Value(0.86)).current;
+  const celebrationProgress = useRef(new Animated.Value(0)).current;
   const handledCameraRequestRef = useRef<number | null>(null);
 
   const load = useCallback(async (options?: { force?: boolean }) => {
@@ -291,38 +303,47 @@ function DietScreenContent({ route, navigation }: Props) {
     setSavedMeal({ mealType, note });
     saveToastOpacity.setValue(0);
     saveToastScale.setValue(0.86);
-    Animated.sequence([
-      Animated.parallel([
-        Animated.timing(saveToastOpacity, {
-          toValue: 1,
-          duration: 180,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.spring(saveToastScale, {
-          toValue: 1,
-          friction: 5,
-          tension: 120,
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.delay(850),
-      Animated.parallel([
-        Animated.timing(saveToastOpacity, {
-          toValue: 0,
-          duration: 220,
-          easing: Easing.in(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(saveToastScale, {
-          toValue: 0.96,
-          duration: 220,
-          easing: Easing.inOut(Easing.cubic),
-          useNativeDriver: true,
-        }),
+    celebrationProgress.setValue(0);
+    Animated.parallel([
+      Animated.timing(celebrationProgress, {
+        toValue: 1,
+        duration: 1650,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(saveToastOpacity, {
+            toValue: 1,
+            duration: 180,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.spring(saveToastScale, {
+            toValue: 1,
+            friction: 5,
+            tension: 120,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.delay(1050),
+        Animated.parallel([
+          Animated.timing(saveToastOpacity, {
+            toValue: 0,
+            duration: 260,
+            easing: Easing.in(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(saveToastScale, {
+            toValue: 0.96,
+            duration: 260,
+            easing: Easing.inOut(Easing.cubic),
+            useNativeDriver: true,
+          }),
+        ]),
       ]),
     ]).start(() => setSavedMeal(null));
-  }, [saveToastOpacity, saveToastScale]);
+  }, [celebrationProgress, saveToastOpacity, saveToastScale]);
 
   const saveTextEntry = async () => {
     const note = textEntry.trim();
@@ -686,19 +707,66 @@ function DietScreenContent({ route, navigation }: Props) {
         <Animated.View
           pointerEvents="none"
           style={[
-            styles.saveToast,
+            styles.celebrationOverlay,
             {
               opacity: saveToastOpacity,
-              transform: [{ scale: saveToastScale }],
             },
           ]}
         >
-          <View style={styles.saveToastIcon}>
-            <Feather name="check" size={34} color={colors.white} />
+          <View style={styles.confettiLayer}>
+            {confettiPieces.map((piece) => {
+              const start = piece.delay;
+              const mid = Math.min(start + 0.42, 0.86);
+              const end = Math.min(start + 0.76, 1);
+              const translateY = celebrationProgress.interpolate({
+                inputRange: [0, start, end],
+                outputRange: [-120, -120, 420],
+                extrapolate: 'clamp',
+              });
+              const translateX = celebrationProgress.interpolate({
+                inputRange: [0, mid, end],
+                outputRange: [0, piece.drift, piece.drift * 1.8],
+                extrapolate: 'clamp',
+              });
+              const rotate = celebrationProgress.interpolate({
+                inputRange: [0, end],
+                outputRange: ['0deg', `${piece.rotate === '1' ? 540 : -540}deg`],
+                extrapolate: 'clamp',
+              });
+              const opacity = celebrationProgress.interpolate({
+                inputRange: [0, start, mid, end],
+                outputRange: [0, 1, 1, 0],
+                extrapolate: 'clamp',
+              });
+              return (
+                <Animated.View
+                  key={piece.id}
+                  style={[
+                    styles.confettiPiece,
+                    {
+                      left: `${piece.left}%`,
+                      width: piece.size,
+                      height: piece.size * 1.6,
+                      backgroundColor: piece.color,
+                      opacity,
+                      transform: [{ translateX }, { translateY }, { rotate }],
+                    },
+                  ]}
+                />
+              );
+            })}
           </View>
-          <Text style={styles.saveToastTitle}>Meal logged</Text>
-          <Text style={styles.saveToastMeal}>{mealLabel(savedMeal.mealType)}</Text>
-          <Text style={styles.saveToastNote} numberOfLines={2}>{savedMeal.note}</Text>
+          <Animated.View style={[styles.saveToast, { transform: [{ scale: saveToastScale }] }]}>
+            <View style={styles.saveToastIcon}>
+              <Feather name="award" size={34} color={colors.white} />
+            </View>
+            <View style={styles.pointsBurst}>
+              <Text style={styles.pointsBurstText}>+1</Text>
+            </View>
+            <Text style={styles.saveToastTitle}>Nice memory</Text>
+            <Text style={styles.saveToastMeal}>{mealLabel(savedMeal.mealType)}</Text>
+            <Text style={styles.saveToastNote} numberOfLines={2}>{savedMeal.note}</Text>
+          </Animated.View>
         </Animated.View>
       ) : null}
     </ScreenContainer>
@@ -929,11 +997,27 @@ const styles = StyleSheet.create({
   characterCount: { ...typography.caption, color: colors.inkMuted, textAlign: 'right' },
   textModalActions: { flexDirection: 'row', gap: spacing.sm },
   modalActionButton: { flex: 1 },
-  saveToast: {
+  celebrationOverlay: {
     position: 'absolute',
-    left: spacing.xl,
-    right: spacing.xl,
-    top: '38%',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  confettiLayer: {
+    ...StyleSheet.absoluteFill,
+    overflow: 'hidden',
+  },
+  confettiPiece: {
+    position: 'absolute',
+    top: '34%',
+    borderRadius: 3,
+  },
+  saveToast: {
+    width: '100%',
     alignItems: 'center',
     borderRadius: radius.xl,
     backgroundColor: colors.panel,
@@ -952,6 +1036,19 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     ...shadows.accent,
   },
+  pointsBurst: {
+    position: 'absolute',
+    top: spacing.lg,
+    right: spacing.lg,
+    minWidth: 54,
+    height: 38,
+    borderRadius: radius.pill,
+    backgroundColor: colors.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  pointsBurstText: { ...typography.subtitle, color: colors.white, fontWeight: '900' },
   saveToastTitle: { ...typography.hero, color: colors.ink, textAlign: 'center' },
   saveToastMeal: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginTop: spacing.xs },
   saveToastNote: { ...typography.body, color: colors.inkMuted, textAlign: 'center', marginTop: spacing.sm },
