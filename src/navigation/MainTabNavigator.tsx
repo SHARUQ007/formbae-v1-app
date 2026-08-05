@@ -46,7 +46,7 @@ type TabIconProps = { color: string; focused: boolean };
 
 const workoutIcon = ({ color, focused }: TabIconProps) => <Icon name="activity" size={focused ? 24 : 22} color={color} />;
 const dietIcon = ({ color, focused }: TabIconProps) => (
-  <MaterialCommunityIcon name="bowl-mix-outline" size={focused ? 24 : 22} color={color} />
+  <MaterialCommunityIcon name="silverware-fork-knife" size={focused ? 24 : 22} color={color} />
 );
 const progressIcon = ({ color, focused }: TabIconProps) => <Icon name="bar-chart-2" size={focused ? 24 : 22} color={color} />;
 const profileIcon = ({ color, focused }: TabIconProps) => <Icon name="user" size={focused ? 24 : 22} color={color} />;
