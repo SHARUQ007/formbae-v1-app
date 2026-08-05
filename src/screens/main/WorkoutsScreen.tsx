@@ -132,7 +132,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   };
 
   const openWorkoutSummary = async (day: PlanDay | null, mode: 'standard' | 'quick') => {
-    if (!day) return;
+    if (!day || summaryOpening) return;
     setSummaryOpening(true);
     const initialDetail = await withTimeout(loadWorkoutDayCached(day.planDayId, mode), 4500);
     navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
@@ -359,11 +359,11 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         onSelect={onSwitchTodayWorkout}
         onClose={() => setSwitcherOpen(false)}
       />
-      <Modal visible={summaryOpening} transparent={false} animationType="none">
-        <ScreenContainer withBottomInset style={styles.summaryLoadingScreen}>
+      {summaryOpening ? (
+        <View pointerEvents="auto" style={styles.summaryLoadingOverlay}>
           <LoadingState message="Preparing workout..." />
-        </ScreenContainer>
-      </Modal>
+        </View>
+      ) : null}
     </ScreenContainer>
   );
 }
@@ -425,9 +425,18 @@ function WorkoutSwitchModal({
 }
 
 const styles = StyleSheet.create({
-  summaryLoadingScreen: {
+  summaryLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 40,
+    elevation: 40,
+    backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
   },
   scroll: { paddingBottom: spacing.xl },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },

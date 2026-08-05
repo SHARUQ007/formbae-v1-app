@@ -17,6 +17,7 @@ export function WorkoutsNavigator() {
         headerTintColor: colors.accentDark,
         headerStyle: { backgroundColor: colors.bg },
         headerShadowVisible: false,
+        contentStyle: { backgroundColor: colors.bg },
       }}
     >
       <Stack.Screen name="WorkoutList" component={WorkoutsScreen} options={{ headerShown: false }} />
