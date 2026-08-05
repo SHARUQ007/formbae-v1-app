@@ -1,35 +1,35 @@
 export const colors = {
   // Surfaces
-  bg: '#f8f8f6',
-  bgTint: '#eeeeec',
+  bg: '#f6f5f2',
+  bgTint: '#ebe9e4',
   panel: '#ffffff',
-  panelMuted: '#f1f1ef',
+  panelMuted: '#f3f2ef',
 
   // Text
   ink: '#111111',
   inkStrong: '#050505',
-  inkMuted: '#5f5f5f',
-  inkSubtle: '#989895',
+  inkMuted: '#60605c',
+  inkSubtle: '#96948d',
 
   // Brand (monochrome)
-  accent: '#111111',
+  accent: '#050505',
   accentDark: '#000000',
   accentDarker: '#000000',
-  accentLight: '#eeeeec',
-  accentSurface: '#d9d9d6',
+  accentLight: '#f4f3f0',
+  accentSurface: '#dedbd3',
 
   // Gradient
-  gradientStart: '#1d1d1d',
-  gradientMid: '#111111',
+  gradientStart: '#242424',
+  gradientMid: '#0f0f0f',
   gradientEnd: '#000000',
 
   // Lines
-  border: '#e4e4e1',
-  borderStrong: '#c8c8c4',
+  border: '#e5e2dc',
+  borderStrong: '#c9c5bc',
 
   // Status
   success: '#111111',
-  successLight: '#eeeeec',
+  successLight: '#f4f3f0',
   warn: '#c2410c',
   warnLight: '#fdf1e7',
   error: '#dc2626',

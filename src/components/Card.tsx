@@ -106,14 +106,14 @@ export function ScreenHeader({
 
 const cardVariants: Record<CardVariant, ViewStyle> = {
   elevated: { backgroundColor: colors.panel, borderColor: colors.border, borderWidth: 1, ...shadows.sm },
-  flat: { backgroundColor: colors.panelMuted, borderColor: 'rgba(201,221,209,0.45)', borderWidth: 1 },
+  flat: { backgroundColor: colors.panelMuted, borderColor: colors.border, borderWidth: 1 },
   outline: { backgroundColor: colors.panel, borderColor: colors.borderStrong, borderWidth: 1 },
-  accent: { backgroundColor: colors.accentLight, borderColor: colors.accentSurface, borderWidth: 1, ...shadows.sm },
+  accent: { backgroundColor: colors.panel, borderColor: colors.accent, borderWidth: 1.5, ...shadows.sm },
 };
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 20,
+    borderRadius: 22,
     padding: spacing.md,
   },
   screen: {
@@ -124,8 +124,19 @@ const styles = StyleSheet.create({
   title: { ...typography.hero, color: colors.ink, marginBottom: spacing.sm },
   subtitle: { ...typography.body, color: colors.inkMuted, marginBottom: spacing.lg },
   section: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase', marginBottom: spacing.sm, marginTop: spacing.lg },
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg, minHeight: 32 },
-  backBtn: { marginRight: spacing.sm, marginLeft: -6 },
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg, minHeight: 42 },
+  backBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    marginRight: spacing.sm,
+    marginLeft: -6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   headerText: { flex: 1 },
   headerTitle: { ...typography.title, color: colors.ink },
   headerSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },

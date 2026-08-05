@@ -279,7 +279,7 @@ const styles = StyleSheet.create({
     ...shadows.accent,
   },
   actionButtonFocused: {
-    backgroundColor: colors.accentDarker,
+    backgroundColor: colors.black,
   },
   actionLabel: {
     ...typography.caption,

@@ -20,7 +20,6 @@ export function GradientHero({
 }) {
   return (
     <View style={[styles.hero, style]}>
-      <View style={styles.blob} />
       {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
       {title ? <Text style={styles.title}>{title}</Text> : null}
       {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
@@ -35,17 +34,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     padding: spacing.lg,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.black,
     ...shadows.accent,
-  },
-  blob: {
-    position: 'absolute',
-    top: -60,
-    right: -40,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: colors.gradientStart,
-    opacity: 0.55,
   },
   eyebrow: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase', marginBottom: 8 },
   title: { ...typography.hero, color: colors.white },

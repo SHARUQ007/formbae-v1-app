@@ -77,16 +77,16 @@ export function PrimaryButton({
 
 const variantStyles: Record<Variant, ViewStyle> = {
   primary: { backgroundColor: colors.accent },
-  secondary: { backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.borderStrong },
+  secondary: { backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.accent },
   ghost: { backgroundColor: 'transparent' },
   danger: { backgroundColor: colors.errorLight, borderWidth: 1, borderColor: '#f6caca' },
   inverted: { backgroundColor: colors.white },
-  heroSecondary: { backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.36)' },
+  heroSecondary: { backgroundColor: 'rgba(255,255,255,0.13)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.45)' },
 };
 
 const styles = StyleSheet.create({
   button: {
-    borderRadius: radius.lg,
+    borderRadius: radius.pill,
     paddingHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',

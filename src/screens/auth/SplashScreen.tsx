@@ -55,7 +55,6 @@ export function SplashScreen({ navigation }: Props) {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-      <View style={styles.blob} />
       <View style={styles.header}>
         <LogoMark size={58} />
         <View>
@@ -89,7 +88,6 @@ export function SplashScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg, overflow: 'hidden', paddingHorizontal: spacing.lg },
-  blob: { position: 'absolute', top: -120, right: -110, width: 330, height: 330, borderRadius: 165, backgroundColor: colors.accentLight },
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl },
   main: { flex: 1, justifyContent: 'center', paddingVertical: spacing.xl },
   center: {
@@ -98,7 +96,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.md,
     backgroundColor: colors.panel,
-    borderRadius: radius.xl,
+    borderRadius: 28,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.xl,
@@ -111,7 +109,9 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: radius.pill,
-    backgroundColor: colors.accentLight,
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
