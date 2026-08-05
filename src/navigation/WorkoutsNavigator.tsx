@@ -22,7 +22,7 @@ export function WorkoutsNavigator() {
       <Stack.Screen name="WorkoutList" component={WorkoutsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Coach" component={TrainerScreen} options={{ title: 'Your coach' }} />
       <Stack.Screen name="PlanRefresh" component={PlanRefreshScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="WorkoutSummary" component={WorkoutSummaryScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="WorkoutSummary" component={WorkoutSummaryScreen} options={{ headerShown: false, animation: 'none' }} />
       <Stack.Screen name="WorkoutDetail" component={WorkoutDetailScreen} options={{ headerShown: false }} />
       <Stack.Screen name="WorkoutVideo" component={WorkoutVideoScreen} options={{ headerShown: false }} />
     </Stack.Navigator>

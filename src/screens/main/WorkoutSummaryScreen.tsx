@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -44,10 +44,6 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
   const [detail, setDetail] = useState<WorkoutDayDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  useLayoutEffect(() => {
-    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
-  }, [navigation]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -148,7 +144,7 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
           </View>
         </View>
 
-        <View style={[styles.cardSection, styles.planPreviewSection]}>
+        <View style={styles.cardSection}>
           <View style={styles.sectionHead}>
             <MaterialCommunityIcon name="chart-line" size={20} color={colors.accentDark} />
             <Text style={styles.sectionTitle}>Why it matters</Text>
@@ -295,9 +291,6 @@ const styles = StyleSheet.create({
   benefitText: { ...typography.body, color: colors.inkMuted, flex: 1, lineHeight: 22 },
   exerciseCount: { ...typography.caption, color: colors.inkSubtle, fontWeight: '800' },
   exerciseList: { gap: spacing.xs },
-  planPreviewSection: {
-    minHeight: 270,
-  },
   exerciseRow: {
     flexDirection: 'row',
     alignItems: 'center',
