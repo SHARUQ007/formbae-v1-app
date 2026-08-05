@@ -41,7 +41,6 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
   const { planDayId, mode = 'standard' } = route.params;
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, spacing.sm);
-  const footerHeight = 102 + bottomInset;
   const [detail, setDetail] = useState<WorkoutDayDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +113,7 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingBottom: footerHeight + spacing.md }]}
+        contentContainerStyle={styles.scroll}
       >
         <View style={styles.hero}>
           <View style={styles.heroTop}>
@@ -189,7 +188,7 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
         </View>
       </ScrollView>
 
-      <View style={[styles.startDock, { height: footerHeight, paddingBottom: bottomInset }]}>
+      <View style={[styles.startDock, { paddingBottom: bottomInset }]}>
         <TouchableOpacity activeOpacity={0.86} onPress={startWorkout} style={styles.startButton} accessibilityRole="button" accessibilityLabel={`Start ${modeLabel(mode)}`}>
           <View style={styles.startIcon}>
             <Feather name="play" size={24} color={colors.accentDark} />
@@ -216,12 +215,12 @@ function Metric({ icon, label, value }: { icon: string; label: string; value: st
 
 const styles = StyleSheet.create({
   root: {
-    ...StyleSheet.absoluteFill,
+    flex: 1,
     backgroundColor: colors.bg,
     paddingHorizontal: spacing.lg,
   },
   scrollView: { flex: 1, minHeight: 0 },
-  scroll: { gap: spacing.sm },
+  scroll: { gap: spacing.sm, paddingBottom: spacing.md },
   hero: {
     borderRadius: 28,
     backgroundColor: colors.accentDarker,
@@ -321,16 +320,11 @@ const styles = StyleSheet.create({
   exerciseMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   moreExercises: { ...typography.caption, color: colors.inkSubtle, textAlign: 'center', marginTop: spacing.xs },
   startDock: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
+    minHeight: 110,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
     backgroundColor: 'rgba(248,252,249,0.97)',
-    zIndex: 20,
-    elevation: 20,
   },
   startButton: {
     width: '100%',
