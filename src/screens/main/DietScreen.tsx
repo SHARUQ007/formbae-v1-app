@@ -107,6 +107,29 @@ function mealLabel(type: MealType) {
   return meals.find((meal) => meal.type === type)?.label || type;
 }
 
+function mealIndex(type: MealType) {
+  const index = meals.findIndex((meal) => meal.type === type);
+  return index >= 0 ? index : 0;
+}
+
+function previousMemorySlot(date: Date, mealType: MealType) {
+  const index = mealIndex(mealType);
+  if (index > 0) {
+    return { date, mealType: meals[index - 1].type };
+  }
+  return { date: shiftDate(date, -1), mealType: meals[meals.length - 1].type };
+}
+
+function nextMemorySlot(date: Date, mealType: MealType) {
+  const index = mealIndex(mealType);
+  if (index < meals.length - 1) {
+    return { date, mealType: meals[index + 1].type };
+  }
+  const dateAfter = shiftDate(date, 1);
+  if (isFutureDay(dateAfter)) return null;
+  return { date: dateAfter, mealType: meals[0].type };
+}
+
 function imageSource(entry: DietDiaryEntry) {
   const uri = resolveDietDiaryImageUrl(entry.remoteImageUrl || entry.uri || '');
   const token = getAuthToken();
@@ -157,6 +180,19 @@ function DietScreenContent({ route, navigation }: Props) {
   const memoryPoints = visibleEntries.length;
   const totalMemoryPoints = entries.length;
   const canGoForward = !isSameDay(selectedDate, new Date()) && !isFutureDay(shiftDate(selectedDate, 1));
+  const canMoveMemoryForward = useMemo(
+    () => Boolean(nextMemorySlot(selectedDate, selectedMeal)),
+    [selectedDate, selectedMeal],
+  );
+
+  const moveMemorySlot = useCallback((direction: -1 | 1) => {
+    const next = direction < 0
+      ? previousMemorySlot(selectedDate, selectedMeal)
+      : nextMemorySlot(selectedDate, selectedMeal);
+    if (!next) return;
+    setSelectedDate(next.date);
+    setSelectedMeal(next.mealType);
+  }, [selectedDate, selectedMeal]);
 
   const saveAsset = useCallback(async (asset?: Asset, mealType: MealType = selectedMeal) => {
     if (!asset?.uri) return;
@@ -272,13 +308,18 @@ function DietScreenContent({ route, navigation }: Props) {
       return;
     }
     setSaving(true);
+    const entryMeal = selectedMeal;
+    const entryDate = selectedDate;
     try {
-      const localEntry = await addTextDietDiaryEntry(selectedMeal, note, timestampForDiaryDate(selectedDate));
+      const localEntry = await addTextDietDiaryEntry(entryMeal, note, timestampForDiaryDate(entryDate));
       setTextEntry('');
-      displayBehavioralNotification('dietPhotoLogged', { mealType: mealLabel(selectedMeal) }).catch(() => undefined);
+      displayBehavioralNotification('dietPhotoLogged', { mealType: mealLabel(entryMeal) }).catch(() => undefined);
       await load();
       setMemorySessionPoints((points) => points + 1);
-      showSavedMealAnimation(selectedMeal, note);
+      showSavedMealAnimation(entryMeal, note);
+      const nextSlot = previousMemorySlot(entryDate, entryMeal);
+      setSelectedDate(nextSlot.date);
+      setSelectedMeal(nextSlot.mealType);
       try {
         const uploaded = await uploadTextDietDiaryEntry({
           clientId: localEntry.id,
@@ -533,11 +574,36 @@ function DietScreenContent({ route, navigation }: Props) {
           <View style={styles.textModalCard}>
             <View style={styles.textModalHeader}>
               <View>
-                <Text style={styles.textModalEyebrow}>Food memory · {formatDiaryDate(selectedDate)} · +1 each</Text>
-                <Text style={styles.textModalTitle}>{memorySessionPoints ? 'What else do you remember?' : 'What did you eat last?'}</Text>
+                <Text style={styles.textModalEyebrow}>Food memory · +1 each</Text>
+                <Text style={styles.textModalTitle}>{memorySessionPoints ? 'Next remembered food' : 'What did you eat last?'}</Text>
               </View>
               <TouchableOpacity onPress={() => setTextModalOpen(false)} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Close meal text entry">
                 <Feather name="x" size={22} color={colors.inkMuted} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.memorySlotNavigator}>
+              <TouchableOpacity
+                onPress={() => moveMemorySlot(-1)}
+                style={styles.memorySlotArrow}
+                accessibilityRole="button"
+                accessibilityLabel="Previous food memory slot"
+              >
+                <Feather name="chevron-left" size={24} color={colors.ink} />
+              </TouchableOpacity>
+              <View style={styles.memorySlotCenter}>
+                <Text style={styles.memorySlotLabel}>Logging</Text>
+                <Text style={styles.memorySlotValue}>{mealLabel(selectedMeal)}</Text>
+                <Text style={styles.memorySlotDate}>{formatDiaryDate(selectedDate)}</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => moveMemorySlot(1)}
+                disabled={!canMoveMemoryForward}
+                style={[styles.memorySlotArrow, !canMoveMemoryForward && styles.memorySlotArrowDisabled]}
+                accessibilityRole="button"
+                accessibilityLabel="Next food memory slot"
+                accessibilityState={{ disabled: !canMoveMemoryForward }}
+              >
+                <Feather name="chevron-right" size={24} color={canMoveMemoryForward ? colors.ink : colors.inkSubtle} />
               </TouchableOpacity>
             </View>
             <View style={styles.memorySessionRow}>
@@ -545,22 +611,7 @@ function DietScreenContent({ route, navigation }: Props) {
                 <Text style={styles.memorySessionValue}>+{memorySessionPoints}</Text>
                 <Text style={styles.memorySessionLabel}>this round</Text>
               </View>
-              <Text style={styles.memorySessionHint}>Add the most recent food first, then keep going backwards.</Text>
-            </View>
-            <View style={styles.modalMealChips}>
-              {meals.map((meal) => {
-                const selected = selectedMeal === meal.type;
-                return (
-                  <TouchableOpacity
-                    key={meal.type}
-                    activeOpacity={0.85}
-                    onPress={() => setSelectedMeal(meal.type)}
-                    style={[styles.modalMealChip, selected && styles.modalMealChipSelected]}
-                  >
-                    <Text style={[styles.modalMealChipText, selected && styles.modalMealChipTextSelected]}>{meal.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+              <Text style={styles.memorySessionHint}>After each entry, the game moves one slot back automatically.</Text>
             </View>
             <TextInput
               value={textEntry}
@@ -736,6 +787,27 @@ const styles = StyleSheet.create({
   textModalEyebrow: { ...typography.overline, color: colors.accent },
   textModalTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
   iconButton: { width: 42, height: 42, borderRadius: radius.pill, backgroundColor: colors.panelMuted, alignItems: 'center', justifyContent: 'center' },
+  memorySlotNavigator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: 24,
+    backgroundColor: colors.black,
+    padding: spacing.sm,
+  },
+  memorySlotArrow: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.pill,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memorySlotArrowDisabled: { opacity: 0.38 },
+  memorySlotCenter: { flex: 1, alignItems: 'center', paddingHorizontal: spacing.sm },
+  memorySlotLabel: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
+  memorySlotValue: { ...typography.title, color: colors.white, marginTop: 1 },
+  memorySlotDate: { ...typography.caption, color: colors.onAccentMuted, marginTop: 2 },
   memorySessionRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -757,18 +829,6 @@ const styles = StyleSheet.create({
   memorySessionValue: { ...typography.title, color: colors.ink },
   memorySessionLabel: { fontSize: 10, lineHeight: 12, color: colors.inkMuted, fontWeight: '700' },
   memorySessionHint: { ...typography.caption, color: colors.inkMuted, flex: 1 },
-  modalMealChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  modalMealChip: {
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.white,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  modalMealChipSelected: { backgroundColor: colors.black, borderColor: colors.black },
-  modalMealChipText: { ...typography.caption, color: colors.ink, fontWeight: '800' },
-  modalMealChipTextSelected: { color: colors.white },
   textInput: {
     minHeight: 132,
     borderWidth: 1,
