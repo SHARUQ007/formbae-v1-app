@@ -33,7 +33,7 @@ import {
   type DietDiaryEntry,
   type MealType,
 } from '../../store/dietDiaryStore';
-import { deleteRemoteDietDiaryEntry, resolveDietDiaryImageUrl, uploadDietDiaryEntry } from '../../services/dietDiaryService';
+import { deleteRemoteDietDiaryEntry, resolveDietDiaryImageUrl, uploadDietDiaryEntry, uploadTextDietDiaryEntry } from '../../services/dietDiaryService';
 import { getAuthToken } from '../../services/apiClient';
 import { displayBehavioralNotification } from '../../services/notificationService';
 import { loadDietDiaryCached } from '../../services/preloadService';
@@ -86,6 +86,7 @@ function DietScreenContent({ route, navigation }: Props) {
   const [textModalOpen, setTextModalOpen] = useState(false);
   const [textEntry, setTextEntry] = useState('');
   const [savedMeal, setSavedMeal] = useState<{ mealType: MealType; note: string } | null>(null);
+  const [memorySessionPoints, setMemorySessionPoints] = useState(0);
   const saveToastOpacity = useRef(new Animated.Value(0)).current;
   const saveToastScale = useRef(new Animated.Value(0.86)).current;
   const handledCameraRequestRef = useRef<number | null>(null);
@@ -109,6 +110,8 @@ function DietScreenContent({ route, navigation }: Props) {
     const today = new Date().toDateString();
     return entries.filter((entry) => new Date(entry.createdAt).toDateString() === today).length;
   }, [entries]);
+  const memoryPoints = todayCount;
+  const totalMemoryPoints = entries.length;
 
   const saveAsset = useCallback(async (asset?: Asset, mealType: MealType = selectedMeal) => {
     if (!asset?.uri) return;
@@ -220,22 +223,48 @@ function DietScreenContent({ route, navigation }: Props) {
   const saveTextEntry = async () => {
     const note = textEntry.trim();
     if (!note) {
-      Alert.alert('Add your meal', 'Write what you ate so it can be added to your diary.');
+      Alert.alert('Add remembered food', 'Write one food or meal you remember eating.');
       return;
     }
     setSaving(true);
     try {
-      await addTextDietDiaryEntry(selectedMeal, note);
+      const localEntry = await addTextDietDiaryEntry(selectedMeal, note);
       setTextEntry('');
-      setTextModalOpen(false);
       displayBehavioralNotification('dietPhotoLogged', { mealType: selectedMeal }).catch(() => undefined);
       await load();
+      setMemorySessionPoints((points) => points + 1);
       showSavedMealAnimation(selectedMeal, note);
+      try {
+        const uploaded = await uploadTextDietDiaryEntry({
+          clientId: localEntry.id,
+          mealType: localEntry.mealType,
+          note: localEntry.note || note,
+          createdAt: localEntry.createdAt,
+        });
+        await updateDietDiaryEntry(localEntry.id, {
+          remoteId: uploaded.entry.entryId,
+          remoteImageUrl: uploaded.entry.imageUrl,
+          syncedAt: new Date().toISOString(),
+          syncError: undefined,
+        });
+        await load({ force: true });
+      } catch (uploadError) {
+        await updateDietDiaryEntry(localEntry.id, {
+          syncError: uploadError instanceof Error ? uploadError.message : 'Could not sync meal yet.',
+        });
+        await load();
+      }
     } catch (e) {
       Alert.alert('Could not save meal', e instanceof Error ? e.message : 'Please try again.');
     } finally {
       setSaving(false);
     }
+  };
+
+  const openMemoryGame = () => {
+    setMemorySessionPoints(0);
+    setTextEntry('');
+    setTextModalOpen(true);
   };
 
   const onRefresh = async () => {
@@ -286,18 +315,29 @@ function DietScreenContent({ route, navigation }: Props) {
         <Card variant="accent">
           <View style={styles.heroRow}>
             <View style={styles.heroIcon}>
-              <Feather name="camera" size={24} color={colors.accent} />
+              <MaterialCommunityIcon name="brain" size={25} color={colors.accent} />
             </View>
             <View style={styles.heroText}>
-              <Text style={styles.heroTitle}>Diet diary</Text>
-              <Text style={styles.heroCopy}>Photo or text logs for meals you want to track.</Text>
+              <Text style={styles.heroTitle}>Food memory</Text>
+              <Text style={styles.heroCopy}>Remember what you ate, one item at a time. Every entry gives +1 point.</Text>
             </View>
           </View>
           <View style={styles.heroStats}>
-            <Badge label={`${todayCount} today`} tone="accent" icon="calendar" />
-            <Badge label={`${entries.length} total`} tone="neutral" icon="image" />
+            <Badge label={`${memoryPoints} points today`} tone="accent" icon="award" />
+            <Badge label={`${totalMemoryPoints} lifetime`} tone="neutral" icon="target" />
           </View>
         </Card>
+
+        <View style={styles.memoryPanel}>
+          <View style={styles.memoryScore}>
+            <Text style={styles.memoryScoreValue}>{memoryPoints}</Text>
+            <Text style={styles.memoryScoreLabel}>today</Text>
+          </View>
+          <View style={styles.memoryCopy}>
+            <Text style={styles.memoryTitle}>Start from the latest food you remember</Text>
+            <Text style={styles.memoryText}>Keep adding until you cannot remember the previous meal or snack.</Text>
+          </View>
+        </View>
 
         <SectionTitle>Meal type</SectionTitle>
         <View style={styles.mealGrid}>
@@ -322,10 +362,10 @@ function DietScreenContent({ route, navigation }: Props) {
         </View>
 
         <View style={styles.actions}>
-          <PrimaryButton title="Take food photo" icon="camera" onPress={() => addFromCamera()} loading={saving} />
+          <PrimaryButton title="Play food memory" icon="plus" onPress={openMemoryGame} loading={saving} />
           <View style={styles.secondaryActionRow}>
+            <PrimaryButton title="Photo" icon="camera" variant="secondary" onPress={() => addFromCamera()} disabled={saving} style={styles.secondaryAction} />
             <PrimaryButton title="Upload" icon="image" variant="secondary" onPress={addFromLibrary} disabled={saving} style={styles.secondaryAction} />
-            <PrimaryButton title="Text log" icon="edit-3" variant="secondary" onPress={() => setTextModalOpen(true)} disabled={saving} style={styles.secondaryAction} />
           </View>
         </View>
 
@@ -334,9 +374,9 @@ function DietScreenContent({ route, navigation }: Props) {
           <EmptyState
             icon="edit-3"
             title="No meals logged yet"
-            message="Add a meal photo or write what you ate when you missed the photo."
-            actionLabel="Log first meal"
-            onAction={() => setTextModalOpen(true)}
+            message="Play the food memory game and add each remembered item for points."
+            actionLabel="Start memory game"
+            onAction={openMemoryGame}
           />
         ) : (
           <View style={styles.grid}>
@@ -417,17 +457,39 @@ function DietScreenContent({ route, navigation }: Props) {
           <View style={styles.textModalCard}>
             <View style={styles.textModalHeader}>
               <View>
-                <Text style={styles.textModalEyebrow}>{selectedMeal}</Text>
-                <Text style={styles.textModalTitle}>What did you eat?</Text>
+                <Text style={styles.textModalEyebrow}>Food memory · +1 per entry</Text>
+                <Text style={styles.textModalTitle}>{memorySessionPoints ? 'What else do you remember?' : 'What did you eat last?'}</Text>
               </View>
               <TouchableOpacity onPress={() => setTextModalOpen(false)} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Close meal text entry">
                 <Feather name="x" size={22} color={colors.inkMuted} />
               </TouchableOpacity>
             </View>
+            <View style={styles.memorySessionRow}>
+              <View style={styles.memorySessionScore}>
+                <Text style={styles.memorySessionValue}>+{memorySessionPoints}</Text>
+                <Text style={styles.memorySessionLabel}>this round</Text>
+              </View>
+              <Text style={styles.memorySessionHint}>Add the most recent food first, then keep going backwards.</Text>
+            </View>
+            <View style={styles.modalMealChips}>
+              {meals.map((meal) => {
+                const selected = selectedMeal === meal.type;
+                return (
+                  <TouchableOpacity
+                    key={meal.type}
+                    activeOpacity={0.85}
+                    onPress={() => setSelectedMeal(meal.type)}
+                    style={[styles.modalMealChip, selected && styles.modalMealChipSelected]}
+                  >
+                    <Text style={[styles.modalMealChipText, selected && styles.modalMealChipTextSelected]}>{meal.type}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
             <TextInput
               value={textEntry}
               onChangeText={setTextEntry}
-              placeholder="Example: 2 eggs, toast, banana and coffee"
+              placeholder="Example: chicken salad, coffee, banana"
               placeholderTextColor={colors.inkSubtle}
               multiline
               textAlignVertical="top"
@@ -437,8 +499,8 @@ function DietScreenContent({ route, navigation }: Props) {
             />
             <Text style={styles.characterCount}>{textEntry.trim().length}/280</Text>
             <View style={styles.textModalActions}>
-              <PrimaryButton title="Cancel" variant="secondary" onPress={() => setTextModalOpen(false)} disabled={saving} style={styles.modalActionButton} />
-              <PrimaryButton title="Add to diary" icon="check" onPress={saveTextEntry} loading={saving} style={styles.modalActionButton} />
+              <PrimaryButton title="Finish" variant="secondary" onPress={() => setTextModalOpen(false)} disabled={saving} style={styles.modalActionButton} />
+              <PrimaryButton title="Add +1" icon="plus" onPress={saveTextEntry} loading={saving} style={styles.modalActionButton} />
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -475,6 +537,29 @@ const styles = StyleSheet.create({
   heroTitle: { ...typography.title, color: colors.accentDarker },
   heroCopy: { ...typography.body, color: colors.accentDarker, marginTop: 2 },
   heroStats: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  memoryPanel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginTop: spacing.md,
+    borderRadius: 26,
+    backgroundColor: colors.black,
+    padding: spacing.lg,
+    ...shadows.accent,
+  },
+  memoryScore: {
+    width: 74,
+    height: 74,
+    borderRadius: radius.pill,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memoryScoreValue: { fontSize: 30, lineHeight: 34, fontWeight: '900', color: colors.black },
+  memoryScoreLabel: { ...typography.caption, color: colors.inkMuted, marginTop: -2 },
+  memoryCopy: { flex: 1 },
+  memoryTitle: { ...typography.subtitle, color: colors.white },
+  memoryText: { ...typography.caption, color: colors.onAccentMuted, marginTop: spacing.xs },
   mealGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   mealCard: {
     width: '48%',
@@ -548,6 +633,39 @@ const styles = StyleSheet.create({
   textModalEyebrow: { ...typography.overline, color: colors.accent },
   textModalTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
   iconButton: { width: 42, height: 42, borderRadius: radius.pill, backgroundColor: colors.panelMuted, alignItems: 'center', justifyContent: 'center' },
+  memorySessionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: 20,
+    backgroundColor: colors.panelMuted,
+    padding: spacing.md,
+  },
+  memorySessionScore: {
+    width: 68,
+    height: 58,
+    borderRadius: radius.lg,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  memorySessionValue: { ...typography.title, color: colors.ink },
+  memorySessionLabel: { fontSize: 10, lineHeight: 12, color: colors.inkMuted, fontWeight: '700' },
+  memorySessionHint: { ...typography.caption, color: colors.inkMuted, flex: 1 },
+  modalMealChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  modalMealChip: {
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  modalMealChipSelected: { backgroundColor: colors.black, borderColor: colors.black },
+  modalMealChipText: { ...typography.caption, color: colors.ink, fontWeight: '800' },
+  modalMealChipTextSelected: { color: colors.white },
   textInput: {
     minHeight: 132,
     borderWidth: 1,

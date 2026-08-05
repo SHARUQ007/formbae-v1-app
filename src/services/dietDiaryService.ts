@@ -44,6 +44,25 @@ export async function uploadDietDiaryEntry(params: {
   return response;
 }
 
+export async function uploadTextDietDiaryEntry(params: {
+  clientId: string;
+  mealType: MealType;
+  note: string;
+  createdAt: string;
+}) {
+  const response = await apiRequest<{ ok: boolean; entry: RemoteDietDiaryEntry }>('/diet/diary', {
+    method: 'POST',
+    body: {
+      clientId: params.clientId,
+      mealType: params.mealType,
+      note: params.note,
+      createdAt: params.createdAt,
+    },
+  });
+  invalidateCachedResource('dietDiary');
+  return response;
+}
+
 export async function deleteRemoteDietDiaryEntry(entryId: string) {
   const response = await apiRequest<{ ok: boolean }>(`/diet/diary/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
   invalidateCachedResource('dietDiary');
