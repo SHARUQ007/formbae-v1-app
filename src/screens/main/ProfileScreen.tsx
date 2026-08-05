@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
-import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
+import { ScreenContainer, ScreenTitle } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { Avatar } from '../../components/Avatar';
 import { LoadingState, ErrorState } from '../../components/States';
@@ -129,18 +129,20 @@ export function ProfileScreen({ navigation }: Props) {
   const accessLabel = String(access.label || (accessActive ? 'Active' : 'Payment required'));
   const planName = typeof access.planName === 'string' ? access.planName : '';
 
-  const metricCards = [
+  const planRows = [
     { icon: 'target', label: 'Goal', value: titleCase(profile.fitnessGoal) },
     { icon: 'calendar', label: 'Training', value: profile.trainingDays ? `${profile.trainingDays}/week` : '' },
     { icon: 'map-pin', label: 'Workout', value: workoutSetting },
     { icon: 'coffee', label: 'Diet', value: titleCase(profile.dietPref) },
   ];
 
-  const bodyStats = [
-    { label: 'Age', value: profile.age },
-    { label: 'Height', value: profile.height ? `${profile.height} cm` : '' },
-    { label: 'Weight', value: profile.weight ? `${profile.weight} kg` : '' },
-    { label: 'Gender', value: titleCase(profile.gender) },
+  const bodyRows = [
+    { icon: 'user', label: 'Age', value: profile.age },
+    { icon: 'maximize-2', label: 'Height', value: profile.height ? `${profile.height} cm` : '' },
+    { icon: 'activity', label: 'Weight', value: profile.weight ? `${profile.weight} kg` : '' },
+    { icon: 'users', label: 'Gender', value: titleCase(profile.gender) },
+    ...(languages.length ? [{ icon: 'message-circle', label: 'Languages', value: languages.join(', ') }] : []),
+    ...(profile.allergies ? [{ icon: 'file-text', label: 'Notes', value: profile.allergies }] : []),
   ];
 
   const confirmCancel = () => {
@@ -195,35 +197,21 @@ export function ProfileScreen({ navigation }: Props) {
           </View>
         </View>
 
-        <SectionTitle>Plan snapshot</SectionTitle>
-        <View style={styles.metricGrid}>
-          {metricCards.map((item) => (
-            <View key={item.label} style={styles.metricCard}>
-              <View style={styles.metricIcon}>
-                <Feather name={item.icon} size={18} color={colors.accent} />
-              </View>
-              <Text style={styles.metricLabel}>{item.label}</Text>
-              <Text style={styles.metricValue} numberOfLines={2}>{compactValue(item.value)}</Text>
-            </View>
+        <SectionHeading title="Plan" />
+        <View style={styles.listPanel}>
+          {planRows.map((item, index) => (
+            <ProfileRow key={item.label} icon={item.icon} label={item.label} value={compactValue(item.value)} isLast={index === planRows.length - 1} />
           ))}
         </View>
 
-        <SectionTitle>Body profile</SectionTitle>
-        <Card>
-          <View style={styles.bodyGrid}>
-            {bodyStats.map((item) => (
-              <View key={item.label} style={styles.bodyTile}>
-                <Text style={styles.bodyLabel}>{item.label}</Text>
-                <Text style={styles.bodyValue}>{compactValue(item.value)}</Text>
-              </View>
-            ))}
-          </View>
-          {languages.length || profile.allergies ? <View style={styles.profileNotes} /> : null}
-          {languages.length ? <InfoLine icon="message-circle" label="Languages" value={languages.join(', ')} /> : null}
-          {profile.allergies ? <InfoLine icon="file-text" label="Notes" value={profile.allergies} /> : null}
-        </Card>
+        <SectionHeading title="Body Profile" />
+        <View style={styles.listPanel}>
+          {bodyRows.map((item, index) => (
+            <ProfileRow key={item.label} icon={item.icon} label={item.label} value={compactValue(item.value)} isLast={index === bodyRows.length - 1} />
+          ))}
+        </View>
 
-        <SectionTitle>Access & refund</SectionTitle>
+        <SectionHeading title="Access" />
         <View style={styles.accessCard}>
           <View style={styles.accessHeader}>
             <View style={styles.accessIcon}>
@@ -234,9 +222,9 @@ export function ProfileScreen({ navigation }: Props) {
               <Text style={styles.accessSubtitle}>{accessLabel}</Text>
             </View>
           </View>
-          <View style={styles.accessTiles}>
-            <MiniTile label="Window" value={formatAccessWindow(access)} compact />
-            <MiniTile label="Days left" value={accessActive ? String(access.premiumDaysRemaining ?? 0) : '0'} />
+          <View style={styles.accessRows}>
+            <PlainRow label="Access window" value={formatAccessWindow(access)} />
+            <PlainRow label="Days left" value={accessActive ? String(access.premiumDaysRemaining ?? 0) : '0'} isLast />
           </View>
           <View style={styles.managePanel}>
             <View style={styles.manageHeader}>
@@ -259,19 +247,19 @@ export function ProfileScreen({ navigation }: Props) {
           </View>
         </View>
 
-        <SectionTitle>Notifications</SectionTitle>
-        <Card>
+        <SectionHeading title="Notifications" />
+        <View style={styles.listPanel}>
           <ToggleRow icon="activity" label="Workout reminders" value={notifications.workoutReminders} onChange={(v) => toggle('workoutReminders', v)} />
           <ToggleRow icon="calendar" label="Weekly check-ins" value={notifications.weeklyCheckInReminders} onChange={(v) => toggle('weeklyCheckInReminders', v)} />
-          <ToggleRow icon="message-circle" label="Trainer messages" value={notifications.trainerMessageReminders} onChange={(v) => toggle('trainerMessageReminders', v)} />
-        </Card>
+          <ToggleRow icon="message-circle" label="Trainer messages" value={notifications.trainerMessageReminders} onChange={(v) => toggle('trainerMessageReminders', v)} isLast />
+        </View>
 
-        <SectionTitle>Account</SectionTitle>
-        <Card>
+        <SectionHeading title="Account" />
+        <View style={styles.listPanel}>
           <ActionRow icon="award" label="Your coach" value="Profile, chat, change" onPress={() => navigation.navigate('Trainer')} />
           <ActionRow icon="file-text" label="Legal & support" onPress={() => navigation.navigate('Legal')} />
-          <ActionRow icon="trash-2" label="Delete account" tone="danger" onPress={() => navigation.navigate('DeleteAccount')} />
-        </Card>
+          <ActionRow icon="trash-2" label="Delete account" tone="danger" onPress={() => navigation.navigate('DeleteAccount')} isLast />
+        </View>
 
         <PrimaryButton title="Log out" icon="log-out" variant="secondary" onPress={() => logout()} style={styles.logout} />
         <Text style={styles.version}>FormBae · v1.0.0</Text>
@@ -280,30 +268,36 @@ export function ProfileScreen({ navigation }: Props) {
   );
 }
 
-function InfoLine({ icon, label, value }: { icon: string; label: string; value: string }) {
+function SectionHeading({ title }: { title: string }) {
+  return <Text style={styles.sectionHeading}>{title}</Text>;
+}
+
+function ProfileRow({ icon, label, value, isLast }: { icon: string; label: string; value: string; isLast?: boolean }) {
   return (
-    <View style={styles.infoLine}>
-      <Feather name={icon} size={16} color={colors.accent} />
-      <View style={styles.infoText}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue}>{value}</Text>
+    <View style={[styles.profileRow, !isLast && styles.profileRowBorder]}>
+      <View style={styles.rowIcon}>
+        <Feather name={icon} size={17} color={colors.ink} />
+      </View>
+      <View style={styles.profileRowText}>
+        <Text style={styles.profileRowLabel}>{label}</Text>
+        <Text style={styles.profileRowValue} numberOfLines={2}>{value}</Text>
       </View>
     </View>
   );
 }
 
-function MiniTile({ label, value, compact }: { label: string; value: string; compact?: boolean }) {
+function PlainRow({ label, value, isLast }: { label: string; value: string; isLast?: boolean }) {
   return (
-    <View style={styles.miniTile}>
-      <Text style={styles.miniLabel}>{label}</Text>
-      <Text style={[styles.miniValue, compact && styles.miniValueCompact]} numberOfLines={2}>{value || '-'}</Text>
+    <View style={[styles.plainRow, !isLast && styles.profileRowBorder]}>
+      <Text style={styles.plainLabel}>{label}</Text>
+      <Text style={styles.plainValue} numberOfLines={2}>{value || '-'}</Text>
     </View>
   );
 }
 
-function ToggleRow({ icon, label, value, onChange }: { icon: string; label: string; value: boolean; onChange: (v: boolean) => void }) {
+function ToggleRow({ icon, label, value, onChange, isLast }: { icon: string; label: string; value: boolean; onChange: (v: boolean) => void; isLast?: boolean }) {
   return (
-    <View style={styles.toggleRow}>
+    <View style={[styles.toggleRow, isLast && styles.noBorder]}>
       <View style={styles.rowIcon}>
         <Feather name={icon} size={17} color={colors.accent} />
       </View>
@@ -313,9 +307,9 @@ function ToggleRow({ icon, label, value, onChange }: { icon: string; label: stri
   );
 }
 
-function ActionRow({ icon, label, value, tone, onPress }: { icon: string; label: string; value?: string; tone?: 'danger'; onPress: () => void }) {
+function ActionRow({ icon, label, value, tone, onPress, isLast }: { icon: string; label: string; value?: string; tone?: 'danger'; onPress: () => void; isLast?: boolean }) {
   return (
-    <TouchableOpacity activeOpacity={0.82} onPress={onPress} style={styles.actionRow}>
+    <TouchableOpacity activeOpacity={0.82} onPress={onPress} style={[styles.actionRow, isLast && styles.noBorder]}>
       <View style={[styles.rowIcon, tone === 'danger' && styles.dangerIcon]}>
         <Feather name={icon} size={17} color={tone === 'danger' ? colors.error : colors.accent} />
       </View>
@@ -354,42 +348,54 @@ const styles = StyleSheet.create({
   },
   heroBadgeText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
   warnText: { color: colors.warn },
-  metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  metricCard: {
-    width: '48%',
-    minHeight: 124,
+  sectionHeading: {
+    ...typography.overline,
+    color: colors.inkSubtle,
+    textTransform: 'uppercase',
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  listPanel: {
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.xl,
     backgroundColor: colors.panel,
-    padding: spacing.md,
+    overflow: 'hidden',
+    ...shadows.sm,
   },
-  metricIcon: { width: 38, height: 38, borderRadius: radius.md, backgroundColor: colors.accentLight, alignItems: 'center', justifyContent: 'center' },
-  metricLabel: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.md },
-  metricValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
-  bodyGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  bodyTile: { width: '48%', borderRadius: radius.lg, backgroundColor: colors.panelMuted, padding: spacing.md },
-  bodyLabel: { ...typography.caption, color: colors.inkMuted },
-  bodyValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
-  profileNotes: { height: 1, backgroundColor: colors.border, marginVertical: spacing.md },
-  infoLine: { flexDirection: 'row', gap: spacing.sm, paddingVertical: spacing.sm },
-  infoText: { flex: 1 },
-  infoLabel: { ...typography.caption, color: colors.inkMuted },
-  infoValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
+  profileRow: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  profileRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  noBorder: { borderBottomWidth: 0 },
+  profileRowText: { flex: 1 },
+  profileRowLabel: { ...typography.caption, color: colors.inkMuted, marginBottom: 2 },
+  profileRowValue: { ...typography.bodyBold, color: colors.ink },
+  plainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: 46,
+  },
+  plainLabel: { ...typography.caption, color: colors.inkMuted, flex: 0.7 },
+  plainValue: { ...typography.bodyBold, color: colors.ink, flex: 1, textAlign: 'right' },
   accessCard: { borderRadius: radius.xl, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, padding: spacing.md, ...shadows.sm },
   accessHeader: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
   accessIcon: { width: 54, height: 54, borderRadius: radius.lg, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
   accessText: { flex: 1 },
   accessTitle: { ...typography.title, color: colors.ink },
   accessSubtitle: { ...typography.body, color: colors.inkMuted, marginTop: 2 },
-  accessTiles: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
-  miniTile: { flex: 1, borderRadius: radius.lg, backgroundColor: colors.panelMuted, padding: spacing.md },
-  miniLabel: { ...typography.caption, color: colors.inkMuted },
-  miniValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
-  miniValueCompact: { fontSize: 13, lineHeight: 18, fontWeight: '800' },
-  managePanel: { borderRadius: radius.lg, backgroundColor: colors.accentLight, padding: spacing.md, marginTop: spacing.md, gap: spacing.md },
+  accessRows: { marginTop: spacing.md, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border, paddingVertical: spacing.xs },
+  managePanel: { borderRadius: radius.lg, backgroundColor: colors.panelMuted, padding: spacing.md, marginTop: spacing.md, gap: spacing.md },
   manageHeader: { flexDirection: 'row', gap: spacing.sm },
-  manageIcon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  manageIcon: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   manageCopy: { flex: 1 },
   manageTitle: { ...typography.bodyBold, color: colors.ink },
   manageText: { ...typography.caption, color: colors.inkMuted, marginTop: 2, lineHeight: 20 },
@@ -405,11 +411,29 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   cancelButtonText: { ...typography.caption, color: colors.error, fontWeight: '800' },
-  toggleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, minHeight: 52 },
-  rowIcon: { width: 36, height: 36, borderRadius: radius.md, backgroundColor: colors.accentLight, alignItems: 'center', justifyContent: 'center' },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: 58,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  rowIcon: { width: 34, height: 34, borderRadius: radius.pill, backgroundColor: colors.accentLight, alignItems: 'center', justifyContent: 'center' },
   dangerIcon: { backgroundColor: colors.errorLight },
   toggleLabel: { ...typography.bodyBold, color: colors.ink, flex: 1 },
-  actionRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, minHeight: 56 },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: 60,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
   actionText: { flex: 1 },
   actionLabel: { ...typography.bodyBold, color: colors.ink },
   actionValue: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
