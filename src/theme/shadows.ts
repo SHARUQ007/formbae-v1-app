@@ -1,7 +1,7 @@
 import { Platform, ViewStyle } from 'react-native';
 
 const ios = (height: number, opacity: number, radius: number): ViewStyle => ({
-  shadowColor: '#0a1710',
+  shadowColor: '#050505',
   shadowOffset: { width: 0, height },
   shadowOpacity: opacity,
   shadowRadius: radius,
@@ -17,7 +17,7 @@ export const shadows = {
   md: make(ios(12, 0.07, 24), 5),
   lg: make(ios(16, 0.1, 32), 8),
   accent: make(
-    { shadowColor: '#047857', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 16 },
+    { shadowColor: '#000000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 16 },
     6,
   ),
 };

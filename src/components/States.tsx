@@ -1,7 +1,8 @@
 import { View, Text, StyleSheet } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { PrimaryButton } from './PrimaryButton';
-import { ScreenSkeleton } from './Skeleton';
+import { LottieAnimation } from './LottieAnimation';
+import { appLottie } from '../assets/lottie';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { radius } from '../theme/radius';
@@ -10,7 +11,7 @@ import { typography } from '../theme/typography';
 export function LoadingState({ message = 'Loading…' }: { message?: string }) {
   return (
     <View style={styles.loadingWrap} accessibilityLabel={message} accessibilityLiveRegion="polite">
-      <ScreenSkeleton />
+      <LottieAnimation source={appLottie.loadingPulse} size={108} />
       <Text style={styles.loadingText}>{message}</Text>
     </View>
   );
@@ -44,9 +45,13 @@ export function EmptyState({
 }) {
   return (
     <View style={styles.wrap}>
-      <View style={[styles.iconCircle, { backgroundColor: colors.accentLight }]}>
-        <Feather name={icon} size={26} color={colors.accent} />
-      </View>
+      {icon === 'inbox' ? (
+        <LottieAnimation source={appLottie.emptySpark} size={92} />
+      ) : (
+        <View style={[styles.iconCircle, { backgroundColor: colors.accentLight }]}>
+          <Feather name={icon} size={26} color={colors.accent} />
+        </View>
+      )}
       <Text style={styles.emptyTitle}>{title}</Text>
       {message ? <Text style={styles.text}>{message}</Text> : null}
       {actionLabel && onAction ? <PrimaryButton title={actionLabel} onPress={onAction} style={styles.retry} /> : null}
@@ -55,7 +60,7 @@ export function EmptyState({
 }
 
 const styles = StyleSheet.create({
-  loadingWrap: { paddingVertical: spacing.sm },
+  loadingWrap: { paddingVertical: spacing.lg, alignItems: 'center', justifyContent: 'center' },
   loadingText: { ...typography.caption, color: colors.inkSubtle, textAlign: 'center', marginTop: spacing.md },
   wrap: { paddingVertical: spacing.xl, paddingHorizontal: spacing.lg, alignItems: 'center', justifyContent: 'center' },
   iconCircle: { width: 60, height: 60, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md },

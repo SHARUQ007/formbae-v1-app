@@ -1,46 +1,46 @@
 export const colors = {
   // Surfaces
-  bg: '#f7faf7',
-  bgTint: '#eef6f1',
+  bg: '#f8f8f6',
+  bgTint: '#eeeeec',
   panel: '#ffffff',
-  panelMuted: '#f0f6f2',
+  panelMuted: '#f1f1ef',
 
   // Text
-  ink: '#0f1f16',
-  inkStrong: '#0a1710',
-  inkMuted: '#5b6f61',
-  inkSubtle: '#8b998f',
+  ink: '#111111',
+  inkStrong: '#050505',
+  inkMuted: '#5f5f5f',
+  inkSubtle: '#989895',
 
-  // Brand (emerald)
-  accent: '#059669',
-  accentDark: '#047857',
-  accentDarker: '#065f46',
-  accentLight: '#e7f6ee',
-  accentSurface: '#d8efe1',
+  // Brand (monochrome)
+  accent: '#111111',
+  accentDark: '#000000',
+  accentDarker: '#000000',
+  accentLight: '#eeeeec',
+  accentSurface: '#d9d9d6',
 
   // Gradient
-  gradientStart: '#10b981',
-  gradientMid: '#059669',
-  gradientEnd: '#047857',
+  gradientStart: '#1d1d1d',
+  gradientMid: '#111111',
+  gradientEnd: '#000000',
 
   // Lines
-  border: '#e6efe9',
-  borderStrong: '#c9ddd1',
+  border: '#e4e4e1',
+  borderStrong: '#c8c8c4',
 
   // Status
-  success: '#059669',
-  successLight: '#e7f6ee',
+  success: '#111111',
+  successLight: '#eeeeec',
   warn: '#c2410c',
   warnLight: '#fdf1e7',
   error: '#dc2626',
   errorLight: '#fdecec',
-  info: '#2563eb',
-  infoLight: '#e8effd',
-  star: '#f59e0b',
+  info: '#404040',
+  infoLight: '#eeeeec',
+  star: '#111111',
 
   // Misc
   white: '#ffffff',
   black: '#000000',
-  overlay: 'rgba(10,23,16,0.55)',
+  overlay: 'rgba(0,0,0,0.58)',
   onAccentMuted: 'rgba(255,255,255,0.85)',
 };

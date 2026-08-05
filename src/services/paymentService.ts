@@ -150,7 +150,7 @@ export async function runNativeCheckout(params: {
       contact: params.user.mobile,
       email: params.user.email || '',
     },
-    theme: { color: '#059669' },
+    theme: { color: '#111111' },
   } as unknown as Parameters<typeof RazorpayCheckout.open>[0];
 
   let checkout: {
