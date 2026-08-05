@@ -7,7 +7,6 @@ import { LoadingState } from '../../components/States';
 import { resolveContextualSnapshot, workoutTitle, type ContextualSnapshot } from '../../utils/contextualAction';
 import type { MainTabParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
-import { radius } from '../../theme/radius';
 import { shadows } from '../../theme/shadows';
 import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
@@ -78,9 +77,6 @@ export function ActionHubScreen({ navigation }: Props) {
         </View>
 
         <TouchableOpacity activeOpacity={0.9} onPress={openTarget} style={styles.hero}>
-          <View style={styles.heroIcon}>
-            <Feather name={snapshot.target.icon} size={30} color={colors.black} />
-          </View>
           <View style={styles.heroCopy}>
             <Text style={styles.heroLabel}>{snapshot.target.detail}</Text>
             <Text style={styles.heroTitle}>
@@ -95,13 +91,8 @@ export function ActionHubScreen({ navigation }: Props) {
         </TouchableOpacity>
 
         <View style={styles.reasonCard}>
-          <View style={styles.reasonIcon}>
-            <Feather name="info" size={18} color={colors.accentDark} />
-          </View>
-          <View style={styles.reasonCopy}>
-            <Text style={styles.reasonTitle}>Why this</Text>
-            <Text style={styles.reasonText}>{targetReason(snapshot)}</Text>
-          </View>
+          <Text style={styles.reasonTitle}>Why this</Text>
+          <Text style={styles.reasonText}>{targetReason(snapshot)}</Text>
         </View>
       </ScrollView>
     </ScreenContainer>
@@ -154,14 +145,6 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     ...shadows.accent,
   },
-  heroIcon: {
-    width: 66,
-    height: 66,
-    borderRadius: radius.pill,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   heroCopy: { flex: 1 },
   heroLabel: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
   heroTitle: { ...typography.title, color: colors.white, marginTop: spacing.xs },
@@ -178,15 +161,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     ...shadows.sm,
   },
-  reasonIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reasonCopy: { flex: 1 },
   reasonTitle: { ...typography.bodyBold, color: colors.ink },
   reasonText: { ...typography.caption, color: colors.inkMuted, marginTop: 3, lineHeight: 18 },
 });
