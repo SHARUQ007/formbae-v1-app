@@ -52,7 +52,7 @@ function formatAccessDate(value?: string | null) {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
 function formatAccessWindow(access: NonNullable<Awaited<ReturnType<typeof fetchSettings>>['access']>) {
@@ -235,7 +235,7 @@ export function ProfileScreen({ navigation }: Props) {
             </View>
           </View>
           <View style={styles.accessTiles}>
-            <MiniTile label="Window" value={formatAccessWindow(access)} />
+            <MiniTile label="Window" value={formatAccessWindow(access)} compact />
             <MiniTile label="Days left" value={accessActive ? String(access.premiumDaysRemaining ?? 0) : '0'} />
           </View>
           <View style={styles.managePanel}>
@@ -292,11 +292,11 @@ function InfoLine({ icon, label, value }: { icon: string; label: string; value: 
   );
 }
 
-function MiniTile({ label, value }: { label: string; value: string }) {
+function MiniTile({ label, value, compact }: { label: string; value: string; compact?: boolean }) {
   return (
     <View style={styles.miniTile}>
       <Text style={styles.miniLabel}>{label}</Text>
-      <Text style={styles.miniValue} numberOfLines={2}>{value || '-'}</Text>
+      <Text style={[styles.miniValue, compact && styles.miniValueCompact]} numberOfLines={2}>{value || '-'}</Text>
     </View>
   );
 }
@@ -386,6 +386,7 @@ const styles = StyleSheet.create({
   miniTile: { flex: 1, borderRadius: radius.lg, backgroundColor: colors.panelMuted, padding: spacing.md },
   miniLabel: { ...typography.caption, color: colors.inkMuted },
   miniValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
+  miniValueCompact: { fontSize: 13, lineHeight: 18, fontWeight: '800' },
   managePanel: { borderRadius: radius.lg, backgroundColor: colors.accentLight, padding: spacing.md, marginTop: spacing.md, gap: spacing.md },
   manageHeader: { flexDirection: 'row', gap: spacing.sm },
   manageIcon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
