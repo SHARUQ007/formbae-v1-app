@@ -23,6 +23,26 @@ export async function fetchWorkoutDay(planDayId: string, mode: 'standard' | 'qui
   }
 }
 
+export async function resolveWorkoutVideo(params: {
+  planDayId: string;
+  workoutMode: 'standard' | 'quick';
+  exerciseId?: string;
+  exerciseName: string;
+  order?: string;
+  focus?: string;
+}) {
+  const response = await apiRequest<{ ok: boolean; videoUrl: string; videoId?: string; source?: string; title?: string }>(
+    '/workouts/resolve-video',
+    {
+      method: 'POST',
+      body: params,
+      timeoutMs: 25000,
+    },
+  );
+  invalidateCachedResource('workoutDay');
+  return response;
+}
+
 export async function completeWorkoutAction(params: {
   planId: string;
   planDayId: string;

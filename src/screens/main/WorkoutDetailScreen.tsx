@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
+  Alert,
   Animated,
   Image,
   KeyboardAvoidingView,
@@ -19,6 +20,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { loadWorkoutDayCached } from '../../services/preloadService';
+import { resolveWorkoutVideo } from '../../services/workoutService';
 import {
   completeWithQueue,
   loadWorkoutProgress,
@@ -35,12 +37,17 @@ import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
+import { isPlayableVideo } from '../../utils/video';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutDetail'>;
 
 type RewardType = 'set' | 'movement' | 'workout';
 type RewardState = { id: number; type: RewardType; title: string; subtitle: string } | null;
 type SetLog = { setNumber: number; reps: string; weight: string; durationSec?: number };
+
+function videoResolveKey(exercise: WorkoutExerciseDetail) {
+  return exercise.exerciseId || `${exercise.exerciseName}:${exercise.order}`;
+}
 
 function getSectionLabel(notes: string, fallback: string) {
   const section = notes.match(/(?:^|[|\n])\s*Section:\s*([^|\n]+)/i)?.[1]?.trim();
@@ -175,8 +182,11 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const [finishing, setFinishing] = useState(false);
   const [reward, setReward] = useState<RewardState>(null);
   const [flowOpen, setFlowOpen] = useState(false);
+  const [resolvedVideoUrls, setResolvedVideoUrls] = useState<Record<string, string>>({});
+  const [resolvingVideoKeys, setResolvingVideoKeys] = useState<Set<string>>(new Set());
   const { status } = useAuthStore();
   const pendingNextIndexRef = useRef<number | null>(null);
+  const resolvingVideoRequestsRef = useRef<Map<string, Promise<string>>>(new Map());
 
   useLayoutEffect(() => {
     navigation.getParent()?.setOptions({ tabBarStyle: hiddenTabBarStyle });
@@ -213,6 +223,9 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       setWorkoutCompleteOpen(false);
       setPendingNextIndex(null);
       pendingNextIndexRef.current = null;
+      setResolvedVideoUrls({});
+      setResolvingVideoKeys(new Set());
+      resolvingVideoRequestsRef.current.clear();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load workout');
     } finally {
@@ -265,6 +278,8 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const activeFocusTags = exerciseFocusTags(activeExercise, detail);
   const activeCues = exerciseCues(activeNotes, activeExercise);
   const activeBenefit = exerciseBenefit(activeExercise, activeFocusTags);
+  const activeVideoKey = activeExercise ? videoResolveKey(activeExercise) : '';
+  const activeVideoResolving = activeVideoKey ? resolvingVideoKeys.has(activeVideoKey) : false;
   const activeNeedsWeight = isWeightedExercise(activeExercise);
   const activeSetLogs = useMemo(() => (activeExerciseId ? setLogs[activeExerciseId] || [] : []), [activeExerciseId, setLogs]);
   const activeLastLog = activeSetLogs[activeSetCount - 1];
@@ -274,30 +289,110 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const restTargetLabel = restTargetIndex === activeExerciseIndex && activeExercise
     ? `Set ${Math.min(activeSets, activeSetCount + 1)} of ${activeExercise.exerciseName}`
     : restTargetExercise?.exerciseName || 'finish workout';
-  const workoutVideos = useMemo(
-    () => trackableExercises
-      .filter((exercise) => String(exercise.videoUrl || '').trim())
-      .map((exercise) => ({
-        id: exercise.exerciseId,
-        title: exercise.exerciseName,
-        subtitle: getSectionLabel(exercise.notes, detail?.focus || 'Workout'),
-        videoUrl: exercise.videoUrl,
-      })),
-    [detail?.focus, trackableExercises],
+
+  const videoUrlForExercise = useCallback(
+    (exercise: WorkoutExerciseDetail) => resolvedVideoUrls[videoResolveKey(exercise)] || exercise.videoUrl || '',
+    [resolvedVideoUrls],
   );
 
+  const workoutVideos = useMemo(
+    () => trackableExercises
+      .map((exercise) => ({
+        exercise,
+        videoUrl: videoUrlForExercise(exercise),
+      }))
+      .filter(({ videoUrl }) => isPlayableVideo(videoUrl))
+      .map((exercise) => ({
+        id: videoResolveKey(exercise.exercise),
+        title: exercise.exercise.exerciseName,
+        subtitle: getSectionLabel(exercise.exercise.notes, detail?.focus || 'Workout'),
+        videoUrl: exercise.videoUrl,
+      })),
+    [detail?.focus, trackableExercises, videoUrlForExercise],
+  );
+
+  const resolveExerciseVideo = useCallback(
+    async (exercise: WorkoutExerciseDetail) => {
+      const existingUrl = videoUrlForExercise(exercise);
+      if (isPlayableVideo(existingUrl)) return existingUrl;
+      if (!detail?.planDayId) return '';
+
+      const key = videoResolveKey(exercise);
+      const pendingRequest = resolvingVideoRequestsRef.current.get(key);
+      if (pendingRequest) return pendingRequest;
+      setResolvingVideoKeys((value) => new Set(value).add(key));
+      const request = (async () => {
+        try {
+          const result = await resolveWorkoutVideo({
+            planDayId: detail.planDayId,
+            workoutMode: detail.workoutMode,
+            exerciseId: exercise.exerciseId,
+            exerciseName: exercise.exerciseName,
+            order: exercise.order,
+            focus: detail.focus,
+          });
+          const nextUrl = result.videoUrl || '';
+          if (!isPlayableVideo(nextUrl)) return '';
+          setResolvedVideoUrls((value) => ({ ...value, [key]: nextUrl }));
+          setDetail((value) => value
+            ? {
+                ...value,
+                exercises: value.exercises.map((entry) => (
+                  videoResolveKey(entry) === key ? { ...entry, videoUrl: nextUrl } : entry
+                )),
+              }
+            : value);
+          return nextUrl;
+        } catch {
+          return '';
+        } finally {
+          resolvingVideoRequestsRef.current.delete(key);
+          setResolvingVideoKeys((value) => {
+            const next = new Set(value);
+            next.delete(key);
+            return next;
+          });
+        }
+      })();
+      resolvingVideoRequestsRef.current.set(key, request);
+      return request;
+    },
+    [detail?.focus, detail?.planDayId, detail?.workoutMode, videoUrlForExercise],
+  );
+
+  useEffect(() => {
+    if (!activeExercise) return;
+    if (isPlayableVideo(videoUrlForExercise(activeExercise))) return;
+    resolveExerciseVideo(activeExercise).catch(() => undefined);
+  }, [activeExercise, resolveExerciseVideo, videoUrlForExercise]);
+
   const openExerciseVideo = useCallback(
-    (exercise: WorkoutExerciseDetail) => {
-      const initialIndex = Math.max(0, workoutVideos.findIndex((item) => item.id === exercise.exerciseId));
+    async (exercise: WorkoutExerciseDetail) => {
+      let resolvedUrl = videoUrlForExercise(exercise);
+      if (!isPlayableVideo(resolvedUrl)) {
+        resolvedUrl = await resolveExerciseVideo(exercise);
+      }
+      if (!isPlayableVideo(resolvedUrl)) {
+        Alert.alert('Video is still being prepared', 'Try again in a moment. We are searching for the best technique video for this movement.');
+        return;
+      }
+      const currentItem = {
+        id: videoResolveKey(exercise),
+        title: exercise.exerciseName,
+        subtitle: getSectionLabel(exercise.notes, detail?.focus || 'Workout'),
+        videoUrl: resolvedUrl,
+      };
+      const videos = workoutVideos.some((item) => item.id === currentItem.id) ? workoutVideos : [currentItem, ...workoutVideos];
+      const initialIndex = Math.max(0, videos.findIndex((item) => item.id === currentItem.id));
       navigation.navigate('WorkoutVideo', {
         title: exercise.exerciseName,
         subtitle: getSectionLabel(exercise.notes, detail?.focus || 'Workout'),
-        videoUrl: exercise.videoUrl,
-        videos: workoutVideos,
+        videoUrl: resolvedUrl,
+        videos,
         initialIndex,
       });
     },
-    [detail?.focus, navigation, workoutVideos],
+    [detail?.focus, navigation, resolveExerciseVideo, videoUrlForExercise, workoutVideos],
   );
 
   useEffect(() => {
@@ -616,8 +711,8 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                 <View style={styles.videoStepFooter}>
                   <View style={styles.videoStepText}>
                     <Text style={styles.videoStepKicker}>Technique video</Text>
-                    <Text style={styles.videoStepTitleLarge}>Watch form first</Text>
-                    <Text style={styles.videoStepMeta}>Open before set {activeSetNumber}.</Text>
+                    <Text style={styles.videoStepTitleLarge}>{activeVideoResolving ? 'Finding form video' : 'Watch form first'}</Text>
+                    <Text style={styles.videoStepMeta}>{activeVideoResolving ? 'Preparing before you open it.' : `Open before set ${activeSetNumber}.`}</Text>
                   </View>
                   <Feather name="chevron-right" size={26} color={colors.white} />
                 </View>
@@ -696,7 +791,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                 accessibilityLabel={`Open video for ${activeExercise.exerciseName}`}
               >
                 <Feather name="play-circle" size={22} color={colors.white} />
-                <Text style={styles.videoMiniText}>Technique video</Text>
+                <Text style={styles.videoMiniText}>{activeVideoResolving ? 'Finding video' : 'Technique video'}</Text>
                 <Feather name="chevron-right" size={20} color={colors.white} />
               </TouchableOpacity>
             </>
