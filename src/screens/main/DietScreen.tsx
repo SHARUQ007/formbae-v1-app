@@ -21,7 +21,6 @@ import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
-import { Badge } from '../../components/Badge';
 import { EmptyState } from '../../components/States';
 import {
   addDietDiaryEntry,
@@ -124,6 +123,18 @@ function mealLabel(type: MealType) {
   return meals.find((meal) => meal.type === type)?.label || type;
 }
 
+function nextFeedbackText(feedback?: DietCoachFeedback | null) {
+  if (!feedback?.generatedAt) return 'Next feedback in 7 days';
+  const generated = new Date(feedback.generatedAt);
+  if (Number.isNaN(generated.getTime())) return 'Next feedback in 7 days';
+  const next = new Date(generated);
+  next.setDate(next.getDate() + 7);
+  const diff = Math.ceil((next.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+  if (diff <= 0) return 'Next feedback due now';
+  if (diff === 1) return 'Next feedback in 1 day';
+  return `Next feedback in ${diff} days`;
+}
+
 function isMemoryEntry(entry: DietDiaryEntry) {
   return entry.kind === 'text' || (!entry.uri && Boolean(entry.note?.trim()));
 }
@@ -171,6 +182,31 @@ function imageSource(entry: DietDiaryEntry) {
   return { uri };
 }
 
+function DietTab({
+  label,
+  icon,
+  active,
+  onPress,
+}: {
+  label: string;
+  icon: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.86}
+      onPress={onPress}
+      style={[styles.dietTab, active && styles.dietTabActive]}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: active }}
+    >
+      <Feather name={icon} size={18} color={active ? colors.white : colors.inkMuted} />
+      <Text style={[styles.dietTabText, active && styles.dietTabTextActive]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 export function DietScreen(props: Props) {
   return <DietScreenContent {...props} />;
 }
@@ -187,6 +223,7 @@ function DietScreenContent({ route, navigation }: Props) {
   const [textEntry, setTextEntry] = useState('');
   const [savedMeal, setSavedMeal] = useState<{ mealType: MealType; note: string } | null>(null);
   const [memorySessionPoints, setMemorySessionPoints] = useState(0);
+  const [activeTab, setActiveTab] = useState<'diary' | 'feedback'>('diary');
   const saveToastOpacity = useRef(new Animated.Value(0)).current;
   const saveToastScale = useRef(new Animated.Value(0.86)).current;
   const celebrationProgress = useRef(new Animated.Value(0)).current;
@@ -448,164 +485,207 @@ function DietScreenContent({ route, navigation }: Props) {
       >
         <ScreenTitle>Diet</ScreenTitle>
 
-        <Card variant="accent">
-          <View style={styles.heroRow}>
-            <View style={styles.heroIcon}>
-              <MaterialCommunityIcon name="brain" size={25} color={colors.accent} />
-            </View>
-            <View style={styles.heroText}>
-              <Text style={styles.heroTitle}>Food memory</Text>
-              <Text style={styles.heroCopy}>Remember what you ate, one item at a time. Every entry gives +1 point.</Text>
-            </View>
-          </View>
-          <View style={styles.heroStats}>
-            <Badge label={`${memoryPoints} points`} tone="accent" icon="award" />
-            <Badge label={`${totalMemoryPoints} lifetime`} tone="neutral" icon="target" />
-          </View>
-        </Card>
+        <View style={styles.dietTabs}>
+          <DietTab label="Diary" icon="edit-3" active={activeTab === 'diary'} onPress={() => setActiveTab('diary')} />
+          <DietTab label="Feedback" icon="message-circle" active={activeTab === 'feedback'} onPress={() => setActiveTab('feedback')} />
+        </View>
 
-        {dietFeedback ? (
-          <View style={styles.coachFeedbackCard}>
-            <View style={styles.coachFeedbackHeader}>
-              <View style={styles.coachFeedbackIcon}>
-                <Feather name="message-circle" size={21} color={colors.white} />
+        {activeTab === 'feedback' ? (
+          <View style={styles.feedbackScreen}>
+            <View style={styles.feedbackHero}>
+              <View style={styles.feedbackHeroIcon}>
+                <Feather name="message-circle" size={24} color={colors.white} />
               </View>
-              <View style={styles.coachFeedbackTitleBlock}>
-                <Text style={styles.coachFeedbackEyebrow}>Weekly diet feedback</Text>
-                <Text style={styles.coachFeedbackTitle}>Ava reviewed your logs</Text>
+              <View style={styles.feedbackHeroText}>
+                <Text style={styles.feedbackEyebrow}>Weekly diet feedback</Text>
+                <Text style={styles.feedbackTitle}>{dietFeedback?.title || 'Ava will review your meals'}</Text>
+                <Text style={styles.feedbackMeta}>{nextFeedbackText(dietFeedback)}</Text>
               </View>
             </View>
-            <Text style={styles.coachFeedbackSummary}>{dietFeedback.summary}</Text>
-            <View style={styles.coachFeedbackStats}>
-              {dietFeedback.highlights.slice(0, 3).map((highlight) => (
-                <View key={highlight} style={styles.coachFeedbackPill}>
-                  <Text style={styles.coachFeedbackPillText}>{highlight}</Text>
+
+            <Card style={styles.feedbackCard}>
+              <Text style={styles.feedbackSectionTitle}>What you are eating</Text>
+              <Text style={styles.feedbackBody}>
+                {dietFeedback?.summary || 'Log a few meals with photos or the memory game so Ava can summarize your eating pattern.'}
+              </Text>
+              {dietFeedback?.stats.recentFoods?.length ? (
+                <View style={styles.foodPillRow}>
+                  {dietFeedback.stats.recentFoods.slice(0, 6).map((food) => (
+                    <View key={food} style={styles.foodPill}>
+                      <Text style={styles.foodPillText}>{food}</Text>
+                    </View>
+                  ))}
                 </View>
-              ))}
+              ) : null}
+            </Card>
+
+            <Card style={styles.feedbackCard}>
+              <Text style={styles.feedbackSectionTitle}>What to eat next</Text>
+              <Text style={styles.feedbackFocusText}>
+                {dietFeedback?.nextFocus || 'Keep logging normally. Ava will use your actual meals to suggest simple swaps and additions.'}
+              </Text>
+              {dietFeedback?.highlights?.length ? (
+                <View style={styles.feedbackList}>
+                  {dietFeedback.highlights.slice(0, 4).map((highlight) => (
+                    <View key={highlight} style={styles.feedbackListItem}>
+                      <Feather name="check" size={16} color={colors.white} />
+                      <Text style={styles.feedbackListText}>{highlight}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+            </Card>
+
+            <View style={styles.feedbackStatsCard}>
+              <View style={styles.feedbackStat}>
+                <Text style={styles.feedbackStatValue}>{dietFeedback?.stats.loggedItems ?? entries.length}</Text>
+                <Text style={styles.feedbackStatLabel}>logged</Text>
+              </View>
+              <View style={styles.feedbackStatDivider} />
+              <View style={styles.feedbackStat}>
+                <Text style={styles.feedbackStatValue}>{dietFeedback?.stats.daysLogged ?? new Set(entries.map((entry) => new Date(entry.createdAt).toDateString())).size}</Text>
+                <Text style={styles.feedbackStatLabel}>days</Text>
+              </View>
+              <View style={styles.feedbackStatDivider} />
+              <View style={styles.feedbackStat}>
+                <Text style={styles.feedbackStatValue}>{dietFeedback?.stats.memoryEntries ?? totalMemoryPoints}</Text>
+                <Text style={styles.feedbackStatLabel}>memory</Text>
+              </View>
             </View>
-            <View style={styles.coachFeedbackFocus}>
-              <Text style={styles.coachFeedbackFocusLabel}>Next focus</Text>
-              <Text style={styles.coachFeedbackFocusText}>{dietFeedback.nextFocus}</Text>
-            </View>
-          </View>
-        ) : null}
 
-        <View style={styles.dateNavigator}>
-          <TouchableOpacity
-            onPress={() => setSelectedDate((value) => shiftDate(value, -1))}
-            style={styles.dateArrow}
-            accessibilityRole="button"
-            accessibilityLabel="Previous diary date"
-          >
-            <Feather name="chevron-left" size={22} color={colors.ink} />
-          </TouchableOpacity>
-          <View style={styles.dateCenter}>
-            <Text style={styles.dateLabel}>Diary date</Text>
-            <Text style={styles.dateValue}>{formatDiaryDate(selectedDate)}</Text>
+            <PrimaryButton title="Start memory game" icon="plus" onPress={() => { setActiveTab('diary'); openMemoryGame(); }} style={styles.feedbackCta} />
           </View>
-          <TouchableOpacity
-            onPress={() => setSelectedDate((value) => shiftDate(value, 1))}
-            disabled={!canGoForward}
-            style={[styles.dateArrow, !canGoForward && styles.dateArrowDisabled]}
-            accessibilityRole="button"
-            accessibilityLabel="Next diary date"
-            accessibilityState={{ disabled: !canGoForward }}
-          >
-            <Feather name="chevron-right" size={22} color={canGoForward ? colors.ink : colors.inkSubtle} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.memoryPanel}>
-          <View style={styles.memoryScore}>
-            <Text style={styles.memoryScoreValue}>{memoryPoints}</Text>
-            <Text style={styles.memoryScoreLabel}>points</Text>
-          </View>
-          <View style={styles.memoryCopy}>
-            <Text style={styles.memoryTitle}>Start from the latest food you remember</Text>
-            <Text style={styles.memoryText}>Keep adding until you cannot remember the previous food item.</Text>
-          </View>
-        </View>
-
-        <SectionTitle>Time of day</SectionTitle>
-        <View style={styles.mealGrid}>
-          {meals.map((meal) => {
-            const selected = selectedMeal === meal.type;
-            return (
-              <TouchableOpacity
-                key={meal.type}
-                activeOpacity={0.85}
-                onPress={() => setSelectedMeal(meal.type)}
-                style={[styles.mealCard, selected && styles.mealCardSelected]}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                accessibilityLabel={`Select ${meal.label}`}
-              >
-                <Feather name={meal.icon} size={20} color={selected ? colors.white : colors.accent} />
-                <Text style={[styles.mealTitle, selected && styles.mealTitleSelected]}>{meal.label}</Text>
-                <Text style={[styles.mealHint, selected && styles.mealHintSelected]}>{meal.hint}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        <View style={styles.actions}>
-          <PrimaryButton title="Play food memory" icon="plus" onPress={openMemoryGame} loading={saving} />
-          <View style={styles.secondaryActionRow}>
-            <PrimaryButton title="Photo" icon="camera" variant="secondary" onPress={() => addFromCamera()} disabled={saving} style={styles.secondaryAction} />
-            <PrimaryButton title="Upload" icon="image" variant="secondary" onPress={addFromLibrary} disabled={saving} style={styles.secondaryAction} />
-          </View>
-        </View>
-
-        <SectionTitle>Diet diary</SectionTitle>
-        {visibleEntries.length === 0 ? (
-          <EmptyState
-            icon="edit-3"
-            title={`No food logged for ${formatDiaryDate(selectedDate).toLowerCase()}`}
-            message="Play the food memory game and add each remembered item for points."
-            actionLabel="Start memory game"
-            onAction={openMemoryGame}
-          />
         ) : (
-          <View style={styles.grid}>
-            {visibleEntries.map((entry) => {
-              const isTextEntry = entry.kind === 'text' || !entry.uri;
-              return (
+          <>
+            <View style={styles.diaryPanel}>
+              <View style={styles.diaryTop}>
+                <View style={styles.memoryScoreCompact}>
+                  <Text style={[styles.memoryScoreValue, styles.memoryScoreCompactValue]}>{memoryPoints}</Text>
+                  <Text style={[styles.memoryScoreLabel, styles.memoryScoreCompactLabel]}>today</Text>
+                </View>
+                <View style={styles.diaryCopy}>
+                  <Text style={styles.memoryTitle}>Food memory</Text>
+                  <Text style={styles.memoryText}>{totalMemoryPoints} lifetime points · add one remembered food at a time.</Text>
+                </View>
+              </View>
+
+              <View style={styles.dateNavigator}>
                 <TouchableOpacity
-                  key={entry.id}
-                  activeOpacity={0.85}
-                  style={[styles.diaryCard, isTextEntry && styles.textCard]}
-                  onPress={() => setPreview(entry)}
+                  onPress={() => setSelectedDate((value) => shiftDate(value, -1))}
+                  style={styles.dateArrow}
+                  accessibilityRole="button"
+                  accessibilityLabel="Previous diary date"
                 >
-                  {isTextEntry ? (
-                    <View style={styles.textCardBody}>
-                      <View style={styles.foodCardHeader}>
-                        <View style={styles.foodIcon}>
-                          <MaterialCommunityIcon name="silverware-fork-knife" size={22} color={colors.accent} />
-                        </View>
-                      </View>
-                      <View style={styles.foodCardContent}>
-                        <Text style={styles.foodLabel}>Food item</Text>
-                        <Text style={styles.foodName} numberOfLines={3}>{entry.note}</Text>
-                      </View>
-                      <View style={styles.foodCardFooter}>
-                        <Feather name="clock" size={13} color={colors.accentDark} />
-                        <Text style={styles.foodFooterText}>{mealLabel(entry.mealType)}</Text>
-                      </View>
-                    </View>
-                  ) : (
-                    <Image source={imageSource(entry)} style={styles.photo} resizeMode="cover" />
-                  )}
-                  <View style={styles.photoMeta}>
-                    <View style={styles.photoMealRow}>
-                      <Text style={styles.photoMeal}>{mealLabel(entry.mealType)}</Text>
-                      {entry.syncError ? <Feather name="cloud-off" size={13} color={colors.warn} /> : null}
-                    </View>
-                    <Text style={styles.photoTime}>{formatEntryTime(entry.createdAt)}</Text>
-                  </View>
+                  <Feather name="chevron-left" size={22} color={colors.ink} />
                 </TouchableOpacity>
-              );
-            })}
-          </View>
+                <View style={styles.dateCenter}>
+                  <Text style={styles.dateLabel}>Diary date</Text>
+                  <Text style={styles.dateValue}>{formatDiaryDate(selectedDate)}</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setSelectedDate((value) => shiftDate(value, 1))}
+                  disabled={!canGoForward}
+                  style={[styles.dateArrow, !canGoForward && styles.dateArrowDisabled]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Next diary date"
+                  accessibilityState={{ disabled: !canGoForward }}
+                >
+                  <Feather name="chevron-right" size={22} color={canGoForward ? colors.ink : colors.inkSubtle} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.mealGridCompact}>
+                {meals.map((meal) => {
+                  const selected = selectedMeal === meal.type;
+                  return (
+                    <TouchableOpacity
+                      key={meal.type}
+                      activeOpacity={0.85}
+                      onPress={() => setSelectedMeal(meal.type)}
+                      style={[styles.mealPill, selected && styles.mealPillSelected]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={`Select ${meal.label}`}
+                    >
+                      <Feather name={meal.icon} size={16} color={selected ? colors.white : colors.inkMuted} />
+                      <Text style={[styles.mealPillText, selected && styles.mealPillTextSelected]}>{meal.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={styles.actions}>
+                <PrimaryButton title="Start memory game" icon="plus" onPress={openMemoryGame} loading={saving} />
+                <View style={styles.secondaryActionRow}>
+                  <PrimaryButton title="Photo" icon="camera" variant="secondary" onPress={() => addFromCamera()} disabled={saving} style={styles.secondaryAction} />
+                  <PrimaryButton title="Upload" icon="image" variant="secondary" onPress={addFromLibrary} disabled={saving} style={styles.secondaryAction} />
+                </View>
+              </View>
+            </View>
+
+            <TouchableOpacity activeOpacity={0.86} style={styles.feedbackPreview} onPress={() => setActiveTab('feedback')}>
+              <View style={styles.feedbackPreviewIcon}>
+                <Feather name="message-circle" size={19} color={colors.white} />
+              </View>
+              <View style={styles.feedbackPreviewText}>
+                <Text style={styles.feedbackPreviewTitle}>Weekly feedback</Text>
+                <Text style={styles.feedbackPreviewCopy}>{nextFeedbackText(dietFeedback)}</Text>
+              </View>
+              <Feather name="chevron-right" size={22} color={colors.inkMuted} />
+            </TouchableOpacity>
+
+            <SectionTitle>Diet diary</SectionTitle>
+            {visibleEntries.length === 0 ? (
+              <EmptyState
+                icon="edit-3"
+                title={`No food logged for ${formatDiaryDate(selectedDate).toLowerCase()}`}
+                message="Play the food memory game and add each remembered item for points."
+                actionLabel="Start memory game"
+                onAction={openMemoryGame}
+              />
+            ) : (
+              <View style={styles.grid}>
+                {visibleEntries.map((entry) => {
+                  const isTextEntry = entry.kind === 'text' || !entry.uri;
+                  return (
+                    <TouchableOpacity
+                      key={entry.id}
+                      activeOpacity={0.85}
+                      style={[styles.diaryCard, isTextEntry && styles.textCard]}
+                      onPress={() => setPreview(entry)}
+                    >
+                      {isTextEntry ? (
+                        <View style={styles.textCardBody}>
+                          <View style={styles.foodCardHeader}>
+                            <View style={styles.foodIcon}>
+                              <MaterialCommunityIcon name="silverware-fork-knife" size={22} color={colors.accent} />
+                            </View>
+                          </View>
+                          <View style={styles.foodCardContent}>
+                            <Text style={styles.foodLabel}>Food item</Text>
+                            <Text style={styles.foodName} numberOfLines={3}>{entry.note}</Text>
+                          </View>
+                          <View style={styles.foodCardFooter}>
+                            <Feather name="clock" size={13} color={colors.accentDark} />
+                            <Text style={styles.foodFooterText}>{mealLabel(entry.mealType)}</Text>
+                          </View>
+                        </View>
+                      ) : (
+                        <Image source={imageSource(entry)} style={styles.photo} resizeMode="cover" />
+                      )}
+                      <View style={styles.photoMeta}>
+                        <View style={styles.photoMealRow}>
+                          <Text style={styles.photoMeal}>{mealLabel(entry.mealType)}</Text>
+                          {entry.syncError ? <Feather name="cloud-off" size={13} color={colors.warn} /> : null}
+                        </View>
+                        <Text style={styles.photoTime}>{formatEntryTime(entry.createdAt)}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
 
@@ -775,50 +855,152 @@ function DietScreenContent({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   scroll: { paddingBottom: spacing.xl },
-  heroRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
-  heroIcon: { width: 50, height: 50, borderRadius: radius.lg, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
-  heroText: { flex: 1 },
-  heroTitle: { ...typography.title, color: colors.accentDarker },
-  heroCopy: { ...typography.body, color: colors.accentDarker, marginTop: 2 },
-  heroStats: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
-  coachFeedbackCard: {
-    marginTop: spacing.md,
+  dietTabs: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    padding: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.md,
+  },
+  dietTab: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: radius.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  dietTabActive: { backgroundColor: colors.black },
+  dietTabText: { ...typography.bodyBold, color: colors.inkMuted },
+  dietTabTextActive: { color: colors.white },
+  feedbackScreen: { gap: spacing.md },
+  feedbackHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: 26,
+    backgroundColor: colors.black,
+    padding: spacing.lg,
+    ...shadows.accent,
+  },
+  feedbackHeroIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  feedbackHeroText: { flex: 1 },
+  feedbackEyebrow: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
+  feedbackTitle: { ...typography.title, color: colors.white, marginTop: 2 },
+  feedbackMeta: { ...typography.bodyBold, color: colors.onAccentMuted, marginTop: spacing.xs },
+  feedbackCard: { gap: spacing.sm },
+  feedbackSectionTitle: { ...typography.subtitle, color: colors.ink },
+  feedbackBody: { ...typography.body, color: colors.inkMuted },
+  foodPillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.xs },
+  foodPill: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+  },
+  foodPillText: { ...typography.caption, color: colors.ink, fontWeight: '800' },
+  feedbackFocusText: { ...typography.bodyBold, color: colors.ink },
+  feedbackList: { gap: spacing.xs, marginTop: spacing.xs },
+  feedbackListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderRadius: radius.pill,
+    backgroundColor: colors.black,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 8,
+  },
+  feedbackListText: { ...typography.caption, color: colors.white, flex: 1, fontWeight: '800' },
+  feedbackStatsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderRadius: radius.xl,
     backgroundColor: colors.panel,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.lg,
+    padding: spacing.md,
+    ...shadows.sm,
+  },
+  feedbackStat: { flex: 1, alignItems: 'center' },
+  feedbackStatDivider: { width: 1, height: 42, backgroundColor: colors.border },
+  feedbackStatValue: { ...typography.title, color: colors.ink },
+  feedbackStatLabel: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  feedbackCta: { marginTop: spacing.xs },
+  diaryPanel: {
+    borderRadius: radius.xl,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
     gap: spacing.md,
     ...shadows.sm,
   },
-  coachFeedbackHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  coachFeedbackIcon: {
-    width: 48,
-    height: 48,
+  diaryTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  memoryScoreCompact: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.lg,
+    backgroundColor: colors.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memoryScoreCompactValue: { color: colors.white },
+  memoryScoreCompactLabel: { color: colors.onAccentMuted },
+  diaryCopy: { flex: 1 },
+  mealGridCompact: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  mealPill: {
+    flexGrow: 1,
+    minWidth: '47%',
+    minHeight: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  mealPillSelected: { backgroundColor: colors.black, borderColor: colors.black },
+  mealPillText: { ...typography.bodyBold, color: colors.inkMuted },
+  mealPillTextSelected: { color: colors.white },
+  feedbackPreview: {
+    marginTop: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: radius.xl,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    ...shadows.sm,
+  },
+  feedbackPreviewIcon: {
+    width: 44,
+    height: 44,
     borderRadius: radius.pill,
     backgroundColor: colors.black,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  coachFeedbackTitleBlock: { flex: 1 },
-  coachFeedbackEyebrow: { ...typography.overline, color: colors.inkMuted, textTransform: 'uppercase' },
-  coachFeedbackTitle: { ...typography.subtitle, color: colors.ink, marginTop: 2 },
-  coachFeedbackSummary: { ...typography.body, color: colors.inkMuted },
-  coachFeedbackStats: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  coachFeedbackPill: {
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentLight,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-  },
-  coachFeedbackPillText: { ...typography.caption, color: colors.ink, fontWeight: '800' },
-  coachFeedbackFocus: {
-    borderRadius: radius.lg,
-    backgroundColor: colors.black,
-    padding: spacing.md,
-  },
-  coachFeedbackFocusLabel: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
-  coachFeedbackFocusText: { ...typography.bodyBold, color: colors.white, marginTop: spacing.xs },
+  feedbackPreviewText: { flex: 1 },
+  feedbackPreviewTitle: { ...typography.bodyBold, color: colors.ink },
+  feedbackPreviewCopy: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   dateNavigator: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -846,43 +1028,10 @@ const styles = StyleSheet.create({
   dateCenter: { flex: 1, alignItems: 'center' },
   dateLabel: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
   dateValue: { ...typography.subtitle, color: colors.ink, marginTop: 2 },
-  memoryPanel: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    marginTop: spacing.md,
-    borderRadius: 26,
-    backgroundColor: colors.black,
-    padding: spacing.lg,
-    ...shadows.accent,
-  },
-  memoryScore: {
-    width: 74,
-    height: 74,
-    borderRadius: radius.pill,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   memoryScoreValue: { fontSize: 30, lineHeight: 34, fontWeight: '900', color: colors.black },
   memoryScoreLabel: { ...typography.caption, color: colors.inkMuted, marginTop: -2 },
-  memoryCopy: { flex: 1 },
-  memoryTitle: { ...typography.subtitle, color: colors.white },
-  memoryText: { ...typography.caption, color: colors.onAccentMuted, marginTop: spacing.xs },
-  mealGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  mealCard: {
-    width: '48%',
-    backgroundColor: colors.panel,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-  },
-  mealCardSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
-  mealTitle: { ...typography.bodyBold, color: colors.ink, marginTop: spacing.sm },
-  mealTitleSelected: { color: colors.white },
-  mealHint: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  mealHintSelected: { color: colors.onAccentMuted },
+  memoryTitle: { ...typography.subtitle, color: colors.ink },
+  memoryText: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.xs },
   actions: { gap: spacing.sm, marginTop: spacing.md },
   secondaryActionRow: { flexDirection: 'row', gap: spacing.sm },
   secondaryAction: { flex: 1, paddingHorizontal: spacing.sm },
