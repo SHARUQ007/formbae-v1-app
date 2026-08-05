@@ -1,4 +1,4 @@
-import { apiRequest } from './apiClient';
+import { ApiError, apiRequest } from './apiClient';
 import { invalidateCachedResource } from './appCache';
 import type { AiPlanRefresh, TodayPayload, WorkoutDayDetail } from '../types/api';
 
@@ -10,8 +10,17 @@ export async function fetchToday() {
   return apiRequest<TodayPayload>('/workouts/today');
 }
 
-export async function fetchWorkoutDay(planDayId: string, mode: 'standard' | 'quick' = 'standard') {
-  return apiRequest<WorkoutDayDetail>(`/workouts/day/${encodeURIComponent(planDayId)}?mode=${mode}`);
+export async function fetchWorkoutDay(planDayId: string, mode: 'standard' | 'quick' = 'standard'): Promise<WorkoutDayDetail> {
+  const path = `/workouts/day/${encodeURIComponent(planDayId)}`;
+  try {
+    return await apiRequest<WorkoutDayDetail>(`${path}?mode=${mode}`);
+  } catch (error) {
+    if (mode !== 'quick') throw error;
+    const status = error instanceof ApiError ? error.status : 0;
+    if (status && status !== 404 && status < 500) throw error;
+    const fallback = await apiRequest<WorkoutDayDetail>(`${path}?mode=standard`);
+    return { ...fallback, workoutMode: 'quick' as const };
+  }
 }
 
 export async function completeWorkoutAction(params: {
