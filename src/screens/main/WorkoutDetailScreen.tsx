@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ReactNode } from 'react';
 import {
   Animated,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -551,15 +552,25 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                 accessibilityRole="button"
                 accessibilityLabel={`Open video for ${activeExercise.exerciseName}`}
               >
-                <View style={styles.videoStepIconLarge}>
-                  <Feather name="play" size={34} color={colors.white} />
+                <View style={styles.videoPlaceholderImage}>
+                  <Image source={require('../../assets/icon-mark.png')} style={styles.videoPlaceholderLogo} />
+                  <View style={styles.videoPlaceholderLines}>
+                    <View style={[styles.videoPlaceholderLine, styles.videoPlaceholderLineLong]} />
+                    <View style={[styles.videoPlaceholderLine, styles.videoPlaceholderLineMedium]} />
+                    <View style={[styles.videoPlaceholderLine, styles.videoPlaceholderLineShort]} />
+                  </View>
+                  <View style={styles.videoStepIconLarge}>
+                    <Feather name="play" size={32} color={colors.white} />
+                  </View>
                 </View>
-                <View style={styles.videoStepText}>
-                  <Text style={styles.videoStepKicker}>Technique video</Text>
-                  <Text style={styles.videoStepTitleLarge}>Watch form first</Text>
-                  <Text style={styles.videoStepMeta}>Open the trainer video before set {activeSetNumber}.</Text>
+                <View style={styles.videoStepFooter}>
+                  <View style={styles.videoStepText}>
+                    <Text style={styles.videoStepKicker}>Technique video</Text>
+                    <Text style={styles.videoStepTitleLarge}>Watch form first</Text>
+                    <Text style={styles.videoStepMeta}>Open before set {activeSetNumber}.</Text>
+                  </View>
+                  <Feather name="chevron-right" size={26} color={colors.white} />
                 </View>
-                <Feather name="chevron-right" size={26} color={colors.white} />
               </TouchableOpacity>
 
               <View style={styles.prepGrid}>
@@ -1081,7 +1092,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.lg,
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     overflow: 'hidden',
   },
   executionShellActive: {
@@ -1224,7 +1235,7 @@ const styles = StyleSheet.create({
     ...typography.subtitle,
     color: colors.ink,
   },
-  lastLogText: { ...typography.caption, color: colors.accentDark, fontWeight: '800', marginTop: spacing.xs },
+  lastLogText: { ...typography.caption, color: colors.accentDark, fontWeight: '800', flex: 1 },
   lastLogCard: {
     minHeight: 58,
     borderRadius: radius.lg,
@@ -1235,6 +1246,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
+    marginTop: spacing.sm,
   },
   statusPanel: {
     borderRadius: 24,
@@ -1395,25 +1407,62 @@ const styles = StyleSheet.create({
   },
   stepFlowText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
   videoStepCardLarge: {
-    flex: 1,
-    minHeight: 210,
-    borderRadius: 30,
+    minHeight: 236,
+    borderRadius: 28,
     backgroundColor: colors.inkStrong,
-    flexDirection: 'row',
-    alignItems: 'center',
+    overflow: 'hidden',
+    justifyContent: 'space-between',
     gap: spacing.md,
-    padding: spacing.lg,
-    marginTop: spacing.lg,
+    padding: spacing.md,
+    marginTop: spacing.md,
   },
+  videoPlaceholderImage: {
+    flex: 1,
+    minHeight: 128,
+    borderRadius: 22,
+    backgroundColor: colors.accentDarker,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  videoPlaceholderLogo: {
+    position: 'absolute',
+    width: 138,
+    height: 138,
+    opacity: 0.12,
+    tintColor: colors.white,
+  },
+  videoPlaceholderLines: {
+    position: 'absolute',
+    left: spacing.lg,
+    right: spacing.lg,
+    bottom: spacing.md,
+    gap: 7,
+  },
+  videoPlaceholderLine: {
+    height: 8,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  videoPlaceholderLineLong: { width: '64%' },
+  videoPlaceholderLineMedium: { width: '46%' },
+  videoPlaceholderLineShort: { width: '30%' },
   videoStepIconLarge: {
-    width: 86,
-    height: 86,
+    width: 76,
+    height: 76,
     borderRadius: radius.pill,
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.28)',
   },
-  videoStepTitleLarge: { fontSize: 27, lineHeight: 32, fontWeight: '900', color: colors.white, marginTop: 6 },
+  videoStepFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  videoStepTitleLarge: { fontSize: 25, lineHeight: 30, fontWeight: '900', color: colors.white, marginTop: 4 },
   videoStepCardCompactActive: {
     minHeight: 76,
     borderRadius: 24,
@@ -1429,7 +1478,7 @@ const styles = StyleSheet.create({
   prepGrid: {
     flexDirection: 'row',
     gap: spacing.sm,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   metricPill: {
     flex: 1,
@@ -1625,7 +1674,7 @@ const styles = StyleSheet.create({
   activeStepText: { ...typography.subtitle, color: colors.accentDark, fontWeight: '800' },
   activeText: { flex: 1 },
   activeKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
-  activeName: { fontSize: 31, lineHeight: 37, fontWeight: '900', color: colors.ink, marginTop: spacing.sm },
+  activeName: { fontSize: 29, lineHeight: 34, fontWeight: '900', color: colors.ink, marginTop: spacing.md },
   activeStatus: {
     width: 36,
     height: 36,
