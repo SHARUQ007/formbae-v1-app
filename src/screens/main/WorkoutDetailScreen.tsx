@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
-  Alert,
   Animated,
   KeyboardAvoidingView,
   Modal,
@@ -17,10 +16,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
-import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { loadWorkoutDayCached } from '../../services/preloadService';
-import { submitWorkoutFeedback, type WorkoutFeedbackSentiment } from '../../services/workoutFeedbackService';
 import {
   completeWithQueue,
   loadWorkoutProgress,
@@ -39,7 +36,7 @@ import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutDetail'>;
 
-type RewardType = 'set' | 'movement' | 'workout' | 'feedback';
+type RewardType = 'set' | 'movement' | 'workout';
 type RewardState = { id: number; type: RewardType; title: string; subtitle: string } | null;
 type SetLog = { setNumber: number; reps: string; weight: string; durationSec?: number };
 
@@ -126,17 +123,14 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const [setEntryOpen, setSetEntryOpen] = useState(false);
   const [setPaused, setSetPaused] = useState(false);
   const [setElapsed, setSetElapsed] = useState(0);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [workoutCompleteOpen, setWorkoutCompleteOpen] = useState(false);
   const [pendingNextIndex, setPendingNextIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
   const [reward, setReward] = useState<RewardState>(null);
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [flowOpen, setFlowOpen] = useState(false);
-  const [statsOpen, setStatsOpen] = useState(false);
-  const [feedbackSentiment, setFeedbackSentiment] = useState<WorkoutFeedbackSentiment | null>(null);
-  const [feedbackText, setFeedbackText] = useState('');
-  const [feedbackSaving, setFeedbackSaving] = useState(false);
   const { status } = useAuthStore();
   const pendingNextIndexRef = useRef<number | null>(null);
 
@@ -171,6 +165,8 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       setSetEntryOpen(false);
       setSetPaused(false);
       setSetElapsed(0);
+      setCountdown(null);
+      setWorkoutCompleteOpen(false);
       setPendingNextIndex(null);
       pendingNextIndexRef.current = null;
     } catch (e) {
@@ -191,6 +187,21 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     }, 1000);
     return () => clearInterval(interval);
   }, [movementStarted, setPaused, timer.running]);
+
+  useEffect(() => {
+    if (countdown === null) return undefined;
+    if (countdown <= 0) {
+      setCountdown(null);
+      setMovementStarted(true);
+      setSetPaused(false);
+      setSetElapsed(0);
+      return undefined;
+    }
+    const timeout = setTimeout(() => {
+      setCountdown((value) => (value === null ? null : value - 1));
+    }, 820);
+    return () => clearTimeout(timeout);
+  }, [countdown]);
 
   const trackableExercises = useMemo(
     () => (detail?.exercises ?? []).filter((exercise) => !isSectionMarker(exercise.notes)),
@@ -216,8 +227,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const restTargetLabel = restTargetIndex === activeExerciseIndex && activeExercise
     ? `Set ${Math.min(activeSets, activeSetCount + 1)} of ${activeExercise.exerciseName}`
     : restTargetExercise?.exerciseName || 'finish workout';
-  const completedCount = completed.size;
-  const progressPct = trackableExercises.length ? Math.min(100, Math.round((completedCount / trackableExercises.length) * 100)) : 0;
   const workoutVideos = useMemo(
     () => trackableExercises
       .filter((exercise) => String(exercise.videoUrl || '').trim())
@@ -291,19 +300,15 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     setSetEntryOpen(false);
     setSetPaused(false);
     setSetElapsed(0);
+    setCountdown(null);
     setActiveIndex(Math.max(0, Math.min(trackableExercises.length - 1, index)));
   };
 
   const startMovement = () => {
-    setMovementStarted(true);
+    setCountdown(3);
+    setMovementStarted(false);
     setSetPaused(false);
     setSetElapsed(0);
-    setReward({
-      id: Date.now(),
-      type: 'set',
-      title: 'Set started',
-      subtitle: `Set ${activeSetNumber} is now active.`,
-    });
   };
 
   const completeActiveSet = () => {
@@ -352,7 +357,10 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     }
 
     const nextIndex = movementComplete ? activeExerciseIndex + 1 : activeExerciseIndex;
-    if (movementComplete && nextIndex >= trackableExercises.length) return;
+    if (movementComplete && nextIndex >= trackableExercises.length) {
+      setWorkoutCompleteOpen(true);
+      return;
+    }
     if (activeRest > 0) {
       pendingNextIndexRef.current = nextIndex;
       setPendingNextIndex(nextIndex);
@@ -373,6 +381,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       setMovementStarted(false);
       setSetPaused(false);
       setSetElapsed(0);
+      setCountdown(null);
     }
   };
 
@@ -386,7 +395,9 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     return completeActiveSet();
   };
 
-  const primaryTitle = timer.running
+  const primaryTitle = countdown !== null
+    ? 'Get ready'
+    : timer.running
     ? 'Skip rest'
     : activeDone
       ? activeExerciseIndex >= trackableExercises.length - 1
@@ -418,43 +429,20 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         firstName: (status?.name || 'there').split(' ')[0],
         workoutTitle: detail.focus || detail.planTitle || 'Workout',
       }).catch(() => undefined);
-      Alert.alert(
-        'Workout complete',
-        result.synced ? 'Great work! Your progress is saved.' : 'Saved offline - it will sync when you are back online.',
-        [{ text: 'Done', onPress: () => navigation.goBack() }],
-      );
+      if (!result.synced) {
+        setReward({
+          id: Date.now(),
+          type: 'workout',
+          title: 'Saved offline',
+          subtitle: 'Your workout will sync when you are back online.',
+        });
+        await wait(700);
+      }
+      navigation.goBack();
     } finally {
       setFinishing(false);
     }
   }, [detail, planDayId, navigation, status?.name]);
-
-  const submitFeedback = async () => {
-    if (!detail || !feedbackSentiment) return;
-    setFeedbackSaving(true);
-    try {
-      await submitWorkoutFeedback({
-        planId: detail.planId,
-        planDayId: detail.planDayId,
-        workoutMode: detail.workoutMode,
-        exerciseId: activeExercise?.exerciseId,
-        sentiment: feedbackSentiment,
-        feedbackText,
-      });
-      setFeedbackOpen(false);
-      setFeedbackText('');
-      setFeedbackSentiment(null);
-      setReward({
-        id: Date.now(),
-        type: 'feedback',
-        title: 'Feedback sent',
-        subtitle: 'Your trainer and team can use this to improve the workout.',
-      });
-    } catch (e) {
-      Alert.alert('Could not send feedback', e instanceof Error ? e.message : 'Please try again.');
-    } finally {
-      setFeedbackSaving(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -486,19 +474,18 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <RewardOverlay reward={reward} onDone={clearReward} />
+      <CountdownOverlay value={countdown} exerciseName={activeExercise.exerciseName} />
+      <WorkoutCompleteScreen
+        visible={workoutCompleteOpen}
+        title={detail.focus || detail.planTitle || 'Workout'}
+        movementCount={trackableExercises.length}
+        onContinue={onFinish}
+        finishing={finishing}
+      />
       <Header
         onBack={() => navigation.goBack()}
         title={copy.eyebrow}
-        right={
-          <TouchableOpacity
-            onPress={() => setFeedbackOpen(true)}
-            style={styles.feedbackButton}
-            accessibilityRole="button"
-            accessibilityLabel="Send workout feedback"
-          >
-            <Feather name="message-square" size={19} color={colors.accentDark} />
-          </TouchableOpacity>
-        }
+        right={null}
       />
 
       <View style={styles.sessionProgress}>
@@ -542,7 +529,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
           </View>
         </View>
       ) : (
-        <View style={[styles.executionShell, compactStep && styles.executionShellCompact]}>
+        <View style={[styles.executionShell, compactStep && styles.executionShellCompact, movementStarted && styles.executionShellActive]}>
           <View style={styles.movementHead}>
             <View style={styles.activeStep}>
               <Text style={styles.activeStepText}>{activeExerciseIndex + 1}</Text>
@@ -555,59 +542,69 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
 
           <Text style={styles.activeName} adjustsFontSizeToFit minimumFontScale={0.82}>{activeExercise.exerciseName}</Text>
 
-          {!activeDone ? (
-            <View style={styles.setLogPanel}>
-              <View style={styles.setLogHeader}>
-                <View>
-                  <Text style={styles.setLogTitle}>{movementStarted ? formatTimer(setElapsed) : `Set ${activeSetNumber} of ${activeSets}`}</Text>
-                  <Text style={styles.setLogMeta}>
-                    {movementStarted
-                      ? setPaused
-                        ? 'Paused. Resume when ready or complete the set.'
-                        : `Set ${activeSetNumber} in progress.`
-                      : 'Start the set when you are ready.'}
-                  </Text>
+          {!movementStarted ? (
+            <>
+              <TouchableOpacity
+                onPress={() => openExerciseVideo(activeExercise)}
+                activeOpacity={0.86}
+                style={styles.videoStepCardLarge}
+                accessibilityRole="button"
+                accessibilityLabel={`Open video for ${activeExercise.exerciseName}`}
+              >
+                <View style={styles.videoStepIconLarge}>
+                  <Feather name="play" size={34} color={colors.white} />
                 </View>
-                <View style={styles.setLogBadge}>
-                  <Feather name={movementStarted ? setPaused ? 'pause' : 'timer' : 'activity'} size={16} color={colors.accentDark} />
+                <View style={styles.videoStepText}>
+                  <Text style={styles.videoStepKicker}>Technique video</Text>
+                  <Text style={styles.videoStepTitleLarge}>Watch form first</Text>
+                  <Text style={styles.videoStepMeta}>Open the trainer video before set {activeSetNumber}.</Text>
                 </View>
+                <Feather name="chevron-right" size={26} color={colors.white} />
+              </TouchableOpacity>
+
+              <View style={styles.prepGrid}>
+                <MetricPill label="Set" value={`${activeSetNumber}/${activeSets}`} icon="target" />
+                <MetricPill label="Target" value={displayValue(activeExercise.reps)} icon="repeat" />
+                <MetricPill label="Rest" value={`${displayValue(activeExercise.restSec, '0')}s`} icon="clock" />
               </View>
 
-              <Text style={styles.setCompactMeta} numberOfLines={1}>
-                {displayValue(activeExercise.reps)} · {displayValue(activeExercise.restSec, '0')}s rest · {activeSetCount}/{activeSets} logged
-              </Text>
-
               {activeLastLog ? (
-                <Text style={styles.lastLogText} numberOfLines={1}>
-                  Last set: {activeLastLog.reps || '-'} reps{activeLastLog.weight ? ` · ${activeLastLog.weight} kg` : ''}{activeLastLog.durationSec ? ` · ${formatTimer(activeLastLog.durationSec)}` : ''}
-                </Text>
+                <View style={styles.lastLogCard}>
+                  <Feather name="check-circle" size={18} color={colors.accentDark} />
+                  <Text style={styles.lastLogText} numberOfLines={2}>
+                    Last set: {activeLastLog.reps || '-'} reps{activeLastLog.weight ? ` · ${activeLastLog.weight} kg` : ''}{activeLastLog.durationSec ? ` · ${formatTimer(activeLastLog.durationSec)}` : ''}
+                  </Text>
+                </View>
               ) : null}
-            </View>
-          ) : null}
-
-          <TouchableOpacity
-            onPress={() => openExerciseVideo(activeExercise)}
-            activeOpacity={0.86}
-            style={styles.videoStepCard}
-            accessibilityRole="button"
-            accessibilityLabel={`Open video for ${activeExercise.exerciseName}`}
-          >
-            <View style={styles.videoStepIcon}>
-              <Feather name="play" size={24} color={colors.white} />
-            </View>
-            <View style={styles.videoStepText}>
-              <Text style={styles.videoStepKicker}>Technique video</Text>
-              <Text style={styles.videoStepTitle} numberOfLines={1}>Watch form</Text>
-            </View>
-            <Feather name="chevron-right" size={22} color={colors.accentDark} />
-          </TouchableOpacity>
-
-          {activeNotes ? (
-            <View style={styles.stepNote}>
-              <Feather name="info" size={15} color={colors.accentDark} />
-              <Text style={styles.notes} numberOfLines={3}>{activeNotes}</Text>
-            </View>
-          ) : null}
+            </>
+          ) : (
+            <>
+              <View style={styles.liveTimerCard}>
+                <Text style={styles.liveTimer}>{formatTimer(setElapsed)}</Text>
+                <Text style={styles.liveTimerMeta}>{setPaused ? 'Paused' : `Set ${activeSetNumber} of ${activeSets}`}</Text>
+              </View>
+              <View style={styles.instructionCard}>
+                <View style={styles.instructionHead}>
+                  <Feather name="info" size={20} color={colors.accentDark} />
+                  <Text style={styles.instructionTitle}>Instructions</Text>
+                </View>
+                <Text style={styles.instructionText}>
+                  {activeNotes || `Keep control through the full range. Match the target ${displayValue(activeExercise.reps)} and stop if form breaks.`}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => openExerciseVideo(activeExercise)}
+                activeOpacity={0.86}
+                style={styles.videoStepCardCompactActive}
+                accessibilityRole="button"
+                accessibilityLabel={`Open video for ${activeExercise.exerciseName}`}
+              >
+                <Feather name="play-circle" size={22} color={colors.white} />
+                <Text style={styles.videoMiniText}>Technique video</Text>
+                <Feather name="chevron-right" size={20} color={colors.white} />
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       )}
 
@@ -639,7 +636,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
           <TouchableOpacity
             activeOpacity={0.86}
             onPress={primaryCta}
-            disabled={finishing}
+            disabled={finishing || countdown !== null}
             style={[styles.primarySessionButton, timer.running && styles.restPrimaryButton, activeDone && styles.donePrimaryButton]}
             accessibilityRole="button"
             accessibilityLabel={primaryTitle}
@@ -654,20 +651,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
             <Feather name="arrow-right" size={22} color={colors.white} />
           </TouchableOpacity>
         )}
-        <View style={styles.secondaryActionRow}>
-          <TouchableOpacity onPress={() => setFeedbackOpen(true)} style={styles.secondarySessionButton} accessibilityRole="button" accessibilityLabel="Workout feedback">
-            <Feather name="message-square" size={17} color={colors.accentDark} />
-            <Text style={styles.secondarySessionText}>Feedback</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setStatsOpen(true)} style={styles.secondarySessionButton} accessibilityRole="button" accessibilityLabel="Open workout stats">
-            <Feather name="bar-chart-2" size={17} color={colors.accentDark} />
-            <Text style={styles.secondarySessionText}>Stats</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setFlowOpen(true)} style={styles.secondarySessionButton} accessibilityRole="button" accessibilityLabel="Open workout flow">
-            <Feather name="list" size={17} color={colors.accentDark} />
-            <Text style={styles.secondarySessionText}>All moves</Text>
-          </TouchableOpacity>
-        </View>
       </View>
 
       <WorkoutFlowModal
@@ -680,28 +663,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
           moveToExercise(index);
         }}
         onClose={() => setFlowOpen(false)}
-      />
-
-      <WorkoutStatsModal
-        visible={statsOpen}
-        exercises={trackableExercises}
-        completed={completed}
-        setProgress={setProgress}
-        setLogs={setLogs}
-        progressPct={progressPct}
-        onClose={() => setStatsOpen(false)}
-      />
-
-      <FeedbackModal
-        visible={feedbackOpen}
-        sentiment={feedbackSentiment}
-        text={feedbackText}
-        saving={feedbackSaving}
-        exerciseName={activeExercise.exerciseName}
-        onClose={() => setFeedbackOpen(false)}
-        onSentiment={setFeedbackSentiment}
-        onText={setFeedbackText}
-        onSubmit={submitFeedback}
       />
 
       <SetEntryModal
@@ -831,170 +792,69 @@ function WorkoutFlowModal({
   );
 }
 
-function WorkoutStatsModal({
-  visible,
-  exercises,
-  completed,
-  setProgress,
-  setLogs,
-  progressPct,
-  onClose,
-}: {
-  visible: boolean;
-  exercises: WorkoutExerciseDetail[];
-  completed: Set<string>;
-  setProgress: Record<string, number>;
-  setLogs: Record<string, SetLog[]>;
-  progressPct: number;
-  onClose: () => void;
-}) {
-  const totalSets = exercises.reduce((sum, exercise) => sum + Math.max(1, Number(exercise.sets || 1)), 0);
-  const loggedSets = exercises.reduce((sum, exercise) => sum + Math.min(Math.max(1, Number(exercise.sets || 1)), setProgress[exercise.exerciseId] || 0), 0);
-
+function MetricPill({ label, value, icon }: { label: string; value: string; icon: string }) {
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.modalRoot}>
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} />
-        <View style={styles.statsSheet}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHead}>
-            <View>
-              <Text style={styles.sheetKicker}>Workout stats</Text>
-              <Text style={styles.sheetTitle}>Progress so far</Text>
-              <Text style={styles.sheetSub}>{loggedSets}/{totalSets} sets logged · {progressPct}% complete</Text>
-            </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Feather name="x" size={20} color={colors.inkMuted} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.statsSummaryRow}>
-            <View style={styles.statsSummaryCard}>
-              <Text style={styles.statsSummaryValue}>{completed.size}/{exercises.length}</Text>
-              <Text style={styles.statsSummaryLabel}>Movements</Text>
-            </View>
-            <View style={styles.statsSummaryCard}>
-              <Text style={styles.statsSummaryValue}>{loggedSets}/{totalSets}</Text>
-              <Text style={styles.statsSummaryLabel}>Sets</Text>
-            </View>
-            <View style={styles.statsSummaryCard}>
-              <Text style={styles.statsSummaryValue}>{progressPct}%</Text>
-              <Text style={styles.statsSummaryLabel}>Done</Text>
-            </View>
-          </View>
-
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.statsList}>
-            {exercises.map((exercise, index) => {
-              const total = Math.max(1, Number(exercise.sets || 1));
-              const logged = Math.min(total, setProgress[exercise.exerciseId] || 0);
-              const logs = setLogs[exercise.exerciseId] || [];
-              const done = completed.has(exercise.exerciseId);
-              return (
-                <View key={exercise.exerciseId} style={[styles.statsExerciseCard, done && styles.statsExerciseCardDone]}>
-                  <View style={styles.statsExerciseHead}>
-                    <View style={[styles.exerciseNum, done && styles.exerciseNumDone]}>
-                      {done ? <Feather name="check" size={15} color={colors.white} /> : <Text style={styles.exerciseNumText}>{index + 1}</Text>}
-                    </View>
-                    <View style={styles.exerciseRowText}>
-                      <Text style={styles.exerciseRowTitle} numberOfLines={1}>{exercise.exerciseName}</Text>
-                      <Text style={styles.exerciseRowMeta} numberOfLines={1}>{logged}/{total} sets · {displayValue(exercise.reps)} · {displayValue(exercise.restSec, '0')}s rest</Text>
-                    </View>
-                  </View>
-                  {logs.length ? (
-                    <View style={styles.loggedSetList}>
-                      {logs.map((log) => (
-                        <View key={log.setNumber} style={styles.loggedSetPill}>
-                          <Text style={styles.loggedSetText}>
-                            Set {log.setNumber}: {log.reps || '-'} reps{log.weight ? ` · ${log.weight} kg` : ''}{log.durationSec ? ` · ${formatTimer(log.durationSec)}` : ''}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
-                </View>
-              );
-            })}
-          </ScrollView>
-        </View>
+    <View style={styles.metricPill}>
+      <Feather name={icon} size={18} color={colors.accentDark} />
+      <View style={styles.metricPillText}>
+        <Text style={styles.metricPillLabel}>{label}</Text>
+        <Text style={styles.metricPillValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>{value}</Text>
       </View>
-    </Modal>
+    </View>
   );
 }
 
-function FeedbackModal({
+function CountdownOverlay({ value, exerciseName }: { value: number | null; exerciseName: string }) {
+  if (value === null) return null;
+  return (
+    <View pointerEvents="none" style={styles.countdownOverlay}>
+      <View style={styles.countdownCard}>
+        <Text style={styles.countdownKicker}>Starting</Text>
+        <Text style={styles.countdownNumber}>{value > 0 ? value : 'Go'}</Text>
+        <Text style={styles.countdownExercise} numberOfLines={2}>{exerciseName}</Text>
+      </View>
+    </View>
+  );
+}
+
+function WorkoutCompleteScreen({
   visible,
-  sentiment,
-  text,
-  saving,
-  exerciseName,
-  onClose,
-  onSentiment,
-  onText,
-  onSubmit,
+  title,
+  movementCount,
+  onContinue,
+  finishing,
 }: {
   visible: boolean;
-  sentiment: WorkoutFeedbackSentiment | null;
-  text: string;
-  saving: boolean;
-  exerciseName: string;
-  onClose: () => void;
-  onSentiment: (value: WorkoutFeedbackSentiment) => void;
-  onText: (value: string) => void;
-  onSubmit: () => void;
+  title: string;
+  movementCount: number;
+  onContinue: () => void;
+  finishing: boolean;
 }) {
+  if (!visible) return null;
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalRoot}>
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} />
-        <View style={styles.feedbackSheet}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHead}>
-            <View>
-              <Text style={styles.sheetKicker}>Workout feedback</Text>
-              <Text style={styles.sheetTitle}>How was this movement?</Text>
-              <Text style={styles.sheetSub} numberOfLines={1}>{exerciseName}</Text>
-            </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Feather name="x" size={20} color={colors.inkMuted} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.sentimentRow}>
-            <TouchableOpacity
-              onPress={() => onSentiment('up')}
-              style={[styles.sentimentButton, sentiment === 'up' && styles.sentimentSelected]}
-              accessibilityRole="button"
-              accessibilityLabel="Thumbs up"
-            >
-              <Feather name="thumbs-up" size={21} color={sentiment === 'up' ? colors.white : colors.accentDark} />
-              <Text style={[styles.sentimentText, sentiment === 'up' && styles.sentimentTextSelected]}>Good fit</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => onSentiment('down')}
-              style={[styles.sentimentButton, sentiment === 'down' && styles.sentimentSelected]}
-              accessibilityRole="button"
-              accessibilityLabel="Thumbs down"
-            >
-              <Feather name="thumbs-down" size={21} color={sentiment === 'down' ? colors.white : colors.accentDark} />
-              <Text style={[styles.sentimentText, sentiment === 'down' && styles.sentimentTextSelected]}>Needs change</Text>
-            </TouchableOpacity>
-          </View>
-
-          <TextInput
-            value={text}
-            onChangeText={onText}
-            placeholder="Tell us what felt good, too hard, painful, boring, or unclear..."
-            placeholderTextColor={colors.inkSubtle}
-            multiline
-            maxLength={1000}
-            style={styles.feedbackInput}
-            textAlignVertical="top"
-          />
-
-          <PrimaryButton title="Send feedback" icon="send" onPress={onSubmit} loading={saving} disabled={!sentiment} />
+    <View style={styles.completeOverlay}>
+      <View style={styles.completeCard}>
+        <View style={styles.completeIcon}>
+          <Feather name="award" size={44} color={colors.white} />
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+        <Text style={styles.completeKicker}>Workout completed</Text>
+        <Text style={styles.completeTitle}>{title}</Text>
+        <Text style={styles.completeText}>
+          {movementCount} movement{movementCount === 1 ? '' : 's'} finished. Your sets are saved and ready to sync.
+        </Text>
+        <TouchableOpacity
+          onPress={onContinue}
+          disabled={finishing}
+          activeOpacity={0.86}
+          style={styles.completeButton}
+          accessibilityRole="button"
+          accessibilityLabel="Finish workout"
+        >
+          <Text style={styles.completeButtonText}>{finishing ? 'Saving...' : 'Done'}</Text>
+          <Feather name="arrow-right" size={22} color={colors.white} />
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
@@ -1144,7 +1004,7 @@ function RewardOverlay({ reward, onDone }: { reward: RewardState; onDone: () => 
     <Animated.View pointerEvents="none" style={[styles.rewardOverlay, { opacity }]}>
       <Animated.View style={[styles.rewardCard, { transform: [{ scale }, { translateY: lift }] }]}>
         <View style={styles.rewardIcon}>
-          <Feather name={reward.type === 'set' ? 'plus' : reward.type === 'feedback' ? 'message-square' : reward.type === 'movement' ? 'check' : 'award'} size={26} color={colors.white} />
+          <Feather name={reward.type === 'set' ? 'plus' : reward.type === 'movement' ? 'check' : 'award'} size={26} color={colors.white} />
         </View>
         <Text style={styles.rewardTitle}>{reward.title}</Text>
         <Text style={styles.rewardSubtitle}>{reward.subtitle}</Text>
@@ -1223,6 +1083,9 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     justifyContent: 'space-between',
     overflow: 'hidden',
+  },
+  executionShellActive: {
+    backgroundColor: colors.white,
   },
   executionShellCompact: {
     padding: spacing.md,
@@ -1362,6 +1225,17 @@ const styles = StyleSheet.create({
     color: colors.ink,
   },
   lastLogText: { ...typography.caption, color: colors.accentDark, fontWeight: '800', marginTop: spacing.xs },
+  lastLogCard: {
+    minHeight: 58,
+    borderRadius: radius.lg,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    padding: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
   statusPanel: {
     borderRadius: 24,
     backgroundColor: colors.panelMuted,
@@ -1378,7 +1252,7 @@ const styles = StyleSheet.create({
   statusMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   actionDock: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
+    paddingTop: spacing.md,
     backgroundColor: colors.bg,
   },
   primarySessionButton: {
@@ -1520,6 +1394,80 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   stepFlowText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
+  videoStepCardLarge: {
+    flex: 1,
+    minHeight: 210,
+    borderRadius: 30,
+    backgroundColor: colors.inkStrong,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+    marginTop: spacing.lg,
+  },
+  videoStepIconLarge: {
+    width: 86,
+    height: 86,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoStepTitleLarge: { fontSize: 27, lineHeight: 32, fontWeight: '900', color: colors.white, marginTop: 6 },
+  videoStepCardCompactActive: {
+    minHeight: 76,
+    borderRadius: 24,
+    backgroundColor: colors.inkStrong,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginTop: spacing.md,
+  },
+  videoMiniText: { ...typography.bodyBold, color: colors.white, flex: 1 },
+  prepGrid: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  metricPill: {
+    flex: 1,
+    minHeight: 76,
+    borderRadius: radius.xl,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    padding: spacing.sm,
+    justifyContent: 'center',
+    gap: 6,
+  },
+  metricPillText: { minWidth: 0 },
+  metricPillLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '900' },
+  metricPillValue: { ...typography.subtitle, color: colors.ink, marginTop: 2 },
+  liveTimerCard: {
+    borderRadius: 30,
+    backgroundColor: colors.accentDarker,
+    padding: spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.lg,
+  },
+  liveTimer: { fontSize: 72, lineHeight: 78, fontWeight: '900', color: colors.white },
+  liveTimerMeta: { ...typography.bodyBold, color: colors.onAccentMuted, marginTop: spacing.xs },
+  instructionCard: {
+    flex: 1,
+    minHeight: 180,
+    borderRadius: 30,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    padding: spacing.lg,
+    marginTop: spacing.md,
+  },
+  instructionHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  instructionTitle: { ...typography.subtitle, color: colors.accentDark },
+  instructionText: { fontSize: 22, lineHeight: 31, fontWeight: '700', color: colors.accentDarker },
   videoStepCard: {
     minHeight: 104,
     borderRadius: 26,
@@ -1547,6 +1495,71 @@ const styles = StyleSheet.create({
   videoStepKicker: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
   videoStepTitle: { ...typography.subtitle, color: colors.white, marginTop: 4 },
   videoStepMeta: { ...typography.caption, color: colors.onAccentMuted, marginTop: 4 },
+  countdownOverlay: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 40,
+    backgroundColor: 'rgba(3, 31, 20, 0.84)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  countdownCard: {
+    width: '100%',
+    borderRadius: 36,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    padding: spacing.xl,
+    alignItems: 'center',
+  },
+  countdownKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
+  countdownNumber: { fontSize: 116, lineHeight: 124, fontWeight: '900', color: colors.accentDark, marginVertical: spacing.sm },
+  countdownExercise: { ...typography.title, color: colors.ink, textAlign: 'center' },
+  completeOverlay: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 35,
+    backgroundColor: colors.bg,
+    padding: spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  completeCard: {
+    width: '100%',
+    borderRadius: 38,
+    backgroundColor: colors.accentDarker,
+    padding: spacing.xl,
+    alignItems: 'center',
+    shadowColor: colors.accentDark,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.22,
+    shadowRadius: 26,
+    elevation: 10,
+  },
+  completeIcon: {
+    width: 96,
+    height: 96,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.lg,
+  },
+  completeKicker: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
+  completeTitle: { ...typography.hero, color: colors.white, textAlign: 'center', marginTop: spacing.sm },
+  completeText: { ...typography.body, color: colors.onAccentMuted, textAlign: 'center', marginTop: spacing.sm },
+  completeButton: {
+    minHeight: 64,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xl,
+    marginTop: spacing.xl,
+    alignSelf: 'stretch',
+  },
+  completeButtonText: { ...typography.bodyBold, color: colors.white },
   stepSetPanel: {
     borderRadius: 22,
     backgroundColor: colors.panelMuted,
