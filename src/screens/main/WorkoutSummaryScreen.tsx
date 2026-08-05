@@ -8,8 +8,9 @@ import { Badge } from '../../components/Badge';
 import { ScreenHeader } from '../../components/Card';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { loadWorkoutDayCached } from '../../services/preloadService';
+import { loadWorkoutProgress, saveWorkoutProgress } from '../../store/workoutStore';
 import type { WorkoutStackParamList } from '../../navigation/types';
-import type { WorkoutDayDetail, WorkoutExerciseDetail } from '../../types/api';
+import type { WorkoutDayDetail, WorkoutExerciseAlternative, WorkoutExerciseDetail } from '../../types/api';
 import { buildWorkoutSummary } from '../../utils/workoutSummary';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
@@ -37,6 +38,20 @@ function exerciseMeta(exercise: WorkoutExerciseDetail) {
   return parts.join(' · ');
 }
 
+function exerciseWithAlternate(exercise: WorkoutExerciseDetail, selectedIndex?: number): WorkoutExerciseDetail {
+  const alternate = selectedIndex !== undefined && selectedIndex >= 0 ? exercise.alternatives?.[selectedIndex] : null;
+  if (!alternate) return exercise;
+  return {
+    ...exercise,
+    exerciseName: alternate.exerciseName || exercise.exerciseName,
+    sets: alternate.sets || exercise.sets,
+    reps: alternate.reps || exercise.reps,
+    restSec: alternate.restSec || exercise.restSec,
+    notes: alternate.notes || exercise.notes,
+    videoUrl: alternate.videoUrl || exercise.videoUrl,
+  };
+}
+
 const CTA_BASE_HEIGHT = 118;
 
 export function WorkoutSummaryScreen({ route, navigation }: Props) {
@@ -45,6 +60,7 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
   const bottomInset = Math.max(insets.bottom, spacing.sm);
   const ctaSpace = CTA_BASE_HEIGHT + bottomInset;
   const [detail, setDetail] = useState<WorkoutDayDetail | null>(initialDetail || null);
+  const [selectedAlternates, setSelectedAlternates] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(!initialDetail);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,6 +81,12 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
     if (initialDetail?.planDayId === planDayId) return;
     load();
   }, [initialDetail?.planDayId, load, planDayId]);
+
+  useEffect(() => {
+    loadWorkoutProgress(planDayId)
+      .then((progress) => setSelectedAlternates(progress.selectedAlternatesByExercise || {}))
+      .catch(() => undefined);
+  }, [planDayId]);
 
   const exercises = useMemo(
     () => (detail?.exercises ?? []).filter((exercise) => !isSectionMarker(exercise.notes)),
@@ -92,6 +114,23 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
     if (!canStartWorkout || !detail) return;
     loadWorkoutDayCached(detail.planDayId, mode).catch(() => undefined);
     navigation.navigate('WorkoutDetail', { planDayId: detail.planDayId, title: detail.focus, mode });
+  };
+
+  const selectAlternate = async (exercise: WorkoutExerciseDetail, index: number | null) => {
+    const next = { ...selectedAlternates };
+    if (index === null) {
+      delete next[exercise.exerciseId];
+    } else {
+      next[exercise.exerciseId] = index;
+    }
+    setSelectedAlternates(next);
+    const progress = await loadWorkoutProgress(planDayId);
+    await saveWorkoutProgress({
+      ...progress,
+      planDayId,
+      selectedAlternatesByExercise: next,
+      updatedAt: new Date().toISOString(),
+    });
   };
 
   if (loading) {
@@ -177,17 +216,24 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
                 <Text style={styles.exerciseCount}>{exercises.length} moves</Text>
               </View>
               <View style={styles.exerciseList}>
-                {exercises.slice(0, 5).map((exercise, index) => (
+                {exercises.slice(0, 5).map((exercise, index) => {
+                  const activeChoice = exerciseWithAlternate(exercise, selectedAlternates[exercise.exerciseId]);
+                  return (
                   <View key={`${exercise.exerciseId}-${index}`} style={styles.exerciseRow}>
                     <View style={styles.exerciseIndex}>
                       <Text style={styles.exerciseIndexText}>{index + 1}</Text>
                     </View>
                     <View style={styles.exerciseCopy}>
-                      <Text style={styles.exerciseName}>{exercise.exerciseName}</Text>
-                      <Text style={styles.exerciseMeta}>{exerciseMeta(exercise)}</Text>
+                      <Text style={styles.exerciseName}>{activeChoice.exerciseName}</Text>
+                      <Text style={styles.exerciseMeta}>{exerciseMeta(activeChoice)}</Text>
+                      <AlternateCarousel
+                        exercise={exercise}
+                        selectedIndex={selectedAlternates[exercise.exerciseId]}
+                        onSelect={(nextIndex) => selectAlternate(exercise, nextIndex)}
+                      />
                     </View>
                   </View>
-                ))}
+                );})}
                 {exercises.length > 5 ? <Text style={styles.moreExercises}>+ {exercises.length - 5} more inside the workout</Text> : null}
               </View>
             </View>
@@ -225,6 +271,52 @@ function Metric({ icon, label, value }: { icon: string; label: string; value: st
         <Text style={styles.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{value}</Text>
       </View>
     </View>
+  );
+}
+
+function AlternateCarousel({
+  exercise,
+  selectedIndex,
+  onSelect,
+}: {
+  exercise: WorkoutExerciseDetail;
+  selectedIndex?: number;
+  onSelect: (index: number | null) => void;
+}) {
+  const alternatives = exercise.alternatives?.filter((alternate: WorkoutExerciseAlternative) => alternate.exerciseName?.trim()).slice(0, 3) || [];
+  if (!alternatives.length) {
+    return (
+      <View style={styles.alternateEmpty}>
+        <Feather name="repeat" size={13} color={colors.inkMuted} />
+        <Text style={styles.alternateEmptyText}>Alternates will appear on newly built plans</Text>
+      </View>
+    );
+  }
+  const choices: Array<{ label: string; index: number | null }> = [
+    { label: 'Original', index: null },
+    ...alternatives.map((alternate, index) => ({ label: alternate.exerciseName, index })),
+  ];
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.alternateRail}
+    >
+      {choices.map((choice) => {
+        const active = choice.index === null ? selectedIndex === undefined : selectedIndex === choice.index;
+        return (
+          <TouchableOpacity
+            key={`${choice.index ?? 'original'}-${choice.label}`}
+            activeOpacity={0.86}
+            onPress={() => onSelect(choice.index)}
+            style={[styles.alternateChip, active && styles.alternateChipActive]}
+          >
+            <Feather name={active ? 'check' : 'repeat'} size={12} color={active ? colors.white : colors.inkMuted} />
+            <Text style={[styles.alternateChipText, active && styles.alternateChipTextActive]} numberOfLines={1}>{choice.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
   );
 }
 
@@ -345,6 +437,32 @@ const styles = StyleSheet.create({
   exerciseCopy: { flex: 1 },
   exerciseName: { ...typography.subtitle, color: colors.ink, lineHeight: 22 },
   exerciseMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  alternateRail: { gap: spacing.xs, paddingTop: spacing.sm, paddingRight: spacing.sm },
+  alternateChip: {
+    maxWidth: 180,
+    minHeight: 32,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  alternateChipActive: {
+    backgroundColor: colors.ink,
+    borderColor: colors.ink,
+  },
+  alternateChipText: { ...typography.caption, color: colors.inkMuted, fontWeight: '800', maxWidth: 138 },
+  alternateChipTextActive: { color: colors.white },
+  alternateEmpty: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  alternateEmptyText: { ...typography.caption, color: colors.inkMuted },
   moreExercises: { ...typography.caption, color: colors.inkSubtle, textAlign: 'center', marginTop: spacing.xs },
   fixedCtaLayer: {
     position: 'absolute',

@@ -21,6 +21,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { loadWorkoutDayCached } from '../../services/preloadService';
 import { resolveWorkoutVideo } from '../../services/workoutService';
+import { submitWorkoutFeedback, type WorkoutFeedbackSentiment } from '../../services/workoutFeedbackService';
 import {
   completeWithQueue,
   loadWorkoutProgress,
@@ -46,7 +47,7 @@ type RewardState = { id: number; type: RewardType; title: string; subtitle: stri
 type SetLog = { setNumber: number; reps: string; weight: string; durationSec?: number };
 
 function videoResolveKey(exercise: WorkoutExerciseDetail) {
-  return exercise.exerciseId || `${exercise.exerciseName}:${exercise.order}`;
+  return `${exercise.exerciseId || ''}:${exercise.exerciseName}:${exercise.order}`;
 }
 
 function getSectionLabel(notes: string, fallback: string) {
@@ -114,6 +115,20 @@ function displayValue(value: string, fallback = '-') {
   return cleaned || fallback;
 }
 
+function exerciseWithSelectedAlternate(exercise: WorkoutExerciseDetail, selectedIndex?: number): WorkoutExerciseDetail {
+  const alternate = selectedIndex !== undefined && selectedIndex >= 0 ? exercise.alternatives?.[selectedIndex] : null;
+  if (!alternate) return exercise;
+  return {
+    ...exercise,
+    exerciseName: alternate.exerciseName || exercise.exerciseName,
+    sets: alternate.sets || exercise.sets,
+    reps: alternate.reps || exercise.reps,
+    restSec: alternate.restSec || exercise.restSec,
+    notes: alternate.notes || exercise.notes,
+    videoUrl: alternate.videoUrl || exercise.videoUrl,
+  };
+}
+
 function defaultRepsFromPrescription(value: string) {
   const range = String(value || '').match(/(\d+)\s*[-–]\s*(\d+)/);
   if (range?.[2]) return range[2];
@@ -167,6 +182,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const [completed, setCompleted] = useState<Set<string>>(new Set());
   const [setProgress, setSetProgress] = useState<Record<string, number>>({});
   const [setLogs, setSetLogs] = useState<Record<string, SetLog[]>>({});
+  const [selectedAlternates, setSelectedAlternates] = useState<Record<string, number>>({});
   const [repInput, setRepInput] = useState('');
   const [weightInput, setWeightInput] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -182,6 +198,10 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const [finishing, setFinishing] = useState(false);
   const [reward, setReward] = useState<RewardState>(null);
   const [flowOpen, setFlowOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackSentiment, setFeedbackSentiment] = useState<WorkoutFeedbackSentiment>('up');
+  const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [resolvedVideoUrls, setResolvedVideoUrls] = useState<Record<string, string>>({});
   const [resolvingVideoKeys, setResolvingVideoKeys] = useState<Set<string>>(new Set());
   const { status } = useAuthStore();
@@ -214,6 +234,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       setCompleted(new Set(saved.completedExerciseIds));
       setSetProgress(saved.setProgressByExercise || {});
       setSetLogs(saved.setLogsByExercise || {});
+      setSelectedAlternates(saved.selectedAlternatesByExercise || {});
       setActiveIndex(0);
       setMovementStarted(false);
       setSetEntryOpen(false);
@@ -261,8 +282,10 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   }, [countdown]);
 
   const trackableExercises = useMemo(
-    () => (detail?.exercises ?? []).filter((exercise) => !isSectionMarker(exercise.notes)),
-    [detail],
+    () => (detail?.exercises ?? [])
+      .filter((exercise) => !isSectionMarker(exercise.notes))
+      .map((exercise) => exerciseWithSelectedAlternate(exercise, selectedAlternates[exercise.exerciseId])),
+    [detail, selectedAlternates],
   );
 
   const activeExercise = trackableExercises[Math.min(activeIndex, Math.max(0, trackableExercises.length - 1))] || null;
@@ -413,11 +436,40 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         completedExerciseIds: Array.from(completedSet),
         setProgressByExercise: next,
         setLogsByExercise: logsOverride,
+        selectedAlternatesByExercise: selectedAlternates,
         updatedAt: new Date().toISOString(),
       });
     },
-    [completed, planDayId, setLogs],
+    [completed, planDayId, selectedAlternates, setLogs],
   );
+
+  const submitActiveFeedback = async () => {
+    if (!activeExercise || !detail || feedbackSubmitting) return;
+    setFeedbackSubmitting(true);
+    try {
+      await submitWorkoutFeedback({
+        planId: detail.planId,
+        planDayId: detail.planDayId,
+        workoutMode: detail.workoutMode,
+        sentiment: feedbackSentiment,
+        feedbackText: feedbackText.trim(),
+        exerciseId: activeExercise.exerciseId,
+      });
+      setFeedbackOpen(false);
+      setFeedbackText('');
+      setFeedbackSentiment('up');
+      setReward({
+        id: Date.now(),
+        type: 'set',
+        title: 'Feedback saved',
+        subtitle: 'Your trainer will use this for future plan updates.',
+      });
+    } catch (submitError) {
+      Alert.alert('Could not save feedback', submitError instanceof Error ? submitError.message : 'Please try again.');
+    } finally {
+      setFeedbackSubmitting(false);
+    }
+  };
 
   const completeActiveExercise = async (setsOverride = setProgress, logsOverride = setLogs) => {
     if (!activeExercise || !detail || completed.has(activeExercise.exerciseId)) return;
@@ -627,7 +679,16 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       <Header
         onBack={() => navigation.goBack()}
         title={copy.eyebrow}
-        right={null}
+        right={(
+          <TouchableOpacity
+            onPress={() => setFeedbackOpen(true)}
+            style={styles.feedbackButton}
+            accessibilityRole="button"
+            accessibilityLabel={`Give feedback for ${activeExercise.exerciseName}`}
+          >
+            <Feather name="message-circle" size={20} color={colors.ink} />
+          </TouchableOpacity>
+        )}
       />
 
       <View style={styles.sessionProgress}>
@@ -898,6 +959,17 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         }}
         onSave={logCurrentSetAndAdvance}
       />
+      <ExerciseFeedbackSheet
+        visible={feedbackOpen}
+        exerciseName={activeExercise.exerciseName}
+        sentiment={feedbackSentiment}
+        feedbackText={feedbackText}
+        submitting={feedbackSubmitting}
+        onSentiment={setFeedbackSentiment}
+        onFeedbackText={setFeedbackText}
+        onClose={() => setFeedbackOpen(false)}
+        onSubmit={submitActiveFeedback}
+      />
     </View>
   );
 }
@@ -1001,6 +1073,85 @@ function WorkoutFlowModal({
           </ScrollView>
         </View>
       </View>
+    </Modal>
+  );
+}
+
+function ExerciseFeedbackSheet({
+  visible,
+  exerciseName,
+  sentiment,
+  feedbackText,
+  submitting,
+  onSentiment,
+  onFeedbackText,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  exerciseName: string;
+  sentiment: WorkoutFeedbackSentiment;
+  feedbackText: string;
+  submitting: boolean;
+  onSentiment: (value: WorkoutFeedbackSentiment) => void;
+  onFeedbackText: (value: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalRoot}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} />
+        <View style={styles.feedbackSheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHead}>
+            <View style={styles.sheetTitleBlock}>
+              <Text style={styles.sheetKicker}>Workout feedback</Text>
+              <Text style={styles.sheetTitle} numberOfLines={1}>{exerciseName}</Text>
+              <Text style={styles.sheetSub}>Tell your trainer what to adjust next time.</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Close feedback">
+              <Feather name="x" size={20} color={colors.inkMuted} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.sentimentRow}>
+            {(['up', 'down'] as WorkoutFeedbackSentiment[]).map((value) => {
+              const active = sentiment === value;
+              return (
+                <TouchableOpacity
+                  key={value}
+                  onPress={() => onSentiment(value)}
+                  activeOpacity={0.86}
+                  style={[styles.sentimentButton, active && styles.sentimentSelected]}
+                >
+                  <Feather name={value === 'up' ? 'thumbs-up' : 'thumbs-down'} size={18} color={active ? colors.white : colors.ink} />
+                  <Text style={[styles.sentimentText, active && styles.sentimentTextSelected]}>{value === 'up' ? 'Works' : 'Change it'}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <TextInput
+            value={feedbackText}
+            onChangeText={onFeedbackText}
+            placeholder="Add what felt good, painful, boring, too hard, or too easy."
+            placeholderTextColor={colors.inkSubtle}
+            multiline
+            style={styles.feedbackInput}
+            textAlignVertical="top"
+          />
+          <TouchableOpacity
+            onPress={onSubmit}
+            disabled={submitting}
+            activeOpacity={0.86}
+            style={styles.sheetSaveButton}
+            accessibilityRole="button"
+            accessibilityLabel="Save workout feedback"
+          >
+            <Text style={styles.sheetSaveText}>{submitting ? 'Saving...' : 'Save feedback'}</Text>
+            <Feather name="arrow-right" size={18} color={colors.white} />
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -2262,6 +2413,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   sheetHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
+  sheetTitleBlock: { flex: 1 },
   sheetKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
   sheetTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
   sheetSub: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },

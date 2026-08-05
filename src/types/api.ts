@@ -256,6 +256,16 @@ export type WorkoutExerciseDetail = {
   notes: string;
   videoUrl: string;
   order: string;
+  alternatives?: WorkoutExerciseAlternative[];
+};
+
+export type WorkoutExerciseAlternative = {
+  exerciseName: string;
+  sets?: string;
+  reps?: string;
+  restSec?: string;
+  notes?: string;
+  videoUrl?: string;
 };
 
 export type WorkoutDayDetail = {
