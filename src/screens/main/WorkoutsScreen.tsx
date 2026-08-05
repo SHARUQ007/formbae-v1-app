@@ -5,7 +5,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
 import { Badge } from '../../components/Badge';
-import { ErrorState, EmptyState, LoadingState } from '../../components/States';
+import { ErrorState, EmptyState } from '../../components/States';
 import { SkeletonBlock } from '../../components/Skeleton';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
@@ -51,7 +51,6 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [summaryOpening, setSummaryOpening] = useState(false);
 
   const load = useCallback(async (options?: { force?: boolean }) => {
     setError(null);
@@ -118,17 +117,10 @@ function WorkoutDashboardScreen({ navigation }: Props) {
 
   const openWorkoutSummary = async (day: PlanDay | null, mode: 'standard' | 'quick') => {
     if (!day) return;
-    setSummaryOpening(true);
-    try {
-      const initialDetail = await loadWorkoutDayCached(day.planDayId, mode);
-      navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
-      await waitForNextFrame();
-      navigation.navigate('WorkoutSummary', { planDayId: day.planDayId, title: day.focus, mode, initialDetail });
-    } catch {
-      setError('Could not prepare workout summary. Please try again.');
-    } finally {
-      setSummaryOpening(false);
-    }
+    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+    await waitForNextFrame();
+    navigation.navigate('WorkoutSummary', { planDayId: day.planDayId, title: day.focus, mode });
+    loadWorkoutDayCached(day.planDayId, mode).catch(() => undefined);
   };
 
   if (loading) {
@@ -343,11 +335,6 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         onSelect={onSwitchTodayWorkout}
         onClose={() => setSwitcherOpen(false)}
       />
-      <Modal visible={summaryOpening} transparent={false} animationType="fade">
-        <ScreenContainer withBottomInset style={styles.summaryLoadingScreen}>
-          <LoadingState message="Preparing workout..." />
-        </ScreenContainer>
-      </Modal>
     </ScreenContainer>
   );
 }
@@ -409,10 +396,6 @@ function WorkoutSwitchModal({
 }
 
 const styles = StyleSheet.create({
-  summaryLoadingScreen: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   scroll: { paddingBottom: spacing.xl },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
   headerText: { flex: 1 },
