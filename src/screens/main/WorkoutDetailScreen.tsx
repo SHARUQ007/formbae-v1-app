@@ -60,6 +60,48 @@ function cleanExerciseNotes(notes: string) {
     .join(' · ');
 }
 
+const EXERCISE_FOCUS_RULES: Array<{ label: string; re: RegExp }> = [
+  { label: 'Chest', re: /\b(bench|chest|push[- ]?up|press)\b/i },
+  { label: 'Shoulders', re: /\b(shoulder|overhead|lateral|front raise)\b/i },
+  { label: 'Back', re: /\b(row|pull[- ]?up|pulldown|lat|back)\b/i },
+  { label: 'Legs', re: /\b(squat|lunge|leg press|step[- ]?up|quad)\b/i },
+  { label: 'Glutes', re: /\b(glute|hip thrust|bridge|deadlift|hinge)\b/i },
+  { label: 'Core', re: /\b(core|plank|crunch|dead bug|hollow)\b/i },
+  { label: 'Conditioning', re: /\b(cardio|interval|run|walk|treadmill|conditioning)\b/i },
+  { label: 'Mobility', re: /\b(stretch|mobility|warm[- ]?up|cool[- ]?down)\b/i },
+];
+
+function exerciseFocusTags(exercise?: WorkoutExerciseDetail | null, day?: WorkoutDayDetail | null) {
+  const haystack = `${exercise?.exerciseName || ''} ${exercise?.notes || ''} ${day?.focus || ''}`;
+  const tags = EXERCISE_FOCUS_RULES.filter((rule) => rule.re.test(haystack)).map((rule) => rule.label);
+  return Array.from(new Set(tags)).slice(0, 3);
+}
+
+function exerciseCues(notes: string, exercise?: WorkoutExerciseDetail | null) {
+  const cues = notes
+    .split(/[.·]/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 10)
+    .slice(0, 2);
+  if (cues.length) return cues;
+  const name = String(exercise?.exerciseName || '').toLowerCase();
+  if (name.includes('squat')) return ['Brace before each rep and keep knees tracking over toes.', 'Use a controlled descent, then drive through the floor.'];
+  if (name.includes('press')) return ['Set your shoulder blades before the first rep.', 'Control the weight down, then press with a steady path.'];
+  if (name.includes('row')) return ['Keep your torso stable and pull with your elbow.', 'Pause briefly at the top before lowering with control.'];
+  if (name.includes('deadlift')) return ['Brace hard before lifting and keep the bar close.', 'Hinge from the hips and finish tall without overextending.'];
+  return ['Move with control and stop the set if form breaks.', 'Match the target reps while keeping breathing steady.'];
+}
+
+function exerciseBenefit(exercise?: WorkoutExerciseDetail | null, tags: string[] = []) {
+  const text = `${exercise?.exerciseName || ''} ${exercise?.notes || ''}`.toLowerCase();
+  if (tags.includes('Conditioning')) return 'Builds work capacity and keeps your heart rate up without overcomplicating the session.';
+  if (tags.includes('Mobility')) return 'Improves range of motion so the rest of your training feels cleaner.';
+  if (text.includes('squat') || tags.includes('Legs')) return 'Builds lower-body strength while training bracing, balance, and control.';
+  if (text.includes('press') || tags.includes('Chest') || tags.includes('Shoulders')) return 'Builds pressing strength and upper-body control for today’s session.';
+  if (text.includes('row') || tags.includes('Back')) return 'Balances pressing work and strengthens your pulling pattern.';
+  return 'Keeps today’s workout aligned with your plan and current training level.';
+}
+
 function displayValue(value: string, fallback = '-') {
   const cleaned = String(value || '').trim();
   return cleaned || fallback;
@@ -220,6 +262,9 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const activeSetNumber = Math.min(activeSets, activeSetCount + 1);
   const activeRest = Number(activeExercise?.restSec || 0);
   const activeNotes = cleanExerciseNotes(activeExercise?.notes || '');
+  const activeFocusTags = exerciseFocusTags(activeExercise, detail);
+  const activeCues = exerciseCues(activeNotes, activeExercise);
+  const activeBenefit = exerciseBenefit(activeExercise, activeFocusTags);
   const activeNeedsWeight = isWeightedExercise(activeExercise);
   const activeSetLogs = useMemo(() => (activeExerciseId ? setLogs[activeExerciseId] || [] : []), [activeExerciseId, setLogs]);
   const activeLastLog = activeSetLogs[activeSetCount - 1];
@@ -545,7 +590,11 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
           <Text style={styles.activeName} adjustsFontSizeToFit minimumFontScale={0.82}>{activeExercise.exerciseName}</Text>
 
           {!movementStarted ? (
-            <>
+            <ScrollView
+              style={styles.prepScroller}
+              contentContainerStyle={styles.prepContent}
+              showsVerticalScrollIndicator={false}
+            >
               <TouchableOpacity
                 onPress={() => openExerciseVideo(activeExercise)}
                 activeOpacity={0.86}
@@ -580,6 +629,41 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                 <MetricPill label="Rest" value={`${displayValue(activeExercise.restSec, '0')}s`} icon="clock" />
               </View>
 
+              <View style={styles.exerciseInsightCard}>
+                <View style={styles.insightHeader}>
+                  <View style={styles.insightIcon}>
+                    <Feather name="zap" size={18} color={colors.white} />
+                  </View>
+                  <View style={styles.insightTitleBlock}>
+                    <Text style={styles.insightKicker}>Workout focus</Text>
+                    <Text style={styles.insightTitle}>What this move is doing</Text>
+                  </View>
+                </View>
+                <Text style={styles.insightBody}>{activeBenefit}</Text>
+                {activeFocusTags.length ? (
+                  <View style={styles.focusChipRow}>
+                    {activeFocusTags.map((tag) => (
+                      <View key={tag} style={styles.focusChip}>
+                        <Text style={styles.focusChipText}>{tag}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={styles.cueCard}>
+                <View style={styles.cueHeader}>
+                  <Feather name="check-circle" size={18} color={colors.accentDark} />
+                  <Text style={styles.cueTitle}>Set cues</Text>
+                </View>
+                {activeCues.map((cue) => (
+                  <View key={cue} style={styles.cueRow}>
+                    <View style={styles.cueDot} />
+                    <Text style={styles.cueText}>{cue}</Text>
+                  </View>
+                ))}
+              </View>
+
               {activeLastLog ? (
                 <View style={styles.lastLogCard}>
                   <Feather name="check-circle" size={18} color={colors.accentDark} />
@@ -588,7 +672,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                   </Text>
                 </View>
               ) : null}
-            </>
+            </ScrollView>
           ) : (
             <>
               <View style={styles.liveTimerCard}>
@@ -1095,6 +1179,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     justifyContent: 'flex-start',
     overflow: 'hidden',
+    gap: spacing.sm,
   },
   executionShellActive: {
     backgroundColor: colors.white,
@@ -1408,18 +1493,18 @@ const styles = StyleSheet.create({
   },
   stepFlowText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
   videoStepCardLarge: {
-    minHeight: 236,
+    minHeight: 214,
     borderRadius: 28,
     backgroundColor: colors.inkStrong,
     overflow: 'hidden',
     justifyContent: 'space-between',
-    gap: spacing.md,
+    gap: spacing.sm,
     padding: spacing.md,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   videoPlaceholderImage: {
     flex: 1,
-    minHeight: 128,
+    minHeight: 112,
     borderRadius: 22,
     backgroundColor: colors.accentDarker,
     alignItems: 'center',
@@ -1483,7 +1568,7 @@ const styles = StyleSheet.create({
   },
   metricPill: {
     flex: 1,
-    minHeight: 76,
+    minHeight: 70,
     borderRadius: radius.xl,
     backgroundColor: colors.accentLight,
     borderWidth: 1,
@@ -1495,6 +1580,58 @@ const styles = StyleSheet.create({
   metricPillText: { minWidth: 0 },
   metricPillLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '900' },
   metricPillValue: { ...typography.subtitle, color: colors.ink, marginTop: 2 },
+  exerciseInsightCard: {
+    borderRadius: 24,
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  insightHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  insightIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  insightTitleBlock: { flex: 1 },
+  insightKicker: { ...typography.overline, color: colors.inkMuted, textTransform: 'uppercase' },
+  insightTitle: { ...typography.bodyBold, color: colors.ink, marginTop: 1 },
+  insightBody: { ...typography.body, color: colors.inkMuted },
+  focusChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  focusChip: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+  },
+  focusChipText: { ...typography.caption, color: colors.ink, fontWeight: '900' },
+  cueCard: {
+    borderRadius: 24,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  cueHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: 2 },
+  cueTitle: { ...typography.bodyBold, color: colors.ink },
+  cueRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs },
+  cueDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.accentDark,
+    marginTop: 8,
+  },
+  cueText: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 19 },
   liveTimerCard: {
     borderRadius: 30,
     backgroundColor: colors.accentDarker,
@@ -1675,7 +1812,7 @@ const styles = StyleSheet.create({
   activeStepText: { ...typography.subtitle, color: colors.accentDark, fontWeight: '800' },
   activeText: { flex: 1 },
   activeKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
-  activeName: { fontSize: 29, lineHeight: 34, fontWeight: '900', color: colors.ink, marginTop: spacing.md },
+  activeName: { fontSize: 28, lineHeight: 33, fontWeight: '900', color: colors.ink, marginTop: spacing.sm },
   activeStatus: {
     width: 36,
     height: 36,
@@ -1686,6 +1823,8 @@ const styles = StyleSheet.create({
   },
   activeStatusDone: { backgroundColor: colors.accent },
   activeStatusLive: { backgroundColor: colors.warn },
+  prepScroller: { flex: 1, marginTop: spacing.sm },
+  prepContent: { paddingBottom: spacing.sm },
   videoBox: { alignItems: 'center', justifyContent: 'center' },
   videoActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   videoActionButton: { flex: 1 },
