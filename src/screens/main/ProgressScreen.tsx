@@ -20,6 +20,7 @@ import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
 
 type Loaded = { progress: ProgressSummary; checkIns: CheckIn[]; dueThisWeek: boolean };
+type LogMode = 'checkin' | 'body';
 
 const ENERGY_OPTIONS = ['4', '6', '8', '10'];
 const DIFFICULTY_OPTIONS = ['3', '5', '7', '9'];
@@ -38,6 +39,7 @@ export function ProgressScreen() {
   const [difficulty, setDifficulty] = useState('');
   const [completion, setCompletion] = useState('');
   const [notes, setNotes] = useState('');
+  const [logMode, setLogMode] = useState<LogMode | null>(null);
   const [savingBody, setSavingBody] = useState(false);
   const [savingCheckIn, setSavingCheckIn] = useState(false);
 
@@ -55,6 +57,7 @@ export function ProgressScreen() {
       setBiceps('');
       await loadProgressBundleCached({ force: true });
       await reload();
+      setLogMode(null);
     } catch (e) {
       Alert.alert('Could not save', e instanceof Error ? e.message : 'Please try again.');
     } finally {
@@ -78,6 +81,7 @@ export function ProgressScreen() {
       await reload();
       displayBehavioralNotification('checkInSubmitted').catch(() => undefined);
       Alert.alert('Check-in sent', 'Your trainer will review your weekly check-in.');
+      setLogMode(null);
     } catch (e) {
       Alert.alert('Could not submit', e instanceof Error ? e.message : 'Please try again.');
     } finally {
@@ -108,14 +112,89 @@ export function ProgressScreen() {
   const latest = trend[trend.length - 1];
   const first = trend[0];
   const recentCheckIns = checkIns.slice(0, 4);
-  const avgEnergy = averageMetric(checkIns, 'energyLevel');
-  const avgDifficulty = averageMetric(checkIns, 'difficultyLevel');
-  const latestCompletion = checkIns.find((entry) => entry.workoutCompletion)?.workoutCompletion || '';
   const weightDelta = latest?.weight && first?.weight ? latest.weight - first.weight : 0;
   const waistDelta = latest?.waist && first?.waist ? latest.waist - first.waist : 0;
   const completionRate = progress.planned ? progress.completed / progress.planned : 0;
   const reward = rewardMessage(progress);
   const progressPoints = progress.completed * 25 + progress.currentStreak * 10;
+  const bestBodyStat = latest?.weight ? `${latest.weight} kg` : latest?.waist ? `${latest.waist} cm waist` : 'No body log yet';
+
+  if (logMode) {
+    return (
+      <KeyboardScreen>
+        <ScreenContainer>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scroll}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.logHeader}>
+              <TouchableOpacity
+                onPress={() => setLogMode(null)}
+                style={styles.backButton}
+                accessibilityRole="button"
+                accessibilityLabel="Back to progress"
+              >
+                <Feather name="chevron-left" size={24} color={colors.ink} />
+              </TouchableOpacity>
+              <View style={styles.logHeaderText}>
+                <Text style={styles.eyebrow}>Log progress</Text>
+                <Text style={styles.logTitle}>Update your coach</Text>
+              </View>
+            </View>
+
+            <View style={styles.logTabs}>
+              <LogTab label="Check-in" icon="send" active={logMode === 'checkin'} onPress={() => setLogMode('checkin')} />
+              <LogTab label="Body" icon="edit-3" active={logMode === 'body'} onPress={() => setLogMode('body')} />
+            </View>
+
+            {logMode === 'checkin' ? (
+              <Card style={styles.formCard}>
+                <View style={styles.formIntro}>
+                  <View style={styles.formIcon}>
+                    <Feather name="message-circle" size={22} color={colors.white} />
+                  </View>
+                  <View style={styles.formIntroText}>
+                    <Text style={styles.cardTitle}>Weekly check-in</Text>
+                    <Text style={styles.cardSub}>Use quick taps first. Add a note only if there is useful context.</Text>
+                  </View>
+                </View>
+                <OptionGroup label="Energy" value={energy} options={ENERGY_OPTIONS} onSelect={setEnergy} suffix="/10" />
+                <FormInput value={energy} onChangeText={setEnergy} placeholder="Energy (1-10)" keyboardType="numeric" maxLength={2} />
+                <OptionGroup label="Difficulty" value={difficulty} options={DIFFICULTY_OPTIONS} onSelect={setDifficulty} suffix="/10" />
+                <FormInput value={difficulty} onChangeText={setDifficulty} placeholder="Difficulty (1-10)" keyboardType="numeric" maxLength={2} />
+                <OptionGroup label="Workouts completed" value={completion} options={COMPLETION_OPTIONS} onSelect={setCompletion} />
+                <FormInput value={completion} onChangeText={setCompletion} placeholder="e.g. 4 of 5" />
+                <FormInput value={notes} onChangeText={setNotes} placeholder="Anything your trainer should know?" multiline autoCapitalize="sentences" />
+                <PrimaryButton title="Send check-in" icon="send" onPress={onCheckIn} loading={savingCheckIn} />
+              </Card>
+            ) : (
+              <Card style={styles.formCard}>
+                <View style={styles.formIntro}>
+                  <View style={styles.formIcon}>
+                    <Feather name="trending-up" size={22} color={colors.white} />
+                  </View>
+                  <View style={styles.formIntroText}>
+                    <Text style={styles.cardTitle}>Body measurements</Text>
+                    <Text style={styles.cardSub}>
+                      {latest ? `Last logged ${formatDate(latest.date)}. Update only when something changed.` : 'Add your first body measurement.'}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.inputGrid}>
+                  <FormInput icon="trending-up" value={weight} onChangeText={setWeight} placeholder="Weight (kg)" keyboardType="numeric" />
+                  <FormInput icon="maximize-2" value={chest} onChangeText={setChest} placeholder="Chest (cm)" keyboardType="numeric" />
+                  <FormInput icon="minimize-2" value={waist} onChangeText={setWaist} placeholder="Waist (cm)" keyboardType="numeric" />
+                  <FormInput icon="activity" value={biceps} onChangeText={setBiceps} placeholder="Biceps (cm)" keyboardType="numeric" />
+                </View>
+                <PrimaryButton title="Save body log" icon="plus" onPress={onLogBody} loading={savingBody} />
+              </Card>
+            )}
+          </ScrollView>
+        </ScreenContainer>
+      </KeyboardScreen>
+    );
+  }
 
   return (
     <KeyboardScreen>
@@ -128,7 +207,7 @@ export function ProgressScreen() {
           <View style={styles.header}>
             <View>
               <Text style={styles.eyebrow}>Progress</Text>
-              <ScreenTitle>Your wins</ScreenTitle>
+              <ScreenTitle>Momentum</ScreenTitle>
             </View>
             <View style={styles.headerBadge}>
               <Feather name="award" size={20} color={colors.accentDark} />
@@ -147,38 +226,41 @@ export function ProgressScreen() {
               </View>
             </View>
             <View style={styles.heroStats}>
-              <HeroMetric icon="target" label="Adherence" value={`${progress.adherencePct}%`} />
               <HeroMetric icon="zap" label="Streak" value={`${progress.currentStreak}d`} />
-              <HeroMetric icon="check-circle" label="Done" value={`${progress.completed}/${progress.planned}`} />
+              <HeroMetric icon="check-circle" label="Workouts" value={`${progress.completed}/${progress.planned}`} />
+              <HeroMetric icon="award" label="Points" value={`${progressPoints}`} />
             </View>
           </Card>
 
-          {dueThisWeek ? (
-            <Card variant="accent" style={styles.nextAction}>
-              <View style={styles.nextActionTop}>
-                <Badge label="Due this week" tone="warn" icon="clock" />
-                <Text style={styles.nextActionTitle}>Send a quick check-in</Text>
-              </View>
-              <Text style={styles.nextActionText}>A short update helps your trainer adjust pace, recovery and the next workout block.</Text>
-            </Card>
-          ) : (
-            <Card variant="accent" style={styles.nextAction}>
-              <View style={styles.nextActionTop}>
-                <Badge label="On track" tone="success" icon="check" />
-                <Text style={styles.nextActionTitle}>Keep the streak alive</Text>
-              </View>
-              <Text style={styles.nextActionText}>Log workouts and body changes when something meaningful changes.</Text>
-            </Card>
-          )}
-
-          <SectionTitle>Snapshot</SectionTitle>
-          <View style={styles.snapshotGrid}>
-            <RewardTile icon="zap" label="Points" value={`${progressPoints}`} helper="Workout + streak score" />
-            <RewardTile icon="award" label="Best streak" value={`${progress.bestStreak}d`} helper="Longest run" />
-            <RewardTile icon="activity" label="Completion" value={`${Math.round(completionRate * 100)}%`} helper={`${progress.completed} workouts logged`} />
-            <RewardTile icon="battery-charging" label="Energy avg" value={avgEnergy ? `${avgEnergy}/10` : '-'} helper="From check-ins" />
-            <RewardTile icon="trending-up" label="Difficulty" value={avgDifficulty ? `${avgDifficulty}/10` : '-'} helper={latestCompletion || 'Latest weekly feel'} />
+          <View style={styles.actionGrid}>
+            <ProgressAction
+              icon="send"
+              title={dueThisWeek ? 'Check-in due' : 'Weekly check-in'}
+              text="Energy, difficulty, and trainer notes"
+              tone={dueThisWeek ? 'dark' : 'light'}
+              onPress={() => setLogMode('checkin')}
+            />
+            <ProgressAction
+              icon="edit-3"
+              title="Body log"
+              text={bestBodyStat}
+              tone="light"
+              onPress={() => setLogMode('body')}
+            />
           </View>
+
+          <SectionTitle>Workout rhythm</SectionTitle>
+          <Card style={styles.rhythmCard}>
+            <View style={styles.rhythmTop}>
+              <View>
+                <Text style={styles.cardTitle}>{Math.round(completionRate * 100)}% complete</Text>
+                <Text style={styles.cardSub}>{progress.completed} of {progress.planned || 0} workouts logged</Text>
+              </View>
+              <Badge label={`Best ${progress.bestStreak}d`} tone="accent" icon="award" />
+            </View>
+            <WorkoutCompletionGraph completed={progress.completed} planned={progress.planned} />
+            <Text style={styles.funFact}>{progress.currentStreak > 0 ? 'Consistency compounds. One more session keeps the chain alive.' : 'Start with one logged session. The app will build the story from there.'}</Text>
+          </Card>
 
           {trend.length > 1 ? (
             <>
@@ -193,42 +275,6 @@ export function ProgressScreen() {
               </Card>
             </>
           ) : null}
-
-          <SectionTitle>Weekly check-in</SectionTitle>
-          <Card style={styles.checkInCard}>
-            <Text style={styles.cardTitle}>How are you feeling?</Text>
-            <Text style={styles.cardSub}>Tap quick values or type exact numbers.</Text>
-            <OptionGroup label="Energy" value={energy} options={ENERGY_OPTIONS} onSelect={setEnergy} suffix="/10" />
-            <FormInput value={energy} onChangeText={setEnergy} placeholder="Energy (1-10)" keyboardType="numeric" maxLength={2} />
-            <OptionGroup label="Difficulty" value={difficulty} options={DIFFICULTY_OPTIONS} onSelect={setDifficulty} suffix="/10" />
-            <FormInput value={difficulty} onChangeText={setDifficulty} placeholder="Difficulty (1-10)" keyboardType="numeric" maxLength={2} />
-            <OptionGroup label="Workouts completed" value={completion} options={COMPLETION_OPTIONS} onSelect={setCompletion} />
-            <FormInput value={completion} onChangeText={setCompletion} placeholder="e.g. 4 of 5" />
-            <FormInput value={notes} onChangeText={setNotes} placeholder="What should your trainer know?" multiline autoCapitalize="sentences" />
-            <PrimaryButton title="Send check-in" icon="send" onPress={onCheckIn} loading={savingCheckIn} />
-          </Card>
-
-          <SectionTitle>Body log</SectionTitle>
-          <Card>
-            <View style={styles.latestBodyRow}>
-              <View>
-                <Text style={styles.cardTitle}>{latest?.weight ? `${latest.weight} kg` : 'No body log yet'}</Text>
-                <Text style={styles.cardSub}>
-                  {latest ? `Last logged ${formatDate(latest.date)}` : 'Add your first body measurement.'}
-                </Text>
-              </View>
-              <View style={styles.measureIcon}>
-                <Feather name="edit-3" size={18} color={colors.accentDark} />
-              </View>
-            </View>
-            <View style={styles.inputGrid}>
-              <FormInput icon="trending-up" value={weight} onChangeText={setWeight} placeholder="Weight (kg)" keyboardType="numeric" />
-              <FormInput icon="maximize-2" value={chest} onChangeText={setChest} placeholder="Chest (cm)" keyboardType="numeric" />
-              <FormInput icon="minimize-2" value={waist} onChangeText={setWaist} placeholder="Waist (cm)" keyboardType="numeric" />
-              <FormInput icon="activity" value={biceps} onChangeText={setBiceps} placeholder="Biceps (cm)" keyboardType="numeric" />
-            </View>
-            <PrimaryButton title="Save body log" icon="plus" onPress={onLogBody} loading={savingBody} variant="secondary" />
-          </Card>
 
           {checkIns.length > 0 ? <SectionTitle>Recent updates</SectionTitle> : null}
           <View style={styles.history}>
@@ -256,12 +302,6 @@ export function ProgressScreen() {
   );
 }
 
-function averageMetric(checkIns: CheckIn[], key: 'energyLevel' | 'difficultyLevel') {
-  const values = checkIns.map((entry) => Number(entry[key])).filter((value) => Number.isFinite(value) && value > 0);
-  if (!values.length) return 0;
-  return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10;
-}
-
 function formatDelta(value: number, unit: string) {
   if (!Number.isFinite(value) || value === 0) return `0 ${unit}`;
   return `${value > 0 ? '+' : ''}${Math.round(value * 10) / 10} ${unit}`;
@@ -274,14 +314,6 @@ function rewardMessage(progress: ProgressSummary) {
       kicker: 'Streak building',
       title: `${progress.currentStreak} days strong`,
       subtitle: 'You are building the consistency that changes outcomes.',
-    };
-  }
-  if (progress.adherencePct >= 80) {
-    return {
-      icon: 'award',
-      kicker: 'Excellent adherence',
-      title: `${progress.adherencePct}% on plan`,
-      subtitle: 'Your training rhythm is in a strong place.',
     };
   }
   if (progress.completed > 0) {
@@ -300,6 +332,44 @@ function rewardMessage(progress: ProgressSummary) {
   };
 }
 
+function LogTab({ label, icon, active, onPress }: { label: string; icon: string; active: boolean; onPress: () => void }) {
+  return (
+    <TouchableOpacity activeOpacity={0.86} onPress={onPress} style={[styles.logTab, active && styles.logTabActive]}>
+      <Feather name={icon} size={17} color={active ? colors.white : colors.ink} />
+      <Text style={[styles.logTabText, active && styles.logTabTextActive]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function ProgressAction({
+  icon,
+  title,
+  text,
+  tone,
+  onPress,
+}: {
+  icon: string;
+  title: string;
+  text: string;
+  tone: 'dark' | 'light';
+  onPress: () => void;
+}) {
+  const dark = tone === 'dark';
+  return (
+    <TouchableOpacity activeOpacity={0.86} onPress={onPress} style={[styles.progressAction, dark && styles.progressActionDark]}>
+      <View style={[styles.progressActionIcon, dark && styles.progressActionIconDark]}>
+        <Feather name={icon} size={20} color={dark ? colors.black : colors.white} />
+      </View>
+      <Text style={[styles.progressActionTitle, dark && styles.progressActionTitleDark]}>{title}</Text>
+      <Text style={[styles.progressActionText, dark && styles.progressActionTextDark]} numberOfLines={2}>{text}</Text>
+      <View style={styles.progressActionFooter}>
+        <Text style={[styles.progressActionLink, dark && styles.progressActionLinkDark]}>Open</Text>
+        <Feather name="arrow-right" size={17} color={dark ? colors.white : colors.black} />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 function HeroMetric({ icon, label, value }: { icon: string; label: string; value: string }) {
   return (
     <View style={styles.heroMetric}>
@@ -312,24 +382,28 @@ function HeroMetric({ icon, label, value }: { icon: string; label: string; value
   );
 }
 
-function RewardTile({ icon, label, value, helper }: { icon: string; label: string; value: string; helper: string }) {
-  return (
-    <View style={styles.rewardTile}>
-      <View style={styles.rewardIcon}>
-        <Feather name={icon} size={17} color={colors.accentDark} />
-      </View>
-      <Text style={styles.rewardValue}>{value}</Text>
-      <Text style={styles.rewardLabel}>{label}</Text>
-      <Text style={styles.rewardHelper}>{helper}</Text>
-    </View>
-  );
-}
-
 function TrendDelta({ label, value, positive }: { label: string; value: string; positive: boolean }) {
   return (
     <View style={[styles.trendDelta, positive ? styles.trendDeltaGood : styles.trendDeltaNeutral]}>
       <Text style={styles.trendDeltaLabel}>{label}</Text>
       <Text style={styles.trendDeltaValue}>{value}</Text>
+    </View>
+  );
+}
+
+function WorkoutCompletionGraph({ completed, planned }: { completed: number; planned: number }) {
+  const total = Math.max(planned || 0, completed, 1);
+  const bars = Array.from({ length: Math.min(Math.max(total, 4), 10) }, (_, index) => index < completed);
+  return (
+    <View style={styles.workoutGraph}>
+      {bars.map((done, index) => {
+        const heightStyle = index % 3 === 0 ? styles.workoutGraphBarLow : index % 3 === 1 ? styles.workoutGraphBarMid : styles.workoutGraphBarHigh;
+        return (
+          <View key={`workout-${index}`} style={styles.workoutGraphColumn}>
+            <View style={[styles.workoutGraphBar, done && styles.workoutGraphBarDone, done ? heightStyle : styles.workoutGraphBarEmpty]} />
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -417,6 +491,52 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  logHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  backButton: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logHeaderText: { flex: 1 },
+  logTitle: { ...typography.title, color: colors.ink },
+  logTabs: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    padding: spacing.xs,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.md,
+  },
+  logTab: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: radius.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  logTabActive: { backgroundColor: colors.black },
+  logTabText: { ...typography.bodyBold, color: colors.ink },
+  logTabTextActive: { color: colors.white },
+  formCard: { gap: spacing.sm },
+  formIntro: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
+  formIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: radius.pill,
+    backgroundColor: colors.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  formIntroText: { flex: 1 },
   hero: { backgroundColor: colors.accentDarker, borderColor: colors.accentDark },
   heroTop: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
   heroIcon: {
@@ -443,32 +563,64 @@ const styles = StyleSheet.create({
   },
   heroMetricLabel: { ...typography.caption, color: colors.inkMuted },
   heroMetricValue: { ...typography.subtitle, color: colors.ink },
-  nextAction: { marginTop: spacing.md },
-  nextActionTop: { gap: spacing.sm },
-  nextActionTitle: { ...typography.subtitle, color: colors.ink, marginTop: spacing.xs },
-  nextActionText: { ...typography.body, color: colors.inkMuted, marginTop: spacing.xs },
-  snapshotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  rewardTile: {
-    width: '48%',
-    minHeight: 142,
+  actionGrid: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  progressAction: {
+    flex: 1,
+    minHeight: 166,
     borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.panel,
     padding: spacing.md,
   },
-  rewardIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.md,
-    backgroundColor: colors.accentLight,
+  progressActionDark: { backgroundColor: colors.black, borderColor: colors.black },
+  progressActionIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.pill,
+    backgroundColor: colors.black,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
-  rewardValue: { ...typography.title, color: colors.ink },
-  rewardLabel: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
-  rewardHelper: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  progressActionIconDark: { backgroundColor: colors.white },
+  progressActionTitle: { ...typography.bodyBold, color: colors.ink },
+  progressActionTitleDark: { color: colors.white },
+  progressActionText: { ...typography.caption, color: colors.inkMuted, marginTop: 4, minHeight: 34 },
+  progressActionTextDark: { color: colors.onAccentMuted },
+  progressActionFooter: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.md },
+  progressActionLink: { ...typography.caption, color: colors.black, fontWeight: '900' },
+  progressActionLinkDark: { color: colors.white },
+  rhythmCard: { gap: spacing.md },
+  rhythmTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  workoutGraph: {
+    height: 126,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 9,
+    borderRadius: radius.xl,
+    backgroundColor: colors.panelMuted,
+    padding: spacing.md,
+  },
+  workoutGraphColumn: { flex: 1, height: '100%', justifyContent: 'flex-end' },
+  workoutGraphBar: {
+    width: '100%',
+    borderRadius: radius.pill,
+    backgroundColor: colors.borderStrong,
+    minHeight: 12,
+  },
+  workoutGraphBarDone: { backgroundColor: colors.black },
+  workoutGraphBarEmpty: { height: '28%' },
+  workoutGraphBarLow: { height: '62%' },
+  workoutGraphBarMid: { height: '74%' },
+  workoutGraphBarHigh: { height: '86%' },
+  funFact: {
+    ...typography.body,
+    color: colors.ink,
+    borderRadius: radius.lg,
+    backgroundColor: colors.accentLight,
+    padding: spacing.md,
+  },
   trendCard: { gap: spacing.md },
   trendSummary: { flexDirection: 'row', gap: spacing.sm },
   trendDelta: { flex: 1, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1 },
@@ -484,7 +636,6 @@ const styles = StyleSheet.create({
   chartCol: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', height: '100%' },
   bar: { width: '72%', borderRadius: radius.sm, minHeight: 8 },
   barLabel: { ...typography.caption, fontSize: 10, color: colors.inkMuted, marginTop: 4 },
-  checkInCard: { gap: spacing.xs },
   cardTitle: { ...typography.subtitle, color: colors.ink },
   cardSub: { ...typography.caption, color: colors.inkMuted, marginTop: 2, marginBottom: spacing.sm },
   optionGroup: { marginTop: spacing.sm },
@@ -501,17 +652,6 @@ const styles = StyleSheet.create({
   optionChipSelected: { backgroundColor: colors.accent, borderColor: colors.accentDark },
   optionText: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
   optionTextSelected: { color: colors.white },
-  latestBodyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
-  measureIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.lg,
-    backgroundColor: colors.accentLight,
-    borderWidth: 1,
-    borderColor: colors.accentSurface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   inputGrid: { gap: spacing.xs },
   history: { gap: spacing.sm },
   historyCard: { padding: spacing.md },
