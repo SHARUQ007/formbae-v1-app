@@ -55,8 +55,7 @@ export function LoginScreen({ navigation, route }: Props) {
           <LogoMark size={64} />
           <Text style={styles.title}>{isSignup ? 'Create your account' : 'Continue with phone'}</Text>
           <Text style={styles.subtitle}>
-            Enter your phone number. If you are new, we will create your account and start your fitness analysis before the paywall.
-            If you already paid, we will sync your plan after login.
+            Enter your phone number to continue. New users start with the fitness analysis; paid users sync their plan automatically.
           </Text>
         </View>
 
@@ -96,7 +95,7 @@ function normalizeIndianMobile(value: string) {
 }
 
 const styles = StyleSheet.create({
-  hero: { alignItems: 'flex-start', marginBottom: spacing.xl },
+  hero: { alignItems: 'flex-start', marginBottom: spacing.lg },
   title: { ...typography.hero, color: colors.ink, marginTop: spacing.md },
   subtitle: { ...typography.body, color: colors.inkMuted, marginTop: spacing.sm },
   errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.sm },

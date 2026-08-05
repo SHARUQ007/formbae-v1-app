@@ -16,7 +16,6 @@ import type { PlanDay } from '../types/api';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/radius';
 import { shadows } from '../theme/shadows';
-import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -60,17 +59,17 @@ type ContextualTarget =
   | { kind: 'progress'; label: string; detail: string; icon: string };
 
 const premiumTabBarStyle = {
-  height: 74,
-  marginHorizontal: 14,
-  marginBottom: 10,
-  borderRadius: 28,
+  height: 70,
+  marginHorizontal: 16,
+  marginBottom: 12,
+  borderRadius: 26,
   borderTopWidth: 0,
   borderColor: colors.border,
   borderWidth: 1,
   backgroundColor: colors.white,
-  paddingTop: 8,
-  paddingBottom: 10,
-  ...shadows.lg,
+  paddingTop: 7,
+  paddingBottom: 8,
+  ...shadows.md,
 };
 
 function ActionPlaceholder() {
@@ -263,19 +262,19 @@ export function MainTabNavigator() {
 
 const styles = StyleSheet.create({
   actionShell: {
-    width: 82,
+    width: 78,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -24,
+    marginTop: -22,
   },
   actionButton: {
-    width: 58,
-    height: 58,
+    width: 56,
+    height: 56,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accent,
-    borderWidth: 4,
+    borderWidth: 3,
     borderColor: colors.white,
     ...shadows.accent,
   },
@@ -285,7 +284,7 @@ const styles = StyleSheet.create({
   actionLabel: {
     ...typography.caption,
     maxWidth: 74,
-    marginTop: spacing.xs,
+    marginTop: 3,
     color: colors.accentDark,
     fontWeight: '800',
     textAlign: 'center',

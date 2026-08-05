@@ -12,12 +12,12 @@ const make = (iosStyle: ViewStyle, elevation: number): ViewStyle =>
 
 export const shadows = {
   none: make(ios(0, 0, 0), 0),
-  sm: make(ios(2, 0.05, 8), 2),
-  card: make(ios(10, 0.075, 22), 4),
-  md: make(ios(14, 0.095, 28), 6),
-  lg: make(ios(20, 0.14, 40), 10),
+  sm: make(ios(2, 0.035, 7), 1),
+  card: make(ios(8, 0.055, 18), 3),
+  md: make(ios(12, 0.07, 24), 5),
+  lg: make(ios(16, 0.1, 32), 8),
   accent: make(
-    { shadowColor: '#047857', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.28, shadowRadius: 16 },
+    { shadowColor: '#047857', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 16 },
     6,
   ),
 };

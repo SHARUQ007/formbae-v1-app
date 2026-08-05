@@ -21,7 +21,7 @@ type Props = {
   style?: ViewStyle;
 };
 
-const heights: Record<Size, number> = { sm: 44, md: 52, lg: 56 };
+const heights: Record<Size, number> = { sm: 42, md: 52, lg: 58 };
 
 export function PrimaryButton({
   title,
@@ -86,12 +86,12 @@ const variantStyles: Record<Variant, ViewStyle> = {
 
 const styles = StyleSheet.create({
   button: {
-    borderRadius: radius.xl,
-    paddingHorizontal: spacing.lg,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  content: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  content: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   disabled: { opacity: 0.5 },
-  text: { ...typography.button },
+  text: { ...typography.button, textAlign: 'center' },
 });

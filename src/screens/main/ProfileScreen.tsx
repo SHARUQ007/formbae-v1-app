@@ -334,8 +334,8 @@ const styles = StyleSheet.create({
   heroCard: {
     borderRadius: radius.xl,
     backgroundColor: colors.accentDark,
-    padding: spacing.lg,
-    ...shadows.lg,
+    padding: spacing.md,
+    ...shadows.md,
   },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   iconAction: { width: 46, height: 46, borderRadius: radius.pill, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
@@ -357,7 +357,7 @@ const styles = StyleSheet.create({
   metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   metricCard: {
     width: '48%',
-    minHeight: 132,
+    minHeight: 124,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.xl,
@@ -376,7 +376,7 @@ const styles = StyleSheet.create({
   infoText: { flex: 1 },
   infoLabel: { ...typography.caption, color: colors.inkMuted },
   infoValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
-  accessCard: { borderRadius: radius.xl, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, padding: spacing.md, ...shadows.card },
+  accessCard: { borderRadius: radius.xl, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, padding: spacing.md, ...shadows.sm },
   accessHeader: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
   accessIcon: { width: 54, height: 54, borderRadius: radius.lg, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
   accessText: { flex: 1 },

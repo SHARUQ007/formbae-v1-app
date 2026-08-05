@@ -34,6 +34,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radius.lg,
     padding: spacing.md,
+    minHeight: 104,
+    justifyContent: 'center',
   },
   icon: { marginBottom: 6 },
   value: { ...typography.title, color: colors.ink },

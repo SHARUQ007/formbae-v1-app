@@ -290,7 +290,7 @@ function DietScreenContent({ route, navigation }: Props) {
             </View>
             <View style={styles.heroText}>
               <Text style={styles.heroTitle}>Diet diary</Text>
-              <Text style={styles.heroCopy}>Capture every meal photo and keep it accessible from this Diet tab.</Text>
+              <Text style={styles.heroCopy}>Photo or text logs for meals you want to track.</Text>
             </View>
           </View>
           <View style={styles.heroStats}>
@@ -470,7 +470,7 @@ function DietScreenContent({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   scroll: { paddingBottom: spacing.xl },
   heroRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
-  heroIcon: { width: 54, height: 54, borderRadius: radius.lg, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  heroIcon: { width: 50, height: 50, borderRadius: radius.lg, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   heroText: { flex: 1 },
   heroTitle: { ...typography.title, color: colors.accentDarker },
   heroCopy: { ...typography.body, color: colors.accentDarker, marginTop: 2 },
@@ -480,7 +480,7 @@ const styles = StyleSheet.create({
     width: '48%',
     backgroundColor: colors.panel,
     borderRadius: radius.lg,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.md,
   },
@@ -489,14 +489,14 @@ const styles = StyleSheet.create({
   mealTitleSelected: { color: colors.white },
   mealHint: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   mealHintSelected: { color: colors.onAccentMuted },
-  actions: { gap: spacing.sm, marginTop: spacing.lg },
+  actions: { gap: spacing.sm, marginTop: spacing.md },
   secondaryActionRow: { flexDirection: 'row', gap: spacing.sm },
   secondaryAction: { flex: 1, paddingHorizontal: spacing.sm },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   diaryCard: {
     width: '48%',
     backgroundColor: colors.panel,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.border,
@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
   iconButton: { width: 42, height: 42, borderRadius: radius.pill, backgroundColor: colors.panelMuted, alignItems: 'center', justifyContent: 'center' },
   textInput: {
     minHeight: 132,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.lg,
     padding: spacing.md,

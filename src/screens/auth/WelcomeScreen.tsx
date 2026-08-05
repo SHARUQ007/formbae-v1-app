@@ -14,10 +14,10 @@ import type { AuthStackParamList } from '../../navigation/types';
 type Props = NativeStackScreenProps<AuthStackParamList, 'Welcome'>;
 
 const benefits: { icon: string; title: string; desc: string }[] = [
-  { icon: 'clipboard', title: 'Free fitness analysis', desc: 'A personalised readiness report in minutes' },
-  { icon: 'user-check', title: 'Real expert trainer', desc: 'Matched to your goal, gender preference & budget' },
-  { icon: 'activity', title: 'Workout app included', desc: 'Guided plans, videos and rest timers' },
-  { icon: 'tag', title: 'Plans within your budget', desc: 'Coaching built for Indian lifestyles' },
+  { icon: 'clipboard', title: 'Fitness analysis', desc: 'A clear report before you pay' },
+  { icon: 'user-check', title: 'Trainer matched', desc: 'Coach fit based on your goal' },
+  { icon: 'activity', title: 'Guided workouts', desc: 'Videos, timers and tracking included' },
+  { icon: 'tag', title: 'Budget aware', desc: 'Plans built for Indian lifestyles' },
 ];
 
 export function WelcomeScreen({ navigation }: Props) {
@@ -30,8 +30,8 @@ export function WelcomeScreen({ navigation }: Props) {
 
         <GradientHero
           eyebrow="Trainer-backed fitness"
-          title="Your fitness plan, built around a real coach"
-          subtitle="FormBae pairs you with a personal trainer and a workout app made for Indian lifestyles — simple, human, and affordable."
+          title="A fitness plan that fits your life"
+          subtitle="Get a trainer-backed plan, guided workouts, diet logging and progress tracking in one simple app."
         />
 
         <View style={styles.benefits}>
@@ -67,8 +67,8 @@ export function WelcomeScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   scrollContent: { paddingBottom: spacing.sm },
-  logoRow: { alignItems: 'flex-start', marginBottom: spacing.lg },
-  benefits: { marginTop: spacing.xl, gap: spacing.md },
+  logoRow: { alignItems: 'flex-start', marginBottom: spacing.md },
+  benefits: { marginTop: spacing.lg, gap: spacing.sm },
   benefitRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   benefitIcon: {
     width: 46,
