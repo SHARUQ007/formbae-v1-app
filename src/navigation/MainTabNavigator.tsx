@@ -1,18 +1,17 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import type { BottomTabBarButtonProps, BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
-import { getFocusedRouteNameFromRoute, useNavigation } from '@react-navigation/native';
+import type { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
+import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
 import { useCallback, useEffect, useState } from 'react';
 import { AppState, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { WorkoutsNavigator } from './WorkoutsNavigator';
 import { DietScreen } from '../screens/main/DietScreen';
+import { ActionHubScreen } from '../screens/main/ActionHubScreen';
 import { ProgressScreen } from '../screens/main/ProgressScreen';
 import { ProfileNavigator } from './ProfileNavigator';
 import type { MainTabParamList } from './types';
-import { loadWorkoutPlanCached } from '../services/preloadService';
-import { loadDietDiaryEntries, type MealType } from '../store/dietDiaryStore';
-import type { PlanDay } from '../types/api';
+import { resolveContextualSnapshot, type ContextualTarget } from '../utils/contextualAction';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/radius';
 import { shadows } from '../theme/shadows';
@@ -52,12 +51,6 @@ const dietIcon = ({ color, focused }: TabIconProps) => (
 const progressIcon = ({ color, focused }: TabIconProps) => <Icon name="bar-chart-2" size={focused ? 24 : 22} color={color} />;
 const profileIcon = ({ color, focused }: TabIconProps) => <Icon name="user" size={focused ? 24 : 22} color={color} />;
 
-type ContextualTarget =
-  | { kind: 'diet'; label: string; detail: string; icon: string; mealType: MealType }
-  | { kind: 'workout'; label: string; detail: string; icon: string; day?: PlanDay }
-  | { kind: 'refresh'; label: string; detail: string; icon: string }
-  | { kind: 'progress'; label: string; detail: string; icon: string };
-
 const premiumTabBarStyle = {
   height: 70,
   marginHorizontal: 16,
@@ -72,92 +65,7 @@ const premiumTabBarStyle = {
   ...shadows.md,
 };
 
-function ActionPlaceholder() {
-  return <View />;
-}
-
-function currentMealType(date = new Date()): MealType {
-  const hour = date.getHours();
-  if (hour >= 5 && hour < 11) return 'Breakfast';
-  if (hour >= 11 && hour < 16) return 'Lunch';
-  if (hour >= 18 && hour < 23) return 'Dinner';
-  return 'Snack';
-}
-
-function isMealWindow(date = new Date()) {
-  const hour = date.getHours();
-  return (hour >= 5 && hour < 16) || (hour >= 18 && hour < 23);
-}
-
-function isToday(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return false;
-  return date.toDateString() === new Date().toDateString();
-}
-
-function workoutTitle(day?: PlanDay) {
-  const focus = String(day?.focus || '').trim();
-  return focus || "Today's workout";
-}
-
-async function resolveContextualTarget(): Promise<ContextualTarget> {
-  try {
-    const [workoutData, dietEntries] = await Promise.all([
-      loadWorkoutPlanCached().catch(() => null),
-      loadDietDiaryEntries().catch(() => []),
-    ]);
-    const mealType = currentMealType();
-    const hasCurrentMealLog = dietEntries.some((entry) => isToday(entry.createdAt) && entry.mealType === mealType);
-    if (isMealWindow() && !hasCurrentMealLog) {
-      return {
-        kind: 'diet',
-        label: mealType,
-        detail: 'Log meal',
-        icon: 'camera',
-        mealType,
-      };
-    }
-
-    const plan = workoutData?.plan || workoutData?.today?.plan;
-    const days = plan?.days || [];
-    const nextDay = days.find((day) => !day.completed) || days[0];
-    if (nextDay?.planDayId && !nextDay.completed) {
-      return {
-        kind: 'workout',
-        label: 'Today',
-        detail: 'Workout',
-        icon: 'activity',
-        day: nextDay,
-      };
-    }
-
-    if (workoutData?.aiPlanRefresh?.due) {
-      return {
-        kind: 'refresh',
-        label: 'Ava',
-        detail: 'Next plan',
-        icon: 'refresh-cw',
-      };
-    }
-
-    return {
-      kind: 'progress',
-      label: 'Check',
-      detail: 'Progress',
-      icon: 'smile',
-    };
-  } catch {
-    return {
-      kind: 'workout',
-      label: 'Today',
-      detail: 'Workout',
-      icon: 'home',
-    };
-  }
-}
-
-function ContextualActionButton({ accessibilityState }: BottomTabBarButtonProps) {
-  const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
+function ContextualActionButton({ accessibilityState, onPress }: BottomTabBarButtonProps) {
   const [target, setTarget] = useState<ContextualTarget>({
     kind: 'workout',
     label: 'Today',
@@ -166,7 +74,8 @@ function ContextualActionButton({ accessibilityState }: BottomTabBarButtonProps)
   });
 
   const refreshTarget = useCallback(async () => {
-    setTarget(await resolveContextualTarget());
+    const snapshot = await resolveContextualSnapshot();
+    setTarget(snapshot.target);
   }, []);
 
   useEffect(() => {
@@ -182,30 +91,9 @@ function ContextualActionButton({ accessibilityState }: BottomTabBarButtonProps)
     };
   }, [refreshTarget]);
 
-  const onPress = async () => {
-    const nextTarget = await resolveContextualTarget();
-    setTarget(nextTarget);
-    if (nextTarget.kind === 'diet') {
-      navigation.navigate('Diet', { action: 'camera', requestId: Date.now(), mealType: nextTarget.mealType });
-    } else if (nextTarget.kind === 'workout') {
-      if (nextTarget.day?.planDayId) {
-        navigation.navigate('Workouts', {
-          screen: 'WorkoutDetail',
-          params: { planDayId: nextTarget.day.planDayId, title: workoutTitle(nextTarget.day), mode: 'standard' },
-        });
-      } else {
-        navigation.navigate('Workouts', { screen: 'WorkoutList' });
-      }
-    } else if (nextTarget.kind === 'refresh') {
-      navigation.navigate('Workouts', { screen: 'PlanRefresh' });
-    } else {
-      navigation.navigate('Progress');
-    }
-  };
-
   const focused = Boolean(accessibilityState?.selected);
   return (
-    <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.actionShell} accessibilityRole="button" accessibilityLabel={`${target.detail}: ${target.label}`}>
+    <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.actionShell} accessibilityRole="button" accessibilityLabel={`Today hub: ${target.detail}`}>
       <View style={[styles.actionButton, focused && styles.actionButtonFocused]}>
         <Icon name={target.icon} size={23} color={colors.white} />
       </View>
@@ -248,7 +136,7 @@ export function MainTabNavigator() {
       <Tab.Screen name="Diet" component={DietScreen} options={{ tabBarIcon: dietIcon }} />
       <Tab.Screen
         name="Action"
-        component={ActionPlaceholder}
+        component={ActionHubScreen}
         options={{
           title: '',
           tabBarButton: renderContextualActionButton,
