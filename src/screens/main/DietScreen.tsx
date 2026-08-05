@@ -107,6 +107,21 @@ function mealLabel(type: MealType) {
   return meals.find((meal) => meal.type === type)?.label || type;
 }
 
+function isMemoryEntry(entry: DietDiaryEntry) {
+  return entry.kind === 'text' || (!entry.uri && Boolean(entry.note?.trim()));
+}
+
+function uniqueMemoryEntries(entries: DietDiaryEntry[]) {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    if (!isMemoryEntry(entry)) return false;
+    const key = entry.remoteId || `${entry.createdAt}:${entry.mealType}:${entry.note?.trim().toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function mealIndex(type: MealType) {
   const index = meals.findIndex((meal) => meal.type === type);
   return index >= 0 ? index : 0;
@@ -177,8 +192,8 @@ function DietScreenContent({ route, navigation }: Props) {
     () => entries.filter((entry) => isSameDay(entry.createdAt, selectedDate)),
     [entries, selectedDate],
   );
-  const memoryPoints = visibleEntries.length;
-  const totalMemoryPoints = entries.length;
+  const memoryPoints = useMemo(() => uniqueMemoryEntries(visibleEntries).length, [visibleEntries]);
+  const totalMemoryPoints = useMemo(() => uniqueMemoryEntries(entries).length, [entries]);
   const canGoForward = !isSameDay(selectedDate, new Date()) && !isFutureDay(shiftDate(selectedDate, 1));
   const canMoveMemoryForward = useMemo(
     () => Boolean(nextMemorySlot(selectedDate, selectedMeal)),
