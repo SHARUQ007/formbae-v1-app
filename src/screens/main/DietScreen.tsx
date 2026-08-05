@@ -44,11 +44,11 @@ import { shadows } from '../../theme/shadows';
 import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
 
-const meals: Array<{ type: MealType; icon: string; hint: string }> = [
-  { type: 'Breakfast', icon: 'sunrise', hint: 'Start strong' },
-  { type: 'Lunch', icon: 'sun', hint: 'Midday fuel' },
-  { type: 'Dinner', icon: 'moon', hint: 'End balanced' },
-  { type: 'Snack', icon: 'coffee', hint: 'Small bites' },
+const meals: Array<{ type: MealType; icon: string; label: string; hint: string }> = [
+  { type: 'Breakfast', icon: 'sunrise', label: 'Morning', hint: 'After waking' },
+  { type: 'Lunch', icon: 'sun', label: 'Afternoon', hint: 'Midday food' },
+  { type: 'Dinner', icon: 'sunset', label: 'Evening', hint: 'Later meal' },
+  { type: 'Snack', icon: 'moon', label: 'Night', hint: 'Late bites' },
 ];
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Diet'>;
@@ -62,6 +62,49 @@ function formatEntryTime(value: string) {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function formatDiaryDate(value: Date) {
+  const today = new Date();
+  const yesterday = shiftDate(today, -1);
+  if (isSameDay(value, today)) return 'Today';
+  if (isSameDay(value, yesterday)) return 'Yesterday';
+  return value.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    weekday: 'short',
+  });
+}
+
+function isSameDay(a: Date | string, b: Date | string) {
+  const first = new Date(a);
+  const second = new Date(b);
+  return first.toDateString() === second.toDateString();
+}
+
+function shiftDate(value: Date, days: number) {
+  const next = new Date(value);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function isFutureDay(value: Date) {
+  const today = new Date();
+  const normalized = new Date(value);
+  normalized.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  return normalized.getTime() > today.getTime();
+}
+
+function timestampForDiaryDate(value: Date) {
+  const now = new Date();
+  const next = new Date(value);
+  next.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+  return next.toISOString();
+}
+
+function mealLabel(type: MealType) {
+  return meals.find((meal) => meal.type === type)?.label || type;
 }
 
 function imageSource(entry: DietDiaryEntry) {
@@ -82,6 +125,7 @@ function DietScreenContent({ route, navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedMeal, setSelectedMeal] = useState<MealType>('Lunch');
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [preview, setPreview] = useState<DietDiaryEntry | null>(null);
   const [textModalOpen, setTextModalOpen] = useState(false);
   const [textEntry, setTextEntry] = useState('');
@@ -106,20 +150,21 @@ function DietScreenContent({ route, navigation }: Props) {
     load();
   }, [load]);
 
-  const todayCount = useMemo(() => {
-    const today = new Date().toDateString();
-    return entries.filter((entry) => new Date(entry.createdAt).toDateString() === today).length;
-  }, [entries]);
-  const memoryPoints = todayCount;
+  const visibleEntries = useMemo(
+    () => entries.filter((entry) => isSameDay(entry.createdAt, selectedDate)),
+    [entries, selectedDate],
+  );
+  const memoryPoints = visibleEntries.length;
   const totalMemoryPoints = entries.length;
+  const canGoForward = !isSameDay(selectedDate, new Date()) && !isFutureDay(shiftDate(selectedDate, 1));
 
   const saveAsset = useCallback(async (asset?: Asset, mealType: MealType = selectedMeal) => {
     if (!asset?.uri) return;
     setSaving(true);
     try {
-      const localEntry = await addDietDiaryEntry(asset, mealType);
+      const localEntry = await addDietDiaryEntry(asset, mealType, undefined, timestampForDiaryDate(selectedDate));
       await load();
-      displayBehavioralNotification('dietPhotoLogged', { mealType }).catch(() => undefined);
+      displayBehavioralNotification('dietPhotoLogged', { mealType: mealLabel(mealType) }).catch(() => undefined);
       try {
         const uploaded = await uploadDietDiaryEntry({
           clientId: localEntry.id,
@@ -146,7 +191,7 @@ function DietScreenContent({ route, navigation }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [load, selectedMeal]);
+  }, [load, selectedDate, selectedMeal]);
 
   const addFromCamera = useCallback(async (mealType: MealType = selectedMeal) => {
     const result = await launchCamera({
@@ -228,9 +273,9 @@ function DietScreenContent({ route, navigation }: Props) {
     }
     setSaving(true);
     try {
-      const localEntry = await addTextDietDiaryEntry(selectedMeal, note);
+      const localEntry = await addTextDietDiaryEntry(selectedMeal, note, timestampForDiaryDate(selectedDate));
       setTextEntry('');
-      displayBehavioralNotification('dietPhotoLogged', { mealType: selectedMeal }).catch(() => undefined);
+      displayBehavioralNotification('dietPhotoLogged', { mealType: mealLabel(selectedMeal) }).catch(() => undefined);
       await load();
       setMemorySessionPoints((points) => points + 1);
       showSavedMealAnimation(selectedMeal, note);
@@ -284,6 +329,12 @@ function DietScreenContent({ route, navigation }: Props) {
     return () => clearTimeout(timer);
   }, [route.params?.action, route.params?.requestId, route.params?.mealType, selectedMeal, navigation, addFromCamera]);
 
+  useEffect(() => {
+    if (route.params?.action === 'camera' || !route.params?.mealType) return;
+    setSelectedMeal(route.params.mealType);
+    navigation.setParams({ mealType: undefined });
+  }, [route.params?.action, route.params?.mealType, navigation]);
+
   const confirmDelete = (entry: DietDiaryEntry) => {
     const isTextEntry = entry.kind === 'text' || !entry.uri;
     Alert.alert(isTextEntry ? 'Delete meal note?' : 'Delete food photo?', `This removes the ${isTextEntry ? 'note' : 'photo'} from your diet diary on this device.`, [
@@ -323,23 +374,48 @@ function DietScreenContent({ route, navigation }: Props) {
             </View>
           </View>
           <View style={styles.heroStats}>
-            <Badge label={`${memoryPoints} points today`} tone="accent" icon="award" />
+            <Badge label={`${memoryPoints} points`} tone="accent" icon="award" />
             <Badge label={`${totalMemoryPoints} lifetime`} tone="neutral" icon="target" />
           </View>
         </Card>
 
+        <View style={styles.dateNavigator}>
+          <TouchableOpacity
+            onPress={() => setSelectedDate((value) => shiftDate(value, -1))}
+            style={styles.dateArrow}
+            accessibilityRole="button"
+            accessibilityLabel="Previous diary date"
+          >
+            <Feather name="chevron-left" size={22} color={colors.ink} />
+          </TouchableOpacity>
+          <View style={styles.dateCenter}>
+            <Text style={styles.dateLabel}>Diary date</Text>
+            <Text style={styles.dateValue}>{formatDiaryDate(selectedDate)}</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => setSelectedDate((value) => shiftDate(value, 1))}
+            disabled={!canGoForward}
+            style={[styles.dateArrow, !canGoForward && styles.dateArrowDisabled]}
+            accessibilityRole="button"
+            accessibilityLabel="Next diary date"
+            accessibilityState={{ disabled: !canGoForward }}
+          >
+            <Feather name="chevron-right" size={22} color={canGoForward ? colors.ink : colors.inkSubtle} />
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.memoryPanel}>
           <View style={styles.memoryScore}>
             <Text style={styles.memoryScoreValue}>{memoryPoints}</Text>
-            <Text style={styles.memoryScoreLabel}>today</Text>
+            <Text style={styles.memoryScoreLabel}>points</Text>
           </View>
           <View style={styles.memoryCopy}>
             <Text style={styles.memoryTitle}>Start from the latest food you remember</Text>
-            <Text style={styles.memoryText}>Keep adding until you cannot remember the previous meal or snack.</Text>
+            <Text style={styles.memoryText}>Keep adding until you cannot remember the previous food item.</Text>
           </View>
         </View>
 
-        <SectionTitle>Meal type</SectionTitle>
+        <SectionTitle>Time of day</SectionTitle>
         <View style={styles.mealGrid}>
           {meals.map((meal) => {
             const selected = selectedMeal === meal.type;
@@ -351,10 +427,10 @@ function DietScreenContent({ route, navigation }: Props) {
                 style={[styles.mealCard, selected && styles.mealCardSelected]}
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
-                accessibilityLabel={`Select ${meal.type}`}
+                accessibilityLabel={`Select ${meal.label}`}
               >
                 <Feather name={meal.icon} size={20} color={selected ? colors.white : colors.accent} />
-                <Text style={[styles.mealTitle, selected && styles.mealTitleSelected]}>{meal.type}</Text>
+                <Text style={[styles.mealTitle, selected && styles.mealTitleSelected]}>{meal.label}</Text>
                 <Text style={[styles.mealHint, selected && styles.mealHintSelected]}>{meal.hint}</Text>
               </TouchableOpacity>
             );
@@ -370,17 +446,17 @@ function DietScreenContent({ route, navigation }: Props) {
         </View>
 
         <SectionTitle>Diet diary</SectionTitle>
-        {entries.length === 0 ? (
+        {visibleEntries.length === 0 ? (
           <EmptyState
             icon="edit-3"
-            title="No meals logged yet"
+            title={`No food logged for ${formatDiaryDate(selectedDate).toLowerCase()}`}
             message="Play the food memory game and add each remembered item for points."
             actionLabel="Start memory game"
             onAction={openMemoryGame}
           />
         ) : (
           <View style={styles.grid}>
-            {entries.map((entry) => {
+            {visibleEntries.map((entry) => {
               const isTextEntry = entry.kind === 'text' || !entry.uri;
               return (
                 <TouchableOpacity
@@ -402,7 +478,7 @@ function DietScreenContent({ route, navigation }: Props) {
                       </View>
                       <View style={styles.foodCardFooter}>
                         <Feather name="clock" size={13} color={colors.accentDark} />
-                        <Text style={styles.foodFooterText}>{entry.mealType}</Text>
+                        <Text style={styles.foodFooterText}>{mealLabel(entry.mealType)}</Text>
                       </View>
                     </View>
                   ) : (
@@ -410,7 +486,7 @@ function DietScreenContent({ route, navigation }: Props) {
                   )}
                   <View style={styles.photoMeta}>
                     <View style={styles.photoMealRow}>
-                      <Text style={styles.photoMeal}>{entry.mealType}</Text>
+                      <Text style={styles.photoMeal}>{mealLabel(entry.mealType)}</Text>
                       {entry.syncError ? <Feather name="cloud-off" size={13} color={colors.warn} /> : null}
                     </View>
                     <Text style={styles.photoTime}>{formatEntryTime(entry.createdAt)}</Text>
@@ -439,7 +515,7 @@ function DietScreenContent({ route, navigation }: Props) {
             {preview ? (
               <View style={styles.previewBody}>
                 <View>
-                  <Text style={styles.previewTitle}>{preview.mealType}</Text>
+                  <Text style={styles.previewTitle}>{mealLabel(preview.mealType)}</Text>
                   <Text style={styles.previewTime}>{formatEntryTime(preview.createdAt)}</Text>
                 </View>
                 <TouchableOpacity onPress={() => confirmDelete(preview)} style={styles.deleteButton} accessibilityRole="button" accessibilityLabel="Delete diary entry">
@@ -457,7 +533,7 @@ function DietScreenContent({ route, navigation }: Props) {
           <View style={styles.textModalCard}>
             <View style={styles.textModalHeader}>
               <View>
-                <Text style={styles.textModalEyebrow}>Food memory · +1 per entry</Text>
+                <Text style={styles.textModalEyebrow}>Food memory · {formatDiaryDate(selectedDate)} · +1 each</Text>
                 <Text style={styles.textModalTitle}>{memorySessionPoints ? 'What else do you remember?' : 'What did you eat last?'}</Text>
               </View>
               <TouchableOpacity onPress={() => setTextModalOpen(false)} style={styles.iconButton} accessibilityRole="button" accessibilityLabel="Close meal text entry">
@@ -481,7 +557,7 @@ function DietScreenContent({ route, navigation }: Props) {
                     onPress={() => setSelectedMeal(meal.type)}
                     style={[styles.modalMealChip, selected && styles.modalMealChipSelected]}
                   >
-                    <Text style={[styles.modalMealChipText, selected && styles.modalMealChipTextSelected]}>{meal.type}</Text>
+                    <Text style={[styles.modalMealChipText, selected && styles.modalMealChipTextSelected]}>{meal.label}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -521,7 +597,7 @@ function DietScreenContent({ route, navigation }: Props) {
             <Feather name="check" size={34} color={colors.white} />
           </View>
           <Text style={styles.saveToastTitle}>Meal logged</Text>
-          <Text style={styles.saveToastMeal}>{savedMeal.mealType}</Text>
+          <Text style={styles.saveToastMeal}>{mealLabel(savedMeal.mealType)}</Text>
           <Text style={styles.saveToastNote} numberOfLines={2}>{savedMeal.note}</Text>
         </Animated.View>
       ) : null}
@@ -537,6 +613,33 @@ const styles = StyleSheet.create({
   heroTitle: { ...typography.title, color: colors.accentDarker },
   heroCopy: { ...typography.body, color: colors.accentDarker, marginTop: 2 },
   heroStats: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  dateNavigator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    borderRadius: radius.xl,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm,
+    ...shadows.sm,
+  },
+  dateArrow: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.pill,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  dateArrowDisabled: { opacity: 0.42 },
+  dateCenter: { flex: 1, alignItems: 'center' },
+  dateLabel: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
+  dateValue: { ...typography.subtitle, color: colors.ink, marginTop: 2 },
   memoryPanel: {
     flexDirection: 'row',
     alignItems: 'center',

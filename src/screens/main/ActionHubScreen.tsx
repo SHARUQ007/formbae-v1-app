@@ -102,7 +102,7 @@ export function ActionHubScreen({ navigation }: Props) {
 function targetTitle(snapshot: ContextualSnapshot) {
   const target = snapshot.target;
   if (target.kind === 'workout') return workoutTitle(target.day);
-  if (target.kind === 'diet') return `Log ${target.mealType}`;
+  if (target.kind === 'diet') return `Log ${mealTimeLabel(target.mealType)}`;
   if (target.kind === 'refresh') return 'Build your next plan';
   return 'Review progress';
 }
@@ -118,7 +118,7 @@ function targetMeta(snapshot: ContextualSnapshot) {
 function targetReason(snapshot: ContextualSnapshot) {
   const target = snapshot.target;
   if (target.kind === 'workout') return 'Your next incomplete workout is the clearest action to move the plan forward.';
-  if (target.kind === 'diet') return `It is ${target.mealType.toLowerCase()} time and this meal is not logged yet.`;
+  if (target.kind === 'diet') return `It is ${mealTimeLabel(target.mealType).toLowerCase()} and this food is not logged yet.`;
   if (target.kind === 'refresh') return 'Your current block is ready for a fresh plan based on the latest check-in.';
   return 'No urgent action is due, so the best next step is to review your progress.';
 }
@@ -129,6 +129,14 @@ function targetCta(snapshot: ContextualSnapshot) {
   if (target.kind === 'diet') return 'Start food memory';
   if (target.kind === 'refresh') return 'Answer check-in';
   return 'Open progress';
+}
+
+function mealTimeLabel(type: string) {
+  if (type === 'Breakfast') return 'Morning';
+  if (type === 'Lunch') return 'Afternoon';
+  if (type === 'Dinner') return 'Evening';
+  if (type === 'Snack') return 'Night';
+  return type;
 }
 
 const styles = StyleSheet.create({

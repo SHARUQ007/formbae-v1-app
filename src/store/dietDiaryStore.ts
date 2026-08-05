@@ -85,7 +85,7 @@ export async function saveDietDiaryEntries(entries: DietDiaryEntry[]) {
   await writeEntries(entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
 }
 
-export async function addDietDiaryEntry(asset: Asset, mealType: MealType, note?: string) {
+export async function addDietDiaryEntry(asset: Asset, mealType: MealType, note?: string, createdAt = new Date().toISOString()) {
   const id = makeId();
   const persisted = await persistAsset(asset, id);
   const entry: DietDiaryEntry = {
@@ -94,7 +94,7 @@ export async function addDietDiaryEntry(asset: Asset, mealType: MealType, note?:
     originalUri: asset.uri,
     mealType,
     note: note?.trim() || undefined,
-    createdAt: new Date().toISOString(),
+    createdAt,
     storedLocally: persisted.storedLocally,
   };
   const entries = await readEntries();
@@ -102,7 +102,7 @@ export async function addDietDiaryEntry(asset: Asset, mealType: MealType, note?:
   return entry;
 }
 
-export async function addTextDietDiaryEntry(mealType: MealType, note: string) {
+export async function addTextDietDiaryEntry(mealType: MealType, note: string, createdAt = new Date().toISOString()) {
   const text = note.trim();
   if (!text) throw new Error('Add what you ate first.');
   const entry: DietDiaryEntry = {
@@ -110,7 +110,7 @@ export async function addTextDietDiaryEntry(mealType: MealType, note: string) {
     kind: 'text',
     mealType,
     note: text,
-    createdAt: new Date().toISOString(),
+    createdAt,
     storedLocally: false,
   };
   const entries = await readEntries();
