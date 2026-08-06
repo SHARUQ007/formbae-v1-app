@@ -68,6 +68,19 @@ function compactValue(value?: string) {
   return trimmed.length ? trimmed : 'Not set';
 }
 
+function isPlaceholderName(value?: string) {
+  const normalized = String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  return !normalized || normalized === 'trainee' || normalized === 'formbae trainee' || normalized === 'user' || normalized === 'formbae user';
+}
+
+function firstRealName(...values: Array<string | undefined | null>) {
+  for (const value of values) {
+    const name = String(value || '').trim();
+    if (!isPlaceholderName(name)) return name;
+  }
+  return 'FormBae Trainee';
+}
+
 export function ProfileScreen({ navigation }: Props) {
   const { logout, status } = useAuthStore();
   const cached = useMemo(() => peekCachedResource<MobileSettingsResponse>(CACHE_KEYS.profileSettings), []);
@@ -128,7 +141,7 @@ export function ProfileScreen({ navigation }: Props) {
   const accessActive = access.tier === 'premium' || status?.hasPaid;
   const accessLabel = String(access.label || (accessActive ? 'Active' : 'Payment required'));
   const planName = typeof access.planName === 'string' ? access.planName : '';
-  const displayName = current?.user?.name || status?.name || 'FormBae Trainee';
+  const displayName = firstRealName(current?.user?.name, profile.name, lifestyle.name, lifestyle.fullName, lifestyle.firstName, status?.name);
   const displayContact = current?.user?.mobile || status?.phone || status?.email || '';
 
   const planRows = [
