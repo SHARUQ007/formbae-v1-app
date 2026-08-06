@@ -9,7 +9,6 @@ import { ErrorState, EmptyState, LoadingState } from '../../components/States';
 import { SkeletonBlock } from '../../components/Skeleton';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
-import { StatTile } from '../../components/StatTile';
 import { loadWorkoutDayCached, loadWorkoutPlanCached } from '../../services/preloadService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
 import { getSiteUrl } from '../../constants/config';
@@ -172,6 +171,8 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const doneCount = days.filter((d) => d.completed).length;
   const todayCount = todayDay?.exercises?.length ?? 0;
   const planProgress = days.length ? doneCount / days.length : 0;
+  const planProgressPct = Math.round(planProgress * 100);
+  const currentStreak = progress?.currentStreak ?? 0;
   const trainerPhoto = resolveTrainerPhotoUrl(trainer?.trainerPhotoUrl);
 
   return (
@@ -196,8 +197,8 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                 </Text>
               </View>
               <View style={styles.scorePill}>
-                <Text style={styles.scoreValue}>{Math.round(planProgress * 100)}%</Text>
-                <Text style={styles.scoreLabel}>week</Text>
+                <Text style={styles.scoreValue}>{currentStreak}d</Text>
+                <Text style={styles.scoreLabel}>streak</Text>
               </View>
             </View>
 
@@ -303,19 +304,15 @@ function WorkoutDashboardScreen({ navigation }: Props) {
               </Card>
             )}
 
-            {progress ? (
-              <View style={styles.statsRow}>
-                <StatTile icon="target" value={`${progress.adherencePct}%`} label="Adherence" />
-                <StatTile icon="zap" value={`${progress.currentStreak}d`} label="Streak" />
-              </View>
-            ) : null}
-
             <Card variant="flat" style={styles.weekProgress}>
               <View style={styles.weekProgressTop}>
                 <Text style={styles.weekProgressTitle}>Full plan progress</Text>
-                <Text style={styles.weekProgressMeta}>
-                  {doneCount}/{days.length} days
-                </Text>
+                <View style={styles.weekProgressMetaGroup}>
+                  <Text style={styles.weekProgressPercent}>{planProgressPct}%</Text>
+                  <Text style={styles.weekProgressMeta}>
+                    {doneCount}/{days.length} days
+                  </Text>
+                </View>
               </View>
               <ProgressBar value={planProgress} />
             </Card>
@@ -518,10 +515,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.accentLight,
   },
-  statsRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   weekProgress: { marginTop: spacing.md },
   weekProgressTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
   weekProgressTitle: { ...typography.bodyBold, color: colors.ink },
+  weekProgressMetaGroup: { alignItems: 'flex-end' },
+  weekProgressPercent: { ...typography.subtitle, color: colors.ink, lineHeight: 22 },
   weekProgressMeta: { ...typography.caption, color: colors.inkMuted },
   days: { gap: spacing.sm },
   dayCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
