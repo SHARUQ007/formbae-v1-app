@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Image, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
+import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { ErrorState, EmptyState, LoadingState } from '../../components/States';
@@ -23,6 +24,10 @@ import { typography } from '../../theme/typography';
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutList'>;
 
 const TODAY_WORKOUT_KEY_PREFIX = 'formbae_today_workout:';
+const LAST_SEEN_STREAK_KEY = 'formbae_last_seen_workout_streak';
+const GOLD = '#f5b301';
+const GOLD_DARK = '#9a5b00';
+const GOLD_SOFT = '#fff4cc';
 
 function resolveTrainerPhotoUrl(value?: string) {
   const url = String(value || '').trim();
@@ -51,6 +56,88 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
         resolve(null);
       });
   });
+}
+
+function GoldenStreakBadge({ streak }: { streak: number }) {
+  const [burning, setBurning] = useState(false);
+  const flame = useRef(new Animated.Value(0)).current;
+  const previousStreak = useRef<number | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    AsyncStorage.getItem(LAST_SEEN_STREAK_KEY)
+      .then((value) => {
+        if (!mounted) return;
+        const stored = value ? Number(value) : NaN;
+        previousStreak.current = Number.isFinite(stored) ? stored : streak;
+        if (streak > 0 && Number.isFinite(stored) && streak > stored) {
+          setBurning(true);
+          flame.setValue(0);
+          Animated.sequence([
+            Animated.timing(flame, {
+              toValue: 1,
+              duration: 260,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }),
+            Animated.loop(
+              Animated.sequence([
+                Animated.timing(flame, {
+                  toValue: 0.42,
+                  duration: 160,
+                  easing: Easing.inOut(Easing.quad),
+                  useNativeDriver: true,
+                }),
+                Animated.timing(flame, {
+                  toValue: 1,
+                  duration: 180,
+                  easing: Easing.inOut(Easing.quad),
+                  useNativeDriver: true,
+                }),
+              ]),
+              { iterations: 4 },
+            ),
+            Animated.timing(flame, {
+              toValue: 0,
+              duration: 360,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }),
+          ]).start(() => {
+            if (mounted) setBurning(false);
+          });
+        }
+        return AsyncStorage.setItem(LAST_SEEN_STREAK_KEY, String(streak));
+      })
+      .catch(() => undefined);
+
+    if (previousStreak.current !== null && streak > previousStreak.current) {
+      previousStreak.current = streak;
+    }
+
+    return () => {
+      mounted = false;
+    };
+  }, [flame, streak]);
+
+  const scale = flame.interpolate({ inputRange: [0, 1], outputRange: [1, 1.16] });
+  const lift = flame.interpolate({ inputRange: [0, 1], outputRange: [0, -3] });
+  const glowOpacity = flame.interpolate({ inputRange: [0, 0.35, 1], outputRange: [0, 0.55, 0.9] });
+  const iconOpacity = flame.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0, 0.85, 1] });
+
+  return (
+    <View style={[styles.streakBadge, burning && styles.streakBadgeBurning]} accessibilityLabel={`${streak} day streak`}>
+      <Animated.View style={[styles.streakGlow, { opacity: glowOpacity, transform: [{ scale }] }]} />
+      <View style={styles.streakIconWrap}>
+        <MaterialCommunityIcon name="fire" size={26} color={colors.ink} />
+        <Animated.View style={[styles.streakGoldIcon, { opacity: iconOpacity, transform: [{ translateY: lift }, { scale }] }]}>
+          <MaterialCommunityIcon name="fire" size={29} color={GOLD} />
+        </Animated.View>
+      </View>
+      <Text style={styles.streakValue}>{streak}d</Text>
+      <Text style={styles.streakLabel}>streak</Text>
+    </View>
+  );
 }
 
 function WorkoutDashboardScreen({ navigation }: Props) {
@@ -196,10 +283,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                   {doneCount} of {days.length} days complete
                 </Text>
               </View>
-              <View style={styles.scorePill}>
-                <Text style={styles.scoreValue}>{currentStreak}d</Text>
-                <Text style={styles.scoreLabel}>streak</Text>
-              </View>
+              <GoldenStreakBadge streak={currentStreak} />
             </View>
 
             <Card style={styles.todayHero}>
@@ -441,18 +525,47 @@ const styles = StyleSheet.create({
   headerText: { flex: 1 },
   eyebrow: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 2 },
   summary: { ...typography.caption, color: colors.inkMuted, marginTop: -spacing.xs },
-  scorePill: {
-    width: 64,
-    height: 64,
+  streakBadge: {
+    width: 72,
+    minHeight: 78,
     borderRadius: radius.pill,
-    backgroundColor: colors.accentLight,
+    backgroundColor: colors.panel,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.accentSurface,
+    borderColor: colors.borderStrong,
+    paddingVertical: 7,
+    shadowColor: colors.black,
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+    overflow: 'hidden',
   },
-  scoreValue: { fontSize: 19, fontWeight: '800', color: colors.accentDark },
-  scoreLabel: { ...typography.caption, color: colors.accentDarker, marginTop: -2 },
+  streakBadgeBurning: {
+    borderColor: GOLD,
+    backgroundColor: GOLD_SOFT,
+  },
+  streakGlow: {
+    position: 'absolute',
+    width: 64,
+    height: 64,
+    borderRadius: radius.pill,
+    backgroundColor: GOLD,
+  },
+  streakIconWrap: {
+    width: 31,
+    height: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  streakGoldIcon: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  streakValue: { fontSize: 18, fontWeight: '900', color: colors.ink, marginTop: -1 },
+  streakLabel: { ...typography.caption, color: GOLD_DARK, marginTop: -3, fontWeight: '800' },
   todayHero: { backgroundColor: colors.accent, borderColor: colors.accentDark, overflow: 'hidden', padding: spacing.lg },
   todayTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   todayTopRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
