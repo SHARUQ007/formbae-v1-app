@@ -273,6 +273,27 @@ function DietScreenContent({ route, navigation }: Props) {
     () => entries.filter((entry) => isSameDay(entry.createdAt, selectedDate)),
     [entries, selectedDate],
   );
+  const diarySections = useMemo(() => {
+    const sections: Array<{ key: string; title: string; entries: DietDiaryEntry[] }> = [];
+    const byDate = new Map<string, DietDiaryEntry[]>();
+    [...entries]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .forEach((entry) => {
+        const date = new Date(entry.createdAt);
+        const key = Number.isNaN(date.getTime()) ? 'unknown' : date.toDateString();
+        const bucket = byDate.get(key) ?? [];
+        bucket.push(entry);
+        byDate.set(key, bucket);
+      });
+    byDate.forEach((dateEntries, key) => {
+      sections.push({
+        key,
+        title: key === 'unknown' ? 'Unknown date' : formatDiaryDate(new Date(dateEntries[0].createdAt)),
+        entries: dateEntries,
+      });
+    });
+    return sections;
+  }, [entries]);
   const memoryPoints = useMemo(() => uniqueMemoryEntries(visibleEntries).length, [visibleEntries]);
   const totalMemoryPoints = useMemo(() => uniqueMemoryEntries(entries).length, [entries]);
   const canGoForward = !isSameDay(selectedDate, new Date()) && !isFutureDay(shiftDate(selectedDate, 1));
@@ -509,57 +530,68 @@ function DietScreenContent({ route, navigation }: Props) {
     ]);
   };
 
-  const renderDietDiary = (options?: { showTitle?: boolean }) => (
+  const renderDiaryFeed = () => (
     <>
-      {options?.showTitle === false ? null : <SectionTitle>Diet diary</SectionTitle>}
-      {visibleEntries.length === 0 ? (
+      <View style={styles.diaryFeedHeader}>
+        <View>
+          <Text style={styles.diaryFeedEyebrow}>Diet diary</Text>
+          <Text style={styles.diaryFeedTitle}>Your food log</Text>
+        </View>
+        <View style={styles.diaryFeedCount}>
+          <Text style={styles.diaryFeedCountValue}>{entries.length}</Text>
+          <Text style={styles.diaryFeedCountLabel}>items</Text>
+        </View>
+      </View>
+      {entries.length === 0 ? (
         <EmptyState
           icon="edit-3"
-          title={`No food logged for ${formatDiaryDate(selectedDate).toLowerCase()}`}
+          title="No food logged yet"
           message="Play the food memory game and add each remembered item for points."
           actionLabel="Start memory game"
           onAction={openMemoryGame}
         />
       ) : (
-        <View style={styles.grid}>
-          {visibleEntries.map((entry) => {
-            const isTextEntry = entry.kind === 'text' || !entry.uri;
-            return (
-              <TouchableOpacity
-                key={entry.id}
-                activeOpacity={0.85}
-                style={[styles.diaryCard, isTextEntry && styles.textCard]}
-                onPress={() => setPreview(entry)}
-              >
-                {isTextEntry ? (
-                  <View style={styles.textCardBody}>
-                    <View style={styles.foodCardHeader}>
-                      <View style={styles.foodIcon}>
-                        <MaterialCommunityIcon name="silverware-fork-knife" size={22} color={colors.accent} />
+        <View style={styles.diaryFeed}>
+          {diarySections.map((section) => (
+            <View key={section.key} style={styles.diaryDateSection}>
+              <View style={styles.diaryDateHeader}>
+                <Text style={styles.diaryDateTitle}>{section.title}</Text>
+                <Text style={styles.diaryDateCount}>{section.entries.length} logged</Text>
+              </View>
+              <View style={styles.diaryList}>
+                {section.entries.map((entry) => {
+                  const isTextEntry = entry.kind === 'text' || !entry.uri;
+                  return (
+                    <TouchableOpacity
+                      key={entry.id}
+                      activeOpacity={0.85}
+                      style={styles.diaryListCard}
+                      onPress={() => setPreview(entry)}
+                    >
+                      <View style={[styles.diaryThumb, isTextEntry && styles.diaryTextThumb]}>
+                        {isTextEntry ? (
+                          <MaterialCommunityIcon name="silverware-fork-knife" size={24} color={colors.ink} />
+                        ) : (
+                          <Image source={imageSource(entry)} style={styles.diaryThumbImage} resizeMode="cover" />
+                        )}
                       </View>
-                    </View>
-                    <View style={styles.foodCardContent}>
-                      <Text style={styles.foodLabel}>Food item</Text>
-                      <Text style={styles.foodName} numberOfLines={3}>{entry.note}</Text>
-                    </View>
-                    <View style={styles.foodCardFooter}>
-                      <Feather name="clock" size={13} color={colors.accentDark} />
-                      <Text style={styles.foodFooterText}>{formatFoodTime(entry.createdAt)}</Text>
-                    </View>
-                  </View>
-                ) : (
-                  <Image source={imageSource(entry)} style={styles.photo} resizeMode="cover" />
-                )}
-                <View style={styles.photoMeta}>
-                  <View style={styles.photoMealRow}>
-                    <Text style={styles.photoMeal}>{mealLabel(entry.mealType)}</Text>
-                    {entry.syncError ? <Feather name="cloud-off" size={13} color={colors.warn} /> : null}
-                  </View>
-                  <Text style={styles.photoTime}>{formatDiaryDate(new Date(entry.createdAt))} · {formatFoodTime(entry.createdAt)}</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
+                      <View style={styles.diaryListBody}>
+                        <View style={styles.diaryListTop}>
+                          <Text style={styles.diaryMeal}>{mealLabel(entry.mealType)}</Text>
+                          {entry.syncError ? <Feather name="cloud-off" size={14} color={colors.warn} /> : null}
+                        </View>
+                        <Text style={styles.diaryFoodName} numberOfLines={2}>
+                          {isTextEntry ? entry.note : 'Food photo'}
+                        </Text>
+                        <Text style={styles.diaryFoodTime}>{formatFoodTime(entry.createdAt)}</Text>
+                      </View>
+                      <Feather name="chevron-right" size={20} color={colors.inkSubtle} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ))}
         </View>
       )}
     </>
@@ -581,46 +613,6 @@ function DietScreenContent({ route, navigation }: Props) {
 
         {activeTab === 'diary' ? (
           <View style={styles.diaryScreen}>
-            <View style={styles.diaryHistoryHero}>
-              <View style={styles.diaryHistoryTop}>
-                <View>
-                  <Text style={styles.diaryHistoryEyebrow}>Diet diary</Text>
-                  <Text style={styles.diaryHistoryTitle}>{formatDiaryDate(selectedDate)}</Text>
-                </View>
-                <View style={styles.diaryHistoryCount}>
-                  <Text style={styles.diaryHistoryCountValue}>{visibleEntries.length}</Text>
-                  <Text style={styles.diaryHistoryCountLabel}>items</Text>
-                </View>
-              </View>
-
-              <View style={styles.dateNavigator}>
-                <TouchableOpacity
-                  onPress={() => setSelectedDate((value) => shiftDate(value, -1))}
-                  style={styles.dateArrow}
-                  accessibilityRole="button"
-                  accessibilityLabel="Previous diary date"
-                >
-                  <Feather name="chevron-left" size={22} color={colors.ink} />
-                </TouchableOpacity>
-                <View style={styles.dateCenter}>
-                  <Text style={styles.dateLabel}>Food date</Text>
-                  <Text style={styles.dateValue}>{formatDiaryDate(selectedDate)}</Text>
-                </View>
-                <TouchableOpacity
-                  onPress={() => setSelectedDate((value) => shiftDate(value, 1))}
-                  disabled={!canGoForward}
-                  style={[styles.dateArrow, !canGoForward && styles.dateArrowDisabled]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Next diary date"
-                  accessibilityState={{ disabled: !canGoForward }}
-                >
-                  <Feather name="chevron-right" size={22} color={canGoForward ? colors.ink : colors.inkSubtle} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {renderDietDiary({ showTitle: false })}
-
             <View style={styles.feedbackHero}>
               <View style={styles.feedbackHeroIcon}>
                 <Feather name="message-circle" size={24} color={colors.white} />
@@ -683,6 +675,8 @@ function DietScreenContent({ route, navigation }: Props) {
             </View>
 
             <PrimaryButton title="Start memory game" icon="plus" onPress={() => { setActiveTab('log'); openMemoryGame(); }} style={styles.feedbackCta} />
+
+            {renderDiaryFeed()}
           </View>
         ) : (
           <>
@@ -959,29 +953,6 @@ const styles = StyleSheet.create({
   dietTabTextActive: { color: colors.white },
   feedbackScreen: { gap: spacing.md },
   diaryScreen: { gap: spacing.md },
-  diaryHistoryHero: {
-    borderRadius: 26,
-    backgroundColor: colors.panel,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    gap: spacing.md,
-    ...shadows.sm,
-  },
-  diaryHistoryTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
-  diaryHistoryEyebrow: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
-  diaryHistoryTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
-  diaryHistoryCount: {
-    minWidth: 70,
-    height: 58,
-    borderRadius: radius.lg,
-    backgroundColor: colors.black,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.sm,
-  },
-  diaryHistoryCountValue: { fontSize: 24, lineHeight: 28, fontWeight: '900', color: colors.white },
-  diaryHistoryCountLabel: { ...typography.caption, color: colors.onAccentMuted, marginTop: -1 },
   feedbackHero: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1043,6 +1014,66 @@ const styles = StyleSheet.create({
   feedbackStatValue: { ...typography.title, color: colors.ink },
   feedbackStatLabel: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   feedbackCta: { marginTop: spacing.xs },
+  diaryFeedHeader: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  diaryFeedEyebrow: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
+  diaryFeedTitle: { ...typography.subtitle, color: colors.ink, marginTop: 2 },
+  diaryFeedCount: {
+    minWidth: 68,
+    height: 52,
+    borderRadius: radius.lg,
+    backgroundColor: colors.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  diaryFeedCountValue: { fontSize: 22, lineHeight: 25, fontWeight: '900', color: colors.white },
+  diaryFeedCountLabel: { fontSize: 10, lineHeight: 12, color: colors.onAccentMuted, fontWeight: '800' },
+  diaryFeed: { gap: spacing.lg },
+  diaryDateSection: { gap: spacing.sm },
+  diaryDateHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    paddingHorizontal: 2,
+  },
+  diaryDateTitle: { ...typography.bodyBold, color: colors.ink },
+  diaryDateCount: { ...typography.caption, color: colors.inkMuted },
+  diaryList: { gap: spacing.sm },
+  diaryListCard: {
+    minHeight: 96,
+    borderRadius: radius.xl,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    ...shadows.sm,
+  },
+  diaryThumb: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+    backgroundColor: colors.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  diaryTextThumb: { backgroundColor: colors.panelMuted, borderWidth: 1, borderColor: colors.border },
+  diaryThumbImage: { width: '100%', height: '100%' },
+  diaryListBody: { flex: 1, minWidth: 0 },
+  diaryListTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  diaryMeal: { ...typography.caption, color: colors.inkMuted, fontWeight: '900', textTransform: 'uppercase' },
+  diaryFoodName: { ...typography.subtitle, color: colors.ink, marginTop: 3 },
+  diaryFoodTime: { ...typography.caption, color: colors.inkMuted, marginTop: 3 },
   logPanel: {
     borderRadius: radius.xl,
     backgroundColor: colors.bg,
