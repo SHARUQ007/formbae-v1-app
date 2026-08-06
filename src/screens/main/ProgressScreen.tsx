@@ -8,23 +8,17 @@ import { KeyboardScreen } from '../../components/KeyboardScreen';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { ErrorState, LoadingState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
-import { submitCheckIn } from '../../services/checkInService';
-import { displayBehavioralNotification } from '../../services/notificationService';
 import { loadProgressBundleCached } from '../../services/preloadService';
 import { logProgress } from '../../services/progressService';
-import type { CheckIn, ProgressSummary } from '../../types/api';
+import type { ProgressSummary } from '../../types/api';
 import { formatDate } from '../../utils/format';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
 import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
 
-type Loaded = { progress: ProgressSummary; checkIns: CheckIn[]; dueThisWeek: boolean };
-type LogMode = 'checkin' | 'body';
-
-const ENERGY_OPTIONS = ['4', '6', '8', '10'];
-const DIFFICULTY_OPTIONS = ['3', '5', '7', '9'];
-const COMPLETION_OPTIONS = ['1 of 5', '3 of 5', '4 of 5', '5 of 5'];
+type Loaded = { progress: ProgressSummary };
+type LogMode = 'body';
 
 export function ProgressScreen() {
   const { data, loading, error, reload, refresh, refreshing } = useAsync<Loaded>((mode) =>
@@ -35,13 +29,8 @@ export function ProgressScreen() {
   const [chest, setChest] = useState('');
   const [waist, setWaist] = useState('');
   const [biceps, setBiceps] = useState('');
-  const [energy, setEnergy] = useState('');
-  const [difficulty, setDifficulty] = useState('');
-  const [completion, setCompletion] = useState('');
-  const [notes, setNotes] = useState('');
   const [logMode, setLogMode] = useState<LogMode | null>(null);
   const [savingBody, setSavingBody] = useState(false);
-  const [savingCheckIn, setSavingCheckIn] = useState(false);
 
   const onLogBody = async () => {
     if (!weight && !chest && !waist && !biceps) {
@@ -65,30 +54,6 @@ export function ProgressScreen() {
     }
   };
 
-  const onCheckIn = async () => {
-    if (!weight && !energy && !notes) {
-      Alert.alert('Add some detail', 'Share at least your weight, energy, or a note for your trainer.');
-      return;
-    }
-    setSavingCheckIn(true);
-    try {
-      await submitCheckIn({ weight, energyLevel: energy, difficultyLevel: difficulty, workoutCompletion: completion, notes });
-      setNotes('');
-      setEnergy('');
-      setDifficulty('');
-      setCompletion('');
-      await loadProgressBundleCached({ force: true });
-      await reload();
-      displayBehavioralNotification('checkInSubmitted').catch(() => undefined);
-      Alert.alert('Check-in sent', 'Your trainer will review your weekly check-in.');
-      setLogMode(null);
-    } catch (e) {
-      Alert.alert('Could not submit', e instanceof Error ? e.message : 'Please try again.');
-    } finally {
-      setSavingCheckIn(false);
-    }
-  };
-
   if (loading) {
     return (
       <ScreenContainer>
@@ -107,11 +72,10 @@ export function ProgressScreen() {
     );
   }
 
-  const { progress, checkIns, dueThisWeek } = data;
+  const { progress } = data;
   const trend = progress.bodyTrend ?? [];
   const latest = trend[trend.length - 1];
   const first = trend[0];
-  const recentCheckIns = checkIns.slice(0, 4);
   const weightDelta = latest?.weight && first?.weight ? latest.weight - first.weight : 0;
   const waistDelta = latest?.waist && first?.waist ? latest.waist - first.waist : 0;
   const completionRate = progress.planned ? progress.completed / progress.planned : 0;
@@ -143,53 +107,26 @@ export function ProgressScreen() {
               </View>
             </View>
 
-            <View style={styles.logTabs}>
-              <LogTab label="Check-in" icon="send" active={logMode === 'checkin'} onPress={() => setLogMode('checkin')} />
-              <LogTab label="Body" icon="edit-3" active={logMode === 'body'} onPress={() => setLogMode('body')} />
-            </View>
-
-            {logMode === 'checkin' ? (
-              <Card style={styles.formCard}>
-                <View style={styles.formIntro}>
-                  <View style={styles.formIcon}>
-                    <Feather name="message-circle" size={22} color={colors.white} />
-                  </View>
-                  <View style={styles.formIntroText}>
-                    <Text style={styles.cardTitle}>Weekly check-in</Text>
-                    <Text style={styles.cardSub}>Use quick taps first. Add a note only if there is useful context.</Text>
-                  </View>
+            <Card style={styles.formCard}>
+              <View style={styles.formIntro}>
+                <View style={styles.formIcon}>
+                  <Feather name="trending-up" size={22} color={colors.white} />
                 </View>
-                <OptionGroup label="Energy" value={energy} options={ENERGY_OPTIONS} onSelect={setEnergy} suffix="/10" />
-                <FormInput value={energy} onChangeText={setEnergy} placeholder="Energy (1-10)" keyboardType="numeric" maxLength={2} />
-                <OptionGroup label="Difficulty" value={difficulty} options={DIFFICULTY_OPTIONS} onSelect={setDifficulty} suffix="/10" />
-                <FormInput value={difficulty} onChangeText={setDifficulty} placeholder="Difficulty (1-10)" keyboardType="numeric" maxLength={2} />
-                <OptionGroup label="Workouts completed" value={completion} options={COMPLETION_OPTIONS} onSelect={setCompletion} />
-                <FormInput value={completion} onChangeText={setCompletion} placeholder="e.g. 4 of 5" />
-                <FormInput value={notes} onChangeText={setNotes} placeholder="Anything your trainer should know?" multiline autoCapitalize="sentences" />
-                <PrimaryButton title="Send check-in" icon="send" onPress={onCheckIn} loading={savingCheckIn} />
-              </Card>
-            ) : (
-              <Card style={styles.formCard}>
-                <View style={styles.formIntro}>
-                  <View style={styles.formIcon}>
-                    <Feather name="trending-up" size={22} color={colors.white} />
-                  </View>
-                  <View style={styles.formIntroText}>
-                    <Text style={styles.cardTitle}>Body measurements</Text>
-                    <Text style={styles.cardSub}>
-                      {latest ? `Last logged ${formatDate(latest.date)}. Update only when something changed.` : 'Add your first body measurement.'}
-                    </Text>
-                  </View>
+                <View style={styles.formIntroText}>
+                  <Text style={styles.cardTitle}>Body measurements</Text>
+                  <Text style={styles.cardSub}>
+                    {latest ? `Last logged ${formatDate(latest.date)}. Update only when something changed.` : 'Add your first body measurement.'}
+                  </Text>
                 </View>
-                <View style={styles.inputGrid}>
-                  <FormInput icon="trending-up" value={weight} onChangeText={setWeight} placeholder="Weight (kg)" keyboardType="numeric" />
-                  <FormInput icon="maximize-2" value={chest} onChangeText={setChest} placeholder="Chest (cm)" keyboardType="numeric" />
-                  <FormInput icon="minimize-2" value={waist} onChangeText={setWaist} placeholder="Waist (cm)" keyboardType="numeric" />
-                  <FormInput icon="activity" value={biceps} onChangeText={setBiceps} placeholder="Biceps (cm)" keyboardType="numeric" />
-                </View>
-                <PrimaryButton title="Save body log" icon="plus" onPress={onLogBody} loading={savingBody} />
-              </Card>
-            )}
+              </View>
+              <View style={styles.inputGrid}>
+                <FormInput icon="trending-up" value={weight} onChangeText={setWeight} placeholder="Weight (kg)" keyboardType="numeric" />
+                <FormInput icon="maximize-2" value={chest} onChangeText={setChest} placeholder="Chest (cm)" keyboardType="numeric" />
+                <FormInput icon="minimize-2" value={waist} onChangeText={setWaist} placeholder="Waist (cm)" keyboardType="numeric" />
+                <FormInput icon="activity" value={biceps} onChangeText={setBiceps} placeholder="Biceps (cm)" keyboardType="numeric" />
+              </View>
+              <PrimaryButton title="Save body log" icon="plus" onPress={onLogBody} loading={savingBody} />
+            </Card>
           </ScrollView>
         </ScreenContainer>
       </KeyboardScreen>
@@ -232,22 +169,13 @@ export function ProgressScreen() {
             </View>
           </Card>
 
-          <View style={styles.actionGrid}>
-            <ProgressAction
-              icon="send"
-              title={dueThisWeek ? 'Check-in due' : 'Weekly check-in'}
-              text="Energy, difficulty, and trainer notes"
-              tone={dueThisWeek ? 'dark' : 'light'}
-              onPress={() => setLogMode('checkin')}
-            />
-            <ProgressAction
-              icon="edit-3"
-              title="Body log"
-              text={bestBodyStat}
-              tone="light"
-              onPress={() => setLogMode('body')}
-            />
-          </View>
+          <ProgressAction
+            icon="edit-3"
+            title="Body log"
+            text={bestBodyStat}
+            tone="light"
+            onPress={() => setLogMode('body')}
+          />
 
           <SectionTitle>Workout rhythm</SectionTitle>
           <Card style={styles.rhythmCard}>
@@ -276,26 +204,6 @@ export function ProgressScreen() {
             </>
           ) : null}
 
-          {checkIns.length > 0 ? <SectionTitle>Recent updates</SectionTitle> : null}
-          <View style={styles.history}>
-            {recentCheckIns.map((c) => (
-              <Card key={c.checkInId} variant="flat" style={styles.historyCard}>
-                <View style={styles.historyHead}>
-                  <View>
-                    <Text style={styles.historyDate}>{formatDate(c.date)}</Text>
-                    <Text style={styles.historyLabel}>Trainer check-in</Text>
-                  </View>
-                  {c.workoutCompletion ? <Badge label={c.workoutCompletion} tone="accent" /> : null}
-                </View>
-                <View style={styles.historyMetrics}>
-                  {c.weight ? <Text style={styles.historyChip}>{c.weight} kg</Text> : null}
-                  {c.energyLevel ? <Text style={styles.historyChip}>Energy {c.energyLevel}/10</Text> : null}
-                  {c.difficultyLevel ? <Text style={styles.historyChip}>Difficulty {c.difficultyLevel}/10</Text> : null}
-                </View>
-                {c.notes ? <Text style={styles.historyText}>{c.notes}</Text> : null}
-              </Card>
-            ))}
-          </View>
         </ScrollView>
       </ScreenContainer>
     </KeyboardScreen>
@@ -328,17 +236,8 @@ function rewardMessage(progress: ProgressSummary) {
     icon: 'target',
     kicker: 'Fresh start',
     title: 'Your first win is waiting',
-    subtitle: 'Complete a workout or send a check-in to start tracking progress.',
+    subtitle: 'Complete a workout or add a body log to start tracking progress.',
   };
-}
-
-function LogTab({ label, icon, active, onPress }: { label: string; icon: string; active: boolean; onPress: () => void }) {
-  return (
-    <TouchableOpacity activeOpacity={0.86} onPress={onPress} style={[styles.logTab, active && styles.logTabActive]}>
-      <Feather name={icon} size={17} color={active ? colors.white : colors.ink} />
-      <Text style={[styles.logTabText, active && styles.logTabTextActive]}>{label}</Text>
-    </TouchableOpacity>
-  );
 }
 
 function ProgressAction({
@@ -404,36 +303,6 @@ function WorkoutCompletionGraph({ completed, planned }: { completed: number; pla
           </View>
         );
       })}
-    </View>
-  );
-}
-
-function OptionGroup({
-  label,
-  value,
-  options,
-  suffix = '',
-  onSelect,
-}: {
-  label: string;
-  value: string;
-  options: string[];
-  suffix?: string;
-  onSelect: (value: string) => void;
-}) {
-  return (
-    <View style={styles.optionGroup}>
-      <Text style={styles.optionLabel}>{label}</Text>
-      <View style={styles.optionRow}>
-        {options.map((option) => {
-          const selected = value === option;
-          return (
-            <TouchableOpacity key={option} style={[styles.optionChip, selected && styles.optionChipSelected]} onPress={() => onSelect(option)}>
-              <Text style={[styles.optionText, selected && styles.optionTextSelected]}>{option}{suffix}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
     </View>
   );
 }
@@ -504,28 +373,6 @@ const styles = StyleSheet.create({
   },
   logHeaderText: { flex: 1 },
   logTitle: { ...typography.title, color: colors.ink },
-  logTabs: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    padding: spacing.xs,
-    borderRadius: radius.pill,
-    backgroundColor: colors.panel,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.md,
-  },
-  logTab: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: radius.pill,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-  },
-  logTabActive: { backgroundColor: colors.black },
-  logTabText: { ...typography.bodyBold, color: colors.ink },
-  logTabTextActive: { color: colors.white },
   formCard: { gap: spacing.sm },
   formIntro: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
   formIcon: {
@@ -563,9 +410,8 @@ const styles = StyleSheet.create({
   },
   heroMetricLabel: { ...typography.caption, color: colors.inkMuted },
   heroMetricValue: { ...typography.subtitle, color: colors.ink },
-  actionGrid: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   progressAction: {
-    flex: 1,
+    marginTop: spacing.md,
     minHeight: 166,
     borderRadius: radius.xl,
     borderWidth: 1,
@@ -638,34 +484,5 @@ const styles = StyleSheet.create({
   barLabel: { ...typography.caption, fontSize: 10, color: colors.inkMuted, marginTop: 4 },
   cardTitle: { ...typography.subtitle, color: colors.ink },
   cardSub: { ...typography.caption, color: colors.inkMuted, marginTop: 2, marginBottom: spacing.sm },
-  optionGroup: { marginTop: spacing.sm },
-  optionLabel: { ...typography.label, color: colors.inkMuted, marginBottom: 8 },
-  optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  optionChip: {
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panel,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 9,
-  },
-  optionChipSelected: { backgroundColor: colors.accent, borderColor: colors.accentDark },
-  optionText: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
-  optionTextSelected: { color: colors.white },
   inputGrid: { gap: spacing.xs },
-  history: { gap: spacing.sm },
-  historyCard: { padding: spacing.md },
-  historyHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  historyDate: { ...typography.bodyBold, color: colors.ink },
-  historyLabel: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  historyMetrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: spacing.sm },
-  historyChip: {
-    ...typography.caption,
-    color: colors.accentDark,
-    backgroundColor: colors.accentLight,
-    borderRadius: radius.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  historyText: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.sm, lineHeight: 17 },
 });
