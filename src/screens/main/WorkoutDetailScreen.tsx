@@ -617,7 +617,10 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         workoutMode: detail.workoutMode,
       });
       await clearWorkoutProgress(planDayId);
-      await AsyncStorage.setItem(PENDING_STREAK_CELEBRATION_KEY, String(Date.now())).catch(() => undefined);
+      await AsyncStorage.setItem(
+        PENDING_STREAK_CELEBRATION_KEY,
+        JSON.stringify({ planDayId: detail.planDayId, completedAt: Date.now() }),
+      ).catch(() => undefined);
       if (!result.synced) {
         setReward({
           id: Date.now(),

@@ -29,6 +29,24 @@ const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebrati
 const GOLD = '#f5b301';
 const GOLD_DARK = '#9a5b00';
 
+function parsePendingCompletion(raw: string | null) {
+  if (!raw) return { planDayId: '', completedAt: 0 };
+  try {
+    const parsed = JSON.parse(raw) as { planDayId?: string; completedAt?: number };
+    return {
+      planDayId: String(parsed.planDayId || ''),
+      completedAt: Number(parsed.completedAt || 0),
+    };
+  } catch {
+    return { planDayId: '', completedAt: Number(raw) || 0 };
+  }
+}
+
+function markPlanDayCompleted(days: PlanDay[], planDayId: string) {
+  if (!planDayId) return days;
+  return days.map((day) => (day.planDayId === planDayId ? { ...day, completed: true } : day));
+}
+
 function resolveTrainerPhotoUrl(value?: string) {
   const url = String(value || '').trim();
   if (!url) return '';
@@ -204,10 +222,14 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     const unsub = navigation.addListener('focus', () => {
       navigation.getParent()?.setOptions({ tabBarStyle: appTabBarStyle });
       void (async () => {
-        await load();
         const pending = await AsyncStorage.getItem(PENDING_STREAK_CELEBRATION_KEY).catch(() => null);
+        const pendingCompletion = parsePendingCompletion(pending);
+        await load({ force: Boolean(pending) });
         if (pending) {
           await AsyncStorage.removeItem(PENDING_STREAK_CELEBRATION_KEY).catch(() => undefined);
+          if (pendingCompletion.planDayId) {
+            setDays((value) => markPlanDayCompleted(value, pendingCompletion.planDayId));
+          }
           setStreakCelebrationNonce((value) => value + 1);
         }
       })();
