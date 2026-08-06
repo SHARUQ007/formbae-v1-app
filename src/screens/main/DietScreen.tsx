@@ -101,6 +101,11 @@ function formatDiaryDate(value: Date) {
   });
 }
 
+function entryTimestamp(entry: DietDiaryEntry) {
+  const time = new Date(entry.createdAt).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
 function isSameDay(a: Date | string, b: Date | string) {
   const first = new Date(a);
   const second = new Date(b);
@@ -286,10 +291,11 @@ function DietScreenContent({ route, navigation }: Props) {
         byDate.set(key, bucket);
       });
     byDate.forEach((dateEntries, key) => {
+      const sortedDateEntries = [...dateEntries].sort((a, b) => entryTimestamp(a) - entryTimestamp(b));
       sections.push({
         key,
         title: key === 'unknown' ? 'Unknown date' : formatDiaryDate(new Date(dateEntries[0].createdAt)),
-        entries: dateEntries,
+        entries: sortedDateEntries,
       });
     });
     return sections;
