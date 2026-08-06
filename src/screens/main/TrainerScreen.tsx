@@ -213,7 +213,7 @@ function CoachAbout({
         <Text style={styles.aboutBody}>{bio}</Text>
         <View style={styles.quickGrid}>
           <InfoTile icon="activity" label="Plan style" value={ai ? 'Adaptive AI' : coach.expertise || 'Personal trainer'} />
-          <InfoTile icon="refresh-cw" label="Updates" value={ai ? 'Every 2 weeks' : 'Coach guided'} />
+          <InfoTile icon="refresh-cw" label="Updates" value={ai ? '2-week plans' : 'Coach guided'} />
           <InfoTile icon="credit-card" label="Access" value={formatPrice(coach.monthlyFee)} />
         </View>
       </Card>
@@ -294,8 +294,10 @@ function InfoTile({ icon, label, value }: { icon: string; label: string; value: 
   return (
     <View style={styles.infoTile}>
       <Feather name={icon} size={16} color={colors.accentDark} />
-      <Text style={styles.infoLabel}>{label}</Text>
-      <Text style={styles.infoValue} numberOfLines={2}>{value}</Text>
+      <View style={styles.infoText}>
+        <Text style={styles.infoLabel}>{label}</Text>
+        <Text style={styles.infoValue} numberOfLines={1}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -363,24 +365,26 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   aiPromiseText: { ...typography.caption, color: colors.white, flex: 1, lineHeight: 18, fontWeight: '800' },
-  scroll: { paddingTop: spacing.sm },
+  scroll: { paddingTop: 0 },
   aboutCard: { gap: spacing.lg, padding: spacing.lg },
   aboutTitle: { ...typography.title, color: colors.ink },
   aboutBody: { ...typography.body, color: colors.inkMuted, lineHeight: 24 },
-  quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  quickGrid: { gap: spacing.sm },
   infoTile: {
-    flex: 1,
-    minWidth: '30%',
-    minHeight: 112,
-    borderRadius: 22,
+    minHeight: 64,
+    borderRadius: radius.lg,
     backgroundColor: colors.panelMuted,
-    padding: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
-    justifyContent: 'space-between',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
-  infoLabel: { ...typography.caption, color: colors.inkMuted, marginTop: 8 },
-  infoValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
+  infoText: { flex: 1, minWidth: 0 },
+  infoLabel: { ...typography.caption, color: colors.inkMuted },
+  infoValue: { ...typography.bodyBold, color: colors.ink, marginTop: 1 },
   singleActionButton: { marginTop: spacing.md },
   goldButtonWrap: {
     marginTop: spacing.lg,
