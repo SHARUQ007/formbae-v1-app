@@ -2,36 +2,34 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
   Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
-import { ScreenContainer, Card, SectionTitle } from '../../components/Card';
-import { KeyboardScreen } from '../../components/KeyboardScreen';
+import { ScreenContainer, Card } from '../../components/Card';
 import { Avatar } from '../../components/Avatar';
 import { Badge } from '../../components/Badge';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
-import { sendMessage } from '../../services/messageService';
 import { changeCoach } from '../../services/trainerService';
 import { loadCoachBundleCached } from '../../services/preloadService';
 import { useAuthStore } from '../../store/authStore';
 import { getSiteUrl } from '../../constants/config';
-import { formatMessageTime } from '../../utils/format';
-import type { CoachOption, Message } from '../../types/api';
+import type { CoachOption } from '../../types/api';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
 
-type CoachTab = 'about' | 'chat' | 'change';
+type CoachTab = 'about' | 'change';
 
 function photoUrl(value: string) {
   const url = value.trim();
@@ -54,15 +52,17 @@ function formatUnlockDate(value: string) {
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
+function isAiCoach(coach: CoachOption) {
+  const text = `${coach.name} ${coach.gender} ${coach.expertise} ${coach.description} ${coach.detailedDescription}`.toLowerCase();
+  return text.includes('ai') || text.includes('ava');
+}
+
 export function TrainerScreen() {
-  const scrollRef = useRef<ScrollView>(null);
   const [tab, setTab] = useState<CoachTab>('about');
-  const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
   const [changingId, setChangingId] = useState('');
   const { refreshStatus } = useAuthStore();
 
-  const { data, loading, error, reload, refresh, refreshing, setData } = useAsync((mode) =>
+  const { data, loading, error, reload, refresh, refreshing } = useAsync((mode) =>
     loadCoachBundleCached({ force: mode === 'refresh' }),
   );
 
@@ -71,26 +71,7 @@ export function TrainerScreen() {
     () => data?.coachHub.trainers.find((coach) => coach.trainerId === currentCoach?.trainerId) ?? currentCoach,
     [currentCoach, data?.coachHub.trainers],
   );
-
-  const onSend = useCallback(async () => {
-    const trimmed = text.trim();
-    if (!trimmed || sending) return;
-    setSending(true);
-    try {
-      const res = await sendMessage(trimmed, data?.planId);
-      setText('');
-      if (res.message) {
-        setData((prev) => (prev ? { ...prev, messages: [...prev.messages, res.message] } : prev));
-        loadCoachBundleCached({ force: true }).catch(() => undefined);
-      } else {
-        await reload();
-      }
-    } catch {
-      await reload();
-    } finally {
-      setSending(false);
-    }
-  }, [text, sending, data?.planId, setData, reload]);
+  const currentIsAi = currentCoach ? isAiCoach(currentCoach) : false;
 
   const confirmChangeCoach = useCallback(
     (coach: CoachOption) => {
@@ -127,12 +108,6 @@ export function TrainerScreen() {
     [currentCoach?.name, data, refreshStatus, reload],
   );
 
-  useEffect(() => {
-    if (tab === 'chat' && data?.messages.length) {
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
-    }
-  }, [data?.messages.length, tab]);
-
   if (loading) {
     return (
       <ScreenContainer>
@@ -158,132 +133,144 @@ export function TrainerScreen() {
   }
 
   return (
-    <KeyboardScreen>
-      <ScreenContainer>
-        <CoachHero coach={currentCoach} />
-        <View style={styles.tabs}>
-          <TabButton label="About" icon="user" active={tab === 'about'} onPress={() => setTab('about')} />
-          <TabButton label="Chat" icon="message-circle" active={tab === 'chat'} onPress={() => setTab('chat')} />
-          <TabButton label="Change" icon="repeat" active={tab === 'change'} onPress={() => setTab('change')} />
-        </View>
+    <ScreenContainer>
+      {tab === 'about' ? (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scroll}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
+        >
+          <CoachHero coach={currentCoach} ai={currentIsAi} />
+          <CoachAbout coach={selectedCoach || currentCoach} ai={currentIsAi} onUpgrade={() => setTab('change')} onChange={() => setTab('change')} />
+        </ScrollView>
+      ) : null}
 
-        {tab === 'about' ? (
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scroll}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
-          >
-            <CoachAbout coach={selectedCoach || currentCoach} onMessage={() => setTab('chat')} onChange={() => setTab('change')} />
-          </ScrollView>
-        ) : null}
-
-        {tab === 'chat' ? (
-          <>
-            <ScrollView
-              ref={scrollRef}
-              style={styles.thread}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.threadContent}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
-            >
-              {data.messages.length === 0 ? (
-                <EmptyState icon="message-circle" title="No messages yet" message="Say hello to your coach to get started." />
-              ) : (
-                data.messages.map((m: Message) => <MessageBubble key={m.messageId} message={m} />)
-              )}
-            </ScrollView>
-            <View style={styles.composer}>
-              <TextInput
-                style={styles.input}
-                value={text}
-                onChangeText={setText}
-                placeholder="Write a message..."
-                placeholderTextColor={colors.inkSubtle}
-                autoCapitalize="sentences"
-                multiline
+      {tab === 'change' ? (
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scroll}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
+        >
+          <ChangeCoachHeader onBack={() => setTab('about')} />
+          <View style={styles.coachList}>
+            {data.coachHub.trainers.map((coach) => (
+              <CoachOptionCard
+                key={coach.trainerId}
+                coach={coach}
+                current={coach.trainerId === currentCoach.trainerId}
+                changing={changingId === coach.trainerId}
+                onPress={() => confirmChangeCoach(coach)}
               />
-              <TouchableOpacity
-                style={[styles.sendBtn, (!text.trim() || sending) && styles.sendDisabled]}
-                onPress={onSend}
-                disabled={!text.trim() || sending}
-                accessibilityRole="button"
-                accessibilityLabel="Send message"
-              >
-                {sending ? <ActivityIndicator color={colors.white} size="small" /> : <Feather name="send" size={20} color={colors.white} />}
-              </TouchableOpacity>
-            </View>
-          </>
-        ) : null}
-
-        {tab === 'change' ? (
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scroll}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
-          >
-            <ChangeCoachHeader onBack={() => setTab('about')} />
-            <View style={styles.coachList}>
-              {data.coachHub.trainers.map((coach) => (
-                <CoachOptionCard
-                  key={coach.trainerId}
-                  coach={coach}
-                  current={coach.trainerId === currentCoach.trainerId}
-                  changing={changingId === coach.trainerId}
-                  onPress={() => confirmChangeCoach(coach)}
-                />
-              ))}
-            </View>
-          </ScrollView>
-        ) : null}
-      </ScreenContainer>
-    </KeyboardScreen>
+            ))}
+          </View>
+        </ScrollView>
+      ) : null}
+    </ScreenContainer>
   );
 }
 
-function CoachHero({ coach }: { coach: CoachOption }) {
+function CoachHero({ coach, ai }: { coach: CoachOption; ai: boolean }) {
   const image = photoUrl(coach.photoUrl);
   return (
     <View style={styles.hero}>
-      {image ? <Image source={{ uri: image }} style={styles.heroImage} /> : <Avatar name={coach.name} size={72} />}
-      <View style={styles.heroText}>
-        <Text style={styles.kicker}>Your coach</Text>
-        <Text style={styles.heroName} numberOfLines={1}>{coach.name}</Text>
-        <Text style={styles.heroMeta} numberOfLines={1}>{coach.expertise || 'Personal trainer'}</Text>
+      <View style={styles.heroTop}>
+        {image ? <Image source={{ uri: image }} style={styles.heroImage} /> : <Avatar name={coach.name} size={82} />}
+        <View style={styles.heroText}>
+          <Text style={styles.kicker}>{ai ? 'AI trainer' : 'Your coach'}</Text>
+          <Text style={styles.heroName} numberOfLines={1}>{coach.name}</Text>
+          <Text style={styles.heroMeta} numberOfLines={2}>{ai ? 'Instant workout planning and adaptive weekly check-ins' : coach.expertise || 'Personal trainer'}</Text>
+        </View>
+        <Badge label={coach.tier} tone="accent" icon="award" />
       </View>
-      <Badge label={coach.tier} tone="accent" icon="award" />
+      {ai ? (
+        <View style={styles.aiPromise}>
+          <Feather name="zap" size={18} color={colors.white} />
+          <Text style={styles.aiPromiseText}>Ava builds plans from your logs, feedback, and next two-week schedule.</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
 
-function TabButton({ label, icon, active, onPress }: { label: string; icon: string; active: boolean; onPress: () => void }) {
-  return (
-    <TouchableOpacity onPress={onPress} style={[styles.tabButton, active && styles.tabActive]} accessibilityRole="button">
-      <Feather name={icon} size={16} color={active ? colors.white : colors.accentDark} />
-      <Text style={[styles.tabText, active && styles.tabTextActive]}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-function CoachAbout({ coach, onMessage, onChange }: { coach: CoachOption; onMessage: () => void; onChange: () => void }) {
+function CoachAbout({
+  coach,
+  ai,
+  onUpgrade,
+  onChange,
+}: {
+  coach: CoachOption;
+  ai: boolean;
+  onUpgrade: () => void;
+  onChange: () => void;
+}) {
   const bio = coach.detailedDescription || coach.description || 'Your coach will guide your training, review your progress, and keep the plan moving.';
   return (
     <>
       <Card style={styles.aboutCard}>
-        <Text style={styles.aboutTitle}>Coach profile</Text>
+        <Text style={styles.aboutTitle}>{ai ? 'How Ava helps' : 'Coach profile'}</Text>
         <Text style={styles.aboutBody}>{bio}</Text>
         <View style={styles.quickGrid}>
-          <InfoTile icon="tag" label="Type" value={coach.expertise || 'Personal trainer'} />
-          <InfoTile icon="credit-card" label="Monthly" value={formatPrice(coach.monthlyFee)} />
-          <InfoTile icon="globe" label="Languages" value={coach.languages.length ? coach.languages.join(', ') : 'Not specified'} />
+          <InfoTile icon="activity" label="Plan style" value={ai ? 'Adaptive AI' : coach.expertise || 'Personal trainer'} />
+          <InfoTile icon="refresh-cw" label="Updates" value={ai ? 'Every 2 weeks' : 'Coach guided'} />
+          <InfoTile icon="credit-card" label="Access" value={formatPrice(coach.monthlyFee)} />
         </View>
       </Card>
 
-      <SectionTitle>What you can do</SectionTitle>
-      <View style={styles.actionRow}>
-        <PrimaryButton title="Message coach" icon="message-circle" onPress={onMessage} style={styles.actionButton} />
-        <PrimaryButton title="Change coach" icon="repeat" variant="secondary" onPress={onChange} style={styles.actionButton} />
-      </View>
+      {ai ? (
+        <GoldUpgradeButton onPress={onUpgrade} />
+      ) : (
+        <PrimaryButton title="Change coach" icon="repeat" variant="secondary" onPress={onChange} style={styles.singleActionButton} />
+      )}
     </>
+  );
+}
+
+function GoldUpgradeButton({ onPress }: { onPress: () => void }) {
+  const shimmer = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const shimmerLoop = Animated.loop(
+      Animated.timing(shimmer, {
+        toValue: 1,
+        duration: 2400,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    );
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 1200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    shimmerLoop.start();
+    pulseLoop.start();
+    return () => {
+      shimmerLoop.stop();
+      pulseLoop.stop();
+    };
+  }, [pulse, shimmer]);
+
+  const shimmerTranslate = shimmer.interpolate({ inputRange: [0, 1], outputRange: [-130, 330] });
+  const glowScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.035] });
+  const glowOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.88] });
+
+  return (
+    <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.goldButtonWrap} accessibilityRole="button" accessibilityLabel="Upgrade trainer">
+      <Animated.View style={[styles.goldGlow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]} />
+      <View style={styles.goldButton}>
+        <Animated.View style={[styles.goldShimmer, { transform: [{ translateX: shimmerTranslate }, { rotate: '16deg' }] }]} />
+        <View style={styles.goldIcon}>
+          <Feather name="star" size={24} color="#2a1700" />
+        </View>
+        <View style={styles.goldTextBlock}>
+          <Text style={styles.goldTitle}>Upgrade to a real coach</Text>
+          <Text style={styles.goldSubtitle}>Unlock human trainer guidance when you are ready.</Text>
+        </View>
+        <Feather name="arrow-right" size={24} color="#2a1700" />
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -307,18 +294,6 @@ function InfoTile({ icon, label, value }: { icon: string; label: string; value: 
       <Feather name={icon} size={16} color={colors.accentDark} />
       <Text style={styles.infoLabel}>{label}</Text>
       <Text style={styles.infoValue} numberOfLines={2}>{value}</Text>
-    </View>
-  );
-}
-
-function MessageBubble({ message }: { message: Message }) {
-  const isUser = message.senderRole === 'user';
-  return (
-    <View style={[styles.bubbleRow, isUser ? styles.rowRight : styles.rowLeft]}>
-      <View style={[styles.bubble, isUser ? styles.userBubble : styles.trainerBubble]}>
-        <Text style={[styles.msg, isUser && styles.msgUser]}>{message.text}</Text>
-        {message.createdAt ? <Text style={[styles.time, isUser && styles.timeUser]}>{formatMessageTime(message.createdAt)}</Text> : null}
-      </View>
     </View>
   );
 }
@@ -362,53 +337,95 @@ function CoachOptionCard({
 
 const styles = StyleSheet.create({
   hero: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
     backgroundColor: colors.inkStrong,
-    borderRadius: 28,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+    borderRadius: 34,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    gap: spacing.lg,
   },
-  heroImage: { width: 72, height: 72, borderRadius: radius.pill, backgroundColor: colors.panelMuted },
+  heroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  heroImage: { width: 82, height: 82, borderRadius: 28, backgroundColor: colors.panelMuted },
   heroText: { flex: 1 },
   kicker: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
   heroName: { ...typography.title, color: colors.white, marginTop: 2 },
-  heroMeta: { ...typography.caption, color: colors.onAccentMuted, marginTop: 2 },
-  tabs: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
-  tabButton: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
+  heroMeta: { ...typography.caption, color: colors.onAccentMuted, marginTop: 4, lineHeight: 18 },
+  aiPromise: {
+    minHeight: 58,
+    borderRadius: radius.lg,
+    backgroundColor: 'rgba(255,255,255,0.12)',
     borderWidth: 1,
-    borderColor: colors.accentSurface,
+    borderColor: 'rgba(255,255,255,0.16)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
   },
-  tabActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  tabText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
-  tabTextActive: { color: colors.white },
-  scroll: { paddingBottom: spacing.xl },
-  aboutCard: { gap: spacing.md },
+  aiPromiseText: { ...typography.caption, color: colors.white, flex: 1, lineHeight: 18, fontWeight: '800' },
+  scroll: { paddingBottom: spacing.xl, paddingTop: spacing.sm },
+  aboutCard: { gap: spacing.lg, padding: spacing.lg },
   aboutTitle: { ...typography.title, color: colors.ink },
-  aboutBody: { ...typography.body, color: colors.inkMuted, lineHeight: 22 },
+  aboutBody: { ...typography.body, color: colors.inkMuted, lineHeight: 24 },
   quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   infoTile: {
-    width: '48%',
-    minHeight: 98,
-    borderRadius: radius.lg,
-    backgroundColor: colors.accentLight,
+    flex: 1,
+    minWidth: '30%',
+    minHeight: 112,
+    borderRadius: 22,
+    backgroundColor: colors.panelMuted,
     padding: spacing.sm,
     borderWidth: 1,
-    borderColor: colors.accentSurface,
+    borderColor: colors.border,
+    justifyContent: 'space-between',
   },
-  infoLabel: { ...typography.caption, color: colors.accentDarker, marginTop: 8 },
+  infoLabel: { ...typography.caption, color: colors.inkMuted, marginTop: 8 },
   infoValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
-  actionRow: { flexDirection: 'row', gap: spacing.sm },
-  actionButton: { flex: 1 },
+  singleActionButton: { marginTop: spacing.md },
+  goldButtonWrap: {
+    marginTop: spacing.lg,
+    minHeight: 104,
+    justifyContent: 'center',
+  },
+  goldGlow: {
+    position: 'absolute',
+    top: 6,
+    right: 10,
+    bottom: 6,
+    left: 10,
+    borderRadius: 34,
+    backgroundColor: '#f3bd3f',
+  },
+  goldButton: {
+    minHeight: 96,
+    borderRadius: 32,
+    overflow: 'hidden',
+    backgroundColor: '#f2c24d',
+    borderWidth: 1,
+    borderColor: '#ffe49a',
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  goldShimmer: {
+    position: 'absolute',
+    top: -30,
+    bottom: -30,
+    width: 82,
+    backgroundColor: 'rgba(255,255,255,0.34)',
+  },
+  goldIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: radius.pill,
+    backgroundColor: '#fff3bf',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(42,23,0,0.12)',
+  },
+  goldTextBlock: { flex: 1 },
+  goldTitle: { ...typography.subtitle, color: '#2a1700', fontWeight: '900' },
+  goldSubtitle: { ...typography.caption, color: 'rgba(42,23,0,0.68)', marginTop: 3, lineHeight: 17 },
   changeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -428,42 +445,6 @@ const styles = StyleSheet.create({
   changeHeaderText: { flex: 1 },
   changeTitle: { ...typography.title, color: colors.ink },
   changeSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  thread: { flex: 1 },
-  threadContent: { paddingBottom: spacing.md },
-  bubbleRow: { marginTop: spacing.sm, flexDirection: 'row' },
-  rowLeft: { justifyContent: 'flex-start' },
-  rowRight: { justifyContent: 'flex-end' },
-  bubble: { maxWidth: '82%', borderRadius: radius.lg, paddingHorizontal: spacing.md, paddingVertical: 10 },
-  userBubble: { backgroundColor: colors.accent, borderBottomRightRadius: 4 },
-  trainerBubble: { backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, borderBottomLeftRadius: 4 },
-  msg: { ...typography.body, color: colors.ink },
-  msgUser: { color: colors.white },
-  time: { ...typography.caption, fontSize: 10, color: colors.inkSubtle, marginTop: 4, alignSelf: 'flex-end' },
-  timeUser: { color: 'rgba(255,255,255,0.75)' },
-  composer: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, paddingTop: spacing.sm },
-  input: {
-    flex: 1,
-    backgroundColor: colors.panel,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderRadius: radius.xl,
-    paddingHorizontal: spacing.md,
-    paddingTop: 12,
-    paddingBottom: 12,
-    maxHeight: 120,
-    ...typography.body,
-    fontSize: 16,
-    color: colors.ink,
-  },
-  sendBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendDisabled: { opacity: 0.5 },
   coachList: { gap: spacing.sm },
   optionCard: {
     borderRadius: 24,
