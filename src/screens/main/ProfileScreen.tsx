@@ -128,6 +128,8 @@ export function ProfileScreen({ navigation }: Props) {
   const accessActive = access.tier === 'premium' || status?.hasPaid;
   const accessLabel = String(access.label || (accessActive ? 'Active' : 'Payment required'));
   const planName = typeof access.planName === 'string' ? access.planName : '';
+  const displayName = current?.user?.name || status?.name || 'FormBae Trainee';
+  const displayContact = current?.user?.mobile || status?.phone || status?.email || '';
 
   const planRows = [
     { icon: 'target', label: 'Goal', value: titleCase(profile.fitnessGoal) },
@@ -184,13 +186,13 @@ export function ProfileScreen({ navigation }: Props) {
 
         <View style={styles.heroCard}>
           <View style={styles.heroTop}>
-            <Avatar name={status?.name} iconId={profile.avatarIcon} size={68} />
+            <Avatar name={displayName} iconId={profile.avatarIcon} size={68} />
             <TouchableOpacity style={styles.iconAction} onPress={() => navigation.navigate('EditProfile')} accessibilityRole="button" accessibilityLabel="Edit profile">
               <Feather name="edit-3" size={20} color={colors.accentDark} />
             </TouchableOpacity>
           </View>
-          <Text style={styles.name}>{status?.name || 'FormBae Trainee'}</Text>
-          <Text style={styles.phone}>{status?.phone || status?.email || ''}</Text>
+          <Text style={styles.name}>{displayName}</Text>
+          <Text style={styles.phone}>{displayContact}</Text>
           <View style={styles.heroBadge}>
             <Feather name={accessActive ? 'shield' : 'alert-circle'} size={16} color={accessActive ? colors.accentDark : colors.warn} />
             <Text style={[styles.heroBadgeText, !accessActive && styles.warnText]}>{accessLabel}{planName ? ` · ${planName}` : ''}</Text>

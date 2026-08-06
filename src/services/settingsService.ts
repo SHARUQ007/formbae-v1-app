@@ -1,5 +1,6 @@
 import { apiRequest } from './apiClient';
 import { invalidateCachedResource } from './appCache';
+import type { SessionUser } from '../types/api';
 
 export type MobileAccessStatus = {
   tier?: string;
@@ -17,6 +18,7 @@ export type MobileAccessStatus = {
 };
 
 export type MobileSettingsResponse = {
+  user?: SessionUser | null;
   profile: Record<string, string> | null;
   access: MobileAccessStatus | null;
   notifications: {

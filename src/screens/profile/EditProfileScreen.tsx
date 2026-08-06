@@ -70,7 +70,7 @@ export function EditProfileScreen({ navigation }: Props) {
     if (data?.profile) {
       const parsedLifestyle = parseJsonRecord(data.profile.lifestyleJson);
       setForm({
-        name: '',
+        name: data.user?.name || '',
         avatarIcon: data.profile.avatarIcon || 'panther',
         age: data.profile.age || '',
         gender: data.profile.gender || '',
@@ -88,7 +88,7 @@ export function EditProfileScreen({ navigation }: Props) {
       setLanguages(parseLanguages(data.profile.languagePreferencesJson));
       setLifestyle(parsedLifestyle);
     }
-  }, [data?.profile]);
+  }, [data?.profile, data?.user?.name]);
 
   const set = (key: string, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
