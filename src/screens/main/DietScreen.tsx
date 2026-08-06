@@ -80,6 +80,15 @@ function formatEntryTime(value: string) {
   });
 }
 
+function formatFoodTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('en-IN', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 function formatDiaryDate(value: Date) {
   const today = new Date();
   const yesterday = shiftDate(today, -1);
@@ -112,10 +121,17 @@ function isFutureDay(value: Date) {
   return normalized.getTime() > today.getTime();
 }
 
-function timestampForDiaryDate(value: Date) {
-  const now = new Date();
+function mealTime(type: MealType) {
+  if (type === 'Breakfast') return { hour: 8, minute: 30 };
+  if (type === 'Lunch') return { hour: 13, minute: 30 };
+  if (type === 'Dinner') return { hour: 19, minute: 30 };
+  return { hour: 22, minute: 0 };
+}
+
+function timestampForFoodSlot(value: Date, mealType: MealType) {
+  const slot = mealTime(mealType);
   const next = new Date(value);
-  next.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+  next.setHours(slot.hour, slot.minute, 0, 0);
   return next.toISOString();
 }
 
@@ -278,7 +294,7 @@ function DietScreenContent({ route, navigation }: Props) {
     if (!asset?.uri) return;
     setSaving(true);
     try {
-      const localEntry = await addDietDiaryEntry(asset, mealType, undefined, timestampForDiaryDate(selectedDate));
+      const localEntry = await addDietDiaryEntry(asset, mealType, undefined, timestampForFoodSlot(selectedDate, mealType));
       await load();
       displayBehavioralNotification('dietPhotoLogged', { mealType: mealLabel(mealType) }).catch(() => undefined);
       try {
@@ -400,7 +416,7 @@ function DietScreenContent({ route, navigation }: Props) {
     const entryMeal = selectedMeal;
     const entryDate = selectedDate;
     try {
-      const localEntry = await addTextDietDiaryEntry(entryMeal, note, timestampForDiaryDate(entryDate));
+      const localEntry = await addTextDietDiaryEntry(entryMeal, note, timestampForFoodSlot(entryDate, entryMeal));
       setTextEntry('');
       displayBehavioralNotification('dietPhotoLogged', { mealType: mealLabel(entryMeal) }).catch(() => undefined);
       await load();
@@ -493,9 +509,9 @@ function DietScreenContent({ route, navigation }: Props) {
     ]);
   };
 
-  const renderDietDiary = () => (
+  const renderDietDiary = (options?: { showTitle?: boolean }) => (
     <>
-      <SectionTitle>Diet diary</SectionTitle>
+      {options?.showTitle === false ? null : <SectionTitle>Diet diary</SectionTitle>}
       {visibleEntries.length === 0 ? (
         <EmptyState
           icon="edit-3"
@@ -528,7 +544,7 @@ function DietScreenContent({ route, navigation }: Props) {
                     </View>
                     <View style={styles.foodCardFooter}>
                       <Feather name="clock" size={13} color={colors.accentDark} />
-                      <Text style={styles.foodFooterText}>{mealLabel(entry.mealType)}</Text>
+                      <Text style={styles.foodFooterText}>{formatFoodTime(entry.createdAt)}</Text>
                     </View>
                   </View>
                 ) : (
@@ -539,7 +555,7 @@ function DietScreenContent({ route, navigation }: Props) {
                     <Text style={styles.photoMeal}>{mealLabel(entry.mealType)}</Text>
                     {entry.syncError ? <Feather name="cloud-off" size={13} color={colors.warn} /> : null}
                   </View>
-                  <Text style={styles.photoTime}>{formatEntryTime(entry.createdAt)}</Text>
+                  <Text style={styles.photoTime}>{formatDiaryDate(new Date(entry.createdAt))} · {formatFoodTime(entry.createdAt)}</Text>
                 </View>
               </TouchableOpacity>
             );
@@ -564,7 +580,47 @@ function DietScreenContent({ route, navigation }: Props) {
         </View>
 
         {activeTab === 'diary' ? (
-          <View style={styles.feedbackScreen}>
+          <View style={styles.diaryScreen}>
+            <View style={styles.diaryHistoryHero}>
+              <View style={styles.diaryHistoryTop}>
+                <View>
+                  <Text style={styles.diaryHistoryEyebrow}>Diet diary</Text>
+                  <Text style={styles.diaryHistoryTitle}>{formatDiaryDate(selectedDate)}</Text>
+                </View>
+                <View style={styles.diaryHistoryCount}>
+                  <Text style={styles.diaryHistoryCountValue}>{visibleEntries.length}</Text>
+                  <Text style={styles.diaryHistoryCountLabel}>items</Text>
+                </View>
+              </View>
+
+              <View style={styles.dateNavigator}>
+                <TouchableOpacity
+                  onPress={() => setSelectedDate((value) => shiftDate(value, -1))}
+                  style={styles.dateArrow}
+                  accessibilityRole="button"
+                  accessibilityLabel="Previous diary date"
+                >
+                  <Feather name="chevron-left" size={22} color={colors.ink} />
+                </TouchableOpacity>
+                <View style={styles.dateCenter}>
+                  <Text style={styles.dateLabel}>Food date</Text>
+                  <Text style={styles.dateValue}>{formatDiaryDate(selectedDate)}</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setSelectedDate((value) => shiftDate(value, 1))}
+                  disabled={!canGoForward}
+                  style={[styles.dateArrow, !canGoForward && styles.dateArrowDisabled]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Next diary date"
+                  accessibilityState={{ disabled: !canGoForward }}
+                >
+                  <Feather name="chevron-right" size={22} color={canGoForward ? colors.ink : colors.inkSubtle} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {renderDietDiary({ showTitle: false })}
+
             <View style={styles.feedbackHero}>
               <View style={styles.feedbackHeroIcon}>
                 <Feather name="message-circle" size={24} color={colors.white} />
@@ -627,7 +683,6 @@ function DietScreenContent({ route, navigation }: Props) {
             </View>
 
             <PrimaryButton title="Start memory game" icon="plus" onPress={() => { setActiveTab('log'); openMemoryGame(); }} style={styles.feedbackCta} />
-            {renderDietDiary()}
           </View>
         ) : (
           <>
@@ -903,6 +958,30 @@ const styles = StyleSheet.create({
   dietTabText: { ...typography.bodyBold, color: colors.inkMuted },
   dietTabTextActive: { color: colors.white },
   feedbackScreen: { gap: spacing.md },
+  diaryScreen: { gap: spacing.md },
+  diaryHistoryHero: {
+    borderRadius: 26,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.md,
+    ...shadows.sm,
+  },
+  diaryHistoryTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  diaryHistoryEyebrow: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
+  diaryHistoryTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
+  diaryHistoryCount: {
+    minWidth: 70,
+    height: 58,
+    borderRadius: radius.lg,
+    backgroundColor: colors.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  diaryHistoryCountValue: { fontSize: 24, lineHeight: 28, fontWeight: '900', color: colors.white },
+  diaryHistoryCountLabel: { ...typography.caption, color: colors.onAccentMuted, marginTop: -1 },
   feedbackHero: {
     flexDirection: 'row',
     alignItems: 'center',
