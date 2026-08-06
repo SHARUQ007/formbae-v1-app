@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Alert,
   Animated,
@@ -78,6 +79,7 @@ const EXERCISE_FOCUS_RULES: Array<{ label: string; re: RegExp }> = [
   { label: 'Conditioning', re: /\b(cardio|interval|run|walk|treadmill|conditioning)\b/i },
   { label: 'Mobility', re: /\b(stretch|mobility|warm[- ]?up|cool[- ]?down)\b/i },
 ];
+const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebration';
 
 function exerciseFocusTags(exercise?: WorkoutExerciseDetail | null, day?: WorkoutDayDetail | null) {
   const haystack = `${exercise?.exerciseName || ''} ${exercise?.notes || ''} ${day?.focus || ''}`;
@@ -619,6 +621,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         workoutMode: detail.workoutMode,
       });
       await clearWorkoutProgress(planDayId);
+      await AsyncStorage.setItem(PENDING_STREAK_CELEBRATION_KEY, String(Date.now())).catch(() => undefined);
       await displayBehavioralNotification('workoutComplete', {
         firstName: (status?.name || 'there').split(' ')[0],
         workoutTitle: detail.focus || detail.planTitle || 'Workout',

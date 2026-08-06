@@ -25,6 +25,7 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutList'>;
 
 const TODAY_WORKOUT_KEY_PREFIX = 'formbae_today_workout:';
 const LAST_SEEN_STREAK_KEY = 'formbae_last_seen_workout_streak';
+const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebration';
 const GOLD = '#f5b301';
 const GOLD_DARK = '#9a5b00';
 const GOLD_SOFT = '#fff4cc';
@@ -58,10 +59,49 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   });
 }
 
-function GoldenStreakBadge({ streak }: { streak: number }) {
+function GoldenStreakBadge({ streak, celebrationNonce }: { streak: number; celebrationNonce: number }) {
   const [burning, setBurning] = useState(false);
   const flame = useRef(new Animated.Value(0)).current;
   const previousStreak = useRef<number | null>(null);
+  const hasMounted = useRef(false);
+
+  const playFire = useCallback(() => {
+    setBurning(true);
+    flame.setValue(0);
+    Animated.sequence([
+      Animated.timing(flame, {
+        toValue: 1,
+        duration: 240,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(flame, {
+            toValue: 0.42,
+            duration: 150,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+          Animated.timing(flame, {
+            toValue: 1,
+            duration: 170,
+            easing: Easing.inOut(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ]),
+        { iterations: 5 },
+      ),
+      Animated.timing(flame, {
+        toValue: 0,
+        duration: 380,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setBurning(false);
+    });
+  }, [flame]);
 
   useEffect(() => {
     let mounted = true;
@@ -71,41 +111,7 @@ function GoldenStreakBadge({ streak }: { streak: number }) {
         const stored = value ? Number(value) : NaN;
         previousStreak.current = Number.isFinite(stored) ? stored : streak;
         if (streak > 0 && Number.isFinite(stored) && streak > stored) {
-          setBurning(true);
-          flame.setValue(0);
-          Animated.sequence([
-            Animated.timing(flame, {
-              toValue: 1,
-              duration: 260,
-              easing: Easing.out(Easing.cubic),
-              useNativeDriver: true,
-            }),
-            Animated.loop(
-              Animated.sequence([
-                Animated.timing(flame, {
-                  toValue: 0.42,
-                  duration: 160,
-                  easing: Easing.inOut(Easing.quad),
-                  useNativeDriver: true,
-                }),
-                Animated.timing(flame, {
-                  toValue: 1,
-                  duration: 180,
-                  easing: Easing.inOut(Easing.quad),
-                  useNativeDriver: true,
-                }),
-              ]),
-              { iterations: 4 },
-            ),
-            Animated.timing(flame, {
-              toValue: 0,
-              duration: 360,
-              easing: Easing.out(Easing.cubic),
-              useNativeDriver: true,
-            }),
-          ]).start(() => {
-            if (mounted) setBurning(false);
-          });
+          playFire();
         }
         return AsyncStorage.setItem(LAST_SEEN_STREAK_KEY, String(streak));
       })
@@ -118,7 +124,17 @@ function GoldenStreakBadge({ streak }: { streak: number }) {
     return () => {
       mounted = false;
     };
-  }, [flame, streak]);
+  }, [playFire, streak]);
+
+  useEffect(() => {
+    if (!hasMounted.current) {
+      hasMounted.current = true;
+      return;
+    }
+    if (celebrationNonce > 0 && streak > 0) {
+      playFire();
+    }
+  }, [celebrationNonce, playFire, streak]);
 
   const scale = flame.interpolate({ inputRange: [0, 1], outputRange: [1, 1.16] });
   const lift = flame.interpolate({ inputRange: [0, 1], outputRange: [0, -3] });
@@ -129,13 +145,12 @@ function GoldenStreakBadge({ streak }: { streak: number }) {
     <View style={[styles.streakBadge, burning && styles.streakBadgeBurning]} accessibilityLabel={`${streak} day streak`}>
       <Animated.View style={[styles.streakGlow, { opacity: glowOpacity, transform: [{ scale }] }]} />
       <View style={styles.streakIconWrap}>
-        <MaterialCommunityIcon name="fire" size={26} color={colors.ink} />
+        <MaterialCommunityIcon name="fire" size={26} color={GOLD} />
         <Animated.View style={[styles.streakGoldIcon, { opacity: iconOpacity, transform: [{ translateY: lift }, { scale }] }]}>
           <MaterialCommunityIcon name="fire" size={29} color={GOLD} />
         </Animated.View>
       </View>
       <Text style={styles.streakValue}>{streak}d</Text>
-      <Text style={styles.streakLabel}>streak</Text>
     </View>
   );
 }
@@ -154,6 +169,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [summaryOpening, setSummaryOpening] = useState(false);
+  const [streakCelebrationNonce, setStreakCelebrationNonce] = useState(0);
 
   const load = useCallback(async (options?: { force?: boolean }) => {
     setError(null);
@@ -188,7 +204,14 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
       navigation.getParent()?.setOptions({ tabBarStyle: appTabBarStyle });
-      load();
+      void (async () => {
+        await load();
+        const pending = await AsyncStorage.getItem(PENDING_STREAK_CELEBRATION_KEY).catch(() => null);
+        if (pending) {
+          await AsyncStorage.removeItem(PENDING_STREAK_CELEBRATION_KEY).catch(() => undefined);
+          setStreakCelebrationNonce((value) => value + 1);
+        }
+      })();
     });
     return unsub;
   }, [navigation, load]);
@@ -283,7 +306,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                   {doneCount} of {days.length} days complete
                 </Text>
               </View>
-              <GoldenStreakBadge streak={currentStreak} />
+              <GoldenStreakBadge streak={currentStreak} celebrationNonce={streakCelebrationNonce} />
             </View>
 
             <Card style={styles.todayHero}>
@@ -526,15 +549,15 @@ const styles = StyleSheet.create({
   eyebrow: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 2 },
   summary: { ...typography.caption, color: colors.inkMuted, marginTop: -spacing.xs },
   streakBadge: {
-    width: 72,
-    minHeight: 78,
+    width: 66,
+    height: 66,
     borderRadius: radius.pill,
     backgroundColor: colors.panel,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    paddingVertical: 7,
+    paddingTop: 6,
     shadowColor: colors.black,
     shadowOpacity: 0.08,
     shadowRadius: 14,
@@ -564,8 +587,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  streakValue: { fontSize: 18, fontWeight: '900', color: colors.ink, marginTop: -1 },
-  streakLabel: { ...typography.caption, color: GOLD_DARK, marginTop: -3, fontWeight: '800' },
+  streakValue: { fontSize: 19, fontWeight: '900', color: GOLD_DARK, marginTop: -5 },
   todayHero: { backgroundColor: colors.accent, borderColor: colors.accentDark, overflow: 'hidden', padding: spacing.lg },
   todayTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   todayTopRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
