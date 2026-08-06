@@ -200,18 +200,23 @@ function CoachHero({ coach, ai }: { coach: CoachOption; ai: boolean }) {
   return (
     <View style={styles.hero}>
       <View style={styles.heroTop}>
-        {image ? <Image source={{ uri: image }} style={styles.heroImage} /> : <Avatar name={coach.name} size={82} />}
+        {image ? (
+          <Image source={{ uri: image }} style={styles.heroImage} resizeMode="cover" />
+        ) : (
+          <View style={styles.aiPhotoFallback}>
+            <Feather name="user" size={28} color={colors.white} />
+          </View>
+        )}
         <View style={styles.heroText}>
           <Text style={styles.kicker}>{ai ? 'AI trainer' : 'Your coach'}</Text>
           <Text style={styles.heroName} numberOfLines={1}>{coach.name}</Text>
-          <Text style={styles.heroMeta} numberOfLines={2}>{ai ? 'Instant workout planning and adaptive weekly check-ins' : coach.expertise || 'Personal trainer'}</Text>
         </View>
         <Badge label={coach.tier} tone="accent" icon="award" />
       </View>
       {ai ? (
         <View style={styles.aiPromise}>
           <Feather name="zap" size={18} color={colors.white} />
-          <Text style={styles.aiPromiseText}>Ava builds plans from your logs, feedback, and next two-week schedule.</Text>
+          <Text style={styles.aiPromiseText}>Plans from your logs, feedback, and next two-week schedule.</Text>
         </View>
       ) : null}
     </View>
@@ -373,10 +378,19 @@ const styles = StyleSheet.create({
   },
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   heroImage: { width: 64, height: 64, borderRadius: 22, backgroundColor: colors.panelMuted },
+  aiPhotoFallback: {
+    width: 64,
+    height: 64,
+    borderRadius: 22,
+    backgroundColor: '#1f1f1f',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   heroText: { flex: 1 },
   kicker: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
   heroName: { ...typography.title, color: colors.white, marginTop: 2 },
-  heroMeta: { ...typography.caption, color: colors.onAccentMuted, marginTop: 4, lineHeight: 18 },
   aiPromise: {
     minHeight: 50,
     borderRadius: radius.lg,
