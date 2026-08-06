@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, Card } from '../../components/Card';
 import { Avatar } from '../../components/Avatar';
@@ -58,6 +59,7 @@ function isAiCoach(coach: CoachOption) {
 }
 
 export function TrainerScreen() {
+  const tabBarHeight = useBottomTabBarHeight();
   const [tab, setTab] = useState<CoachTab>('about');
   const [changingId, setChangingId] = useState('');
   const { refreshStatus } = useAuthStore();
@@ -137,7 +139,7 @@ export function TrainerScreen() {
       {tab === 'about' ? (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
         >
           <CoachHero coach={currentCoach} ai={currentIsAi} />
@@ -148,7 +150,7 @@ export function TrainerScreen() {
       {tab === 'change' ? (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
         >
           <ChangeCoachHeader onBack={() => setTab('about')} />
@@ -361,7 +363,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   aiPromiseText: { ...typography.caption, color: colors.white, flex: 1, lineHeight: 18, fontWeight: '800' },
-  scroll: { paddingBottom: spacing.xl, paddingTop: spacing.sm },
+  scroll: { paddingTop: spacing.sm },
   aboutCard: { gap: spacing.lg, padding: spacing.lg },
   aboutTitle: { ...typography.title, color: colors.ink },
   aboutBody: { ...typography.body, color: colors.inkMuted, lineHeight: 24 },
