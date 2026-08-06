@@ -14,6 +14,7 @@ export function WorkoutsNavigator() {
   return (
     <Stack.Navigator
       screenOptions={{
+        gestureEnabled: false,
         headerBackButtonDisplayMode: 'minimal',
         headerBackTitle: '',
         headerTintColor: colors.accentDark,
