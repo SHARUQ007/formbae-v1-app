@@ -28,7 +28,6 @@ const LAST_SEEN_STREAK_KEY = 'formbae_last_seen_workout_streak';
 const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebration';
 const GOLD = '#f5b301';
 const GOLD_DARK = '#9a5b00';
-const GOLD_SOFT = '#fff4cc';
 
 function resolveTrainerPhotoUrl(value?: string) {
   const url = String(value || '').trim();
@@ -145,12 +144,12 @@ function GoldenStreakBadge({ streak, celebrationNonce }: { streak: number; celeb
     <View style={[styles.streakBadge, burning && styles.streakBadgeBurning]} accessibilityLabel={`${streak} day streak`}>
       <Animated.View style={[styles.streakGlow, { opacity: glowOpacity, transform: [{ scale }] }]} />
       <View style={styles.streakIconWrap}>
-        <MaterialCommunityIcon name="fire" size={26} color={GOLD} />
+        <MaterialCommunityIcon name="fire" size={24} color={colors.ink} />
         <Animated.View style={[styles.streakGoldIcon, { opacity: iconOpacity, transform: [{ translateY: lift }, { scale }] }]}>
-          <MaterialCommunityIcon name="fire" size={29} color={GOLD} />
+          <MaterialCommunityIcon name="fire" size={27} color={GOLD} />
         </Animated.View>
       </View>
-      <Text style={styles.streakValue}>{streak}d</Text>
+      <Text style={[styles.streakValue, burning && styles.streakValueBurning]}>{streak}</Text>
     </View>
   );
 }
@@ -549,15 +548,17 @@ const styles = StyleSheet.create({
   eyebrow: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 2 },
   summary: { ...typography.caption, color: colors.inkMuted, marginTop: -spacing.xs },
   streakBadge: {
-    width: 66,
-    height: 66,
+    width: 86,
+    height: 54,
     borderRadius: radius.pill,
     backgroundColor: colors.panel,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 4,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    paddingTop: 6,
+    paddingHorizontal: 10,
     shadowColor: colors.black,
     shadowOpacity: 0.08,
     shadowRadius: 14,
@@ -567,18 +568,17 @@ const styles = StyleSheet.create({
   },
   streakBadgeBurning: {
     borderColor: GOLD,
-    backgroundColor: GOLD_SOFT,
   },
   streakGlow: {
     position: 'absolute',
-    width: 64,
-    height: 64,
+    width: 78,
+    height: 42,
     borderRadius: radius.pill,
     backgroundColor: GOLD,
   },
   streakIconWrap: {
-    width: 31,
-    height: 31,
+    width: 28,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -587,7 +587,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  streakValue: { fontSize: 19, fontWeight: '900', color: GOLD_DARK, marginTop: -5 },
+  streakValue: {
+    minWidth: 34,
+    textAlign: 'left',
+    fontSize: 22,
+    lineHeight: 26,
+    fontWeight: '900',
+    color: colors.ink,
+  },
+  streakValueBurning: { color: GOLD_DARK },
   todayHero: { backgroundColor: colors.accent, borderColor: colors.accentDark, overflow: 'hidden', padding: spacing.lg },
   todayTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   todayTopRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
