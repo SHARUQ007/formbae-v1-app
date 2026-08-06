@@ -123,6 +123,14 @@ function mealLabel(type: MealType) {
   return meals.find((meal) => meal.type === type)?.label || type;
 }
 
+function mealForCurrentTime(now = new Date()): MealType {
+  const hour = now.getHours();
+  if (hour >= 5 && hour < 11) return 'Breakfast';
+  if (hour >= 11 && hour < 16) return 'Lunch';
+  if (hour >= 16 && hour < 21) return 'Dinner';
+  return 'Snack';
+}
+
 function nextFeedbackText(feedback?: DietCoachFeedback | null) {
   if (!feedback?.generatedAt) return 'Next feedback in 7 days';
   const generated = new Date(feedback.generatedAt);
@@ -215,7 +223,7 @@ function DietScreenContent({ route, navigation }: Props) {
   const [entries, setEntries] = useState<DietDiaryEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [selectedMeal, setSelectedMeal] = useState<MealType>('Lunch');
+  const [selectedMeal, setSelectedMeal] = useState<MealType>(() => route.params?.mealType || mealForCurrentTime());
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [dietFeedback, setDietFeedback] = useState<DietCoachFeedback | null>(null);
   const [preview, setPreview] = useState<DietDiaryEntry | null>(null);
@@ -456,6 +464,15 @@ function DietScreenContent({ route, navigation }: Props) {
     setSelectedMeal(route.params.mealType);
     navigation.setParams({ mealType: undefined });
   }, [route.params?.action, route.params?.mealType, navigation]);
+
+  useEffect(() => {
+    const unsub = navigation.addListener('focus', () => {
+      if (route.params?.mealType || route.params?.action === 'camera' || textModalOpen) return;
+      if (!isSameDay(selectedDate, new Date())) return;
+      setSelectedMeal(mealForCurrentTime());
+    });
+    return unsub;
+  }, [navigation, route.params?.action, route.params?.mealType, selectedDate, textModalOpen]);
 
   const confirmDelete = (entry: DietDiaryEntry) => {
     const isTextEntry = entry.kind === 'text' || !entry.uri;
