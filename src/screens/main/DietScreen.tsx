@@ -223,7 +223,7 @@ function DietScreenContent({ route, navigation }: Props) {
   const [textEntry, setTextEntry] = useState('');
   const [savedMeal, setSavedMeal] = useState<{ mealType: MealType; note: string } | null>(null);
   const [memorySessionPoints, setMemorySessionPoints] = useState(0);
-  const [activeTab, setActiveTab] = useState<'diary' | 'feedback'>('diary');
+  const [activeTab, setActiveTab] = useState<'log' | 'diary'>('log');
   const saveToastOpacity = useRef(new Animated.Value(0)).current;
   const saveToastScale = useRef(new Animated.Value(0.86)).current;
   const celebrationProgress = useRef(new Animated.Value(0)).current;
@@ -542,11 +542,11 @@ function DietScreenContent({ route, navigation }: Props) {
         <ScreenTitle>Diet</ScreenTitle>
 
         <View style={styles.dietTabs}>
-          <DietTab label="Diary" icon="edit-3" active={activeTab === 'diary'} onPress={() => setActiveTab('diary')} />
-          <DietTab label="Feedback" icon="message-circle" active={activeTab === 'feedback'} onPress={() => setActiveTab('feedback')} />
+          <DietTab label="Log" icon="plus-circle" active={activeTab === 'log'} onPress={() => setActiveTab('log')} />
+          <DietTab label="Diary" icon="book-open" active={activeTab === 'diary'} onPress={() => setActiveTab('diary')} />
         </View>
 
-        {activeTab === 'feedback' ? (
+        {activeTab === 'diary' ? (
           <View style={styles.feedbackScreen}>
             <View style={styles.feedbackHero}>
               <View style={styles.feedbackHeroIcon}>
@@ -609,66 +609,69 @@ function DietScreenContent({ route, navigation }: Props) {
               </View>
             </View>
 
-            <PrimaryButton title="Start memory game" icon="plus" onPress={() => { setActiveTab('diary'); openMemoryGame(); }} style={styles.feedbackCta} />
+            <PrimaryButton title="Start memory game" icon="plus" onPress={() => { setActiveTab('log'); openMemoryGame(); }} style={styles.feedbackCta} />
             {renderDietDiary()}
           </View>
         ) : (
           <>
-            <View style={styles.diaryPanel}>
-              <View style={styles.diaryTop}>
-                <View style={styles.memoryScoreCompact}>
-                  <Text style={[styles.memoryScoreValue, styles.memoryScoreCompactValue]}>{memoryPoints}</Text>
-                  <Text style={[styles.memoryScoreLabel, styles.memoryScoreCompactLabel]}>today</Text>
+            <View style={styles.logPanel}>
+              <View style={styles.logHero}>
+                <View style={styles.logScore}>
+                  <Text style={styles.logScoreValue}>{memoryPoints}</Text>
+                  <Text style={styles.logScoreLabel}>today</Text>
                 </View>
-                <View style={styles.diaryCopy}>
-                  <Text style={styles.memoryTitle}>Food memory</Text>
-                  <Text style={styles.memoryText}>{totalMemoryPoints} lifetime points · add one remembered food at a time.</Text>
+                <View style={styles.logHeroText}>
+                  <Text style={styles.logEyebrow}>Food logging</Text>
+                  <Text style={styles.logTitle}>Remember what you ate</Text>
+                  <Text style={styles.logCopy}>{totalMemoryPoints} lifetime points. Add one item at a time.</Text>
                 </View>
               </View>
 
-              <View style={styles.dateNavigator}>
-                <TouchableOpacity
-                  onPress={() => setSelectedDate((value) => shiftDate(value, -1))}
-                  style={styles.dateArrow}
-                  accessibilityRole="button"
-                  accessibilityLabel="Previous diary date"
-                >
-                  <Feather name="chevron-left" size={22} color={colors.ink} />
-                </TouchableOpacity>
-                <View style={styles.dateCenter}>
-                  <Text style={styles.dateLabel}>Diary date</Text>
-                  <Text style={styles.dateValue}>{formatDiaryDate(selectedDate)}</Text>
+              <View style={styles.logControlsCard}>
+                <View style={styles.dateNavigator}>
+                  <TouchableOpacity
+                    onPress={() => setSelectedDate((value) => shiftDate(value, -1))}
+                    style={styles.dateArrow}
+                    accessibilityRole="button"
+                    accessibilityLabel="Previous log date"
+                  >
+                    <Feather name="chevron-left" size={22} color={colors.ink} />
+                  </TouchableOpacity>
+                  <View style={styles.dateCenter}>
+                    <Text style={styles.dateLabel}>Log date</Text>
+                    <Text style={styles.dateValue}>{formatDiaryDate(selectedDate)}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setSelectedDate((value) => shiftDate(value, 1))}
+                    disabled={!canGoForward}
+                    style={[styles.dateArrow, !canGoForward && styles.dateArrowDisabled]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Next log date"
+                    accessibilityState={{ disabled: !canGoForward }}
+                  >
+                    <Feather name="chevron-right" size={22} color={canGoForward ? colors.ink : colors.inkSubtle} />
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity
-                  onPress={() => setSelectedDate((value) => shiftDate(value, 1))}
-                  disabled={!canGoForward}
-                  style={[styles.dateArrow, !canGoForward && styles.dateArrowDisabled]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Next diary date"
-                  accessibilityState={{ disabled: !canGoForward }}
-                >
-                  <Feather name="chevron-right" size={22} color={canGoForward ? colors.ink : colors.inkSubtle} />
-                </TouchableOpacity>
-              </View>
 
-              <View style={styles.mealGridCompact}>
-                {meals.map((meal) => {
-                  const selected = selectedMeal === meal.type;
-                  return (
-                    <TouchableOpacity
-                      key={meal.type}
-                      activeOpacity={0.85}
-                      onPress={() => setSelectedMeal(meal.type)}
-                      style={[styles.mealPill, selected && styles.mealPillSelected]}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      accessibilityLabel={`Select ${meal.label}`}
-                    >
-                      <Feather name={meal.icon} size={16} color={selected ? colors.white : colors.inkMuted} />
-                      <Text style={[styles.mealPillText, selected && styles.mealPillTextSelected]}>{meal.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                <View style={styles.mealGridCompact}>
+                  {meals.map((meal) => {
+                    const selected = selectedMeal === meal.type;
+                    return (
+                      <TouchableOpacity
+                        key={meal.type}
+                        activeOpacity={0.85}
+                        onPress={() => setSelectedMeal(meal.type)}
+                        style={[styles.mealPill, selected && styles.mealPillSelected]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        accessibilityLabel={`Select ${meal.label}`}
+                      >
+                        <Feather name={meal.icon} size={16} color={selected ? colors.white : colors.inkMuted} />
+                        <Text style={[styles.mealPillText, selected && styles.mealPillTextSelected]}>{meal.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
               </View>
 
               <View style={styles.actions}>
@@ -680,7 +683,7 @@ function DietScreenContent({ route, navigation }: Props) {
               </View>
             </View>
 
-            <TouchableOpacity activeOpacity={0.86} style={styles.feedbackPreview} onPress={() => setActiveTab('feedback')}>
+            <TouchableOpacity activeOpacity={0.86} style={styles.feedbackPreview} onPress={() => setActiveTab('diary')}>
               <View style={styles.feedbackPreviewIcon}>
                 <Feather name="message-circle" size={19} color={colors.white} />
               </View>
@@ -944,27 +947,45 @@ const styles = StyleSheet.create({
   feedbackStatValue: { ...typography.title, color: colors.ink },
   feedbackStatLabel: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   feedbackCta: { marginTop: spacing.xs },
-  diaryPanel: {
+  logPanel: {
     borderRadius: radius.xl,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.sm,
+    gap: spacing.md,
+    ...shadows.sm,
+  },
+  logHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: 26,
+    backgroundColor: colors.black,
+    padding: spacing.lg,
+  },
+  logScore: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.lg,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logScoreValue: { fontSize: 34, lineHeight: 38, fontWeight: '900', color: colors.black },
+  logScoreLabel: { ...typography.caption, color: colors.inkMuted, marginTop: -2 },
+  logHeroText: { flex: 1 },
+  logEyebrow: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
+  logTitle: { ...typography.title, color: colors.white, marginTop: 2 },
+  logCopy: { ...typography.caption, color: colors.onAccentMuted, marginTop: spacing.xs, lineHeight: 18 },
+  logControlsCard: {
+    borderRadius: 24,
     backgroundColor: colors.panel,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.md,
     gap: spacing.md,
-    ...shadows.sm,
   },
-  diaryTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  memoryScoreCompact: {
-    width: 64,
-    height: 64,
-    borderRadius: radius.lg,
-    backgroundColor: colors.black,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  memoryScoreCompactValue: { color: colors.white },
-  memoryScoreCompactLabel: { color: colors.onAccentMuted },
-  diaryCopy: { flex: 1 },
   mealGridCompact: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   mealPill: {
     flexGrow: 1,
@@ -1011,13 +1032,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
-    marginTop: spacing.md,
-    borderRadius: radius.xl,
-    backgroundColor: colors.panel,
+    borderRadius: radius.lg,
+    backgroundColor: colors.bg,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.sm,
-    ...shadows.sm,
   },
   dateArrow: {
     width: 46,
