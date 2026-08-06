@@ -40,7 +40,6 @@ import {
   type DietCoachFeedback,
 } from '../../services/dietDiaryService';
 import { getAuthToken } from '../../services/apiClient';
-import { displayBehavioralNotification } from '../../services/notificationService';
 import { loadDietDiaryCached } from '../../services/preloadService';
 import type { MainTabParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
@@ -323,7 +322,6 @@ function DietScreenContent({ route, navigation }: Props) {
     try {
       const localEntry = await addDietDiaryEntry(asset, mealType, undefined, timestampForFoodSlot(selectedDate, mealType));
       await load();
-      displayBehavioralNotification('dietPhotoLogged', { mealType: mealLabel(mealType) }).catch(() => undefined);
       try {
         const uploaded = await uploadDietDiaryEntry({
           clientId: localEntry.id,
@@ -445,7 +443,6 @@ function DietScreenContent({ route, navigation }: Props) {
     try {
       const localEntry = await addTextDietDiaryEntry(entryMeal, note, timestampForFoodSlot(entryDate, entryMeal));
       setTextEntry('');
-      displayBehavioralNotification('dietPhotoLogged', { mealType: mealLabel(entryMeal) }).catch(() => undefined);
       await load();
       setMemorySessionPoints((points) => points + 1);
       showSavedMealAnimation(entryMeal, note);

@@ -39,7 +39,7 @@ type NotificationConfig = {
   behavioral: Record<BehavioralNotificationEvent, BehavioralNotificationTemplate>;
 };
 
-export type BehavioralNotificationEvent = 'workoutComplete' | 'dietPhotoLogged' | 'checkInSubmitted' | 'paymentConfirmed' | 'planReady';
+export type BehavioralNotificationEvent = 'paymentConfirmed' | 'planReady';
 
 type BehavioralNotificationTemplate = {
   enabled: boolean;
@@ -69,24 +69,6 @@ const DEFAULT_CONFIG: NotificationConfig = {
     timeHHMM: '19:30',
   },
   behavioral: {
-    workoutComplete: {
-      enabled: true,
-      title: 'Workout logged',
-      body: 'Great work, {firstName}. Your trainer can now see today’s progress.',
-      cooldownHours: 2,
-    },
-    dietPhotoLogged: {
-      enabled: true,
-      title: 'Meal saved',
-      body: '{mealType} added to your diet diary. Keep the streak going.',
-      cooldownHours: 2,
-    },
-    checkInSubmitted: {
-      enabled: true,
-      title: 'Check-in sent',
-      body: 'Your trainer has your latest update and can adjust your plan if needed.',
-      cooldownHours: 12,
-    },
     paymentConfirmed: {
       enabled: true,
       title: 'Payment confirmed',
@@ -132,9 +114,6 @@ async function fetchNotificationConfig(): Promise<NotificationConfig> {
       checkIn: { ...DEFAULT_CONFIG.checkIn, ...response.config.checkIn },
       trainer: { ...DEFAULT_CONFIG.trainer, ...response.config.trainer },
       behavioral: {
-        workoutComplete: { ...DEFAULT_CONFIG.behavioral.workoutComplete, ...response.config.behavioral?.workoutComplete },
-        dietPhotoLogged: { ...DEFAULT_CONFIG.behavioral.dietPhotoLogged, ...response.config.behavioral?.dietPhotoLogged },
-        checkInSubmitted: { ...DEFAULT_CONFIG.behavioral.checkInSubmitted, ...response.config.behavioral?.checkInSubmitted },
         paymentConfirmed: { ...DEFAULT_CONFIG.behavioral.paymentConfirmed, ...response.config.behavioral?.paymentConfirmed },
         planReady: { ...DEFAULT_CONFIG.behavioral.planReady, ...response.config.behavioral?.planReady },
       },

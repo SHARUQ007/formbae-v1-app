@@ -30,8 +30,6 @@ import {
   clearWorkoutProgress,
 } from '../../store/workoutStore';
 import { useRestTimer } from '../../hooks/useRestTimer';
-import { displayBehavioralNotification, displayLocalNotification } from '../../services/notificationService';
-import { useAuthStore } from '../../store/authStore';
 import type { WorkoutDayDetail, WorkoutExerciseDetail } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
 import { hiddenTabBarStyle } from '../../navigation/tabBarStyle';
@@ -206,7 +204,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [resolvedVideoUrls, setResolvedVideoUrls] = useState<Record<string, string>>({});
   const [resolvingVideoKeys, setResolvingVideoKeys] = useState<Set<string>>(new Set());
-  const { status } = useAuthStore();
   const pendingNextIndexRef = useRef<number | null>(null);
   const resolvingVideoRequestsRef = useRef<Map<string, Promise<string>>>(new Map());
 
@@ -215,7 +212,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   }, [navigation]);
 
   const timer = useRestTimer(() => {
-    displayLocalNotification('Rest complete', 'Time for your next set.').catch(() => undefined);
     const nextIndex = pendingNextIndexRef.current;
     pendingNextIndexRef.current = null;
     setPendingNextIndex(null);
@@ -622,10 +618,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       });
       await clearWorkoutProgress(planDayId);
       await AsyncStorage.setItem(PENDING_STREAK_CELEBRATION_KEY, String(Date.now())).catch(() => undefined);
-      await displayBehavioralNotification('workoutComplete', {
-        firstName: (status?.name || 'there').split(' ')[0],
-        workoutTitle: detail.focus || detail.planTitle || 'Workout',
-      }).catch(() => undefined);
       if (!result.synced) {
         setReward({
           id: Date.now(),
@@ -639,7 +631,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     } finally {
       setFinishing(false);
     }
-  }, [detail, planDayId, navigation, status?.name]);
+  }, [detail, planDayId, navigation]);
 
   if (loading) {
     return (
