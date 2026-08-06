@@ -22,10 +22,11 @@ import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { changeCoach } from '../../services/trainerService';
+import { runNativeCheckout } from '../../services/paymentService';
 import { loadCoachBundleCached } from '../../services/preloadService';
 import { useAuthStore } from '../../store/authStore';
 import { getSiteUrl } from '../../constants/config';
-import type { CoachOption } from '../../types/api';
+import type { CoachOption, PaymentPlan } from '../../types/api';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
@@ -55,8 +56,28 @@ function formatUnlockDate(value: string) {
 }
 
 function isAiCoach(coach: CoachOption) {
-  const text = `${coach.name} ${coach.gender} ${coach.expertise} ${coach.description} ${coach.detailedDescription}`.toLowerCase();
-  return text.includes('ai') || text.includes('ava');
+  const kind = String(coach.trainerKind || '').trim().toLowerCase();
+  if (kind === 'ai') return true;
+  if (kind === 'human') return false;
+  const persona = String(coach.trainerPersona || '').trim().toLowerCase();
+  if (persona === 'female_ai' || persona === 'male_ai') return true;
+  const text = `${coach.name} ${coach.expertise} ${coach.description} ${coach.detailedDescription}`.toLowerCase();
+  return /\b(ai trainer|ava)\b/.test(text);
+}
+
+function trainerUpgradePlan(coach: CoachOption): PaymentPlan | null {
+  const amount = Math.round(Number(coach.upgradeAmountPaise || 0));
+  if (!coach.paywallId || !Number.isFinite(amount) || amount < 100) return null;
+  return {
+    planId: '',
+    planName: `${coach.name} coach access`,
+    label: `${coach.name} coach access`,
+    amount,
+    planDuration: 'monthly',
+    paywallId: coach.paywallId,
+    flowSlug: 'mobile',
+    billing: 'one_time',
+  };
 }
 
 export function TrainerScreen() {
@@ -64,7 +85,8 @@ export function TrainerScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const [tab, setTab] = useState<CoachTab>('about');
   const [changingId, setChangingId] = useState('');
-  const { refreshStatus } = useAuthStore();
+  const [payingTrainerId, setPayingTrainerId] = useState('');
+  const { user, status, refreshStatus } = useAuthStore();
 
   const { data, loading, error, reload, refresh, refreshing } = useAsync((mode) =>
     loadCoachBundleCached({ force: mode === 'refresh' }),
@@ -77,6 +99,43 @@ export function TrainerScreen() {
   );
   const currentIsAi = currentCoach ? isAiCoach(currentCoach) : false;
 
+  const startTrainerUpgrade = useCallback(
+    async (coach: CoachOption) => {
+      const plan = trainerUpgradePlan(coach);
+      if (!plan) {
+        Alert.alert('Coach payment not ready', 'This coach does not have an enabled trainer paywall yet. Please try another coach or contact support.');
+        return;
+      }
+      setPayingTrainerId(coach.trainerId);
+      try {
+        const result = await runNativeCheckout({
+          plan,
+          paywallId: coach.paywallId,
+          selectedTrainerId: coach.trainerId,
+          user: {
+            name: status?.name || user?.name || 'FormBae Trainee',
+            mobile: status?.phone || user?.mobile || '',
+            email: status?.email,
+          },
+        });
+        if (result.cancelled) return;
+        if (!result.success) {
+          Alert.alert('Payment issue', result.error || 'Payment could not be completed.');
+          return;
+        }
+        await refreshStatus().catch(() => undefined);
+        await loadCoachBundleCached({ force: true }).catch(() => undefined);
+        await reload();
+        setTab('about');
+      } catch (e) {
+        Alert.alert('Could not unlock coach', e instanceof Error ? e.message : 'Please try again.');
+      } finally {
+        setPayingTrainerId('');
+      }
+    },
+    [refreshStatus, reload, status?.email, status?.name, status?.phone, user?.mobile, user?.name],
+  );
+
   const confirmChangeCoach = useCallback(
     (coach: CoachOption) => {
       if (!data || coach.changeKind === 'none') return;
@@ -85,7 +144,10 @@ export function TrainerScreen() {
         return;
       }
       if (coach.requiresUpgrade) {
-        Alert.alert('Upgrade required', coach.reason);
+        Alert.alert('Upgrade coach?', coach.reason || `Unlock ${coach.name} with Razorpay.`, [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Continue', onPress: () => startTrainerUpgrade(coach) },
+        ]);
         return;
       }
       Alert.alert('Change coach?', `Switch from ${currentCoach?.name || 'your current coach'} to ${coach.name}? Your workout history stays intact.`, [
@@ -109,7 +171,7 @@ export function TrainerScreen() {
         },
       ]);
     },
-    [currentCoach?.name, data, refreshStatus, reload],
+    [currentCoach?.name, data, refreshStatus, reload, startTrainerUpgrade],
   );
 
   if (loading) {
@@ -172,7 +234,7 @@ export function TrainerScreen() {
                 key={coach.trainerId}
                 coach={coach}
                 current={coach.trainerId === currentCoach.trainerId}
-                changing={changingId === coach.trainerId}
+                changing={changingId === coach.trainerId || payingTrainerId === coach.trainerId}
                 onPress={() => confirmChangeCoach(coach)}
               />
             ))}

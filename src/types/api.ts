@@ -108,6 +108,8 @@ export type PaymentPlan = {
   recurringLabel?: string;
 };
 
+export type TrainerKind = 'human' | 'ai';
+
 export type TodayPayload = {
   plan?: {
     planId: string;
@@ -204,6 +206,8 @@ export type CoachOption = {
   languages: string[];
   monthlyFee: string;
   tier: string;
+  trainerKind?: TrainerKind | string;
+  trainerPersona?: string;
   availableSlotCount: number;
   nextSlotAt: string;
   changeKind: CoachChangeKind;
