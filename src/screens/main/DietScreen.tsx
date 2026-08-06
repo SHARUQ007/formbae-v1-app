@@ -476,6 +476,62 @@ function DietScreenContent({ route, navigation }: Props) {
     ]);
   };
 
+  const renderDietDiary = () => (
+    <>
+      <SectionTitle>Diet diary</SectionTitle>
+      {visibleEntries.length === 0 ? (
+        <EmptyState
+          icon="edit-3"
+          title={`No food logged for ${formatDiaryDate(selectedDate).toLowerCase()}`}
+          message="Play the food memory game and add each remembered item for points."
+          actionLabel="Start memory game"
+          onAction={openMemoryGame}
+        />
+      ) : (
+        <View style={styles.grid}>
+          {visibleEntries.map((entry) => {
+            const isTextEntry = entry.kind === 'text' || !entry.uri;
+            return (
+              <TouchableOpacity
+                key={entry.id}
+                activeOpacity={0.85}
+                style={[styles.diaryCard, isTextEntry && styles.textCard]}
+                onPress={() => setPreview(entry)}
+              >
+                {isTextEntry ? (
+                  <View style={styles.textCardBody}>
+                    <View style={styles.foodCardHeader}>
+                      <View style={styles.foodIcon}>
+                        <MaterialCommunityIcon name="silverware-fork-knife" size={22} color={colors.accent} />
+                      </View>
+                    </View>
+                    <View style={styles.foodCardContent}>
+                      <Text style={styles.foodLabel}>Food item</Text>
+                      <Text style={styles.foodName} numberOfLines={3}>{entry.note}</Text>
+                    </View>
+                    <View style={styles.foodCardFooter}>
+                      <Feather name="clock" size={13} color={colors.accentDark} />
+                      <Text style={styles.foodFooterText}>{mealLabel(entry.mealType)}</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <Image source={imageSource(entry)} style={styles.photo} resizeMode="cover" />
+                )}
+                <View style={styles.photoMeta}>
+                  <View style={styles.photoMealRow}>
+                    <Text style={styles.photoMeal}>{mealLabel(entry.mealType)}</Text>
+                    {entry.syncError ? <Feather name="cloud-off" size={13} color={colors.warn} /> : null}
+                  </View>
+                  <Text style={styles.photoTime}>{formatEntryTime(entry.createdAt)}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+    </>
+  );
+
   return (
     <ScreenContainer>
       <ScrollView
@@ -554,6 +610,7 @@ function DietScreenContent({ route, navigation }: Props) {
             </View>
 
             <PrimaryButton title="Start memory game" icon="plus" onPress={() => { setActiveTab('diary'); openMemoryGame(); }} style={styles.feedbackCta} />
+            {renderDietDiary()}
           </View>
         ) : (
           <>
@@ -633,58 +690,6 @@ function DietScreenContent({ route, navigation }: Props) {
               </View>
               <Feather name="chevron-right" size={22} color={colors.inkMuted} />
             </TouchableOpacity>
-
-            <SectionTitle>Diet diary</SectionTitle>
-            {visibleEntries.length === 0 ? (
-              <EmptyState
-                icon="edit-3"
-                title={`No food logged for ${formatDiaryDate(selectedDate).toLowerCase()}`}
-                message="Play the food memory game and add each remembered item for points."
-                actionLabel="Start memory game"
-                onAction={openMemoryGame}
-              />
-            ) : (
-              <View style={styles.grid}>
-                {visibleEntries.map((entry) => {
-                  const isTextEntry = entry.kind === 'text' || !entry.uri;
-                  return (
-                    <TouchableOpacity
-                      key={entry.id}
-                      activeOpacity={0.85}
-                      style={[styles.diaryCard, isTextEntry && styles.textCard]}
-                      onPress={() => setPreview(entry)}
-                    >
-                      {isTextEntry ? (
-                        <View style={styles.textCardBody}>
-                          <View style={styles.foodCardHeader}>
-                            <View style={styles.foodIcon}>
-                              <MaterialCommunityIcon name="silverware-fork-knife" size={22} color={colors.accent} />
-                            </View>
-                          </View>
-                          <View style={styles.foodCardContent}>
-                            <Text style={styles.foodLabel}>Food item</Text>
-                            <Text style={styles.foodName} numberOfLines={3}>{entry.note}</Text>
-                          </View>
-                          <View style={styles.foodCardFooter}>
-                            <Feather name="clock" size={13} color={colors.accentDark} />
-                            <Text style={styles.foodFooterText}>{mealLabel(entry.mealType)}</Text>
-                          </View>
-                        </View>
-                      ) : (
-                        <Image source={imageSource(entry)} style={styles.photo} resizeMode="cover" />
-                      )}
-                      <View style={styles.photoMeta}>
-                        <View style={styles.photoMealRow}>
-                          <Text style={styles.photoMeal}>{mealLabel(entry.mealType)}</Text>
-                          {entry.syncError ? <Feather name="cloud-off" size={13} color={colors.warn} /> : null}
-                        </View>
-                        <Text style={styles.photoTime}>{formatEntryTime(entry.createdAt)}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
           </>
         )}
       </ScrollView>
