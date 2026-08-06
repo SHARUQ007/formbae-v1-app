@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, Card } from '../../components/Card';
@@ -59,6 +60,7 @@ function isAiCoach(coach: CoachOption) {
 }
 
 export function TrainerScreen() {
+  const navigation = useNavigation();
   const tabBarHeight = useBottomTabBarHeight();
   const [tab, setTab] = useState<CoachTab>('about');
   const [changingId, setChangingId] = useState('');
@@ -136,6 +138,16 @@ export function TrainerScreen() {
 
   return (
     <ScreenContainer>
+      <CoachHeader
+        title={tab === 'change' ? 'Upgrade coach' : 'Your coach'}
+        onBack={() => {
+          if (tab === 'change') {
+            setTab('about');
+          } else if (navigation.canGoBack()) {
+            navigation.goBack();
+          }
+        }}
+      />
       {tab === 'about' ? (
         <ScrollView
           showsVerticalScrollIndicator={false}
@@ -168,6 +180,18 @@ export function TrainerScreen() {
         </ScrollView>
       ) : null}
     </ScreenContainer>
+  );
+}
+
+function CoachHeader({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <View style={styles.screenHeader}>
+      <TouchableOpacity onPress={onBack} style={styles.headerBack} accessibilityRole="button" accessibilityLabel="Go back">
+        <Feather name="chevron-left" size={26} color={colors.ink} />
+      </TouchableOpacity>
+      <Text style={styles.headerTitle}>{title}</Text>
+      <View style={styles.headerSpacer} />
+    </View>
   );
 }
 
@@ -342,19 +366,19 @@ function CoachOptionCard({
 const styles = StyleSheet.create({
   hero: {
     backgroundColor: colors.inkStrong,
-    borderRadius: 34,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-    gap: spacing.lg,
+    borderRadius: 28,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.md,
   },
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  heroImage: { width: 82, height: 82, borderRadius: 28, backgroundColor: colors.panelMuted },
+  heroImage: { width: 64, height: 64, borderRadius: 22, backgroundColor: colors.panelMuted },
   heroText: { flex: 1 },
   kicker: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
   heroName: { ...typography.title, color: colors.white, marginTop: 2 },
   heroMeta: { ...typography.caption, color: colors.onAccentMuted, marginTop: 4, lineHeight: 18 },
   aiPromise: {
-    minHeight: 58,
+    minHeight: 50,
     borderRadius: radius.lg,
     backgroundColor: 'rgba(255,255,255,0.12)',
     borderWidth: 1,
@@ -362,16 +386,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   aiPromiseText: { ...typography.caption, color: colors.white, flex: 1, lineHeight: 18, fontWeight: '800' },
+  screenHeader: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  headerBack: {
+    width: 50,
+    height: 50,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: { ...typography.subtitle, color: colors.ink, flex: 1, textAlign: 'center' },
+  headerSpacer: { width: 50 },
   scroll: { paddingTop: 0 },
-  aboutCard: { gap: spacing.lg, padding: spacing.lg },
-  aboutTitle: { ...typography.title, color: colors.ink },
-  aboutBody: { ...typography.body, color: colors.inkMuted, lineHeight: 24 },
+  aboutCard: { gap: spacing.md, padding: spacing.md },
+  aboutTitle: { ...typography.subtitle, color: colors.ink },
+  aboutBody: { ...typography.body, color: colors.inkMuted, lineHeight: 22 },
   quickGrid: { gap: spacing.sm },
   infoTile: {
-    minHeight: 64,
+    minHeight: 54,
     borderRadius: radius.lg,
     backgroundColor: colors.panelMuted,
     paddingHorizontal: spacing.md,
@@ -387,8 +430,8 @@ const styles = StyleSheet.create({
   infoValue: { ...typography.bodyBold, color: colors.ink, marginTop: 1 },
   singleActionButton: { marginTop: spacing.md },
   goldButtonWrap: {
-    marginTop: spacing.lg,
-    minHeight: 104,
+    marginTop: spacing.md,
+    minHeight: 86,
     justifyContent: 'center',
   },
   goldGlow: {
@@ -401,8 +444,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#f3bd3f',
   },
   goldButton: {
-    minHeight: 96,
-    borderRadius: 32,
+    minHeight: 80,
+    borderRadius: 28,
     overflow: 'hidden',
     backgroundColor: '#f2c24d',
     borderWidth: 1,
@@ -420,8 +463,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.34)',
   },
   goldIcon: {
-    width: 58,
-    height: 58,
+    width: 50,
+    height: 50,
     borderRadius: radius.pill,
     backgroundColor: '#fff3bf',
     alignItems: 'center',
@@ -430,7 +473,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(42,23,0,0.12)',
   },
   goldTextBlock: { flex: 1 },
-  goldTitle: { ...typography.subtitle, color: '#2a1700', fontWeight: '900' },
+  goldTitle: { ...typography.bodyBold, color: '#2a1700', fontWeight: '900' },
   goldSubtitle: { ...typography.caption, color: 'rgba(42,23,0,0.68)', marginTop: 3, lineHeight: 17 },
   changeHeader: {
     flexDirection: 'row',

@@ -24,7 +24,7 @@ export function ProfileNavigator() {
     >
       <Stack.Screen name="ProfileMain" component={ProfileScreen} options={{ headerShown: false }} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
-      <Stack.Screen name="Trainer" component={TrainerScreen} />
+      <Stack.Screen name="Trainer" component={TrainerScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Legal" component={LegalScreen} />
       <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
     </Stack.Navigator>
