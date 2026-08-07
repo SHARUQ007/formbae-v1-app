@@ -3,22 +3,9 @@ import { Animated, Easing, LayoutChangeEvent, StyleSheet, View } from 'react-nat
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-type Variant = 'gold' | 'green';
-
-// Colour sets per variant. Gold marks banked completions from earlier days;
-// light green marks today's fresh win.
-const PALETTES: Record<Variant, { wash: string[]; band: string[]; sparkle: string }> = {
-  gold: {
-    wash: ['rgba(245,179,1,0.22)', 'rgba(245,179,1,0.06)', 'rgba(245,179,1,0)'],
-    band: ['rgba(255,236,179,0)', 'rgba(255,236,179,0.55)', 'rgba(255,236,179,0)'],
-    sparkle: '#ffe08a',
-  },
-  green: {
-    wash: ['rgba(52,199,89,0.2)', 'rgba(52,199,89,0.05)', 'rgba(52,199,89,0)'],
-    band: ['rgba(187,247,208,0)', 'rgba(187,247,208,0.6)', 'rgba(187,247,208,0)'],
-    sparkle: '#bbf7d0',
-  },
-};
+const WASH = ['rgba(245,179,1,0.22)', 'rgba(245,179,1,0.06)', 'rgba(245,179,1,0)'];
+const BAND = ['rgba(255,236,179,0)', 'rgba(255,236,179,0.55)', 'rgba(255,236,179,0)'];
+const SPARKLE_COLOR = '#ffe08a';
 
 // Glints framing the completion check on the left of the card. They stay
 // clear of the title and the "Done" badge so nothing crowds the text. Each
@@ -29,7 +16,7 @@ const SPARKLES = [
   { top: 29, left: 3, size: 6, delay: 1500, gap: 1900 },
 ];
 
-function Sparkle({ top, left, size, delay, gap, color }: { top: number; left: number; size: number; delay: number; gap: number; color: string }) {
+function Sparkle({ top, left, size, delay, gap }: { top: number; left: number; size: number; delay: number; gap: number }) {
   const t = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -51,25 +38,24 @@ function Sparkle({ top, left, size, delay, gap, color }: { top: number; left: nu
 
   return (
     <Animated.View style={[styles.sparkle, { top, left, opacity, transform: [{ scale }, { rotate }] }]}>
-      <MaterialCommunityIcon name="star-four-points" size={size} color={color} />
+      <MaterialCommunityIcon name="star-four-points" size={size} color={SPARKLE_COLOR} />
     </Animated.View>
   );
 }
 
 /**
- * Decorative "reward" overlay for a completed workout card. Render it as the
- * first child of the card so it sits behind the content; it never intercepts
- * touches.
+ * Decorative golden "reward" overlay for a completed workout card. Render it
+ * as the first child of the card so it sits behind the content; it never
+ * intercepts touches.
  *
- * A gilded wash always warms the card (the static look). When `animated` is
- * true — reserved for today's freshly completed workout — a highlight sweeps
- * across on a calm loop and a few glints twinkle by the check. Previously
- * completed days keep the coloured look without any motion.
+ * A gilded wash always warms the card (the static golden look). When
+ * `animated` is true — reserved for today's freshly completed workout — a
+ * highlight sweeps across on a calm loop and a few glints twinkle by the
+ * check. Previously completed days keep the golden look without any motion.
  */
-export function CompletionGlow({ radius = 22, variant = 'gold', animated = true }: { radius?: number; variant?: Variant; animated?: boolean }) {
+export function CompletionGlow({ radius = 22, animated = true }: { radius?: number; animated?: boolean }) {
   const shine = useRef(new Animated.Value(0)).current;
   const [size, setSize] = useState({ width: 0, height: 0 });
-  const palette = PALETTES[variant];
 
   useEffect(() => {
     if (!animated) return undefined;
@@ -97,7 +83,7 @@ export function CompletionGlow({ radius = 22, variant = 'gold', animated = true 
 
   return (
     <View style={[styles.root, { borderRadius: radius }]} pointerEvents="none" onLayout={onLayout}>
-      <LinearGradient colors={palette.wash} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={WASH} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
       {animated && size.width > 0 ? (
         <Animated.View
           style={[
@@ -110,10 +96,10 @@ export function CompletionGlow({ radius = 22, variant = 'gold', animated = true 
             },
           ]}
         >
-          <LinearGradient colors={palette.band} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={BAND} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} />
         </Animated.View>
       ) : null}
-      {animated ? SPARKLES.map((s, i) => <Sparkle key={i} {...s} color={palette.sparkle} />) : null}
+      {animated ? SPARKLES.map((s, i) => <Sparkle key={i} {...s} />) : null}
     </View>
   );
 }

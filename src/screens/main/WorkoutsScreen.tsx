@@ -459,11 +459,11 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                     style={StyleSheet.flatten([
                       styles.dayCard,
                       isToday && !day.completed && styles.todayPlanCard,
-                      day.completed && (isToday ? styles.dayCardDoneToday : styles.dayCardDone),
+                      day.completed && styles.dayCardDone,
                     ])}
                   >
-                    {day.completed ? <CompletionGlow radius={22} variant={isToday ? 'green' : 'gold'} animated={isToday} /> : null}
-                    <View style={[styles.dayBadge, day.completed && (isToday ? styles.dayBadgeDoneToday : styles.dayBadgeDone)]}>
+                    {day.completed ? <CompletionGlow radius={22} animated={isToday} /> : null}
+                    <View style={[styles.dayBadge, isToday && !day.completed && styles.dayBadgeToday, day.completed && styles.dayBadgeDone]}>
                       {day.completed ? <Feather name="check" size={18} color={colors.white} /> : <Text style={styles.dayNum}>{day.dayNumber}</Text>}
                     </View>
                     <View style={styles.dayInfo}>
@@ -471,14 +471,14 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                         <Text style={styles.dayTitle} numberOfLines={1}>
                           {day.focus || 'Workout'}
                         </Text>
-                        {isToday && !day.completed ? <Badge label="Today" tone="accent" /> : null}
+                        {isToday && !day.completed ? <Badge label="Today" tone="greenSolid" /> : null}
                       </View>
                       <Text style={styles.meta}>
                         {count} exercise{count === 1 ? '' : 's'} · Day {day.dayNumber}
                       </Text>
                     </View>
                     {day.completed ? (
-                      <Badge label="Done" tone={isToday ? 'greenSolid' : 'goldSolid'} icon="check" />
+                      <Badge label="Done" tone="goldSolid" icon="check" style={styles.doneBadge} />
                     ) : (
                       <Feather name="chevron-right" size={20} color={colors.inkSubtle} />
                     )}
@@ -699,9 +699,8 @@ const styles = StyleSheet.create({
   weekProgressMeta: { ...typography.caption, color: colors.inkMuted },
   days: { gap: spacing.sm },
   dayCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
-  todayPlanCard: { borderColor: colors.accent, backgroundColor: colors.accentLight },
+  todayPlanCard: { borderColor: 'rgba(52,199,89,0.55)', borderWidth: 1.5, backgroundColor: '#f4fdf7' },
   dayCardDone: { borderColor: 'rgba(245,179,1,0.6)', borderWidth: 1.5, backgroundColor: '#fffdf7' },
-  dayCardDoneToday: { borderColor: 'rgba(52,199,89,0.55)', borderWidth: 1.5, backgroundColor: '#f4fdf7' },
   dayBadge: {
     width: 44,
     height: 44,
@@ -710,8 +709,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  dayBadgeToday: { backgroundColor: '#e6f9ec', borderWidth: 1.5, borderColor: GREEN },
   dayBadgeDone: { backgroundColor: colors.accent, borderWidth: 1.5, borderColor: GOLD },
-  dayBadgeDoneToday: { backgroundColor: colors.accent, borderWidth: 1.5, borderColor: GREEN },
+  doneBadge: { alignSelf: 'center' },
   dayNum: { ...typography.subtitle, color: colors.accentDark, fontWeight: '800' },
   dayInfo: { flex: 1 },
   dayTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

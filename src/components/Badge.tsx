@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/radius';
@@ -17,10 +17,10 @@ const tones: Record<Tone, { bg: string; fg: string }> = {
   greenSolid: { bg: '#86efac', fg: '#14532d' },
 };
 
-export function Badge({ label, tone = 'accent', icon }: { label: string; tone?: Tone; icon?: string }) {
+export function Badge({ label, tone = 'accent', icon, style }: { label: string; tone?: Tone; icon?: string; style?: ViewStyle }) {
   const c = tones[tone];
   return (
-    <View style={[styles.badge, { backgroundColor: c.bg }]}>
+    <View style={[styles.badge, { backgroundColor: c.bg }, style]}>
       {icon ? <Feather name={icon} size={12} color={c.fg} /> : null}
       <Text style={[styles.text, { color: c.fg }]}>{label}</Text>
     </View>
