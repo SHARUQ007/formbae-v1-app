@@ -9,6 +9,25 @@ jest.mock('react-native-linear-gradient', () => {
   const { View } = require('react-native');
   return { __esModule: true, default: (props) => React.createElement(View, props) };
 });
+jest.mock('react-native-svg', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  const passthrough = (props) => React.createElement(View, props);
+  return {
+    __esModule: true,
+    default: passthrough,
+    Svg: passthrough,
+    Path: passthrough,
+    Circle: passthrough,
+    Line: passthrough,
+    Rect: passthrough,
+    G: passthrough,
+    Defs: passthrough,
+    Stop: passthrough,
+    LinearGradient: passthrough,
+    Text: passthrough,
+  };
+});
 jest.mock('react-native-config', () => ({}));
 jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
