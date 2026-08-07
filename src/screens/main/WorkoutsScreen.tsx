@@ -189,6 +189,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [summaryOpening, setSummaryOpening] = useState(false);
   const [streakCelebrationNonce, setStreakCelebrationNonce] = useState(0);
+  const [justCompletedPlanDayId, setJustCompletedPlanDayId] = useState('');
 
   const load = useCallback(async (options?: { force?: boolean }) => {
     setError(null);
@@ -231,6 +232,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
           await AsyncStorage.removeItem(PENDING_STREAK_CELEBRATION_KEY).catch(() => undefined);
           if (pendingCompletion.planDayId) {
             setDays((value) => markPlanDayCompleted(value, pendingCompletion.planDayId));
+            setJustCompletedPlanDayId(pendingCompletion.planDayId);
           }
           setStreakCelebrationNonce((value) => value + 1);
         }
@@ -248,7 +250,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const todayDay = useMemo(() => {
     if (!days.length) return null;
     const selected = days.find((day) => day.planDayId === selectedTodayPlanDayId);
-    if (selected) return selected;
+    if (selected && !selected.completed) return selected;
     return days.find((day) => !day.completed) || days[0];
   }, [days, selectedTodayPlanDayId]);
   const onSwitchTodayWorkout = async (day: PlanDay) => {
@@ -462,7 +464,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                       day.completed && styles.dayCardDone,
                     ])}
                   >
-                    {day.completed ? <CompletionGlow radius={22} animated={isToday} /> : null}
+                    {day.completed ? <CompletionGlow radius={22} animated={day.planDayId === justCompletedPlanDayId} /> : null}
                     <View style={[styles.dayBadge, isToday && !day.completed && styles.dayBadgeToday, day.completed && styles.dayBadgeDone]}>
                       {day.completed ? <Feather name="check" size={18} color={colors.white} /> : <Text style={styles.dayNum}>{day.dayNumber}</Text>}
                     </View>
