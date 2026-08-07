@@ -152,12 +152,12 @@ export function ProfileScreen({ navigation }: Props) {
   ];
 
   const bodyRows = [
-    { icon: 'user', label: 'Age', value: profile.age, wide: false },
-    { icon: 'maximize-2', label: 'Height', value: profile.height ? `${profile.height} cm` : '', wide: false },
-    { icon: 'activity', label: 'Weight', value: profile.weight ? `${profile.weight} kg` : '', wide: false },
-    { icon: 'users', label: 'Gender', value: titleCase(profile.gender), wide: false },
-    ...(languages.length ? [{ icon: 'message-circle', label: 'Languages', value: languages.join(', '), wide: true }] : []),
-    ...(profile.allergies ? [{ icon: 'file-text', label: 'Notes', value: profile.allergies, wide: true }] : []),
+    { icon: 'user', label: 'Age', value: profile.age },
+    { icon: 'maximize-2', label: 'Height', value: profile.height ? `${profile.height} cm` : '' },
+    { icon: 'activity', label: 'Weight', value: profile.weight ? `${profile.weight} kg` : '' },
+    { icon: 'users', label: 'Gender', value: titleCase(profile.gender) },
+    ...(languages.length ? [{ icon: 'message-circle', label: 'Languages', value: languages.join(', ') }] : []),
+    ...(profile.allergies ? [{ icon: 'file-text', label: 'Notes', value: profile.allergies }] : []),
   ];
 
   const confirmCancel = () => {
@@ -215,16 +215,16 @@ export function ProfileScreen({ navigation }: Props) {
         </View>
 
         <SectionHeading title="Plan" />
-        <View style={styles.grid}>
-          {planRows.map((item) => (
-            <InfoTile key={item.label} icon={item.icon} label={item.label} value={compactValue(item.value)} />
+        <View style={styles.listPanel}>
+          {planRows.map((item, index) => (
+            <ProfileRow key={item.label} icon={item.icon} label={item.label} value={compactValue(item.value)} isLast={index === planRows.length - 1} />
           ))}
         </View>
 
         <SectionHeading title="Body Profile" />
-        <View style={styles.grid}>
-          {bodyRows.map((item) => (
-            <InfoTile key={item.label} icon={item.icon} label={item.label} value={compactValue(item.value)} wide={item.wide} />
+        <View style={styles.listPanel}>
+          {bodyRows.map((item, index) => (
+            <ProfileRow key={item.label} icon={item.icon} label={item.label} value={compactValue(item.value)} isLast={index === bodyRows.length - 1} />
           ))}
         </View>
 
@@ -288,14 +288,16 @@ function SectionHeading({ title }: { title: string }) {
   return <Text style={styles.sectionHeading}>{title}</Text>;
 }
 
-function InfoTile({ icon, label, value, wide }: { icon: string; label: string; value: string; wide?: boolean }) {
+function ProfileRow({ icon, label, value, isLast }: { icon: string; label: string; value: string; isLast?: boolean }) {
   return (
-    <View style={[styles.tile, wide && styles.tileWide]}>
-      <View style={styles.tileIcon}>
-        <Feather name={icon} size={16} color={colors.ink} />
+    <View style={[styles.profileRow, !isLast && styles.profileRowBorder]}>
+      <View style={styles.rowIcon}>
+        <Feather name={icon} size={17} color={colors.ink} />
       </View>
-      <Text style={styles.tileLabel}>{label}</Text>
-      <Text style={styles.tileValue} numberOfLines={wide ? 3 : 1}>{value}</Text>
+      <View style={styles.profileRowText}>
+        <Text style={styles.profileRowLabel}>{label}</Text>
+        <Text style={styles.profileRowValue} numberOfLines={2}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -378,23 +380,19 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...shadows.sm,
   },
+  profileRow: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
   profileRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
   noBorder: { borderBottomWidth: 0 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  tile: {
-    width: '48%',
-    flexGrow: 1,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panel,
-    padding: spacing.md,
-    ...shadows.sm,
-  },
-  tileWide: { width: '100%' },
-  tileIcon: { width: 36, height: 36, borderRadius: radius.md, backgroundColor: colors.accentLight, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm },
-  tileLabel: { ...typography.caption, color: colors.inkMuted },
-  tileValue: { ...typography.subtitle, color: colors.ink, marginTop: 2 },
+  profileRowText: { flex: 1 },
+  profileRowLabel: { ...typography.caption, color: colors.inkMuted, marginBottom: 2 },
+  profileRowValue: { ...typography.bodyBold, color: colors.ink },
   plainRow: {
     flexDirection: 'row',
     alignItems: 'center',
