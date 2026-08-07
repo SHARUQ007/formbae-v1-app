@@ -32,6 +32,13 @@ const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebrati
 const GOLD = '#f5b301';
 const GOLD_DARK = '#9a5b00';
 const GREEN = '#22c55e';
+const FLAME_CORE = '#ffe08a';
+const STREAK_EMBERS = [
+  { left: 9, delay: 0, size: 4, drift: -6 },
+  { left: 15, delay: 0.12, size: 3, drift: 5 },
+  { left: 12, delay: 0.2, size: 3.5, drift: -2 },
+  { left: 18, delay: 0.28, size: 3, drift: 7 },
+];
 
 function parsePendingCompletion(raw: string | null) {
   if (!raw) return { planDayId: '', completedAt: 0 };
@@ -90,47 +97,44 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
 
 function GoldenStreakBadge({ streak, celebrationNonce }: { streak: number; celebrationNonce: number }) {
   const [burning, setBurning] = useState(false);
-  const flame = useRef(new Animated.Value(0)).current;
+  const flicker = useRef(new Animated.Value(0)).current; // flame flicker (celebration only)
+  const flare = useRef(new Animated.Value(0)).current; // glow burst
+  const ember = useRef(new Animated.Value(0)).current; // rising sparks
+  const pop = useRef(new Animated.Value(1)).current; // number bump
   const previousStreak = useRef<number | null>(null);
   const hasMounted = useRef(false);
 
+  // The flame sits completely static; the whole animation only plays on a
+  // streak win, then settles back to rest.
   const playFire = useCallback(() => {
     setBurning(true);
-    flame.setValue(0);
-    Animated.sequence([
-      Animated.timing(flame, {
-        toValue: 1,
-        duration: 240,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(flame, {
-            toValue: 0.42,
-            duration: 150,
-            easing: Easing.inOut(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(flame, {
-            toValue: 1,
-            duration: 170,
-            easing: Easing.inOut(Easing.quad),
-            useNativeDriver: true,
-          }),
-        ]),
-        { iterations: 5 },
-      ),
-      Animated.timing(flame, {
-        toValue: 0,
-        duration: 380,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      setBurning(false);
-    });
-  }, [flame]);
+    flicker.setValue(0);
+    flare.setValue(0);
+    ember.setValue(0);
+    pop.setValue(1);
+    Animated.parallel([
+      Animated.sequence([
+        Animated.timing(flicker, { toValue: 1, duration: 180, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(flicker, { toValue: 0.45, duration: 140, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+            Animated.timing(flicker, { toValue: 1, duration: 150, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+          ]),
+          { iterations: 4 },
+        ),
+        Animated.timing(flicker, { toValue: 0, duration: 360, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      ]),
+      Animated.sequence([
+        Animated.timing(flare, { toValue: 1, duration: 200, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(flare, { toValue: 0, duration: 1000, easing: Easing.in(Easing.cubic), useNativeDriver: true }),
+      ]),
+      Animated.timing(ember, { toValue: 1, duration: 1050, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.sequence([
+        Animated.spring(pop, { toValue: 1.32, friction: 4, tension: 160, useNativeDriver: true }),
+        Animated.spring(pop, { toValue: 1, friction: 5, tension: 140, useNativeDriver: true }),
+      ]),
+    ]).start(() => setBurning(false));
+  }, [flicker, flare, ember, pop]);
 
   useEffect(() => {
     let mounted = true;
@@ -165,21 +169,57 @@ function GoldenStreakBadge({ streak, celebrationNonce }: { streak: number; celeb
     }
   }, [celebrationNonce, playFire, streak]);
 
-  const scale = flame.interpolate({ inputRange: [0, 1], outputRange: [1, 1.16] });
-  const lift = flame.interpolate({ inputRange: [0, 1], outputRange: [0, -3] });
-  const glowOpacity = flame.interpolate({ inputRange: [0, 0.35, 1], outputRange: [0, 0.55, 0.9] });
-  const iconOpacity = flame.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0, 0.85, 1] });
+  // All resolve to identity / 0 at rest, so the flame is a static black icon
+  // until playFire runs.
+  const flameLift = flicker.interpolate({ inputRange: [0, 1], outputRange: [0, -3] });
+  const flameRotate = flicker.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '5deg'] });
+  const flameScale = flicker.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
+  const coreScale = flicker.interpolate({ inputRange: [0, 1], outputRange: [1, 1.12] });
+  const goldOpacity = flicker.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
+  const coreOpacity = flicker.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 0.85, 1] });
+  const flareScale = flare.interpolate({ inputRange: [0, 1], outputRange: [1, 1.32] });
+  const flareLift = flare.interpolate({ inputRange: [0, 1], outputRange: [0, -3] });
+  const flareGlowOpacity = flare.interpolate({ inputRange: [0, 0.25, 1], outputRange: [0, 0.85, 0] });
+  const flareGlowScale = flare.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1.7] });
 
   return (
     <View style={[styles.streakBadge, burning && styles.streakBadgeBurning]} accessibilityLabel={`${streak} day streak`}>
-      <Animated.View style={[styles.streakGlow, { opacity: glowOpacity, transform: [{ scale }] }]} />
       <View style={styles.streakIconWrap}>
-        <MaterialCommunityIcon name="fire" size={24} color={colors.ink} />
-        <Animated.View style={[styles.streakGoldIcon, { opacity: iconOpacity, transform: [{ translateY: lift }, { scale }] }]}>
-          <MaterialCommunityIcon name="fire" size={27} color={GOLD} />
+        <Animated.View style={[styles.streakLayer, { opacity: flareGlowOpacity }]} pointerEvents="none">
+          <Animated.View style={[styles.flareCircle, { transform: [{ scale: flareGlowScale }] }]} />
         </Animated.View>
+        <Animated.View
+          style={[styles.streakLayer, { transform: [{ translateY: flameLift }, { translateY: flareLift }, { rotate: flameRotate }, { scale: flameScale }, { scale: flareScale }] }]}
+        >
+          <MaterialCommunityIcon name="fire" size={26} color={colors.ink} />
+        </Animated.View>
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.streakLayer, { opacity: goldOpacity, transform: [{ translateY: flameLift }, { translateY: flareLift }, { rotate: flameRotate }, { scale: flameScale }, { scale: flareScale }] }]}
+        >
+          <MaterialCommunityIcon name="fire" size={26} color={GOLD} />
+        </Animated.View>
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.streakLayer, { opacity: coreOpacity, transform: [{ translateY: flameLift }, { translateY: flareLift }, { scale: coreScale }, { scale: flareScale }] }]}
+        >
+          <MaterialCommunityIcon name="fire" size={15} color={FLAME_CORE} />
+        </Animated.View>
+        {STREAK_EMBERS.map((piece, index) => {
+          const opacity = ember.interpolate({ inputRange: [piece.delay, piece.delay + 0.1, 0.75, 1], outputRange: [0, 1, 1, 0], extrapolate: 'clamp' });
+          const translateY = ember.interpolate({ inputRange: [piece.delay, 1], outputRange: [0, -18], extrapolate: 'clamp' });
+          const translateX = ember.interpolate({ inputRange: [piece.delay, 1], outputRange: [0, piece.drift], extrapolate: 'clamp' });
+          const scale = ember.interpolate({ inputRange: [piece.delay, piece.delay + 0.15, 1], outputRange: [0.4, 1, 0.5], extrapolate: 'clamp' });
+          return (
+            <Animated.View
+              key={index}
+              pointerEvents="none"
+              style={[styles.ember, { left: piece.left, width: piece.size, height: piece.size, opacity, transform: [{ translateX }, { translateY }, { scale }] }]}
+            />
+          );
+        })}
       </View>
-      <Text style={[styles.streakValue, burning && styles.streakValueBurning]}>{streak}</Text>
+      <Animated.Text style={[styles.streakValue, burning && styles.streakValueBurning, { transform: [{ scale: pop }] }]}>{streak}</Animated.Text>
     </View>
   );
 }
@@ -527,18 +567,17 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                       {day.completed ? <Feather name="check" size={18} color={colors.white} /> : <Text style={[styles.dayNum, isToday && styles.dayNumToday]}>{day.dayNumber}</Text>}
                     </View>
                     <View style={styles.dayInfo}>
-                      <View style={styles.dayTitleRow}>
-                        <Text style={styles.dayTitle} numberOfLines={1}>
-                          {day.focus || 'Workout'}
-                        </Text>
-                        {isToday && !day.completed ? <Badge label="Today" tone="greenSolid" /> : null}
-                      </View>
+                      <Text style={styles.dayTitle} numberOfLines={1}>
+                        {day.focus || 'Workout'}
+                      </Text>
                       <Text style={styles.meta}>
                         {count} exercise{count === 1 ? '' : 's'} · Day {day.dayNumber}
                       </Text>
                     </View>
                     {day.completed ? (
                       <Badge label="Done" tone="goldSolid" icon="check" style={styles.doneBadge} />
+                    ) : isToday ? (
+                      <Badge label="Today" tone="greenSolid" style={styles.doneBadge} />
                     ) : (
                       <Feather name="chevron-right" size={20} color={colors.inkSubtle} />
                     )}
@@ -768,24 +807,34 @@ const styles = StyleSheet.create({
   },
   streakBadgeBurning: {
     borderColor: GOLD,
-  },
-  streakGlow: {
-    position: 'absolute',
-    width: 78,
-    height: 42,
-    borderRadius: radius.pill,
-    backgroundColor: GOLD,
+    backgroundColor: '#fffdf5',
   },
   streakIconWrap: {
-    width: 28,
-    height: 28,
+    width: 30,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  streakGoldIcon: {
+  streakLayer: {
     position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  flareCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#ffcf4d',
+  },
+  ember: {
+    position: 'absolute',
+    bottom: 14,
+    borderRadius: 3,
+    backgroundColor: GOLD,
   },
   streakValue: {
     minWidth: 34,
@@ -937,8 +986,7 @@ const styles = StyleSheet.create({
   dayNum: { ...typography.subtitle, color: colors.accentDark, fontWeight: '800' },
   dayNumToday: { color: colors.white },
   dayInfo: { flex: 1 },
-  dayTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  dayTitle: { ...typography.bodyBold, color: colors.ink, flex: 1 },
+  dayTitle: { ...typography.bodyBold, color: colors.ink },
   meta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   skeletonTitle: { width: '62%', height: 30, marginBottom: spacing.sm },
   skeletonSummary: { width: '74%', height: 14, marginBottom: spacing.md },
