@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -19,7 +19,6 @@ import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
-import Svg, { Rect, Text as SvgText } from 'react-native-svg';
 import { ScreenContainer, ScreenTitle, Card } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { EmptyState } from '../../components/States';
@@ -154,16 +153,12 @@ function mealForCurrentTime(now = new Date()): MealType {
   return 'Snack';
 }
 
-function nextFeedbackText(feedback?: DietCoachFeedback | null) {
-  if (!feedback?.generatedAt) return 'Next feedback in 7 days';
-  const generated = new Date(feedback.generatedAt);
-  if (Number.isNaN(generated.getTime())) return 'Next feedback in 7 days';
-  const next = new Date(generated);
-  next.setDate(next.getDate() + 7);
-  const diff = Math.ceil((next.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
-  if (diff <= 0) return 'Next feedback due now';
-  if (diff === 1) return 'Next feedback in 1 day';
-  return `Next feedback in ${diff} days`;
+function feedbackStatusText(feedback?: DietCoachFeedback | null) {
+  if (!feedback || feedback.status === 'pending') {
+    const days = feedback?.nextInDays ?? 7;
+    return `Insights unlock in ${days} day${days === 1 ? '' : 's'}`;
+  }
+  return 'Personalized feedback · refreshes weekly';
 }
 
 function isMemoryEntry(entry: DietDiaryEntry) {
@@ -238,58 +233,6 @@ function DietTab({
   );
 }
 
-function ReportStat({ value, label }: { value: string; label: string }) {
-  return (
-    <View style={styles.reportStat}>
-      <Text style={styles.reportStatValue}>{value}</Text>
-      <Text style={styles.reportStatLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function WeekBars({ bars }: { bars: Array<{ key: string; label: string; count: number; isToday: boolean }> }) {
-  const [width, setWidth] = useState(0);
-  const height = 132;
-  const padTop = 22;
-  const labelH = 22;
-  const innerH = height - padTop - labelH;
-  const max = Math.max(...bars.map((bar) => bar.count), 1);
-  const maxCount = Math.max(...bars.map((bar) => bar.count));
-  const slot = width > 0 ? width / bars.length : 0;
-  const barW = Math.min(slot * 0.46, 24);
-
-  return (
-    <View style={styles.weekChart} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
-      {width > 0 ? (
-        <Svg width={width} height={height}>
-          {bars.map((bar, index) => {
-            const cx = index * slot + slot / 2;
-            const barH = bar.count > 0 ? Math.max((bar.count / max) * innerH, 6) : 0;
-            const barY = padTop + (innerH - barH);
-            const showValue = bar.count > 0 && bar.count === maxCount;
-            return (
-              <Fragment key={bar.key}>
-                <Rect x={cx - barW / 2} y={padTop} width={barW} height={innerH} rx={barW / 2} fill={colors.panelMuted} />
-                {bar.count > 0 ? (
-                  <Rect x={cx - barW / 2} y={barY} width={barW} height={barH} rx={barW / 2} fill={bar.isToday ? GOLD : colors.ink} />
-                ) : null}
-                {showValue ? (
-                  <SvgText x={cx} y={barY - 7} fontSize={11} fontWeight="700" fill={colors.ink} textAnchor="middle">
-                    {bar.count}
-                  </SvgText>
-                ) : null}
-                <SvgText x={cx} y={height - 6} fontSize={11} fontWeight={bar.isToday ? '700' : '400'} fill={bar.isToday ? colors.ink : colors.inkSubtle} textAnchor="middle">
-                  {bar.label}
-                </SvgText>
-              </Fragment>
-            );
-          })}
-        </Svg>
-      ) : null}
-    </View>
-  );
-}
-
 export function DietScreen(props: Props) {
   return <DietScreenContent {...props} />;
 }
@@ -306,7 +249,7 @@ function DietScreenContent({ route, navigation }: Props) {
   const [textEntry, setTextEntry] = useState('');
   const [savedMeal, setSavedMeal] = useState<{ mealType: MealType; note: string } | null>(null);
   const [memorySessionPoints, setMemorySessionPoints] = useState(0);
-  const [activeTab, setActiveTab] = useState<'log' | 'diary'>('log');
+  const [activeTab, setActiveTab] = useState<'log' | 'diary' | 'feedback'>('log');
   const saveToastOpacity = useRef(new Animated.Value(0)).current;
   const saveToastScale = useRef(new Animated.Value(0.86)).current;
   const celebrationProgress = useRef(new Animated.Value(0)).current;
@@ -356,31 +299,6 @@ function DietScreenContent({ route, navigation }: Props) {
   }, [entries]);
   const memoryPoints = useMemo(() => uniqueMemoryEntries(visibleEntries).length, [visibleEntries]);
   const totalMemoryPoints = useMemo(() => uniqueMemoryEntries(entries).length, [entries]);
-  const weekly = useMemo(() => {
-    const now = new Date();
-    const start = new Date(now);
-    start.setDate(start.getDate() - 6);
-    start.setHours(0, 0, 0, 0);
-    const bars = Array.from({ length: 7 }, (_, index) => {
-      const day = shiftDate(now, -(6 - index));
-      const count = entries.filter((entry) => isSameDay(entry.createdAt, day)).length;
-      return {
-        key: day.toDateString(),
-        label: day.toLocaleDateString('en-IN', { weekday: 'narrow' }),
-        count,
-        isToday: isSameDay(day, now),
-      };
-    });
-    const weekEntries = entries.filter((entry) => {
-      const time = new Date(entry.createdAt).getTime();
-      return !Number.isNaN(time) && time >= start.getTime();
-    });
-    const slots = meals.map((meal) => ({ label: meal.label, count: weekEntries.filter((entry) => entry.mealType === meal.type).length }));
-    const maxSlotCount = Math.max(...slots.map((slot) => slot.count), 0);
-    const strongest = maxSlotCount > 0 ? slots.find((slot) => slot.count === maxSlotCount) || null : null;
-    const daysActive = new Set(weekEntries.map((entry) => new Date(entry.createdAt).toDateString())).size;
-    return { bars, slots, total: weekEntries.length, maxSlotCount, strongest, daysActive };
-  }, [entries]);
   const canGoForward = !isSameDay(selectedDate, new Date()) && !isFutureDay(shiftDate(selectedDate, 1));
   const canMoveMemoryForward = useMemo(
     () => Boolean(nextMemorySlot(selectedDate, selectedMeal)),
@@ -692,105 +610,77 @@ function DietScreenContent({ route, navigation }: Props) {
         <View style={styles.dietTabs}>
           <DietTab label="Log" icon="plus-circle" active={activeTab === 'log'} onPress={() => setActiveTab('log')} />
           <DietTab label="Diary" icon="book-open" active={activeTab === 'diary'} onPress={() => setActiveTab('diary')} />
+          <DietTab label="Feedback" icon="message-circle" active={activeTab === 'feedback'} onPress={() => setActiveTab('feedback')} />
         </View>
 
         {activeTab === 'diary' ? (
+          <View style={styles.diaryScreen}>{renderDiaryFeed()}</View>
+        ) : activeTab === 'feedback' ? (
           <View style={styles.diaryScreen}>
             <View style={styles.feedbackHero}>
               <View style={styles.feedbackHeroIcon}>
                 <Feather name="message-circle" size={24} color={colors.white} />
               </View>
               <View style={styles.feedbackHeroText}>
-                <Text style={styles.feedbackEyebrow}>Weekly diet feedback</Text>
-                <Text style={styles.feedbackTitle}>{dietFeedback?.title || 'Ava will review your meals'}</Text>
-                <Text style={styles.feedbackMeta}>{nextFeedbackText(dietFeedback)}</Text>
+                <Text style={styles.feedbackEyebrow}>Diet feedback</Text>
+                <Text style={styles.feedbackTitle}>{dietFeedback?.title || "Ava's diet feedback"}</Text>
+                <Text style={styles.feedbackMeta}>{feedbackStatusText(dietFeedback)}</Text>
               </View>
             </View>
 
-            <Card style={styles.reportCard}>
-              <View style={styles.reportHead}>
-                <View style={styles.reportHeadText}>
-                  <Text style={styles.reportKicker}>Last 7 days</Text>
-                  <Text style={styles.reportTitle}>Logging activity</Text>
-                </View>
-                <View style={styles.reportTotal}>
-                  <Text style={styles.reportTotalValue}>{weekly.total}</Text>
-                  <Text style={styles.reportTotalLabel}>items</Text>
-                </View>
-              </View>
-              <WeekBars bars={weekly.bars} />
-              <View style={styles.reportStats}>
-                <ReportStat value={`${dietFeedback?.stats.loggedItems ?? entries.length}`} label="logged" />
-                <View style={styles.reportStatDivider} />
-                <ReportStat value={`${dietFeedback?.stats.daysLogged ?? weekly.daysActive}`} label="days" />
-                <View style={styles.reportStatDivider} />
-                <ReportStat value={`${dietFeedback?.stats.memoryEntries ?? totalMemoryPoints}`} label="memory" />
-              </View>
-            </Card>
-
-            <Card style={styles.rhythmCard}>
-              <View style={styles.rhythmHead}>
-                <Text style={styles.feedbackSectionTitle}>When you eat</Text>
-                {weekly.strongest ? (
-                  <View style={styles.strongPill}>
-                    <Feather name="trending-up" size={12} color={colors.accentDark} />
-                    <Text style={styles.strongPillText}>Top · {weekly.strongest.label}</Text>
+            {!dietFeedback || dietFeedback.status === 'pending' ? (
+              <Card style={styles.feedbackCard}>
+                <View style={styles.countdownRow}>
+                  <View style={styles.countdownBadge}>
+                    <Text style={styles.countdownValue}>{dietFeedback?.nextInDays ?? 7}</Text>
+                    <Text style={styles.countdownUnit}>days</Text>
                   </View>
-                ) : null}
-              </View>
-              <View style={styles.slotList}>
-                {weekly.slots.map((slot) => {
-                  const isMax = weekly.maxSlotCount > 0 && slot.count === weekly.maxSlotCount;
-                  const pct = weekly.maxSlotCount > 0 ? slot.count / weekly.maxSlotCount : 0;
-                  return (
-                    <View key={slot.label} style={styles.slotRow}>
-                      <Text style={styles.slotLabel}>{slot.label}</Text>
-                      <View style={styles.slotTrack}>
-                        <View style={[styles.slotFill, { width: `${slot.count > 0 ? Math.max(pct * 100, 10) : 0}%` }, isMax && styles.slotFillMax]} />
-                      </View>
-                      <Text style={styles.slotCount}>{slot.count}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-            </Card>
-
-            <Card style={styles.feedbackCard}>
-              <Text style={styles.feedbackSectionTitle}>What you are eating</Text>
-              <Text style={styles.feedbackBody}>
-                {dietFeedback?.summary || 'Log a few meals with photos or the memory game so Ava can summarize your eating pattern.'}
-              </Text>
-              {dietFeedback?.stats.recentFoods?.length ? (
-                <View style={styles.foodPillRow}>
-                  {dietFeedback.stats.recentFoods.slice(0, 6).map((food) => (
-                    <View key={food} style={styles.foodPill}>
-                      <Text style={styles.foodPillText}>{food}</Text>
-                    </View>
-                  ))}
+                  <View style={styles.countdownCopy}>
+                    <Text style={styles.feedbackSectionTitle}>Insights on the way</Text>
+                    <Text style={styles.feedbackBody}>
+                      Ava is getting to know your eating. Your first personalized diet insights unlock in {dietFeedback?.nextInDays ?? 7} day{(dietFeedback?.nextInDays ?? 7) === 1 ? '' : 's'} — keep logging your meals so the review is accurate.
+                    </Text>
+                  </View>
                 </View>
-              ) : null}
-            </Card>
-
-            <Card style={styles.feedbackCard}>
-              <Text style={styles.feedbackSectionTitle}>What to eat next</Text>
-              <Text style={styles.feedbackFocusText}>
-                {dietFeedback?.nextFocus || 'Keep logging normally. Ava will use your actual meals to suggest simple swaps and additions.'}
-              </Text>
-              {dietFeedback?.highlights?.length ? (
-                <View style={styles.feedbackList}>
-                  {dietFeedback.highlights.slice(0, 4).map((highlight) => (
-                    <View key={highlight} style={styles.feedbackListItem}>
-                      <Feather name="check" size={16} color={colors.white} />
-                      <Text style={styles.feedbackListText}>{highlight}</Text>
+              </Card>
+            ) : (
+              <>
+                <Card style={styles.feedbackCard}>
+                  <Text style={styles.feedbackSectionTitle}>What you are eating</Text>
+                  <Text style={styles.feedbackBody}>
+                    {dietFeedback.summary || 'Log a few meals so Ava can review your eating pattern.'}
+                  </Text>
+                  {dietFeedback.stats?.recentFoods?.length ? (
+                    <View style={styles.foodPillRow}>
+                      {dietFeedback.stats.recentFoods.slice(0, 6).map((food) => (
+                        <View key={food} style={styles.foodPill}>
+                          <Text style={styles.foodPillText}>{food}</Text>
+                        </View>
+                      ))}
                     </View>
-                  ))}
-                </View>
-              ) : null}
-            </Card>
+                  ) : null}
+                </Card>
 
-            <PrimaryButton title="Start memory game" icon="plus" onPress={() => { setActiveTab('log'); openMemoryGame(); }} style={styles.feedbackCta} />
+                <Card style={styles.feedbackCard}>
+                  <Text style={styles.feedbackSectionTitle}>What to eat next</Text>
+                  <Text style={styles.feedbackFocusText}>
+                    {dietFeedback.nextFocus || 'Keep meals balanced and protein-forward.'}
+                  </Text>
+                  {dietFeedback.highlights?.length ? (
+                    <View style={styles.feedbackList}>
+                      {dietFeedback.highlights.slice(0, 4).map((highlight) => (
+                        <View key={highlight} style={styles.feedbackListItem}>
+                          <Feather name="check" size={16} color={colors.white} />
+                          <Text style={styles.feedbackListText}>{highlight}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
+                </Card>
+              </>
+            )}
 
-            {renderDiaryFeed()}
+            <PrimaryButton title="Log a meal" icon="plus" onPress={() => setActiveTab('log')} style={styles.feedbackCta} />
           </View>
         ) : (
           <>
@@ -863,13 +753,13 @@ function DietScreenContent({ route, navigation }: Props) {
               </View>
             </View>
 
-            <TouchableOpacity activeOpacity={0.86} style={styles.feedbackPreview} onPress={() => setActiveTab('diary')}>
+            <TouchableOpacity activeOpacity={0.86} style={styles.feedbackPreview} onPress={() => setActiveTab('feedback')}>
               <View style={styles.feedbackPreviewIcon}>
                 <Feather name="message-circle" size={19} color={colors.white} />
               </View>
               <View style={styles.feedbackPreviewText}>
-                <Text style={styles.feedbackPreviewTitle}>Weekly feedback</Text>
-                <Text style={styles.feedbackPreviewCopy}>{nextFeedbackText(dietFeedback)}</Text>
+                <Text style={styles.feedbackPreviewTitle}>Diet feedback</Text>
+                <Text style={styles.feedbackPreviewCopy}>{feedbackStatusText(dietFeedback)}</Text>
               </View>
               <Feather name="chevron-right" size={22} color={colors.inkMuted} />
             </TouchableOpacity>
@@ -1089,6 +979,18 @@ const styles = StyleSheet.create({
   feedbackTitle: { ...typography.title, color: colors.white, marginTop: 2 },
   feedbackMeta: { ...typography.bodyBold, color: colors.onAccentMuted, marginTop: spacing.xs },
   feedbackCard: { gap: spacing.sm },
+  countdownRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  countdownBadge: {
+    width: 66,
+    height: 66,
+    borderRadius: radius.xl,
+    backgroundColor: colors.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countdownValue: { fontSize: 26, lineHeight: 28, fontWeight: '900', color: colors.white },
+  countdownUnit: { fontSize: 10, lineHeight: 12, color: colors.onAccentMuted, fontWeight: '700' },
+  countdownCopy: { flex: 1 },
   reportCard: { gap: spacing.md },
   reportHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md },
   reportHeadText: { flex: 1 },

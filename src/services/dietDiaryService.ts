@@ -20,6 +20,8 @@ export type DietCoachFeedback = {
   summary: string;
   nextFocus: string;
   highlights: string[];
+  status?: 'pending' | 'ready';
+  nextInDays?: number;
   stats: {
     loggedItems: number;
     daysLogged: number;
