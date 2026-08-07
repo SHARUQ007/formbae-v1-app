@@ -31,7 +31,7 @@ const LAST_SEEN_STREAK_KEY = 'formbae_last_seen_workout_streak';
 const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebration';
 const GOLD = '#f5b301';
 const GOLD_DARK = '#9a5b00';
-const GREEN = '#34c759';
+const GREEN = '#22c55e';
 
 function parsePendingCompletion(raw: string | null) {
   if (!raw) return { planDayId: '', completedAt: 0 };
@@ -524,7 +524,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                   >
                     {day.completed ? <CompletionGlow radius={22} animated={day.planDayId === justCompletedPlanDayId} /> : null}
                     <View style={[styles.dayBadge, isToday && !day.completed && styles.dayBadgeToday, day.completed && styles.dayBadgeDone]}>
-                      {day.completed ? <Feather name="check" size={18} color={colors.white} /> : <Text style={styles.dayNum}>{day.dayNumber}</Text>}
+                      {day.completed ? <Feather name="check" size={18} color={colors.white} /> : <Text style={[styles.dayNum, isToday && styles.dayNumToday]}>{day.dayNumber}</Text>}
                     </View>
                     <View style={styles.dayInfo}>
                       <View style={styles.dayTitleRow}>
@@ -921,7 +921,7 @@ const styles = StyleSheet.create({
   },
   planActivePillText: { ...typography.caption, color: colors.white, fontWeight: '800' },
   dayCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
-  todayPlanCard: { borderColor: 'rgba(52,199,89,0.55)', borderWidth: 1.5, backgroundColor: '#f4fdf7' },
+  todayPlanCard: { borderColor: 'rgba(34,197,94,0.45)', borderWidth: 1.5, backgroundColor: '#f2fcf6' },
   dayCardDone: { borderColor: 'rgba(245,179,1,0.6)', borderWidth: 1.5, backgroundColor: '#fffdf7' },
   dayBadge: {
     width: 44,
@@ -931,10 +931,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayBadgeToday: { backgroundColor: '#e6f9ec', borderWidth: 1.5, borderColor: GREEN },
+  dayBadgeToday: { backgroundColor: GREEN, borderWidth: 1.5, borderColor: '#16a34a' },
   dayBadgeDone: { backgroundColor: colors.accent, borderWidth: 1.5, borderColor: GOLD },
   doneBadge: { alignSelf: 'center' },
   dayNum: { ...typography.subtitle, color: colors.accentDark, fontWeight: '800' },
+  dayNumToday: { color: colors.white },
   dayInfo: { flex: 1 },
   dayTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   dayTitle: { ...typography.bodyBold, color: colors.ink, flex: 1 },

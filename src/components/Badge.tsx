@@ -14,7 +14,7 @@ const tones: Record<Tone, { bg: string; fg: string }> = {
   error: { bg: colors.errorLight, fg: colors.error },
   info: { bg: colors.infoLight, fg: colors.info },
   goldSolid: { bg: '#f5b301', fg: '#2e1d00' },
-  greenSolid: { bg: '#86efac', fg: '#14532d' },
+  greenSolid: { bg: '#bbf7d0', fg: '#166534' },
 };
 
 export function Badge({ label, tone = 'accent', icon, style }: { label: string; tone?: Tone; icon?: string; style?: ViewStyle }) {
