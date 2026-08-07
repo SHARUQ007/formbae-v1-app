@@ -25,6 +25,7 @@ jest.mock('react-native-svg', () => {
     Defs: passthrough,
     Stop: passthrough,
     LinearGradient: passthrough,
+    RadialGradient: passthrough,
     Text: passthrough,
   };
 });

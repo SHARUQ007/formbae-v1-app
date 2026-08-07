@@ -4,7 +4,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Alert,
   Animated,
-  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -20,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
+import { TechniqueVideoBackdrop } from '../../components/TechniqueVideoBackdrop';
 import { loadWorkoutDayCached } from '../../services/preloadService';
 import { resolveWorkoutVideo } from '../../services/workoutService';
 import { submitWorkoutFeedback, type WorkoutFeedbackSentiment } from '../../services/workoutFeedbackService';
@@ -30,6 +30,8 @@ import {
   clearWorkoutProgress,
 } from '../../store/workoutStore';
 import { useRestTimer } from '../../hooks/useRestTimer';
+import { deriveWorkoutResumeIndex, remainingRestSeconds } from '../../hooks/useWorkoutSession';
+import { WorkoutPrimaryCTA } from '../../features/workout/components/WorkoutPrimaryCTA';
 import type { WorkoutDayDetail, WorkoutExerciseDetail } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
 import { hiddenTabBarStyle } from '../../navigation/tabBarStyle';
@@ -149,12 +151,6 @@ function adjustNumberText(value: string, delta: number, step = 1) {
   return Number.isInteger(next) ? String(next) : next.toFixed(1).replace(/\.0$/, '');
 }
 
-function wait(ms: number) {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
 function formatTimer(seconds: number) {
   const safe = Math.max(0, Math.round(seconds));
   const mins = Math.floor(safe / 60);
@@ -174,7 +170,7 @@ function modeCopy(mode: 'standard' | 'quick') {
 }
 
 function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
-  const { planDayId, mode = 'standard' } = route.params;
+  const { planDayId, mode = 'standard', initialDetail } = route.params;
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const compactStep = windowHeight < 760;
@@ -190,9 +186,9 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const [setEntryOpen, setSetEntryOpen] = useState(false);
   const [setPaused, setSetPaused] = useState(false);
   const [setElapsed, setSetElapsed] = useState(0);
-  const [countdown, setCountdown] = useState<number | null>(null);
   const [workoutCompleteOpen, setWorkoutCompleteOpen] = useState(false);
   const [pendingNextIndex, setPendingNextIndex] = useState<number | null>(null);
+  const [restoration, setRestoration] = useState<{ nextIndex: number; remaining: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);
@@ -226,22 +222,28 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const data = await loadWorkoutDayCached(planDayId, mode);
+      const data = initialDetail?.planDayId === planDayId ? initialDetail : await loadWorkoutDayCached(planDayId, mode);
       setDetail(data);
       const saved = await loadWorkoutProgress(planDayId);
       setCompleted(new Set(saved.completedExerciseIds));
       setSetProgress(saved.setProgressByExercise || {});
       setSetLogs(saved.setLogsByExercise || {});
       setSelectedAlternates(saved.selectedAlternatesByExercise || {});
-      setActiveIndex(0);
+      const resumedExercises = data.exercises
+        .filter((exercise) => !isSectionMarker(exercise.notes))
+        .map((exercise) => exerciseWithSelectedAlternate(exercise, saved.selectedAlternatesByExercise?.[exercise.exerciseId]));
+      const resumeIndex = deriveWorkoutResumeIndex(resumedExercises, saved);
+      setActiveIndex(resumeIndex);
       setMovementStarted(false);
       setSetEntryOpen(false);
       setSetPaused(false);
       setSetElapsed(0);
-      setCountdown(null);
       setWorkoutCompleteOpen(false);
       setPendingNextIndex(null);
       pendingNextIndexRef.current = null;
+      const remainingRest = remainingRestSeconds(saved.rest);
+      const restIndex = saved.rest ? resumedExercises.findIndex((exercise) => exercise.exerciseId === saved.rest?.nextExerciseId) : -1;
+      setRestoration(remainingRest > 0 && restIndex >= 0 ? { nextIndex: restIndex, remaining: remainingRest } : null);
       setResolvedVideoUrls({});
       setResolvingVideoKeys(new Set());
       resolvingVideoRequestsRef.current.clear();
@@ -250,7 +252,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [planDayId, mode]);
+  }, [initialDetail, planDayId, mode]);
 
   useEffect(() => {
     load();
@@ -264,27 +266,21 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     return () => clearInterval(interval);
   }, [movementStarted, setPaused, timer.running]);
 
-  useEffect(() => {
-    if (countdown === null) return undefined;
-    if (countdown <= 0) {
-      setCountdown(null);
-      setMovementStarted(true);
-      setSetPaused(false);
-      setSetElapsed(0);
-      return undefined;
-    }
-    const timeout = setTimeout(() => {
-      setCountdown((value) => (value === null ? null : value - 1));
-    }, 820);
-    return () => clearTimeout(timeout);
-  }, [countdown]);
-
   const trackableExercises = useMemo(
     () => (detail?.exercises ?? [])
       .filter((exercise) => !isSectionMarker(exercise.notes))
       .map((exercise) => exerciseWithSelectedAlternate(exercise, selectedAlternates[exercise.exerciseId])),
     [detail, selectedAlternates],
   );
+
+  useEffect(() => {
+    if (!restoration || !trackableExercises.length) return;
+    pendingNextIndexRef.current = restoration.nextIndex;
+    setPendingNextIndex(restoration.nextIndex);
+    setActiveIndex(restoration.nextIndex);
+    timer.start(restoration.remaining);
+    setRestoration(null);
+  }, [restoration, timer, trackableExercises.length]);
 
   const activeExercise = trackableExercises[Math.min(activeIndex, Math.max(0, trackableExercises.length - 1))] || null;
   const activeExerciseId = activeExercise?.exerciseId || '';
@@ -492,13 +488,11 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     setSetEntryOpen(false);
     setSetPaused(false);
     setSetElapsed(0);
-    setCountdown(null);
     setActiveIndex(Math.max(0, Math.min(trackableExercises.length - 1, index)));
   };
 
   const startMovement = () => {
-    setCountdown(3);
-    setMovementStarted(false);
+    setMovementStarted(true);
     setSetPaused(false);
     setSetElapsed(0);
   };
@@ -533,14 +527,17 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     setSetEntryOpen(false);
 
     const movementComplete = nextSetCount >= activeSets;
-    setReward({
-      id: Date.now(),
-      type: movementComplete ? 'movement' : 'set',
-      title: movementComplete ? 'Movement complete' : `Set ${nextSetCount} logged`,
-      subtitle: movementComplete
-        ? `${activeExercise.exerciseName} done.`
-        : `${activeSets - nextSetCount} set${activeSets - nextSetCount === 1 ? '' : 's'} left.`,
-    });
+    const completesWorkout = movementComplete && activeExerciseIndex + 1 >= trackableExercises.length;
+    if (!completesWorkout) {
+      setReward({
+        id: Date.now(),
+        type: movementComplete ? 'movement' : 'set',
+        title: movementComplete ? 'Movement complete' : `Set ${nextSetCount} logged`,
+        subtitle: movementComplete
+          ? `${activeExercise.exerciseName} done.`
+          : `${activeSets - nextSetCount} set${activeSets - nextSetCount === 1 ? '' : 's'} left.`,
+      });
+    }
 
     if (movementComplete) {
       await completeActiveExercise(nextSets, nextLogs);
@@ -549,7 +546,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     }
 
     const nextIndex = movementComplete ? activeExerciseIndex + 1 : activeExerciseIndex;
-    if (movementComplete && nextIndex >= trackableExercises.length) {
+    if (completesWorkout) {
       setWorkoutCompleteOpen(true);
       return;
     }
@@ -557,6 +554,20 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       pendingNextIndexRef.current = nextIndex;
       setPendingNextIndex(nextIndex);
       timer.start(activeRest);
+      await saveWorkoutProgress({
+        planDayId,
+        completedExerciseIds: Array.from(movementComplete ? new Set([...completed, activeExercise.exerciseId]) : completed),
+        setProgressByExercise: nextSets,
+        setLogsByExercise: nextLogs,
+        selectedAlternatesByExercise: selectedAlternates,
+        activeExerciseId: trackableExercises[nextIndex]?.exerciseId,
+        rest: {
+          nextExerciseId: trackableExercises[nextIndex]?.exerciseId || activeExercise.exerciseId,
+          startedAt: Date.now(),
+          durationSec: activeRest,
+        },
+        updatedAt: new Date().toISOString(),
+      });
     } else {
       moveToExercise(nextIndex);
     }
@@ -573,8 +584,36 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       setMovementStarted(false);
       setSetPaused(false);
       setSetElapsed(0);
-      setCountdown(null);
+      void saveWorkoutProgress({
+        planDayId,
+        completedExerciseIds: Array.from(completed),
+        setProgressByExercise: setProgress,
+        setLogsByExercise: setLogs,
+        selectedAlternatesByExercise: selectedAlternates,
+        activeExerciseId: trackableExercises[nextIndex]?.exerciseId,
+        updatedAt: new Date().toISOString(),
+      });
     }
+  };
+
+  const addRestTime = () => {
+    timer.addTime(15);
+    const nextExerciseId = restTargetExercise?.exerciseId;
+    if (!nextExerciseId) return;
+    void saveWorkoutProgress({
+      planDayId,
+      completedExerciseIds: Array.from(completed),
+      setProgressByExercise: setProgress,
+      setLogsByExercise: setLogs,
+      selectedAlternatesByExercise: selectedAlternates,
+      activeExerciseId: nextExerciseId,
+      rest: {
+        nextExerciseId,
+        startedAt: Date.now(),
+        durationSec: timer.remaining + 15,
+      },
+      updatedAt: new Date().toISOString(),
+    });
   };
 
   const primaryCta = () => {
@@ -587,9 +626,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     return completeActiveSet();
   };
 
-  const primaryTitle = countdown !== null
-    ? 'Get ready'
-    : timer.running
+  const primaryTitle = timer.running
     ? 'Skip rest'
     : activeDone
       ? activeExerciseIndex >= trackableExercises.length - 1
@@ -603,13 +640,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     if (!detail) return;
     setFinishing(true);
     try {
-      setReward({
-        id: Date.now(),
-        type: 'workout',
-        title: 'Workout complete',
-        subtitle: 'Strong finish. Your progress is saved.',
-      });
-      await wait(900);
       const result = await completeWithQueue({
         planId: detail.planId,
         planDayId: detail.planDayId,
@@ -622,19 +652,24 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         JSON.stringify({ planDayId: detail.planDayId, completedAt: Date.now() }),
       ).catch(() => undefined);
       if (!result.synced) {
-        setReward({
-          id: Date.now(),
-          type: 'workout',
-          title: 'Saved offline',
-          subtitle: 'Your workout will sync when you are back online.',
-        });
-        await wait(700);
+        Alert.alert('Saved offline', 'Your workout will sync when you are back online.');
       }
-      navigation.goBack();
+      navigation.popToTop();
     } finally {
       setFinishing(false);
     }
   }, [detail, planDayId, navigation]);
+
+  const leaveWorkout = () => {
+    if (!movementStarted && !timer.running) {
+      navigation.goBack();
+      return;
+    }
+    Alert.alert('Pause workout?', 'Your current progress is saved. You can resume from this set anytime.', [
+      { text: 'Keep training', style: 'cancel' },
+      { text: 'Pause workout', onPress: () => navigation.goBack() },
+    ]);
+  };
 
   if (loading) {
     return (
@@ -647,7 +682,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   if (error || !detail) {
     return (
       <View style={[styles.container, styles.centerPad, { paddingTop: insets.top }]}>
-        <Header onBack={() => navigation.goBack()} title="Workout" />
+        <Header onBack={leaveWorkout} title="Workout" />
         <ErrorState message={error || 'Workout not found'} onRetry={load} />
       </View>
     );
@@ -657,7 +692,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     return (
       <View style={[styles.container, styles.centerPad, { paddingTop: insets.top }]}>
         <RewardOverlay reward={reward} onDone={clearReward} />
-        <Header onBack={() => navigation.goBack()} title={`Day ${detail.dayNumber}`} subtitle={detail.focus || detail.planTitle} />
+        <Header onBack={leaveWorkout} title={`Day ${detail.dayNumber}`} subtitle={detail.focus || detail.planTitle} />
         <EmptyState icon="coffee" title="Rest day" message="No movements for this day. Recover well!" />
       </View>
     );
@@ -666,7 +701,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <RewardOverlay reward={reward} onDone={clearReward} />
-      <CountdownOverlay value={countdown} exerciseName={activeExercise.exerciseName} />
       <WorkoutCompleteScreen
         visible={workoutCompleteOpen}
         title={detail.focus || detail.planTitle || 'Workout'}
@@ -675,7 +709,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         finishing={finishing}
       />
       <Header
-        onBack={() => navigation.goBack()}
+        onBack={leaveWorkout}
         title={copy.eyebrow}
         right={(
           <TouchableOpacity
@@ -708,29 +742,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         </View>
       </View>
 
-      {timer.running ? (
-        <View style={[styles.executionShell, compactStep && styles.executionShellCompact]}>
-          <View style={styles.restCard}>
-            <View style={styles.restIcon}>
-              <Feather name="clock" size={30} color={colors.white} />
-            </View>
-            <Text style={styles.restKicker}>Rest</Text>
-            <Text style={styles.restTimer}>{formatTimer(timer.remaining)}</Text>
-            <Text style={styles.restText} numberOfLines={2}>
-              Next: {restTargetLabel}
-            </Text>
-            <View style={styles.restActions}>
-              <TouchableOpacity onPress={() => timer.addTime(15)} style={styles.restSmallButton} accessibilityRole="button" accessibilityLabel="Add fifteen seconds">
-                <Text style={styles.restSmallButtonText}>+15s</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={skipRest} style={styles.restSmallButton} accessibilityRole="button" accessibilityLabel="Skip rest">
-                <Text style={styles.restSmallButtonText}>Skip</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      ) : (
-        <View style={[styles.executionShell, compactStep && styles.executionShellCompact, movementStarted && styles.executionShellActive]}>
+      <View style={[styles.executionShell, compactStep && styles.executionShellCompact, movementStarted && styles.executionShellActive]}>
           <View style={styles.movementHead}>
             <View style={styles.activeStep}>
               <Text style={styles.activeStepText}>{activeExerciseIndex + 1}</Text>
@@ -757,15 +769,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                 accessibilityLabel={`Open video for ${activeExercise.exerciseName}`}
               >
                 <View style={styles.videoPlaceholderImage}>
-                  <Image source={require('../../assets/icon-mark.png')} style={styles.videoPlaceholderLogo} />
-                  <View style={styles.videoPlaceholderLines}>
-                    <View style={[styles.videoPlaceholderLine, styles.videoPlaceholderLineLong]} />
-                    <View style={[styles.videoPlaceholderLine, styles.videoPlaceholderLineMedium]} />
-                    <View style={[styles.videoPlaceholderLine, styles.videoPlaceholderLineShort]} />
-                  </View>
-                  <View style={styles.videoStepIconLarge}>
-                    <Feather name="play" size={32} color={colors.white} />
-                  </View>
+                  <TechniqueVideoBackdrop resolving={activeVideoResolving} />
                 </View>
                 <View style={styles.videoStepFooter}>
                   <View style={styles.videoStepText}>
@@ -786,7 +790,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
               <View style={styles.exerciseInsightCard}>
                 <View style={styles.insightHeader}>
                   <View style={styles.insightIcon}>
-                    <Feather name="zap" size={18} color={colors.white} />
+                    <Feather name="zap" size={18} color={colors.accentDark} />
                   </View>
                   <View style={styles.insightTitleBlock}>
                     <Text style={styles.insightKicker}>Workout focus</Text>
@@ -877,8 +881,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
               </TouchableOpacity>
             </>
           )}
-        </View>
-      )}
+      </View>
 
       <View style={[styles.actionDock, { paddingBottom: insets.bottom + spacing.sm }]}>
         {movementStarted && !timer.running ? (
@@ -905,23 +908,13 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
             </TouchableOpacity>
           </View>
         ) : (
-          <TouchableOpacity
-            activeOpacity={0.86}
+          <WorkoutPrimaryCTA
+            title={finishing ? 'Finishing...' : primaryTitle}
+            subtitle={!timer.running && !activeDone ? `Set ${activeSetNumber} of ${activeSets}` : undefined}
+            icon={timer.running ? 'skip-forward' : activeDone && activeExerciseIndex >= trackableExercises.length - 1 ? 'flag' : 'play'}
             onPress={primaryCta}
-            disabled={finishing || countdown !== null}
-            style={[styles.primarySessionButton, timer.running && styles.restPrimaryButton, activeDone && styles.donePrimaryButton]}
-            accessibilityRole="button"
-            accessibilityLabel={primaryTitle}
-          >
-            <View style={styles.primarySessionIcon}>
-              <Feather name={timer.running ? 'skip-forward' : activeDone && activeExerciseIndex >= trackableExercises.length - 1 ? 'flag' : 'play'} size={24} color={colors.accentDark} />
-            </View>
-            <View style={styles.primarySessionLabelBlock}>
-              <Text style={styles.primarySessionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>{finishing ? 'Finishing...' : primaryTitle}</Text>
-              {!timer.running && !activeDone ? <Text style={styles.primarySessionSubText}>Set {activeSetNumber} of {activeSets}</Text> : null}
-            </View>
-            <Feather name="arrow-right" size={22} color={colors.white} />
-          </TouchableOpacity>
+            disabled={finishing}
+          />
         )}
       </View>
 
@@ -935,6 +928,13 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
           moveToExercise(index);
         }}
         onClose={() => setFlowOpen(false)}
+      />
+      <RestSheet
+        visible={timer.running}
+        remaining={timer.remaining}
+        nextLabel={restTargetLabel}
+        onAddTime={addRestTime}
+        onSkip={skipRest}
       />
 
       <SetEntryModal
@@ -1166,19 +1166,6 @@ function MetricPill({ label, value, icon }: { label: string; value: string; icon
   );
 }
 
-function CountdownOverlay({ value, exerciseName }: { value: number | null; exerciseName: string }) {
-  if (value === null) return null;
-  return (
-    <View pointerEvents="none" style={styles.countdownOverlay}>
-      <View style={styles.countdownCard}>
-        <Text style={styles.countdownKicker}>Starting</Text>
-        <Text style={styles.countdownNumber}>{value > 0 ? value : 'Go'}</Text>
-        <Text style={styles.countdownExercise} numberOfLines={2}>{exerciseName}</Text>
-      </View>
-    </View>
-  );
-}
-
 function WorkoutCompleteScreen({
   visible,
   title,
@@ -1197,7 +1184,7 @@ function WorkoutCompleteScreen({
     <View style={styles.completeOverlay}>
       <View style={styles.completeCard}>
         <View style={styles.completeIcon}>
-          <Feather name="award" size={44} color={colors.white} />
+          <Feather name="award" size={44} color={colors.accentDark} />
         </View>
         <Text style={styles.completeKicker}>Workout completed</Text>
         <Text style={styles.completeTitle}>{title}</Text>
@@ -1213,7 +1200,45 @@ function WorkoutCompleteScreen({
           accessibilityLabel="Finish workout"
         >
           <Text style={styles.completeButtonText}>{finishing ? 'Saving...' : 'Done'}</Text>
-          <Feather name="arrow-right" size={22} color={colors.white} />
+          <Feather name="arrow-right" size={22} color={colors.accentDark} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function RestSheet({
+  visible,
+  remaining,
+  nextLabel,
+  onAddTime,
+  onSkip,
+}: {
+  visible: boolean;
+  remaining: number;
+  nextLabel: string;
+  onAddTime: () => void;
+  onSkip: () => void;
+}) {
+  if (!visible) return null;
+  return (
+    <View style={styles.restSheetLayer}>
+      <View style={styles.restSheet}>
+        <View style={styles.sheetHandle} />
+        <View style={styles.restSheetHeader}>
+          <View>
+            <Text style={styles.restKicker}>Recover</Text>
+            <Text style={styles.restSheetTitle}>{formatTimer(remaining)}</Text>
+          </View>
+          <TouchableOpacity onPress={onSkip} style={styles.restSkipButton} accessibilityRole="button" accessibilityLabel="Skip rest">
+            <Text style={styles.restSkipText}>Skip</Text>
+            <Feather name="arrow-right" size={16} color={colors.white} />
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.restSheetNext} numberOfLines={2}>Up next: {nextLabel}</Text>
+        <TouchableOpacity onPress={onAddTime} style={styles.restAddTimeButton} accessibilityRole="button" accessibilityLabel="Add fifteen seconds">
+          <Feather name="plus" size={16} color={colors.accentDark} />
+          <Text style={styles.restAddTimeText}>Add 15 seconds</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -1438,7 +1463,7 @@ const styles = StyleSheet.create({
   executionShell: {
     flex: 1,
     marginHorizontal: spacing.lg,
-    borderRadius: 30,
+    borderRadius: 28,
     backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
@@ -1486,6 +1511,46 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.24)',
   },
   restSmallButtonText: { ...typography.bodyBold, color: colors.white },
+  restSheetLayer: {
+    ...StyleSheet.absoluteFill,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(20,20,18,0.18)',
+  },
+  restSheet: {
+    backgroundColor: colors.panel,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxl,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  restSheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm },
+  restSheetTitle: { fontSize: 42, lineHeight: 48, fontWeight: '900', color: colors.ink, marginTop: 2 },
+  restSheetNext: { ...typography.body, color: colors.inkMuted, marginTop: spacing.sm },
+  restSkipButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  restSkipText: { ...typography.bodyBold, color: colors.white },
+  restAddTimeButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelMuted,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  restAddTimeText: { ...typography.bodyBold, color: colors.accentDark },
   movementHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1732,7 +1797,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
   },
   stepperDotDone: {
-    backgroundColor: colors.accentSurface,
+    backgroundColor: colors.accent,
   },
   stepperDotActive: {
     height: 7,
@@ -1759,8 +1824,8 @@ const styles = StyleSheet.create({
   },
   stepFlowText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
   videoStepCardLarge: {
-    minHeight: 214,
-    borderRadius: 28,
+    minHeight: 188,
+    borderRadius: 26,
     backgroundColor: colors.inkStrong,
     overflow: 'hidden',
     justifyContent: 'space-between',
@@ -1770,8 +1835,8 @@ const styles = StyleSheet.create({
   },
   videoPlaceholderImage: {
     flex: 1,
-    minHeight: 112,
-    borderRadius: 22,
+    minHeight: 96,
+    borderRadius: 20,
     backgroundColor: colors.accentDarker,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1800,8 +1865,8 @@ const styles = StyleSheet.create({
   videoPlaceholderLineMedium: { width: '46%' },
   videoPlaceholderLineShort: { width: '30%' },
   videoStepIconLarge: {
-    width: 76,
-    height: 76,
+    width: 64,
+    height: 64,
     borderRadius: radius.pill,
     backgroundColor: colors.accent,
     alignItems: 'center',
@@ -1814,7 +1879,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
   },
-  videoStepTitleLarge: { fontSize: 25, lineHeight: 30, fontWeight: '900', color: colors.white, marginTop: 4 },
+  videoStepTitleLarge: { fontSize: 22, lineHeight: 27, fontWeight: '800', color: colors.white, marginTop: 3 },
   videoStepCardCompactActive: {
     minHeight: 68,
     borderRadius: 20,
@@ -1844,9 +1909,9 @@ const styles = StyleSheet.create({
   },
   metricPill: {
     flex: 1,
-    minHeight: 70,
-    borderRadius: radius.xl,
-    backgroundColor: colors.accentLight,
+    minHeight: 74,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panelMuted,
     borderWidth: 1,
     borderColor: colors.accentSurface,
     padding: spacing.sm,
@@ -1854,10 +1919,10 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   metricPillText: { minWidth: 0 },
-  metricPillLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '900' },
-  metricPillValue: { ...typography.subtitle, color: colors.ink, marginTop: 2 },
+  metricPillLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
+  metricPillValue: { ...typography.subtitle, color: colors.ink, marginTop: 2, fontWeight: '800' },
   exerciseInsightCard: {
-    borderRadius: 24,
+    borderRadius: 20,
     backgroundColor: colors.panelMuted,
     borderWidth: 1,
     borderColor: colors.border,
@@ -1999,26 +2064,6 @@ const styles = StyleSheet.create({
   videoStepKicker: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
   videoStepTitle: { ...typography.subtitle, color: colors.white, marginTop: 4 },
   videoStepMeta: { ...typography.caption, color: colors.onAccentMuted, marginTop: 4 },
-  countdownOverlay: {
-    ...StyleSheet.absoluteFill,
-    zIndex: 40,
-    backgroundColor: 'rgba(3, 31, 20, 0.84)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.lg,
-  },
-  countdownCard: {
-    width: '100%',
-    borderRadius: 36,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.accentSurface,
-    padding: spacing.xl,
-    alignItems: 'center',
-  },
-  countdownKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
-  countdownNumber: { fontSize: 116, lineHeight: 124, fontWeight: '900', color: colors.accentDark, marginVertical: spacing.sm },
-  countdownExercise: { ...typography.title, color: colors.ink, textAlign: 'center' },
   completeOverlay: {
     ...StyleSheet.absoluteFill,
     zIndex: 35,
@@ -2043,7 +2088,7 @@ const styles = StyleSheet.create({
     width: 96,
     height: 96,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    backgroundColor: '#f5b301',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.lg,
@@ -2054,7 +2099,7 @@ const styles = StyleSheet.create({
   completeButton: {
     minHeight: 64,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    backgroundColor: '#f5b301',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2063,7 +2108,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     alignSelf: 'stretch',
   },
-  completeButtonText: { ...typography.bodyBold, color: colors.white },
+  completeButtonText: { ...typography.bodyBold, color: colors.accentDark },
   stepSetPanel: {
     borderRadius: 22,
     backgroundColor: colors.panelMuted,
@@ -2122,14 +2167,16 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: radius.lg,
-    backgroundColor: colors.accentLight,
+    backgroundColor: '#fff8e6',
+    borderWidth: 1,
+    borderColor: '#f5b301',
     alignItems: 'center',
     justifyContent: 'center',
   },
   activeStepText: { ...typography.subtitle, color: colors.accentDark, fontWeight: '800' },
   activeText: { flex: 1 },
   activeKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
-  activeName: { fontSize: 28, lineHeight: 33, fontWeight: '900', color: colors.ink, marginTop: spacing.sm },
+  activeName: { fontSize: 30, lineHeight: 35, fontWeight: '800', color: colors.ink, marginTop: spacing.md, letterSpacing: -0.35 },
   activeStatus: {
     width: 36,
     height: 36,
