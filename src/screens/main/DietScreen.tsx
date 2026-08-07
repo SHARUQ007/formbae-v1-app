@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -19,6 +19,7 @@ import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Svg, { Rect, Text as SvgText } from 'react-native-svg';
 import { ScreenContainer, ScreenTitle, Card } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { EmptyState } from '../../components/States';
@@ -54,6 +55,8 @@ const meals: Array<{ type: MealType; icon: string; label: string; hint: string }
   { type: 'Dinner', icon: 'sunset', label: 'Evening', hint: 'Later meal' },
   { type: 'Snack', icon: 'moon', label: 'Night', hint: 'Late bites' },
 ];
+
+const GOLD = '#f5b301';
 
 const confettiColors = ['#050505', '#ffffff', '#d9d6ce', '#8f8b82'];
 const confettiPieces = Array.from({ length: 32 }, (_, index) => ({
@@ -235,6 +238,58 @@ function DietTab({
   );
 }
 
+function ReportStat({ value, label }: { value: string; label: string }) {
+  return (
+    <View style={styles.reportStat}>
+      <Text style={styles.reportStatValue}>{value}</Text>
+      <Text style={styles.reportStatLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function WeekBars({ bars }: { bars: Array<{ key: string; label: string; count: number; isToday: boolean }> }) {
+  const [width, setWidth] = useState(0);
+  const height = 132;
+  const padTop = 22;
+  const labelH = 22;
+  const innerH = height - padTop - labelH;
+  const max = Math.max(...bars.map((bar) => bar.count), 1);
+  const maxCount = Math.max(...bars.map((bar) => bar.count));
+  const slot = width > 0 ? width / bars.length : 0;
+  const barW = Math.min(slot * 0.46, 24);
+
+  return (
+    <View style={styles.weekChart} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+      {width > 0 ? (
+        <Svg width={width} height={height}>
+          {bars.map((bar, index) => {
+            const cx = index * slot + slot / 2;
+            const barH = bar.count > 0 ? Math.max((bar.count / max) * innerH, 6) : 0;
+            const barY = padTop + (innerH - barH);
+            const showValue = bar.count > 0 && bar.count === maxCount;
+            return (
+              <Fragment key={bar.key}>
+                <Rect x={cx - barW / 2} y={padTop} width={barW} height={innerH} rx={barW / 2} fill={colors.panelMuted} />
+                {bar.count > 0 ? (
+                  <Rect x={cx - barW / 2} y={barY} width={barW} height={barH} rx={barW / 2} fill={bar.isToday ? GOLD : colors.ink} />
+                ) : null}
+                {showValue ? (
+                  <SvgText x={cx} y={barY - 7} fontSize={11} fontWeight="700" fill={colors.ink} textAnchor="middle">
+                    {bar.count}
+                  </SvgText>
+                ) : null}
+                <SvgText x={cx} y={height - 6} fontSize={11} fontWeight={bar.isToday ? '700' : '400'} fill={bar.isToday ? colors.ink : colors.inkSubtle} textAnchor="middle">
+                  {bar.label}
+                </SvgText>
+              </Fragment>
+            );
+          })}
+        </Svg>
+      ) : null}
+    </View>
+  );
+}
+
 export function DietScreen(props: Props) {
   return <DietScreenContent {...props} />;
 }
@@ -301,6 +356,31 @@ function DietScreenContent({ route, navigation }: Props) {
   }, [entries]);
   const memoryPoints = useMemo(() => uniqueMemoryEntries(visibleEntries).length, [visibleEntries]);
   const totalMemoryPoints = useMemo(() => uniqueMemoryEntries(entries).length, [entries]);
+  const weekly = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(start.getDate() - 6);
+    start.setHours(0, 0, 0, 0);
+    const bars = Array.from({ length: 7 }, (_, index) => {
+      const day = shiftDate(now, -(6 - index));
+      const count = entries.filter((entry) => isSameDay(entry.createdAt, day)).length;
+      return {
+        key: day.toDateString(),
+        label: day.toLocaleDateString('en-IN', { weekday: 'narrow' }),
+        count,
+        isToday: isSameDay(day, now),
+      };
+    });
+    const weekEntries = entries.filter((entry) => {
+      const time = new Date(entry.createdAt).getTime();
+      return !Number.isNaN(time) && time >= start.getTime();
+    });
+    const slots = meals.map((meal) => ({ label: meal.label, count: weekEntries.filter((entry) => entry.mealType === meal.type).length }));
+    const maxSlotCount = Math.max(...slots.map((slot) => slot.count), 0);
+    const strongest = maxSlotCount > 0 ? slots.find((slot) => slot.count === maxSlotCount) || null : null;
+    const daysActive = new Set(weekEntries.map((entry) => new Date(entry.createdAt).toDateString())).size;
+    return { bars, slots, total: weekEntries.length, maxSlotCount, strongest, daysActive };
+  }, [entries]);
   const canGoForward = !isSameDay(selectedDate, new Date()) && !isFutureDay(shiftDate(selectedDate, 1));
   const canMoveMemoryForward = useMemo(
     () => Boolean(nextMemorySlot(selectedDate, selectedMeal)),
@@ -627,6 +707,54 @@ function DietScreenContent({ route, navigation }: Props) {
               </View>
             </View>
 
+            <Card style={styles.reportCard}>
+              <View style={styles.reportHead}>
+                <View style={styles.reportHeadText}>
+                  <Text style={styles.reportKicker}>Last 7 days</Text>
+                  <Text style={styles.reportTitle}>Logging activity</Text>
+                </View>
+                <View style={styles.reportTotal}>
+                  <Text style={styles.reportTotalValue}>{weekly.total}</Text>
+                  <Text style={styles.reportTotalLabel}>items</Text>
+                </View>
+              </View>
+              <WeekBars bars={weekly.bars} />
+              <View style={styles.reportStats}>
+                <ReportStat value={`${dietFeedback?.stats.loggedItems ?? entries.length}`} label="logged" />
+                <View style={styles.reportStatDivider} />
+                <ReportStat value={`${dietFeedback?.stats.daysLogged ?? weekly.daysActive}`} label="days" />
+                <View style={styles.reportStatDivider} />
+                <ReportStat value={`${dietFeedback?.stats.memoryEntries ?? totalMemoryPoints}`} label="memory" />
+              </View>
+            </Card>
+
+            <Card style={styles.rhythmCard}>
+              <View style={styles.rhythmHead}>
+                <Text style={styles.feedbackSectionTitle}>When you eat</Text>
+                {weekly.strongest ? (
+                  <View style={styles.strongPill}>
+                    <Feather name="trending-up" size={12} color={colors.accentDark} />
+                    <Text style={styles.strongPillText}>Top · {weekly.strongest.label}</Text>
+                  </View>
+                ) : null}
+              </View>
+              <View style={styles.slotList}>
+                {weekly.slots.map((slot) => {
+                  const isMax = weekly.maxSlotCount > 0 && slot.count === weekly.maxSlotCount;
+                  const pct = weekly.maxSlotCount > 0 ? slot.count / weekly.maxSlotCount : 0;
+                  return (
+                    <View key={slot.label} style={styles.slotRow}>
+                      <Text style={styles.slotLabel}>{slot.label}</Text>
+                      <View style={styles.slotTrack}>
+                        <View style={[styles.slotFill, { width: `${slot.count > 0 ? Math.max(pct * 100, 10) : 0}%` }, isMax && styles.slotFillMax]} />
+                      </View>
+                      <Text style={styles.slotCount}>{slot.count}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </Card>
+
             <Card style={styles.feedbackCard}>
               <Text style={styles.feedbackSectionTitle}>What you are eating</Text>
               <Text style={styles.feedbackBody}>
@@ -659,23 +787,6 @@ function DietScreenContent({ route, navigation }: Props) {
                 </View>
               ) : null}
             </Card>
-
-            <View style={styles.feedbackStatsCard}>
-              <View style={styles.feedbackStat}>
-                <Text style={styles.feedbackStatValue}>{dietFeedback?.stats.loggedItems ?? entries.length}</Text>
-                <Text style={styles.feedbackStatLabel}>logged</Text>
-              </View>
-              <View style={styles.feedbackStatDivider} />
-              <View style={styles.feedbackStat}>
-                <Text style={styles.feedbackStatValue}>{dietFeedback?.stats.daysLogged ?? new Set(entries.map((entry) => new Date(entry.createdAt).toDateString())).size}</Text>
-                <Text style={styles.feedbackStatLabel}>days</Text>
-              </View>
-              <View style={styles.feedbackStatDivider} />
-              <View style={styles.feedbackStat}>
-                <Text style={styles.feedbackStatValue}>{dietFeedback?.stats.memoryEntries ?? totalMemoryPoints}</Text>
-                <Text style={styles.feedbackStatLabel}>memory</Text>
-              </View>
-            </View>
 
             <PrimaryButton title="Start memory game" icon="plus" onPress={() => { setActiveTab('log'); openMemoryGame(); }} style={styles.feedbackCta} />
 
@@ -978,6 +1089,55 @@ const styles = StyleSheet.create({
   feedbackTitle: { ...typography.title, color: colors.white, marginTop: 2 },
   feedbackMeta: { ...typography.bodyBold, color: colors.onAccentMuted, marginTop: spacing.xs },
   feedbackCard: { gap: spacing.sm },
+  reportCard: { gap: spacing.md },
+  reportHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md },
+  reportHeadText: { flex: 1 },
+  reportKicker: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
+  reportTitle: { ...typography.subtitle, color: colors.ink, marginTop: 2 },
+  reportTotal: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 62,
+    borderRadius: radius.lg,
+    backgroundColor: colors.black,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+  },
+  reportTotalValue: { fontSize: 20, lineHeight: 23, fontWeight: '900', color: colors.white },
+  reportTotalLabel: { fontSize: 10, lineHeight: 12, color: colors.onAccentMuted, fontWeight: '700' },
+  weekChart: { height: 132, width: '100%' },
+  reportStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+  },
+  reportStat: { flex: 1, alignItems: 'center' },
+  reportStatValue: { ...typography.title, color: colors.ink },
+  reportStatLabel: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  reportStatDivider: { width: 1, height: 34, backgroundColor: colors.border },
+  rhythmCard: { gap: spacing.md },
+  rhythmHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  strongPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+  },
+  strongPillText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
+  slotList: { gap: spacing.sm },
+  slotRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  slotLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '700', width: 72 },
+  slotTrack: { flex: 1, height: 12, borderRadius: radius.pill, backgroundColor: colors.panelMuted, overflow: 'hidden' },
+  slotFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.ink },
+  slotFillMax: { backgroundColor: GOLD },
+  slotCount: { ...typography.caption, color: colors.ink, fontWeight: '800', width: 20, textAlign: 'right' },
   feedbackSectionTitle: { ...typography.subtitle, color: colors.ink },
   feedbackBody: { ...typography.body, color: colors.inkMuted },
   foodPillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.xs },
