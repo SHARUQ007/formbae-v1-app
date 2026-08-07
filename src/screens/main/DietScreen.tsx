@@ -19,7 +19,7 @@ import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
+import { ScreenContainer, ScreenTitle, Card } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { EmptyState } from '../../components/States';
 import {
@@ -685,15 +685,15 @@ function DietScreenContent({ route, navigation }: Props) {
           <>
             <View style={styles.logPanel}>
               <View style={styles.logHero}>
-                <View style={styles.logScore}>
-                  <Text style={styles.logScoreValue}>{memoryPoints}</Text>
-                  <Text style={styles.logScoreLabel}>today</Text>
-                </View>
-                <View style={styles.logHeroText}>
+                <View style={styles.logHeroTop}>
                   <Text style={styles.logEyebrow}>Food logging</Text>
-                  <Text style={styles.logTitle}>Remember what you ate</Text>
-                  <Text style={styles.logCopy}>{totalMemoryPoints} lifetime points. Add one item at a time.</Text>
+                  <View style={styles.logScorePill}>
+                    <Text style={styles.logScorePillValue}>{memoryPoints}</Text>
+                    <Text style={styles.logScorePillLabel}>today</Text>
+                  </View>
                 </View>
+                <Text style={styles.logTitle}>Remember what you ate</Text>
+                <Text style={styles.logCopy}>{totalMemoryPoints} lifetime points · add one item at a time</Text>
               </View>
 
               <View style={styles.logControlsCard}>
@@ -1087,27 +1087,31 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   logHero: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
     borderRadius: 26,
     backgroundColor: colors.black,
     padding: spacing.lg,
+    gap: spacing.sm,
   },
-  logScore: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.lg,
-    backgroundColor: colors.white,
+  logHeroTop: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
   },
-  logScoreValue: { fontSize: 34, lineHeight: 38, fontWeight: '900', color: colors.black },
-  logScoreLabel: { ...typography.caption, color: colors.inkMuted, marginTop: -2 },
-  logHeroText: { flex: 1 },
+  logScorePill: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  logScorePillValue: { fontSize: 17, lineHeight: 20, fontWeight: '900', color: colors.black },
+  logScorePillLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
   logEyebrow: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
-  logTitle: { ...typography.title, color: colors.white, marginTop: 2 },
-  logCopy: { ...typography.caption, color: colors.onAccentMuted, marginTop: spacing.xs, lineHeight: 18 },
+  logTitle: { ...typography.title, color: colors.white },
+  logCopy: { ...typography.caption, color: colors.onAccentMuted, lineHeight: 18 },
   logControlsCard: {
     borderRadius: 24,
     backgroundColor: colors.panel,
