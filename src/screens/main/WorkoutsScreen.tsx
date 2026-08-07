@@ -10,7 +10,7 @@ import { ErrorState, EmptyState, LoadingState } from '../../components/States';
 import { SkeletonBlock } from '../../components/Skeleton';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
-import { GoldenCompletionGlow } from '../../components/GoldenCompletionGlow';
+import { CompletionGlow } from '../../components/CompletionGlow';
 import { loadWorkoutDayCached, loadWorkoutPlanCached } from '../../services/preloadService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
 import { getSiteUrl } from '../../constants/config';
@@ -29,6 +29,7 @@ const LAST_SEEN_STREAK_KEY = 'formbae_last_seen_workout_streak';
 const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebration';
 const GOLD = '#f5b301';
 const GOLD_DARK = '#9a5b00';
+const GREEN = '#34c759';
 
 function parsePendingCompletion(raw: string | null) {
   if (!raw) return { planDayId: '', completedAt: 0 };
@@ -455,10 +456,14 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                   <Card
                     key={day.planDayId}
                     onPress={() => openWorkoutDetail(day, 'standard')}
-                    style={StyleSheet.flatten([styles.dayCard, isToday && styles.todayPlanCard, day.completed && styles.dayCardDone])}
+                    style={StyleSheet.flatten([
+                      styles.dayCard,
+                      isToday && !day.completed && styles.todayPlanCard,
+                      day.completed && (isToday ? styles.dayCardDoneToday : styles.dayCardDone),
+                    ])}
                   >
-                    {day.completed ? <GoldenCompletionGlow radius={22} /> : null}
-                    <View style={[styles.dayBadge, day.completed && styles.dayBadgeDone]}>
+                    {day.completed ? <CompletionGlow radius={22} variant={isToday ? 'green' : 'gold'} animated={isToday} /> : null}
+                    <View style={[styles.dayBadge, day.completed && (isToday ? styles.dayBadgeDoneToday : styles.dayBadgeDone)]}>
                       {day.completed ? <Feather name="check" size={18} color={colors.white} /> : <Text style={styles.dayNum}>{day.dayNumber}</Text>}
                     </View>
                     <View style={styles.dayInfo}>
@@ -466,13 +471,17 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                         <Text style={styles.dayTitle} numberOfLines={1}>
                           {day.focus || 'Workout'}
                         </Text>
-                        {isToday ? <Badge label="Today" tone="accent" /> : null}
+                        {isToday && !day.completed ? <Badge label="Today" tone="accent" /> : null}
                       </View>
                       <Text style={styles.meta}>
                         {count} exercise{count === 1 ? '' : 's'} · Day {day.dayNumber}
                       </Text>
                     </View>
-                    {day.completed ? <Badge label="Done" tone="success" icon="check" /> : <Feather name="chevron-right" size={20} color={colors.inkSubtle} />}
+                    {day.completed ? (
+                      <Badge label="Done" tone={isToday ? 'greenSolid' : 'goldSolid'} icon="check" />
+                    ) : (
+                      <Feather name="chevron-right" size={20} color={colors.inkSubtle} />
+                    )}
                   </Card>
                 );
               })}
@@ -692,6 +701,7 @@ const styles = StyleSheet.create({
   dayCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
   todayPlanCard: { borderColor: colors.accent, backgroundColor: colors.accentLight },
   dayCardDone: { borderColor: 'rgba(245,179,1,0.6)', borderWidth: 1.5, backgroundColor: '#fffdf7' },
+  dayCardDoneToday: { borderColor: 'rgba(52,199,89,0.55)', borderWidth: 1.5, backgroundColor: '#f4fdf7' },
   dayBadge: {
     width: 44,
     height: 44,
@@ -701,6 +711,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   dayBadgeDone: { backgroundColor: colors.accent, borderWidth: 1.5, borderColor: GOLD },
+  dayBadgeDoneToday: { backgroundColor: colors.accent, borderWidth: 1.5, borderColor: GREEN },
   dayNum: { ...typography.subtitle, color: colors.accentDark, fontWeight: '800' },
   dayInfo: { flex: 1 },
   dayTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

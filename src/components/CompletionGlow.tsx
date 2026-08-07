@@ -3,18 +3,33 @@ import { Animated, Easing, LayoutChangeEvent, StyleSheet, View } from 'react-nat
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-const GOLD_LIGHT = '#ffe08a';
+type Variant = 'gold' | 'green';
 
-// A few gold glints near the top-right corner. Each twinkles gently on its
-// own cadence (staggered), so the effect reads as a soft sparkle rather than
-// one synchronized pulse.
+// Colour sets per variant. Gold marks banked completions from earlier days;
+// light green marks today's fresh win.
+const PALETTES: Record<Variant, { wash: string[]; band: string[]; sparkle: string }> = {
+  gold: {
+    wash: ['rgba(245,179,1,0.22)', 'rgba(245,179,1,0.06)', 'rgba(245,179,1,0)'],
+    band: ['rgba(255,236,179,0)', 'rgba(255,236,179,0.55)', 'rgba(255,236,179,0)'],
+    sparkle: '#ffe08a',
+  },
+  green: {
+    wash: ['rgba(52,199,89,0.2)', 'rgba(52,199,89,0.05)', 'rgba(52,199,89,0)'],
+    band: ['rgba(187,247,208,0)', 'rgba(187,247,208,0.6)', 'rgba(187,247,208,0)'],
+    sparkle: '#bbf7d0',
+  },
+};
+
+// Glints framing the completion check on the left of the card. They stay
+// clear of the title and the "Done" badge so nothing crowds the text. Each
+// twinkles on its own staggered cadence rather than one synchronized pulse.
 const SPARKLES = [
-  { top: 7, right: 16, size: 13, delay: 0, gap: 1700 },
-  { top: 24, right: 42, size: 8, delay: 850, gap: 2100 },
-  { top: 33, right: 9, size: 7, delay: 1500, gap: 1900 },
+  { top: 5, left: 50, size: 12, delay: 0, gap: 1700 },
+  { top: 45, left: 11, size: 8, delay: 850, gap: 2100 },
+  { top: 29, left: 3, size: 6, delay: 1500, gap: 1900 },
 ];
 
-function Sparkle({ top, right, size, delay, gap }: { top: number; right: number; size: number; delay: number; gap: number }) {
+function Sparkle({ top, left, size, delay, gap, color }: { top: number; left: number; size: number; delay: number; gap: number; color: string }) {
   const t = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -35,8 +50,8 @@ function Sparkle({ top, right, size, delay, gap }: { top: number; right: number;
   const rotate = t.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '80deg'] });
 
   return (
-    <Animated.View style={[styles.sparkle, { top, right, opacity, transform: [{ scale }, { rotate }] }]}>
-      <MaterialCommunityIcon name="star-four-points" size={size} color={GOLD_LIGHT} />
+    <Animated.View style={[styles.sparkle, { top, left, opacity, transform: [{ scale }, { rotate }] }]}>
+      <MaterialCommunityIcon name="star-four-points" size={size} color={color} />
     </Animated.View>
   );
 }
@@ -44,14 +59,20 @@ function Sparkle({ top, right, size, delay, gap }: { top: number; right: number;
 /**
  * Decorative "reward" overlay for a completed workout card. Render it as the
  * first child of the card so it sits behind the content; it never intercepts
- * touches. A static gilded wash warms the card, a single highlight sweeps
- * across on a calm loop, and a few glints twinkle near the corner.
+ * touches.
+ *
+ * A gilded wash always warms the card (the static look). When `animated` is
+ * true — reserved for today's freshly completed workout — a highlight sweeps
+ * across on a calm loop and a few glints twinkle by the check. Previously
+ * completed days keep the coloured look without any motion.
  */
-export function GoldenCompletionGlow({ radius = 22 }: { radius?: number }) {
+export function CompletionGlow({ radius = 22, variant = 'gold', animated = true }: { radius?: number; variant?: Variant; animated?: boolean }) {
   const shine = useRef(new Animated.Value(0)).current;
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const palette = PALETTES[variant];
 
   useEffect(() => {
+    if (!animated) return undefined;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(shine, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
@@ -60,7 +81,7 @@ export function GoldenCompletionGlow({ radius = 22 }: { radius?: number }) {
     );
     loop.start();
     return () => loop.stop();
-  }, [shine]);
+  }, [shine, animated]);
 
   const onLayout = (e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -76,13 +97,8 @@ export function GoldenCompletionGlow({ radius = 22 }: { radius?: number }) {
 
   return (
     <View style={[styles.root, { borderRadius: radius }]} pointerEvents="none" onLayout={onLayout}>
-      <LinearGradient
-        colors={['rgba(245,179,1,0.2)', 'rgba(245,179,1,0.06)', 'rgba(245,179,1,0)']}
-        start={{ x: 1, y: 0 }}
-        end={{ x: 0.15, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      {size.width > 0 ? (
+      <LinearGradient colors={palette.wash} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      {animated && size.width > 0 ? (
         <Animated.View
           style={[
             styles.band,
@@ -94,17 +110,10 @@ export function GoldenCompletionGlow({ radius = 22 }: { radius?: number }) {
             },
           ]}
         >
-          <LinearGradient
-            colors={['rgba(255,236,179,0)', 'rgba(255,236,179,0.55)', 'rgba(255,236,179,0)']}
-            start={{ x: 0, y: 0.5 }}
-            end={{ x: 1, y: 0.5 }}
-            style={StyleSheet.absoluteFill}
-          />
+          <LinearGradient colors={palette.band} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} />
         </Animated.View>
       ) : null}
-      {SPARKLES.map((s, i) => (
-        <Sparkle key={i} {...s} />
-      ))}
+      {animated ? SPARKLES.map((s, i) => <Sparkle key={i} {...s} color={palette.sparkle} />) : null}
     </View>
   );
 }

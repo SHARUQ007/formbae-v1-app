@@ -4,7 +4,7 @@ import { colors } from '../theme/colors';
 import { radius } from '../theme/radius';
 import { typography } from '../theme/typography';
 
-type Tone = 'accent' | 'neutral' | 'success' | 'warn' | 'error' | 'info';
+type Tone = 'accent' | 'neutral' | 'success' | 'warn' | 'error' | 'info' | 'goldSolid' | 'greenSolid';
 
 const tones: Record<Tone, { bg: string; fg: string }> = {
   accent: { bg: colors.accentLight, fg: colors.accentDark },
@@ -13,6 +13,8 @@ const tones: Record<Tone, { bg: string; fg: string }> = {
   warn: { bg: colors.warnLight, fg: colors.warn },
   error: { bg: colors.errorLight, fg: colors.error },
   info: { bg: colors.infoLight, fg: colors.info },
+  goldSolid: { bg: '#f5b301', fg: '#2e1d00' },
+  greenSolid: { bg: '#86efac', fg: '#14532d' },
 };
 
 export function Badge({ label, tone = 'accent', icon }: { label: string; tone?: Tone; icon?: string }) {
