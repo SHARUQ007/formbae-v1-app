@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Image, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Easing, Image, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
@@ -12,9 +12,10 @@ import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
 import { CompletionGlow } from '../../components/CompletionGlow';
 import { loadWorkoutDayCached, loadWorkoutPlanCached } from '../../services/preloadService';
+import { fetchUserPlans, selectWorkoutPlan } from '../../services/workoutService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
 import { getSiteUrl } from '../../constants/config';
-import type { AiPlanRefresh, PlanDay, ProgressSummary, TrainerInfo } from '../../types/api';
+import type { AiPlanRefresh, PlanDay, ProgressSummary, TrainerInfo, UserPlanSummary } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
 import { appTabBarStyle, hiddenTabBarStyle } from '../../navigation/tabBarStyle';
 import { colors } from '../../theme/colors';
@@ -47,6 +48,14 @@ function parsePendingCompletion(raw: string | null) {
 function markPlanDayCompleted(days: PlanDay[], planDayId: string) {
   if (!planDayId) return days;
   return days.map((day) => (day.planDayId === planDayId ? { ...day, completed: true } : day));
+}
+
+function formatPlanDate(plan: UserPlanSummary) {
+  const raw = plan.weekStartDate || plan.createdAt || '';
+  if (!raw) return '';
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function resolveTrainerPhotoUrl(value?: string) {
@@ -190,6 +199,10 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [summaryOpening, setSummaryOpening] = useState(false);
   const [streakCelebrationNonce, setStreakCelebrationNonce] = useState(0);
   const [justCompletedPlanDayId, setJustCompletedPlanDayId] = useState('');
+  const [plansOpen, setPlansOpen] = useState(false);
+  const [plans, setPlans] = useState<UserPlanSummary[]>([]);
+  const [plansLoading, setPlansLoading] = useState(false);
+  const [switchingPlanId, setSwitchingPlanId] = useState('');
 
   const load = useCallback(async (options?: { force?: boolean }) => {
     setError(null);
@@ -257,6 +270,50 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     setSelectedTodayPlanDayId(day.planDayId);
     setSwitcherOpen(false);
     await AsyncStorage.setItem(`${TODAY_WORKOUT_KEY_PREFIX}${planId || title || 'default'}`, day.planDayId).catch(() => undefined);
+  };
+
+  const openPlanSwitcher = async () => {
+    setPlansOpen(true);
+    setPlansLoading(true);
+    try {
+      const data = await fetchUserPlans();
+      setPlans(data.plans || []);
+    } catch (e) {
+      Alert.alert('Could not load plans', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setPlansLoading(false);
+    }
+  };
+
+  const onSelectPlan = (plan: UserPlanSummary) => {
+    if (plan.isActive || switchingPlanId) {
+      setPlansOpen(false);
+      return;
+    }
+    Alert.alert(
+      'Switch workout plan?',
+      `Make "${plan.title || 'this plan'}" your active plan? Your current plan stays saved — you can switch back anytime.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Switch',
+          onPress: async () => {
+            setSwitchingPlanId(plan.planId);
+            try {
+              await selectWorkoutPlan(plan.planId);
+              await AsyncStorage.removeItem(`${TODAY_WORKOUT_KEY_PREFIX}${planId || title || 'default'}`).catch(() => undefined);
+              setSelectedTodayPlanDayId('');
+              setPlansOpen(false);
+              await load({ force: true });
+            } catch (e) {
+              Alert.alert('Could not switch plan', e instanceof Error ? e.message : 'Please try again.');
+            } finally {
+              setSwitchingPlanId('');
+            }
+          },
+        },
+      ],
+    );
   };
 
   const openWorkoutDetail = (day: PlanDay | null, mode: 'standard' | 'quick') => {
@@ -488,6 +545,23 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                 );
               })}
             </View>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={openPlanSwitcher}
+              style={styles.switchPlanButton}
+              accessibilityRole="button"
+              accessibilityLabel="Switch to another workout plan"
+            >
+              <View style={styles.switchPlanIcon}>
+                <Feather name="layers" size={18} color={colors.ink} />
+              </View>
+              <View style={styles.switchPlanText}>
+                <Text style={styles.switchPlanTitle}>Switch workout plan</Text>
+                <Text style={styles.switchPlanMeta}>Browse every plan made for you</Text>
+              </View>
+              <Feather name="chevron-right" size={20} color={colors.inkSubtle} />
+            </TouchableOpacity>
           </>
         )}
       </ScrollView>
@@ -497,6 +571,14 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         selectedPlanDayId={todayDay?.planDayId || ''}
         onSelect={onSwitchTodayWorkout}
         onClose={() => setSwitcherOpen(false)}
+      />
+      <PlanSwitcherModal
+        visible={plansOpen}
+        plans={plans}
+        loading={plansLoading}
+        switchingPlanId={switchingPlanId}
+        onSelect={onSelectPlan}
+        onClose={() => setPlansOpen(false)}
       />
       {summaryOpening ? (
         <View pointerEvents="auto" style={styles.summaryLoadingOverlay}>
@@ -557,6 +639,88 @@ function WorkoutSwitchModal({
               );
             })}
           </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function PlanSwitcherModal({
+  visible,
+  plans,
+  loading,
+  switchingPlanId,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  plans: UserPlanSummary[];
+  loading: boolean;
+  switchingPlanId: string;
+  onSelect: (plan: UserPlanSummary) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalRoot}>
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} />
+        <View style={styles.switchSheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <View>
+              <Text style={styles.sheetKicker}>Your plans</Text>
+              <Text style={styles.sheetTitle}>Switch workout plan</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Close">
+              <Feather name="x" size={20} color={colors.inkMuted} />
+            </TouchableOpacity>
+          </View>
+          {loading ? (
+            <LoadingState message="Loading your plans..." />
+          ) : plans.length === 0 ? (
+            <EmptyState icon="layers" title="No other plans" message="Plans your coach or AI creates will appear here so you can switch between them." />
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.switchList}>
+              {plans.map((plan) => {
+                const dayCount = plan.days?.length ?? 0;
+                const switching = switchingPlanId === plan.planId;
+                const meta = [
+                  plan.trainerName ? `Coach ${plan.trainerName}` : null,
+                  dayCount ? `${dayCount} day${dayCount === 1 ? '' : 's'}` : null,
+                  formatPlanDate(plan) || null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ');
+                return (
+                  <TouchableOpacity
+                    key={plan.planId}
+                    onPress={() => onSelect(plan)}
+                    disabled={plan.isActive || Boolean(switchingPlanId)}
+                    style={[styles.planRow, plan.isActive && styles.planRowActive]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: Boolean(plan.isActive) }}
+                  >
+                    <View style={[styles.planRowBadge, plan.isActive && styles.planRowBadgeActive]}>
+                      <Feather name={plan.isActive ? 'check' : 'layers'} size={18} color={plan.isActive ? colors.white : colors.accentDark} />
+                    </View>
+                    <View style={styles.planRowText}>
+                      <Text style={styles.planRowTitle} numberOfLines={1}>{plan.title || 'Workout plan'}</Text>
+                      {meta ? <Text style={styles.planRowMeta} numberOfLines={1}>{meta}</Text> : null}
+                    </View>
+                    {plan.isActive ? (
+                      <View style={styles.planActivePill}>
+                        <Text style={styles.planActivePillText}>Active</Text>
+                      </View>
+                    ) : switching ? (
+                      <ActivityIndicator size="small" color={colors.accent} />
+                    ) : (
+                      <Feather name="chevron-right" size={20} color={colors.inkSubtle} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
         </View>
       </View>
     </Modal>
@@ -700,6 +864,60 @@ const styles = StyleSheet.create({
   weekProgressPercent: { ...typography.subtitle, color: colors.ink, lineHeight: 22 },
   weekProgressMeta: { ...typography.caption, color: colors.inkMuted },
   days: { gap: spacing.sm },
+  switchPlanButton: {
+    marginTop: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.panel,
+    padding: spacing.md,
+  },
+  switchPlanIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.md,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  switchPlanText: { flex: 1 },
+  switchPlanTitle: { ...typography.bodyBold, color: colors.ink },
+  switchPlanMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  planRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: radius.xl,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  planRowActive: { backgroundColor: colors.accentLight, borderColor: colors.accentSurface },
+  planRowBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.accentLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  planRowBadgeActive: { backgroundColor: colors.accent },
+  planRowText: { flex: 1, minWidth: 0 },
+  planRowTitle: { ...typography.bodyBold, color: colors.ink },
+  planRowMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  planActivePill: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+  },
+  planActivePillText: { ...typography.caption, color: colors.white, fontWeight: '800' },
   dayCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
   todayPlanCard: { borderColor: 'rgba(52,199,89,0.55)', borderWidth: 1.5, backgroundColor: '#f4fdf7' },
   dayCardDone: { borderColor: 'rgba(245,179,1,0.6)', borderWidth: 1.5, backgroundColor: '#fffdf7' },

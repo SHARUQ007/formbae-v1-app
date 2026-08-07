@@ -150,6 +150,17 @@ export type PlanDay = {
   completed?: boolean;
 };
 
+export type UserPlanSummary = {
+  planId: string;
+  title?: string;
+  trainerName?: string;
+  status?: string;
+  isActive?: boolean;
+  weekStartDate?: string;
+  createdAt?: string;
+  days?: PlanDay[];
+};
+
 export type PlanExercise = {
   exerciseId: string;
   exerciseName: string;

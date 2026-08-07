@@ -1,9 +1,24 @@
 import { ApiError, apiRequest } from './apiClient';
 import { invalidateCachedResource } from './appCache';
-import type { AiPlanRefresh, TodayPayload, WorkoutDayDetail } from '../types/api';
+import type { AiPlanRefresh, TodayPayload, UserPlanSummary, WorkoutDayDetail } from '../types/api';
 
 export async function fetchWorkoutPlan() {
   return apiRequest<{ today: TodayPayload; plan: TodayPayload['plan']; aiPlanRefresh?: AiPlanRefresh }>('/workouts/plan');
+}
+
+export async function fetchUserPlans() {
+  return apiRequest<{ plans: UserPlanSummary[] }>('/user/plans');
+}
+
+export async function selectWorkoutPlan(planId: string) {
+  const response = await apiRequest<{ ok: boolean; planId: string }>('/workouts/plan/select', {
+    method: 'POST',
+    body: { planId },
+  });
+  invalidateCachedResource('workoutPlan');
+  invalidateCachedResource('workoutDay');
+  invalidateCachedResource('progressBundle');
+  return response;
 }
 
 export async function fetchToday() {
