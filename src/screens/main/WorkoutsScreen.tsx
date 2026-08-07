@@ -31,7 +31,6 @@ const LAST_SEEN_STREAK_KEY = 'formbae_last_seen_workout_streak';
 const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebration';
 const GOLD = '#f5b301';
 const GOLD_DARK = '#9a5b00';
-const GREEN = '#22c55e';
 const FLAME_CORE = '#ffe08a';
 const STREAK_EMBERS = [
   { left: 9, delay: 0, size: 4, drift: -6 },
@@ -278,7 +277,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
       navigation.getParent()?.setOptions({ tabBarStyle: appTabBarStyle });
-      void (async () => {
+      (async () => {
         const pending = await AsyncStorage.getItem(PENDING_STREAK_CELEBRATION_KEY).catch(() => null);
         const pendingCompletion = parsePendingCompletion(pending);
         await load({ force: Boolean(pending) });
@@ -290,7 +289,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
           }
           setStreakCelebrationNonce((value) => value + 1);
         }
-      })();
+      })().catch(() => undefined);
     });
     return unsub;
   }, [navigation, load]);
@@ -355,13 +354,6 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         },
       ],
     );
-  };
-
-  const openWorkoutDetail = (day: PlanDay | null, mode: 'standard' | 'quick') => {
-    if (!day) return;
-    loadWorkoutDayCached(day.planDayId, mode).catch(() => undefined);
-    navigation.getParent()?.setOptions({ tabBarStyle: hiddenTabBarStyle });
-    navigation.navigate('WorkoutDetail', { planDayId: day.planDayId, title: day.focus, mode });
   };
 
   const openWorkoutSummary = async (day: PlanDay | null, mode: 'standard' | 'quick') => {
@@ -555,7 +547,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                 return (
                   <Card
                     key={day.planDayId}
-                    onPress={() => openWorkoutDetail(day, 'standard')}
+                    onPress={() => openWorkoutSummary(day, 'standard')}
                     style={StyleSheet.flatten([
                       styles.dayCard,
                       isToday && !day.completed && styles.todayPlanCard,
@@ -563,9 +555,13 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                     ])}
                   >
                     {day.completed ? <CompletionGlow radius={22} animated={day.planDayId === justCompletedPlanDayId} /> : null}
-                    <View style={[styles.dayBadge, isToday && !day.completed && styles.dayBadgeToday, day.completed && styles.dayBadgeDone]}>
-                      {day.completed ? <Feather name="check" size={18} color={colors.white} /> : <Text style={[styles.dayNum, isToday && styles.dayNumToday]}>{day.dayNumber}</Text>}
-                    </View>
+                    {day.completed ? (
+                      <CompletedDayBadge animated={day.planDayId === justCompletedPlanDayId} />
+                    ) : (
+                      <View style={[styles.dayBadge, isToday && styles.dayBadgeToday]}>
+                        <Text style={[styles.dayNum, isToday && styles.dayNumToday]}>{day.dayNumber}</Text>
+                      </View>
+                    )}
                     <View style={styles.dayInfo}>
                       <Text style={styles.dayTitle} numberOfLines={1}>
                         {day.focus || 'Workout'}
@@ -577,7 +573,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                     {day.completed ? (
                       <Badge label="Done" tone="goldSolid" icon="check" style={styles.doneBadge} />
                     ) : isToday ? (
-                      <Badge label="Today" tone="greenSolid" style={styles.doneBadge} />
+                      <Badge label="Today" tone="gold" style={styles.todayBadge} />
                     ) : (
                       <Feather name="chevron-right" size={20} color={colors.inkSubtle} />
                     )}
@@ -764,6 +760,36 @@ function PlanSwitcherModal({
         </View>
       </View>
     </Modal>
+  );
+}
+
+function CompletedDayBadge({ animated }: { animated: boolean }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const glow = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!animated) return;
+    scale.setValue(0.45);
+    glow.setValue(0);
+    Animated.parallel([
+      Animated.sequence([
+        Animated.spring(scale, { toValue: 1.16, friction: 4, tension: 150, useNativeDriver: true }),
+        Animated.spring(scale, { toValue: 1, friction: 6, tension: 110, useNativeDriver: true }),
+      ]),
+      Animated.sequence([
+        Animated.timing(glow, { toValue: 1, duration: 180, useNativeDriver: true }),
+        Animated.timing(glow, { toValue: 0, duration: 520, useNativeDriver: true }),
+      ]),
+    ]).start();
+  }, [animated, glow, scale]);
+
+  return (
+    <View style={styles.completedDayBadgeWrap}>
+      <Animated.View pointerEvents="none" style={[styles.completedDayBadgeGlow, { opacity: glow, transform: [{ scale: glow.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1.7] }) }] }]} />
+      <Animated.View style={[styles.dayBadge, styles.dayBadgeDone, { transform: [{ scale }] }]}>
+        <Feather name="check" size={18} color={colors.white} />
+      </Animated.View>
+    </View>
   );
 }
 
@@ -970,8 +996,8 @@ const styles = StyleSheet.create({
   },
   planActivePillText: { ...typography.caption, color: colors.white, fontWeight: '800' },
   dayCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
-  todayPlanCard: { borderColor: 'rgba(34,197,94,0.45)', borderWidth: 1.5, backgroundColor: '#f2fcf6' },
-  dayCardDone: { borderColor: 'rgba(245,179,1,0.6)', borderWidth: 1.5, backgroundColor: '#fffdf7' },
+  todayPlanCard: { borderColor: 'rgba(245,179,1,0.7)', borderWidth: 1.5, backgroundColor: 'rgba(245,179,1,0.08)' },
+  dayCardDone: { borderColor: GOLD, borderWidth: 1.5, backgroundColor: '#fffaf0' },
   dayBadge: {
     width: 44,
     height: 44,
@@ -980,11 +1006,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayBadgeToday: { backgroundColor: GREEN, borderWidth: 1.5, borderColor: '#16a34a' },
+  completedDayBadgeWrap: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  completedDayBadgeGlow: {
+    position: 'absolute',
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: GOLD,
+  },
+  dayBadgeToday: { backgroundColor: 'rgba(245,179,1,0.18)', borderWidth: 1.5, borderColor: GOLD },
   dayBadgeDone: { backgroundColor: colors.accent, borderWidth: 1.5, borderColor: GOLD },
   doneBadge: { alignSelf: 'center' },
+  todayBadge: { alignSelf: 'center', borderWidth: 1, borderColor: GOLD },
   dayNum: { ...typography.subtitle, color: colors.accentDark, fontWeight: '800' },
-  dayNumToday: { color: colors.white },
+  dayNumToday: { color: colors.accentDark },
   dayInfo: { flex: 1 },
   dayTitle: { ...typography.bodyBold, color: colors.ink },
   meta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },

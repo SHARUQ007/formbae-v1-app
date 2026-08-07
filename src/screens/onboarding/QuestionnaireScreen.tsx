@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
-import { ScrollView, Text, TouchableOpacity, StyleSheet, View } from 'react-native';
+import { Alert, ScrollView, Text, TouchableOpacity, StyleSheet, View } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
@@ -9,8 +12,9 @@ import { ProgressBar } from '../../components/ProgressBar';
 import { LoadingState } from '../../components/States';
 import { fetchQuestionnaire, saveQuestionnaireDraft, submitQuestionnaire } from '../../services/questionnaireService';
 import { loadQuestionnaireDraft, saveQuestionnaireDraft as saveLocalDraft } from '../../store/onboardingStore';
+import { useAuthStore } from '../../store/authStore';
 import type { MobileQuestion } from '../../types/api';
-import type { OnboardingStackParamList } from '../../navigation/types';
+import type { OnboardingStackParamList, RootStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
@@ -19,6 +23,8 @@ import { typography } from '../../theme/typography';
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'Questionnaire'>;
 
 export function QuestionnaireScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
+  const { logout } = useAuthStore();
   const [questions, setQuestions] = useState<MobileQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [index, setIndex] = useState(0);
@@ -70,6 +76,19 @@ export function QuestionnaireScreen({ navigation }: Props) {
     }
   };
 
+  const exitFlow = () => {
+    Alert.alert('Leave setup?', 'Your progress is saved. You can continue building your report when you sign back in.', [
+      { text: 'Stay', style: 'cancel' },
+      {
+        text: 'Log out',
+        onPress: async () => {
+          await logout();
+          navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Auth');
+        },
+      },
+    ]);
+  };
+
   const renderBody = () => {
     if (!current) return null;
     if (current.type === 'text') {
@@ -118,24 +137,36 @@ export function QuestionnaireScreen({ navigation }: Props) {
   const isHealth = /injur|restrict|medical|condition|health/i.test(`${current.id} ${current.title}`);
 
   return (
-    <ScreenContainer withBottomInset>
+    <LinearGradient colors={['#05070c', '#02040a']} style={styles.root}>
+      <View style={[styles.safeArea, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.md }]}>
       <View style={styles.progressHeader}>
         <View style={styles.progressTop}>
-          {index > 0 ? (
-            <TouchableOpacity onPress={() => setIndex(index - 1)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Feather name="chevron-left" size={24} color={colors.ink} />
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.spacer} />
-          )}
+          <TouchableOpacity
+            onPress={() => index > 0 && setIndex(index - 1)}
+            disabled={index === 0}
+            style={[styles.backButton, index === 0 && styles.backButtonDisabled]}
+            accessibilityRole="button"
+            accessibilityLabel="Previous question"
+            accessibilityState={{ disabled: index === 0 }}
+          >
+            <Feather name="chevron-left" size={24} color={colors.white} />
+          </TouchableOpacity>
           <Text style={styles.step}>
             {index + 1} / {questions.length}
           </Text>
+          <TouchableOpacity onPress={exitFlow} style={styles.logoutButton} accessibilityRole="button" accessibilityLabel="Log out">
+            <Text style={styles.logoutText}>Log out</Text>
+            <Feather name="log-out" size={15} color="rgba(255,255,255,0.72)" />
+          </TouchableOpacity>
         </View>
-        <ProgressBar value={progress} />
+        <ProgressBar value={progress} trackColor="rgba(255,255,255,0.12)" fillColor={colors.white} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView
+        style={styles.questionScroll}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.scroll, current.type === 'single' && styles.scrollSingle]}
+      >
         <Text style={styles.title}>{current.title}</Text>
         {current.subtitle ? <Text style={styles.subtitle}>{current.subtitle}</Text> : null}
         {renderBody()}
@@ -155,39 +186,50 @@ export function QuestionnaireScreen({ navigation }: Props) {
         icon={index === questions.length - 1 ? 'check' : 'arrow-right'}
         onPress={onNext}
         loading={submitting}
+        variant="inverted"
       />
-    </ScreenContainer>
+      </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  progressHeader: { marginBottom: spacing.lg },
+  root: { flex: 1 },
+  safeArea: { flex: 1, paddingHorizontal: spacing.lg },
+  progressHeader: { marginBottom: spacing.xl },
   progressTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
-  spacer: { width: 24 },
-  step: { ...typography.label, color: colors.inkMuted },
+  backButton: { width: 40, height: 40, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
+  backButtonDisabled: { opacity: 0.28 },
+  logoutButton: { minHeight: 40, paddingHorizontal: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  logoutText: { ...typography.caption, color: 'rgba(255,255,255,0.72)', fontWeight: '700' },
+  step: { ...typography.label, color: 'rgba(255,255,255,0.48)' },
+  questionScroll: { flex: 1 },
   scroll: { paddingBottom: spacing.lg },
-  title: { ...typography.title, color: colors.ink, marginBottom: spacing.xs },
-  subtitle: { ...typography.body, color: colors.inkMuted, marginBottom: spacing.lg },
-  options: { gap: spacing.sm },
+  scrollSingle: { flexGrow: 1 },
+  title: { fontSize: 32, lineHeight: 34, fontWeight: '700', letterSpacing: -0.5, color: colors.white, marginBottom: spacing.sm },
+  subtitle: { ...typography.body, color: 'rgba(255,255,255,0.62)', marginBottom: spacing.lg },
+  options: { flex: 1, gap: spacing.sm, marginTop: spacing.sm },
   option: {
+    flex: 1,
+    minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: colors.panel,
-    borderRadius: radius.lg,
-    padding: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.055)',
+    borderRadius: 20,
+    padding: spacing.lg,
     borderWidth: 1.5,
-    borderColor: colors.border,
+    borderColor: 'rgba(255,255,255,0.12)',
   },
-  optionSelected: { borderColor: colors.accent, backgroundColor: colors.accentLight },
-  optionText: { ...typography.body, color: colors.ink, flex: 1, paddingRight: spacing.sm },
-  optionTextSelected: { color: colors.accentDarker, fontWeight: '600' },
+  optionSelected: { borderColor: colors.white, backgroundColor: colors.white },
+  optionText: { ...typography.bodyBold, color: colors.white, flex: 1, paddingRight: spacing.sm },
+  optionTextSelected: { color: colors.accentDarker, fontWeight: '700' },
   radio: {
     width: 24,
     height: 24,
     borderRadius: radius.pill,
     borderWidth: 2,
-    borderColor: colors.borderStrong,
+    borderColor: 'rgba(255,255,255,0.16)',
     alignItems: 'center',
     justifyContent: 'center',
   },

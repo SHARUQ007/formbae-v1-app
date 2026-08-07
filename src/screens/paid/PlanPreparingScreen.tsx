@@ -4,7 +4,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenTitle, ScreenSubtitle, Card } from '../../components/Card';
-import { PrimaryButton } from '../../components/PrimaryButton';
 import { useAuthStore } from '../../store/authStore';
 import { displayBehavioralNotification } from '../../services/notificationService';
 import { colors } from '../../theme/colors';
@@ -65,12 +64,7 @@ export function PlanPreparingScreen({ navigation }: Props) {
         ))}
       </Card>
 
-      <PrimaryButton
-        title="Go to dashboard"
-        icon="arrow-right"
-        onPress={() => navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Main')}
-        style={styles.cta}
-      />
+      <Text style={styles.waitNote}>We will open your app automatically as soon as your first plan is ready.</Text>
     </ScreenContainer>
   );
 }
@@ -83,5 +77,5 @@ const styles = StyleSheet.create({
   stepPending: { backgroundColor: colors.panelMuted },
   stepLabel: { ...typography.body, color: colors.inkMuted },
   stepLabelDone: { color: colors.ink, fontWeight: '600' },
-  cta: { marginTop: spacing.lg },
+  waitNote: { ...typography.body, color: colors.inkMuted, textAlign: 'center', marginTop: spacing.lg, paddingHorizontal: spacing.md },
 });

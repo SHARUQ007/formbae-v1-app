@@ -5,8 +5,9 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Badge } from '../../components/Badge';
-import { ScreenHeader } from '../../components/Card';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
+import { WorkoutPrimaryCTA } from '../../features/workout/components/WorkoutPrimaryCTA';
+import { WorkoutScreenHeader } from '../../features/workout/components/WorkoutScreenHeader';
 import { loadWorkoutDayCached } from '../../services/preloadService';
 import { loadWorkoutProgress, saveWorkoutProgress } from '../../store/workoutStore';
 import type { WorkoutStackParamList } from '../../navigation/types';
@@ -102,18 +103,14 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
     : route.params.title
       ? `Day workout - ${route.params.title}`
       : undefined;
-  const startLabel = loading
-    ? 'Preparing...'
-    : error || !detail || !summary
-      ? 'Workout unavailable'
-      : !exercises.length
-        ? 'Rest day'
-        : 'Start workout';
-
   const startWorkout = () => {
     if (!canStartWorkout || !detail) return;
-    loadWorkoutDayCached(detail.planDayId, mode).catch(() => undefined);
-    navigation.navigate('WorkoutDetail', { planDayId: detail.planDayId, title: detail.focus, mode });
+    navigation.navigate('WorkoutDetail', {
+      planDayId: detail.planDayId,
+      title: detail.focus,
+      mode,
+      initialDetail: detail,
+    });
   };
 
   const selectAlternate = async (exercise: WorkoutExerciseDetail, index: number | null) => {
@@ -143,7 +140,7 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
 
   return (
     <View style={[styles.root, { paddingTop: insets.top + spacing.md }]}>
-      <ScreenHeader title={modeLabel(mode)} subtitle={headerSubtitle} onBack={() => navigation.goBack()} />
+      <WorkoutScreenHeader eyebrow={mode === 'quick' ? 'Short on time' : 'Your session'} title={modeLabel(mode)} subtitle={headerSubtitle} onBack={() => navigation.goBack()} />
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
@@ -243,19 +240,12 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
 
       {canStartWorkout ? (
         <View pointerEvents="box-none" style={[styles.fixedCtaLayer, { paddingBottom: bottomInset }]}>
-          <TouchableOpacity
-            activeOpacity={0.9}
+          <WorkoutPrimaryCTA
+            title="Start workout"
+            subtitle={`${exercises.length} movements · ${summary?.duration || 'Ready when you are'}`}
+            icon="play"
             onPress={startWorkout}
-            style={styles.fixedCtaButton}
-            accessibilityRole="button"
-            accessibilityLabel={startLabel}
-          >
-            <View style={styles.fixedCtaIcon}>
-              <Feather name="play" size={24} color={colors.accentDark} />
-            </View>
-            <Text style={styles.fixedCtaText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>Start workout</Text>
-            <Feather name="arrow-right" size={24} color={colors.white} />
-          </TouchableOpacity>
+          />
         </View>
       ) : null}
     </View>
@@ -351,7 +341,7 @@ const styles = StyleSheet.create({
   },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   heroCopy: { flex: 1 },
-  heroTitle: { fontSize: 21, lineHeight: 26, fontWeight: '800', color: colors.white, marginTop: spacing.sm },
+  heroTitle: { fontSize: 22, lineHeight: 28, fontWeight: '700', color: colors.white, marginTop: spacing.sm },
   heroSubline: { ...typography.bodyBold, color: colors.onAccentMuted, marginTop: spacing.xs },
   heroGraphic: {
     width: 104,
@@ -384,8 +374,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   metricCopy: { flex: 1, minWidth: 0 },
-  metricLabel: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '800', textTransform: 'uppercase' },
-  metricValue: { fontSize: 14, lineHeight: 17, color: colors.ink, marginTop: 1, fontWeight: '800' },
+  metricLabel: { ...typography.overline, color: colors.inkMuted, textTransform: 'uppercase' },
+  metricValue: { ...typography.label, color: colors.ink, marginTop: 1 },
   cardSection: {
     borderRadius: 22,
     backgroundColor: colors.panel,
@@ -475,25 +465,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(247,250,247,0.98)',
   },
-  fixedCtaButton: {
-    height: 78,
-    borderRadius: radius.pill,
-    flexDirection: 'row',
-    gap: spacing.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accent,
-    borderWidth: 4,
-    borderColor: colors.white,
-    ...shadows.accent,
-  },
-  fixedCtaIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.pill,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fixedCtaText: { fontSize: 20, lineHeight: 25, fontWeight: '900', color: colors.white },
 });

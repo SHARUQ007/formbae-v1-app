@@ -49,7 +49,7 @@ export type WorkoutStackParamList = {
   Coach: undefined;
   PlanRefresh: undefined;
   WorkoutSummary: { planDayId: string; title: string; mode?: 'standard' | 'quick'; initialDetail?: WorkoutDayDetail };
-  WorkoutDetail: { planDayId: string; title: string; mode?: 'standard' | 'quick' };
+  WorkoutDetail: { planDayId: string; title: string; mode?: 'standard' | 'quick'; initialDetail?: WorkoutDayDetail };
   WorkoutVideo: { title: string; subtitle?: string; videoUrl: string; videos?: WorkoutVideoItem[]; initialIndex?: number };
 };
 

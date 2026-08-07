@@ -11,7 +11,7 @@ export const colors = {
   inkMuted: '#60605c',
   inkSubtle: '#96948d',
 
-  // Brand (monochrome)
+  // Brand
   accent: '#050505',
   accentDark: '#000000',
   accentDarker: '#000000',

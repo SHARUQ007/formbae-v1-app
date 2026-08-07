@@ -4,6 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ExerciseVideo } from '../../components/ExerciseVideo';
+import { WorkoutPrimaryCTA } from '../../features/workout/components/WorkoutPrimaryCTA';
+import { WorkoutScreenHeader } from '../../features/workout/components/WorkoutScreenHeader';
 import type { WorkoutStackParamList } from '../../navigation/types';
 import { hiddenTabBarStyle } from '../../navigation/tabBarStyle';
 import { colors } from '../../theme/colors';
@@ -42,17 +44,15 @@ export function WorkoutVideoScreen({ route, navigation }: Props) {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Go back">
-          <Feather name="chevron-left" size={24} color={colors.ink} />
-        </TouchableOpacity>
-        <View style={styles.headerText}>
-          <Text style={styles.kicker}>Technique video</Text>
-          <Text style={styles.title} numberOfLines={1}>{activeVideo.title}</Text>
-          {activeVideo.subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{activeVideo.subtitle}</Text> : null}
-        </View>
-        <View style={styles.countPill}>
+        <WorkoutScreenHeader
+          eyebrow="Technique video"
+          title={activeVideo.title}
+          subtitle={activeVideo.subtitle}
+          onBack={() => navigation.goBack()}
+          right={<View style={styles.countPill}>
           <Text style={styles.countText}>{activeIndex + 1}/{videoItems.length}</Text>
-        </View>
+          </View>}
+        />
       </View>
 
       <View style={styles.videoStage}>
@@ -81,13 +81,7 @@ export function WorkoutVideoScreen({ route, navigation }: Props) {
             <Text style={[styles.secondaryText, !canTryAnother && styles.secondaryTextDisabled]}>Try another</Text>
           </TouchableOpacity>
         </View>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.startButton} accessibilityRole="button">
-          <View style={styles.playBadge}>
-            <Feather name="play" size={22} color={colors.accentDark} />
-          </View>
-          <Text style={styles.startText}>Start workout</Text>
-          <Feather name="arrow-right" size={22} color={colors.white} />
-        </TouchableOpacity>
+        <WorkoutPrimaryCTA title="Return to workout" subtitle="Your current set is ready" onPress={() => navigation.goBack()} />
       </View>
     </View>
   );
@@ -95,28 +89,7 @@ export function WorkoutVideoScreen({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.sm,
-  },
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  headerText: { flex: 1 },
-  kicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 2 },
-  title: { ...typography.subtitle, color: colors.ink, fontWeight: '800' },
-  subtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  header: { paddingHorizontal: spacing.md, paddingTop: spacing.xs, paddingBottom: spacing.sm },
   countPill: {
     minWidth: 52,
     height: 38,
@@ -168,23 +141,4 @@ const styles = StyleSheet.create({
   },
   secondaryText: { ...typography.button, color: colors.accentDark },
   secondaryTextDisabled: { color: colors.inkSubtle },
-  startButton: {
-    minHeight: 64,
-    borderRadius: radius.xl,
-    backgroundColor: colors.accent,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-  },
-  playBadge: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.white,
-  },
-  startText: { ...typography.title, color: colors.white, fontWeight: '800' },
 });

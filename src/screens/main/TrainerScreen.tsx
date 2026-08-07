@@ -48,6 +48,23 @@ function formatPrice(value: string) {
   return `₹${amount.toLocaleString('en-IN')}/mo`;
 }
 
+function formatCoachLabel(coach: CoachOption) {
+  const raw = String(coach.expertise || coach.trainerPersona || '').trim();
+  const kind = String(coach.trainerKind || '').trim().toLowerCase();
+  if (kind === 'ai' || raw === 'female_ai' || raw === 'male_ai') return 'AI trainer';
+  const normalized = raw.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!normalized) return 'Personal trainer';
+  return normalized.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function coachBlurb(coach: CoachOption) {
+  const copy = String(coach.description || coach.detailedDescription || '').trim();
+  if (copy) return copy;
+  return isAiCoach(coach)
+    ? 'AI planning, check-ins, and workout updates based on your logs.'
+    : 'Personal guidance, workout reviews, and plan adjustments from your coach.';
+}
+
 function formatUnlockDate(value: string) {
   if (!value) return '';
   const date = new Date(value);
@@ -227,7 +244,7 @@ export function TrainerScreen() {
           contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
         >
-          <ChangeCoachHeader onBack={() => setTab('about')} />
+          <ChangeCoachHeader />
           <View style={styles.coachList}>
             {data.coachHub.trainers.map((coach) => (
               <CoachOptionCard
@@ -367,15 +384,12 @@ function GoldUpgradeButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-function ChangeCoachHeader({ onBack }: { onBack: () => void }) {
+function ChangeCoachHeader() {
   return (
     <View style={styles.changeHeader}>
-      <TouchableOpacity onPress={onBack} style={styles.changeBackButton} accessibilityRole="button" accessibilityLabel="Back to coach profile">
-        <Feather name="chevron-left" size={22} color={colors.ink} />
-      </TouchableOpacity>
       <View style={styles.changeHeaderText}>
         <Text style={styles.changeTitle}>Pick your trainer</Text>
-        <Text style={styles.changeSubtitle}>Choose from trainers currently shown to users.</Text>
+        <Text style={styles.changeSubtitle}>Visible coaches only. Upgrade opens secure Razorpay checkout for real coach access.</Text>
       </View>
     </View>
   );
@@ -405,24 +419,41 @@ function CoachOptionCard({
   onPress: () => void;
 }) {
   const image = photoUrl(coach.photoUrl);
+  const label = formatCoachLabel(coach);
+  const blurb = coachBlurb(coach);
   const disabled = current || changing;
+  const actionLabel = current ? 'Selected' : coach.requiresUpgrade ? 'Upgrade' : 'Choose';
   return (
-    <TouchableOpacity activeOpacity={0.84} onPress={onPress} disabled={disabled} style={[styles.optionCard, current && styles.optionCurrent]}>
+    <TouchableOpacity activeOpacity={0.84} onPress={onPress} disabled={disabled} style={[styles.optionCard, current && styles.optionCurrent, coach.requiresUpgrade && styles.optionUpgrade]}>
       <View style={styles.optionTop}>
-        {image ? <Image source={{ uri: image }} style={styles.optionImage} /> : <Avatar name={coach.name} size={54} tone={current ? 'accent' : 'neutral'} />}
+        {image ? <Image source={{ uri: image }} style={styles.optionImage} /> : <Avatar name={coach.name} size={62} tone={current ? 'accent' : 'neutral'} />}
         <View style={styles.optionText}>
           <View style={styles.optionNameRow}>
             <Text style={styles.optionName} numberOfLines={1}>{coach.name}</Text>
-            {current ? <Badge label="Current" tone="success" icon="check" /> : null}
           </View>
-          <Text style={styles.optionMeta} numberOfLines={1}>{coach.expertise}</Text>
+          <Text style={styles.optionMeta} numberOfLines={1}>{label}</Text>
+        </View>
+        <View style={[styles.optionStatus, current && styles.optionStatusCurrent, coach.requiresUpgrade && styles.optionStatusUpgrade]}>
+          <Feather name={current ? 'check' : coach.requiresUpgrade ? 'star' : 'arrow-right'} size={16} color={current ? colors.ink : coach.requiresUpgrade ? '#2a1700' : colors.white} />
         </View>
       </View>
-      <Text style={styles.optionDescription} numberOfLines={2}>{coach.description || coach.detailedDescription || 'Coach profile details will appear here.'}</Text>
+      <Text style={styles.optionDescription} numberOfLines={2}>{blurb}</Text>
+      <View style={styles.optionMetaRow}>
+        <View style={styles.optionChip}>
+          <Feather name="award" size={13} color={colors.inkMuted} />
+          <Text style={styles.optionChipText}>{coach.tier || 'bronze'}</Text>
+        </View>
+        {coach.requiresUpgrade ? (
+          <View style={styles.optionChip}>
+            <Feather name="lock" size={13} color={colors.inkMuted} />
+            <Text style={styles.optionChipText}>Paid upgrade</Text>
+          </View>
+        ) : null}
+      </View>
       <View style={styles.optionFooter}>
         <Text style={styles.optionPrice}>{formatPrice(coach.monthlyFee)}</Text>
         <View style={[styles.selectPill, (!coach.canSelect || current) && styles.selectPillDisabled]}>
-          {changing ? <ActivityIndicator size="small" color={colors.white} /> : <Text style={[styles.selectText, (!coach.canSelect || current) && styles.selectTextDisabled]}>{current ? 'Selected' : coach.requiresUpgrade ? 'Upgrade' : 'Choose'}</Text>}
+          {changing ? <ActivityIndicator size="small" color={current ? colors.inkMuted : colors.white} /> : <Text style={[styles.selectText, (!coach.canSelect || current) && styles.selectTextDisabled]}>{actionLabel}</Text>}
         </View>
       </View>
       {!coach.canSelect && !current ? <Text style={styles.optionReason}>{coach.blockedUntil ? `${coach.reason} Available ${formatUnlockDate(coach.blockedUntil)}.` : coach.reason}</Text> : null}
@@ -552,43 +583,56 @@ const styles = StyleSheet.create({
   goldTitle: { ...typography.bodyBold, color: '#2a1700', fontWeight: '900' },
   goldSubtitle: { ...typography.caption, color: 'rgba(42,23,0,0.68)', marginTop: 3, lineHeight: 17 },
   changeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
     marginBottom: spacing.md,
+    paddingHorizontal: 2,
   },
-  changeBackButton: {
-    width: 42,
-    height: 42,
-    borderRadius: radius.pill,
+  changeHeaderText: { gap: 6 },
+  changeTitle: { ...typography.title, color: colors.ink, fontSize: 30, lineHeight: 34 },
+  changeSubtitle: { ...typography.body, color: colors.inkMuted, lineHeight: 22 },
+  coachList: { gap: spacing.md },
+  optionCard: {
+    borderRadius: 28,
     backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  optionCurrent: { borderColor: colors.ink, backgroundColor: colors.panelMuted },
+  optionUpgrade: { borderColor: '#dcc47a' },
+  optionTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  optionImage: { width: 62, height: 62, borderRadius: 22, backgroundColor: colors.panelMuted },
+  optionText: { flex: 1, minWidth: 0 },
+  optionNameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  optionName: { ...typography.subtitle, color: colors.ink, flex: 1, fontSize: 23, lineHeight: 28 },
+  optionMeta: { ...typography.bodyBold, color: colors.inkMuted, marginTop: 2 },
+  optionStatus: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: colors.ink,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  changeHeaderText: { flex: 1 },
-  changeTitle: { ...typography.title, color: colors.ink },
-  changeSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  coachList: { gap: spacing.sm },
-  optionCard: {
-    borderRadius: 24,
-    backgroundColor: colors.white,
+  optionStatusCurrent: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border },
+  optionStatusUpgrade: { backgroundColor: '#f4c84d' },
+  optionDescription: { ...typography.body, color: colors.inkMuted, lineHeight: 22 },
+  optionMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  optionChip: {
+    minHeight: 30,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelMuted,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.md,
+    paddingHorizontal: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
-  optionCurrent: { borderColor: colors.accentSurface, backgroundColor: colors.accentLight },
-  optionTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  optionImage: { width: 54, height: 54, borderRadius: radius.pill, backgroundColor: colors.panelMuted },
-  optionText: { flex: 1 },
-  optionNameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  optionName: { ...typography.subtitle, color: colors.ink, flex: 1 },
-  optionMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
-  optionDescription: { ...typography.body, color: colors.inkMuted, marginTop: spacing.sm },
-  optionFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.md },
-  optionPrice: { ...typography.bodyBold, color: colors.ink },
-  selectPill: { minWidth: 86, alignItems: 'center', borderRadius: radius.pill, backgroundColor: colors.accent, paddingHorizontal: spacing.md, paddingVertical: 9 },
+  optionChipText: { ...typography.caption, color: colors.inkMuted, fontWeight: '800', textTransform: 'capitalize' },
+  optionFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  optionPrice: { ...typography.subtitle, color: colors.ink },
+  selectPill: { minWidth: 104, alignItems: 'center', borderRadius: radius.pill, backgroundColor: colors.ink, paddingHorizontal: spacing.md, paddingVertical: 12 },
   selectPillDisabled: { backgroundColor: colors.panelMuted },
   selectText: { ...typography.caption, color: colors.white, fontWeight: '800' },
   selectTextDisabled: { color: colors.inkMuted },

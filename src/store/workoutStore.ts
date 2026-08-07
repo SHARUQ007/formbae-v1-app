@@ -10,6 +10,12 @@ export type WorkoutProgress = {
   setProgressByExercise?: Record<string, number>;
   setLogsByExercise?: Record<string, Array<{ setNumber: number; reps: string; weight: string; durationSec?: number }>>;
   selectedAlternatesByExercise?: Record<string, number>;
+  activeExerciseId?: string;
+  rest?: {
+    nextExerciseId: string;
+    startedAt: number;
+    durationSec: number;
+  };
   updatedAt: string;
 };
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Linking, ScrollView, Text, TouchableOpacity, StyleSheet, View } from 'react-native';
+import { Alert, ScrollView, Text, TouchableOpacity, StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
@@ -7,10 +7,10 @@ import { ScreenContainer, ScreenTitle, ScreenSubtitle } from '../../components/C
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState } from '../../components/States';
 import { fetchPaymentStatus, runNativeCheckout } from '../../services/paymentService';
+import { fetchRecommendedTrainer } from '../../services/trainerService';
 import { displayBehavioralNotification } from '../../services/notificationService';
 import { useAuthStore } from '../../store/authStore';
 import { resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
-import { getSiteUrl } from '../../constants/config';
 import type { PaymentPlan } from '../../types/api';
 import type { OnboardingStackParamList, RootStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
@@ -25,7 +25,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
   const [plans, setPlans] = useState<PaymentPlan[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [paywallId, setPaywallId] = useState<string>('monsoon-offer');
-  const [paymentUrl, setPaymentUrl] = useState(getSiteUrl());
+  const [recommendedTrainerId, setRecommendedTrainerId] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
 
@@ -53,11 +53,16 @@ export function PaymentRequiredScreen({ navigation }: Props) {
         setPlans(data.plans || []);
         setSelectedId(data.plans?.[0]?.planId || '');
         setPaywallId(data.paywallId || data.plans?.[0]?.paywallId || 'monsoon-offer');
-        if (data.paymentUrl) setPaymentUrl(data.paymentUrl);
       })
       .catch(() => setPlans([]))
       .finally(() => setLoading(false));
   }, [routeAfterPaid]);
+
+  useEffect(() => {
+    fetchRecommendedTrainer()
+      .then((data) => setRecommendedTrainerId(data.trainer?.trainerId))
+      .catch(() => undefined);
+  }, []);
 
   const onPayNative = async () => {
     const plan = plans.find((p) => p.planId === selectedId) || plans[0];
@@ -69,8 +74,13 @@ export function PaymentRequiredScreen({ navigation }: Props) {
     try {
       const result = await runNativeCheckout({
         plan,
-        user: { name: status?.name || user?.name || 'FormBae Trainee', mobile: status?.phone || user?.mobile || '' },
+        user: {
+          name: status?.name || user?.name || 'FormBae Trainee',
+          mobile: status?.phone || user?.mobile || '',
+          email: status?.email,
+        },
         paywallId: plan.paywallId || paywallId,
+        selectedTrainerId: recommendedTrainerId,
       });
       if (result.cancelled) return;
       if (result.success) {
@@ -79,28 +89,26 @@ export function PaymentRequiredScreen({ navigation }: Props) {
         routeAfterPaid(result.status?.recommendedNextScreen || 'paid_welcome');
         return;
       }
-      Alert.alert('Payment issue', result.error || 'Payment could not be completed. You can also use web checkout.');
+      Alert.alert('Payment issue', result.error || 'Payment could not be completed. Please try again.');
     } finally {
       setPaying(false);
     }
   };
 
-  const openWebPayment = async () => {
-    const url = paymentUrl || `${getSiteUrl()}/discovery`;
-    const supported = await Linking.canOpenURL(url);
-    if (!supported) {
-      Alert.alert('Unable to open payment', 'Please visit formbae.in to complete payment.');
-      return;
-    }
-    await Linking.openURL(url);
-    Alert.alert('Complete payment on FormBae', 'After payment, return to the app. We will sync your plan automatically.');
-  };
-
   return (
     <ScreenContainer withBottomInset>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-        <ScreenTitle>Unlock your plan</ScreenTitle>
-        <ScreenSubtitle>Choose a plan and pay securely with Razorpay inside the app. You can also pay on the web.</ScreenSubtitle>
+        <TouchableOpacity
+          onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('AnalysisReport'))}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Back to your report"
+        >
+          <Feather name="chevron-left" size={22} color={colors.ink} />
+          <Text style={styles.backText}>Back to report</Text>
+        </TouchableOpacity>
+        <ScreenTitle>Your plan is ready to unlock</ScreenTitle>
+        <ScreenSubtitle>We have used your report to shape your first plan. Choose an option below to activate it securely.</ScreenSubtitle>
 
         {loading ? (
           <LoadingState message="Loading plans…" />
@@ -132,11 +140,10 @@ export function PaymentRequiredScreen({ navigation }: Props) {
         )}
 
         <PrimaryButton title="Pay & unlock plan" icon="lock" onPress={onPayNative} loading={paying} style={styles.payBtn} />
-        <PrimaryButton title="Pay on web instead" variant="ghost" onPress={openWebPayment} />
 
         <View style={styles.secureRow}>
           <Feather name="shield" size={14} color={colors.inkMuted} />
-          <Text style={styles.note}>Payments are processed securely by Razorpay. Access unlocks instantly after verification.</Text>
+          <Text style={styles.note}>Your details are securely prefilled in Razorpay. Access unlocks after verification.</Text>
         </View>
       </ScrollView>
     </ScreenContainer>
@@ -145,6 +152,20 @@ export function PaymentRequiredScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   scroll: { paddingBottom: spacing.lg },
+  backButton: {
+    alignSelf: 'flex-start',
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  backText: { ...typography.label, color: colors.ink },
   plans: { gap: spacing.sm, marginBottom: spacing.md },
   planCard: {
     flexDirection: 'row',

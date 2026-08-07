@@ -584,7 +584,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       setMovementStarted(false);
       setSetPaused(false);
       setSetElapsed(0);
-      void saveWorkoutProgress({
+      saveWorkoutProgress({
         planDayId,
         completedExerciseIds: Array.from(completed),
         setProgressByExercise: setProgress,
@@ -592,7 +592,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         selectedAlternatesByExercise: selectedAlternates,
         activeExerciseId: trackableExercises[nextIndex]?.exerciseId,
         updatedAt: new Date().toISOString(),
-      });
+      }).catch(() => undefined);
     }
   };
 
@@ -600,7 +600,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     timer.addTime(15);
     const nextExerciseId = restTargetExercise?.exerciseId;
     if (!nextExerciseId) return;
-    void saveWorkoutProgress({
+    saveWorkoutProgress({
       planDayId,
       completedExerciseIds: Array.from(completed),
       setProgressByExercise: setProgress,
@@ -613,7 +613,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         durationSec: timer.remaining + 15,
       },
       updatedAt: new Date().toISOString(),
-    });
+    }).catch(() => undefined);
   };
 
   const primaryCta = () => {

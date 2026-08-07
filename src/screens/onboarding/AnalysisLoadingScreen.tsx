@@ -8,8 +8,8 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'AnalysisLoading'>
 
 const messages = [
   'Preparing your analysis',
-  'Finding your recommended trainer',
-  'Creating your starter fitness direction',
+  'Mapping your most sustainable training direction',
+  'Building your first-plan preview',
 ];
 
 export function AnalysisLoadingScreen({ navigation }: Props) {

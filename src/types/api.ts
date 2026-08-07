@@ -68,8 +68,22 @@ export type AnalysisReport = {
   trainerType: string;
   budgetRecommendation: string;
   bmi: number;
+  bmiPosition?: number;
   goalWeight: number;
   readinessScore: number;
+  goal?: string;
+  blocker?: string;
+  cause?: string;
+  cadence?: string;
+  workoutStyle?: string;
+  identity?: string;
+  activity?: string;
+  diet?: string;
+  trainerMonths?: number;
+  trainerCadence?: string;
+  trainerReason?: string;
+  projectionStartScore?: number;
+  projectionTargetScore?: number;
   scores: {
     activity: number;
     consistency: number;

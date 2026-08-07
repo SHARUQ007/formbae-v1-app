@@ -4,7 +4,7 @@ import { colors } from '../theme/colors';
 import { radius } from '../theme/radius';
 import { typography } from '../theme/typography';
 
-type Tone = 'accent' | 'neutral' | 'success' | 'warn' | 'error' | 'info' | 'goldSolid' | 'greenSolid';
+type Tone = 'accent' | 'neutral' | 'success' | 'warn' | 'error' | 'info' | 'dark' | 'gold' | 'goldSolid' | 'greenSolid';
 
 const tones: Record<Tone, { bg: string; fg: string }> = {
   accent: { bg: colors.accentLight, fg: colors.accentDark },
@@ -13,6 +13,8 @@ const tones: Record<Tone, { bg: string; fg: string }> = {
   warn: { bg: colors.warnLight, fg: colors.warn },
   error: { bg: colors.errorLight, fg: colors.error },
   info: { bg: colors.infoLight, fg: colors.info },
+  dark: { bg: colors.accent, fg: colors.white },
+  gold: { bg: '#fff8e6', fg: '#9a5b00' },
   goldSolid: { bg: '#f5b301', fg: '#2e1d00' },
   greenSolid: { bg: '#bbf7d0', fg: '#166534' },
 };
