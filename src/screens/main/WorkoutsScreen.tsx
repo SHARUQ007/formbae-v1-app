@@ -10,6 +10,7 @@ import { ErrorState, EmptyState, LoadingState } from '../../components/States';
 import { SkeletonBlock } from '../../components/Skeleton';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
+import { GoldenCompletionGlow } from '../../components/GoldenCompletionGlow';
 import { loadWorkoutDayCached, loadWorkoutPlanCached } from '../../services/preloadService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
 import { getSiteUrl } from '../../constants/config';
@@ -454,8 +455,9 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                   <Card
                     key={day.planDayId}
                     onPress={() => openWorkoutDetail(day, 'standard')}
-                    style={StyleSheet.flatten([styles.dayCard, isToday && styles.todayPlanCard])}
+                    style={StyleSheet.flatten([styles.dayCard, isToday && styles.todayPlanCard, day.completed && styles.dayCardDone])}
                   >
+                    {day.completed ? <GoldenCompletionGlow radius={22} /> : null}
                     <View style={[styles.dayBadge, day.completed && styles.dayBadgeDone]}>
                       {day.completed ? <Feather name="check" size={18} color={colors.white} /> : <Text style={styles.dayNum}>{day.dayNumber}</Text>}
                     </View>
@@ -689,6 +691,7 @@ const styles = StyleSheet.create({
   days: { gap: spacing.sm },
   dayCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
   todayPlanCard: { borderColor: colors.accent, backgroundColor: colors.accentLight },
+  dayCardDone: { borderColor: 'rgba(245,179,1,0.6)', borderWidth: 1.5, backgroundColor: '#fffdf7' },
   dayBadge: {
     width: 44,
     height: 44,
@@ -697,7 +700,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayBadgeDone: { backgroundColor: colors.accent },
+  dayBadgeDone: { backgroundColor: colors.accent, borderWidth: 1.5, borderColor: GOLD },
   dayNum: { ...typography.subtitle, color: colors.accentDark, fontWeight: '800' },
   dayInfo: { flex: 1 },
   dayTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
