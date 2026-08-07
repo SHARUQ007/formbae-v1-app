@@ -450,7 +450,7 @@ function TrendLineChart({ points }: { points: SeriesPoint[] }) {
 }
 
 const styles = StyleSheet.create({
-  scroll: { paddingBottom: spacing.xl },
+  scroll: { paddingBottom: 110 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
   eyebrow: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 2 },
   headerBadge: {

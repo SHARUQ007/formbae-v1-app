@@ -1042,7 +1042,7 @@ function DietScreenContent({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  scroll: { paddingBottom: spacing.xl },
+  scroll: { paddingBottom: 110 },
   dietTabs: {
     flexDirection: 'row',
     gap: spacing.xs,
