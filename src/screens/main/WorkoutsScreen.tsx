@@ -21,6 +21,7 @@ import { appTabBarStyle, hiddenTabBarStyle } from '../../navigation/tabBarStyle'
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
+import { shadows } from '../../theme/shadows';
 import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutList'>;
@@ -554,13 +555,13 @@ function WorkoutDashboardScreen({ navigation }: Props) {
               accessibilityLabel="Switch to another workout plan"
             >
               <View style={styles.switchPlanIcon}>
-                <Feather name="layers" size={18} color={colors.ink} />
+                <Feather name="layers" size={18} color={colors.white} />
               </View>
               <View style={styles.switchPlanText}>
                 <Text style={styles.switchPlanTitle}>Switch workout plan</Text>
                 <Text style={styles.switchPlanMeta}>Browse every plan made for you</Text>
               </View>
-              <Feather name="chevron-right" size={20} color={colors.inkSubtle} />
+              <Feather name="chevron-right" size={20} color={colors.onAccentMuted} />
             </TouchableOpacity>
           </>
         )}
@@ -741,7 +742,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
   },
-  scroll: { paddingBottom: spacing.xl },
+  scroll: { paddingBottom: 110 },
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
   headerText: { flex: 1 },
   eyebrow: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 2 },
@@ -871,23 +872,24 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.panel,
+    borderColor: colors.accentDark,
+    backgroundColor: colors.accent,
     padding: spacing.md,
+    ...shadows.sm,
   },
   switchPlanIcon: {
     width: 42,
     height: 42,
     borderRadius: radius.md,
-    backgroundColor: colors.accentLight,
+    backgroundColor: 'rgba(255,255,255,0.14)',
     borderWidth: 1,
-    borderColor: colors.accentSurface,
+    borderColor: 'rgba(255,255,255,0.22)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   switchPlanText: { flex: 1 },
-  switchPlanTitle: { ...typography.bodyBold, color: colors.ink },
-  switchPlanMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  switchPlanTitle: { ...typography.bodyBold, color: colors.white },
+  switchPlanMeta: { ...typography.caption, color: colors.onAccentMuted, marginTop: 2 },
   planRow: {
     flexDirection: 'row',
     alignItems: 'center',
