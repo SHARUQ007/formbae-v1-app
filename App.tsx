@@ -8,7 +8,7 @@ import { AppDialogProvider } from './src/components/AppDialogProvider';
 function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.bg} />
+      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
       <AppDialogProvider>
         <RootNavigator />
       </AppDialogProvider>

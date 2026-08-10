@@ -50,7 +50,7 @@ export function LoginScreen({ navigation, route }: Props) {
   return (
     <ScreenContainer withBottomInset>
       <ScreenHeader title="" onBack={() => navigation.goBack()} />
-      <KeyboardScreen>
+      <KeyboardScreen scroll>
         <View style={styles.hero}>
           <LogoMark size={64} />
           <Text style={styles.title}>{isSignup ? 'Create your account' : 'Continue with phone'}</Text>

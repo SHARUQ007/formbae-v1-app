@@ -6,23 +6,23 @@ import { typography } from '../theme/typography';
 
 type Tone = 'accent' | 'neutral' | 'success' | 'warn' | 'error' | 'info' | 'dark' | 'gold' | 'goldSolid' | 'greenSolid';
 
-const tones: Record<Tone, { bg: string; fg: string }> = {
-  accent: { bg: colors.accentLight, fg: colors.accentDark },
-  neutral: { bg: colors.panelMuted, fg: colors.inkMuted },
-  success: { bg: colors.successLight, fg: colors.success },
-  warn: { bg: colors.warnLight, fg: colors.warn },
-  error: { bg: colors.errorLight, fg: colors.error },
-  info: { bg: colors.infoLight, fg: colors.info },
-  dark: { bg: colors.accent, fg: colors.white },
-  gold: { bg: '#fff8e6', fg: '#9a5b00' },
-  goldSolid: { bg: '#f5b301', fg: '#2e1d00' },
-  greenSolid: { bg: '#bbf7d0', fg: '#166534' },
+const tones: Record<Tone, { bg: string; fg: string; border: string }> = {
+  accent: { bg: colors.panel, fg: colors.gold, border: colors.accentSurface },
+  neutral: { bg: colors.panel, fg: colors.inkMuted, border: colors.border },
+  success: { bg: colors.panel, fg: colors.success, border: colors.successLight },
+  warn: { bg: colors.panel, fg: colors.warn, border: colors.warnLight },
+  error: { bg: colors.panel, fg: colors.error, border: colors.errorLight },
+  info: { bg: colors.panel, fg: colors.info, border: colors.infoLight },
+  dark: { bg: colors.panelRaised, fg: colors.white, border: colors.borderStrong },
+  gold: { bg: colors.panel, fg: colors.gold, border: colors.accentSurface },
+  goldSolid: { bg: colors.gold, fg: colors.onPrimary, border: colors.gold },
+  greenSolid: { bg: colors.success, fg: colors.onPrimary, border: colors.success },
 };
 
 export function Badge({ label, tone = 'accent', icon, style }: { label: string; tone?: Tone; icon?: string; style?: ViewStyle }) {
   const c = tones[tone];
   return (
-    <View style={[styles.badge, { backgroundColor: c.bg }, style]}>
+    <View style={[styles.badge, { backgroundColor: c.bg, borderColor: c.border }, style]}>
       {icon ? <Feather name={icon} size={12} color={c.fg} /> : null}
       <Text style={[styles.text, { color: c.fg }]}>{label}</Text>
     </View>
@@ -31,13 +31,15 @@ export function Badge({ label, tone = 'accent', icon, style }: { label: string; 
 
 const styles = StyleSheet.create({
   badge: {
+    maxWidth: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderRadius: radius.pill,
+    borderWidth: 1,
   },
-  text: { ...typography.caption, fontWeight: '700' },
+  text: { ...typography.caption, flexShrink: 1, fontWeight: '700' },
 });

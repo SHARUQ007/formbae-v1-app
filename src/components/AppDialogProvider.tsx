@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/radius';
 import { shadows } from '../theme/shadows';
@@ -47,7 +47,13 @@ export function AppDialogProvider({ children }: { children: React.ReactNode }) {
         <View style={styles.overlay}>
           <Pressable style={styles.backdrop} onPress={() => close(dialog?.buttons.find((button) => button.style === 'cancel'))} />
           {dialog ? (
-            <View accessibilityViewIsModal style={styles.card}>
+            <ScrollView
+              accessibilityViewIsModal
+              style={styles.card}
+              contentContainerStyle={styles.cardContent}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
               <View style={styles.goldRule} />
               <Text style={styles.title}>{dialog.title}</Text>
               {dialog.message ? <Text style={styles.message}>{dialog.message}</Text> : null}
@@ -76,7 +82,7 @@ export function AppDialogProvider({ children }: { children: React.ReactNode }) {
                   </TouchableOpacity>
                 ))}
               </View>
-            </View>
+            </ScrollView>
           ) : null}
         </View>
       </Modal>
@@ -90,21 +96,22 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 360,
-    borderRadius: 28,
+    maxHeight: '86%',
+    borderRadius: radius.lg,
     backgroundColor: colors.panel,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.lg,
-    ...shadows.lg,
+    ...shadows.card,
   },
-  goldRule: { width: 36, height: 4, borderRadius: radius.pill, backgroundColor: '#f5b301', marginBottom: spacing.lg },
+  cardContent: { padding: spacing.lg },
+  goldRule: { width: 28, height: 2, borderRadius: radius.pill, backgroundColor: colors.goldMuted, marginBottom: spacing.md },
   title: { ...typography.title, color: colors.ink },
   message: { ...typography.body, color: colors.inkMuted, marginTop: spacing.sm },
-  actions: { flexDirection: 'row-reverse', gap: spacing.sm, marginTop: spacing.xl },
-  action: { flex: 1, minHeight: 52, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.md },
-  actionPrimary: { backgroundColor: colors.accent, borderWidth: 1, borderColor: '#f5b301' },
+  actions: { flexDirection: 'column', gap: spacing.sm, marginTop: spacing.xl },
+  action: { minHeight: 50, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  actionPrimary: { backgroundColor: colors.primaryAction, borderWidth: 1, borderColor: colors.primaryAction },
   actionSecondary: { backgroundColor: colors.panelMuted, borderWidth: 1, borderColor: colors.borderStrong },
   actionDestructive: { backgroundColor: colors.error },
-  actionText: { ...typography.button, color: colors.ink },
-  actionPrimaryText: { color: colors.white },
+  actionText: { ...typography.button, color: colors.ink, textAlign: 'center' },
+  actionPrimaryText: { color: colors.onPrimary },
 });

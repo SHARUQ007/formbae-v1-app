@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNFS from 'react-native-fs';
 import type { Asset } from 'react-native-image-picker';
+import { timestampValue, validTimestamp } from '../utils/dietDiaryTime';
 
 const KEY = 'formbae_diet_diary_entries_v1';
 const DIR = `${RNFS.DocumentDirectoryPath}/diet-diary`;
@@ -9,7 +10,10 @@ export type DietDiaryEntry = {
   id: string;
   kind?: 'photo' | 'text';
   uri?: string;
+  /** When the food was eaten. Kept as createdAt for API compatibility. */
   createdAt: string;
+  /** When the diary record was actually saved on this device/server. */
+  loggedAt?: string;
   mealType: MealType;
   note?: string;
   originalUri?: string;
@@ -20,7 +24,14 @@ export type DietDiaryEntry = {
   syncError?: string;
 };
 
-export type MealType = 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack';
+export type MealType = 'Breakfast' | 'Lunch' | 'Evening' | 'Dinner';
+
+export function normalizeMealType(value?: string): MealType {
+  if (value === 'Breakfast' || value === 'Lunch' || value === 'Evening' || value === 'Dinner') return value;
+  // Older app versions used Snack as the fourth diary slot.
+  if (value === 'Snack') return 'Evening';
+  return 'Evening';
+}
 
 function makeId() {
   return `diet_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -39,7 +50,15 @@ async function readEntries(): Promise<DietDiaryEntry[]> {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as DietDiaryEntry[];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((entry) => entry && typeof entry.id === 'string')
+      .map((entry) => ({
+        ...entry,
+        mealType: normalizeMealType(entry.mealType),
+        createdAt: validTimestamp(entry.createdAt) || validTimestamp(entry.loggedAt) || new Date(0).toISOString(),
+        loggedAt: validTimestamp(entry.loggedAt),
+      }));
   } catch {
     return [];
   }
@@ -47,6 +66,14 @@ async function readEntries(): Promise<DietDiaryEntry[]> {
 
 async function writeEntries(entries: DietDiaryEntry[]) {
   await AsyncStorage.setItem(KEY, JSON.stringify(entries));
+}
+
+function compareEntriesNewestFirst(a: DietDiaryEntry, b: DietDiaryEntry) {
+  const occurrenceDifference = timestampValue(b.createdAt) - timestampValue(a.createdAt);
+  if (occurrenceDifference) return occurrenceDifference;
+  const loggedDifference = timestampValue(b.loggedAt) - timestampValue(a.loggedAt);
+  if (loggedDifference) return loggedDifference;
+  return b.id.localeCompare(a.id);
 }
 
 async function ensureDir() {
@@ -78,15 +105,16 @@ async function persistAsset(asset: Asset, id: string): Promise<{ uri: string; st
 
 export async function loadDietDiaryEntries() {
   const entries = await readEntries();
-  return entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return entries.sort(compareEntriesNewestFirst);
 }
 
 export async function saveDietDiaryEntries(entries: DietDiaryEntry[]) {
-  await writeEntries(entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  await writeEntries([...entries].sort(compareEntriesNewestFirst));
 }
 
 export async function addDietDiaryEntry(asset: Asset, mealType: MealType, note?: string, createdAt = new Date().toISOString()) {
   const id = makeId();
+  const loggedAt = new Date().toISOString();
   const persisted = await persistAsset(asset, id);
   const entry: DietDiaryEntry = {
     id,
@@ -94,7 +122,8 @@ export async function addDietDiaryEntry(asset: Asset, mealType: MealType, note?:
     originalUri: asset.uri,
     mealType,
     note: note?.trim() || undefined,
-    createdAt,
+    createdAt: validTimestamp(createdAt) || loggedAt,
+    loggedAt,
     storedLocally: persisted.storedLocally,
   };
   const entries = await readEntries();
@@ -105,12 +134,14 @@ export async function addDietDiaryEntry(asset: Asset, mealType: MealType, note?:
 export async function addTextDietDiaryEntry(mealType: MealType, note: string, createdAt = new Date().toISOString()) {
   const text = note.trim();
   if (!text) throw new Error('Add what you ate first.');
+  const loggedAt = new Date().toISOString();
   const entry: DietDiaryEntry = {
     id: makeId(),
     kind: 'text',
     mealType,
     note: text,
-    createdAt,
+    createdAt: validTimestamp(createdAt) || loggedAt,
+    loggedAt,
     storedLocally: false,
   };
   const entries = await readEntries();
@@ -129,9 +160,10 @@ export async function mergeRemoteDietDiaryEntries(
     entryId: string;
     clientId?: string;
     imageUrl: string;
-    mealType: MealType;
+    mealType: MealType | 'Snack';
     note?: string;
     createdAt: string;
+    loggedAt?: string;
   }>,
 ) {
   const local = await readEntries();
@@ -147,9 +179,10 @@ export async function mergeRemoteDietDiaryEntries(
         remoteId: remote.entryId,
         remoteImageUrl: remote.imageUrl,
         uri: remote.imageUrl || existing.uri,
-        mealType: remote.mealType,
+        mealType: normalizeMealType(remote.mealType),
         note: remote.note,
-        createdAt: remote.createdAt || existing.createdAt,
+        createdAt: validTimestamp(remote.createdAt) || existing.createdAt,
+        loggedAt: validTimestamp(remote.loggedAt) || existing.loggedAt,
         syncedAt: new Date().toISOString(),
         syncError: undefined,
       });
@@ -160,9 +193,10 @@ export async function mergeRemoteDietDiaryEntries(
         uri: remote.imageUrl,
         remoteId: remote.entryId,
         remoteImageUrl: remote.imageUrl,
-        mealType: remote.mealType,
+        mealType: normalizeMealType(remote.mealType),
         note: remote.note,
-        createdAt: remote.createdAt,
+        createdAt: validTimestamp(remote.createdAt) || validTimestamp(remote.loggedAt) || new Date().toISOString(),
+        loggedAt: validTimestamp(remote.loggedAt),
         storedLocally: false,
         syncedAt: new Date().toISOString(),
       });

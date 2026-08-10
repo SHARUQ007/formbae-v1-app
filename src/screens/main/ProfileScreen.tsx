@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenTitle } from '../../components/Card';
@@ -82,6 +83,7 @@ function firstRealName(...values: Array<string | undefined | null>) {
 }
 
 export function ProfileScreen({ navigation }: Props) {
+  const tabBarHeight = useBottomTabBarHeight();
   const { logout, status } = useAuthStore();
   const cached = useMemo(() => peekCachedResource<MobileSettingsResponse>(CACHE_KEYS.profileSettings), []);
   const [cancelling, setCancelling] = useState(false);
@@ -191,7 +193,7 @@ export function ProfileScreen({ navigation }: Props) {
     <ScreenContainer>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
       >
         <ScreenTitle>Profile</ScreenTitle>
@@ -203,7 +205,7 @@ export function ProfileScreen({ navigation }: Props) {
               <Avatar name={displayName} iconId={profile.avatarIcon} size={60} tone="neutral" />
             </View>
             <TouchableOpacity style={styles.iconAction} onPress={() => navigation.navigate('EditProfile')} accessibilityRole="button" accessibilityLabel="Edit profile">
-              <Feather name="edit-3" size={20} color={colors.accentDark} />
+              <Feather name="edit-3" size={19} color={colors.inkMuted} />
             </TouchableOpacity>
           </View>
           <Text style={styles.name}>{displayName}</Text>
@@ -232,7 +234,7 @@ export function ProfileScreen({ navigation }: Props) {
         <View style={styles.accessCard}>
           <View style={styles.accessHeader}>
             <View style={styles.accessIcon}>
-              <Feather name="credit-card" size={24} color={colors.white} />
+              <Feather name="credit-card" size={22} color={colors.gold} />
             </View>
             <View style={styles.accessText}>
               <Text style={styles.accessTitle}>{accessActive ? 'Access active' : 'Access required'}</Text>
@@ -296,7 +298,7 @@ function ProfileRow({ icon, label, value, isLast }: { icon: string; label: strin
       </View>
       <View style={styles.profileRowText}>
         <Text style={styles.profileRowLabel}>{label}</Text>
-        <Text style={styles.profileRowValue} numberOfLines={2}>{value}</Text>
+        <Text style={styles.profileRowValue}>{value}</Text>
       </View>
     </View>
   );
@@ -306,7 +308,7 @@ function PlainRow({ label, value, isLast }: { label: string; value: string; isLa
   return (
     <View style={[styles.plainRow, !isLast && styles.profileRowBorder]}>
       <Text style={styles.plainLabel}>{label}</Text>
-      <Text style={styles.plainValue} numberOfLines={2}>{value || '-'}</Text>
+      <Text style={styles.plainValue}>{value || '-'}</Text>
     </View>
   );
 }
@@ -315,10 +317,16 @@ function ToggleRow({ icon, label, value, onChange, isLast }: { icon: string; lab
   return (
     <View style={[styles.toggleRow, isLast && styles.noBorder]}>
       <View style={styles.rowIcon}>
-        <Feather name={icon} size={17} color={colors.accent} />
+        <Feather name={icon} size={17} color={colors.inkMuted} />
       </View>
       <Text style={styles.toggleLabel}>{label}</Text>
-      <Switch value={value} onValueChange={onChange} trackColor={{ true: colors.accent, false: colors.borderStrong }} />
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ true: colors.goldMuted, false: colors.borderStrong }}
+        thumbColor={value ? colors.primaryAction : colors.inkMuted}
+        ios_backgroundColor={colors.borderStrong}
+      />
     </View>
   );
 }
@@ -327,7 +335,7 @@ function ActionRow({ icon, label, value, tone, onPress, isLast }: { icon: string
   return (
     <TouchableOpacity activeOpacity={0.82} onPress={onPress} style={[styles.actionRow, isLast && styles.noBorder]}>
       <View style={[styles.rowIcon, tone === 'danger' && styles.dangerIcon]}>
-        <Feather name={icon} size={17} color={tone === 'danger' ? colors.error : colors.accent} />
+        <Feather name={icon} size={17} color={tone === 'danger' ? colors.error : colors.inkMuted} />
       </View>
       <View style={styles.actionText}>
         <Text style={[styles.actionLabel, tone === 'danger' && styles.dangerText]}>{label}</Text>
@@ -339,19 +347,21 @@ function ActionRow({ icon, label, value, tone, onPress, isLast }: { icon: string
 }
 
 const styles = StyleSheet.create({
-  scroll: { paddingBottom: spacing.xl },
+  scroll: {},
   syncing: { ...typography.caption, color: colors.inkSubtle, marginTop: -spacing.sm, marginBottom: spacing.md },
   heroCard: {
-    borderRadius: radius.xl,
-    backgroundColor: colors.accentDark,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
     padding: spacing.md,
-    ...shadows.md,
+    ...shadows.sm,
   },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  iconAction: { width: 46, height: 46, borderRadius: radius.pill, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
-  heroAvatarRing: { borderRadius: radius.pill, borderWidth: 2, borderColor: 'rgba(255,255,255,0.22)', padding: 3 },
-  name: { ...typography.hero, color: colors.white, marginTop: spacing.md },
-  phone: { ...typography.body, color: colors.onAccentMuted, marginTop: 2 },
+  iconAction: { width: 46, height: 46, borderRadius: radius.pill, backgroundColor: colors.panelRaised, alignItems: 'center', justifyContent: 'center' },
+  heroAvatarRing: { borderRadius: radius.pill, borderWidth: 1, borderColor: colors.borderStrong, padding: 3 },
+  name: { ...typography.hero, color: colors.ink, marginTop: spacing.md },
+  phone: { ...typography.body, color: colors.inkMuted, marginTop: 2 },
   heroBadge: {
     marginTop: spacing.md,
     alignSelf: 'flex-start',
@@ -359,26 +369,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
     borderRadius: radius.pill,
-    backgroundColor: colors.white,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
   },
-  heroBadgeText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
+  heroBadgeText: { ...typography.caption, color: colors.gold, fontWeight: '800' },
   warnText: { color: colors.warn },
   sectionHeading: {
-    ...typography.overline,
-    color: colors.inkSubtle,
-    textTransform: 'uppercase',
-    marginTop: spacing.lg,
+    ...typography.bodyBold,
+    color: colors.ink,
+    marginTop: spacing.xl,
     marginBottom: spacing.sm,
   },
   listPanel: {
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.xl,
+    borderRadius: radius.lg,
     backgroundColor: colors.panel,
     overflow: 'hidden',
-    ...shadows.sm,
   },
   profileRow: {
     minHeight: 64,
@@ -403,16 +412,16 @@ const styles = StyleSheet.create({
   },
   plainLabel: { ...typography.caption, color: colors.inkMuted, flex: 0.7 },
   plainValue: { ...typography.bodyBold, color: colors.ink, flex: 1, textAlign: 'right' },
-  accessCard: { borderRadius: radius.xl, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, padding: spacing.md, ...shadows.sm },
+  accessCard: { borderRadius: radius.lg, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
   accessHeader: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
-  accessIcon: { width: 54, height: 54, borderRadius: radius.lg, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  accessIcon: { width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface, alignItems: 'center', justifyContent: 'center' },
   accessText: { flex: 1 },
   accessTitle: { ...typography.title, color: colors.ink },
   accessSubtitle: { ...typography.body, color: colors.inkMuted, marginTop: 2 },
   accessRows: { marginTop: spacing.md, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border, paddingVertical: spacing.xs },
-  managePanel: { borderRadius: radius.lg, backgroundColor: colors.panelMuted, padding: spacing.md, marginTop: spacing.md, gap: spacing.md },
+  managePanel: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md, gap: spacing.md },
   manageHeader: { flexDirection: 'row', gap: spacing.sm },
-  manageIcon: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  manageIcon: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   manageCopy: { flex: 1 },
   manageTitle: { ...typography.bodyBold, color: colors.ink },
   manageText: { ...typography.caption, color: colors.inkMuted, marginTop: 2, lineHeight: 20 },
@@ -438,7 +447,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  rowIcon: { width: 34, height: 34, borderRadius: radius.pill, backgroundColor: colors.accentLight, alignItems: 'center', justifyContent: 'center' },
+  rowIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   dangerIcon: { backgroundColor: colors.errorLight },
   toggleLabel: { ...typography.bodyBold, color: colors.ink, flex: 1 },
   actionRow: {

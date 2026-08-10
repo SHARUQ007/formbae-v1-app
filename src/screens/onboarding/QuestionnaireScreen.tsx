@@ -117,7 +117,7 @@ export function QuestionnaireScreen({ navigation }: Props) {
             >
               <Text style={[styles.optionText, selected && styles.optionTextSelected]}>{opt.label}</Text>
               <View style={[styles.radio, selected && styles.radioSelected]}>
-                {selected ? <Feather name="check" size={14} color={colors.white} /> : null}
+                {selected ? <Feather name="check" size={14} color={colors.onPrimary} /> : null}
               </View>
             </TouchableOpacity>
           );
@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
   questionScroll: { flex: 1 },
   scroll: { paddingBottom: spacing.lg },
   scrollSingle: { flexGrow: 1 },
-  title: { fontSize: 32, lineHeight: 34, fontWeight: '700', letterSpacing: -0.5, color: colors.white, marginBottom: spacing.sm },
+  title: { fontSize: 28, lineHeight: 34, fontWeight: '700', letterSpacing: -0.4, color: colors.white, marginBottom: spacing.sm },
   subtitle: { ...typography.body, color: 'rgba(255,255,255,0.62)', marginBottom: spacing.lg },
   options: { flex: 1, gap: spacing.sm, marginTop: spacing.sm },
   option: {
@@ -216,14 +216,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: 'rgba(255,255,255,0.055)',
-    borderRadius: 20,
+    borderRadius: radius.md,
     padding: spacing.lg,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
   },
-  optionSelected: { borderColor: colors.white, backgroundColor: colors.white },
+  optionSelected: { borderColor: 'rgba(255,255,255,0.64)', backgroundColor: 'rgba(255,255,255,0.12)' },
   optionText: { ...typography.bodyBold, color: colors.white, flex: 1, paddingRight: spacing.sm },
-  optionTextSelected: { color: colors.accentDarker, fontWeight: '700' },
+  optionTextSelected: { color: colors.white, fontWeight: '700' },
   radio: {
     width: 24,
     height: 24,
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  radioSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
+  radioSelected: { backgroundColor: colors.white, borderColor: colors.white },
   disclaimer: {
     flexDirection: 'row',
     gap: spacing.sm,

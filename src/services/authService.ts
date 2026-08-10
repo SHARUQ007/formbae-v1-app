@@ -10,15 +10,28 @@ export async function saveToken(token: string) {
 }
 
 export async function loadToken(): Promise<string | null> {
-  const creds = await Keychain.getGenericPassword({ service: SERVICE });
-  const token = creds ? creds.password : null;
-  setAuthToken(token);
-  return token;
+  try {
+    const creds = await Keychain.getGenericPassword({ service: SERVICE });
+    const token = creds ? creds.password : null;
+    setAuthToken(token);
+    return token;
+  } catch {
+    // Secure storage can be temporarily unavailable after restore, an OS
+    // upgrade, or in unsigned simulator builds. Treat that as signed out so
+    // bootstrap never strands the user on the loading screen.
+    setAuthToken(null);
+    return null;
+  }
 }
 
 export async function clearToken() {
   setAuthToken(null);
-  await Keychain.resetGenericPassword({ service: SERVICE });
+  try {
+    await Keychain.resetGenericPassword({ service: SERVICE });
+  } catch {
+    // The in-memory session is already cleared; unavailable secure storage
+    // must not prevent logout or auth recovery.
+  }
 }
 
 export async function login(mobile: string, name?: string, createIfMissing = true) {

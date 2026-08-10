@@ -50,6 +50,9 @@ export function FormInput({
           onChangeText={onChangeText}
           placeholder={placeholder}
           placeholderTextColor={colors.inkSubtle}
+          selectionColor={colors.gold}
+          cursorColor={colors.gold}
+          keyboardAppearance="dark"
           keyboardType={keyboardType}
           maxLength={maxLength}
           autoCapitalize={autoCapitalize}
@@ -58,6 +61,7 @@ export function FormInput({
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           textAlignVertical={multiline ? 'top' : 'center'}
+          accessibilityLabel={label || placeholder}
         />
       </View>
     </View>
@@ -78,7 +82,7 @@ const styles = StyleSheet.create({
     minHeight: 54,
   },
   multilineWrap: { alignItems: 'flex-start', paddingVertical: 12 },
-  focused: { borderColor: colors.accent, backgroundColor: colors.white },
+  focused: { borderColor: colors.goldMuted, backgroundColor: colors.panelRaised },
   disabled: { backgroundColor: colors.panelMuted },
   icon: { marginRight: 10 },
   input: { flex: 1, ...typography.body, fontSize: 16, color: colors.ink, paddingVertical: 12 },

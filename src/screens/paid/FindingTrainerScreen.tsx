@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { ScrollView, View, Text, StyleSheet } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenTitle, ScreenSubtitle, Card } from '../../components/Card';
@@ -15,36 +15,39 @@ type Props = NativeStackScreenProps<PaidStackParamList, 'FindingTrainer'>;
 export function FindingTrainerScreen({ navigation }: Props) {
   return (
     <ScreenContainer withBottomInset>
-      <ScreenTitle>We are finding your trainer</ScreenTitle>
-      <ScreenSubtitle>
-        A FormBae coach will be assigned based on your goal, schedule and budget. You&apos;ll be notified when your trainer
-        is ready.
-      </ScreenSubtitle>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        <ScreenTitle>We are finding your trainer</ScreenTitle>
+        <ScreenSubtitle>
+          A FormBae coach will be assigned based on your goal, schedule and budget. You&apos;ll be notified when your trainer
+          is ready.
+        </ScreenSubtitle>
 
-      <Card variant="accent">
-        <View style={styles.row}>
-          <View style={styles.icon}>
-            <Feather name="search" size={20} color={colors.accent} />
+        <Card variant="accent">
+          <View style={styles.row}>
+            <View style={styles.icon}>
+              <Feather name="search" size={20} color={colors.accent} />
+            </View>
+            <Text style={styles.copy}>
+              You can explore the app while we finish setup. Your dashboard unlocks fully once your plan is live.
+            </Text>
           </View>
-          <Text style={styles.copy}>
-            You can explore the app while we finish setup. Your dashboard unlocks fully once your plan is live.
-          </Text>
-        </View>
-      </Card>
+        </Card>
 
-      <View style={styles.spacer} />
+        <View style={styles.spacer} />
 
-      <PrimaryButton
-        title="Go to dashboard"
-        icon="arrow-right"
-        onPress={() => navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Main')}
-      />
-      <PrimaryButton title="Check plan status" variant="ghost" onPress={() => navigation.navigate('PlanPreparing')} style={styles.secondary} />
+        <PrimaryButton
+          title="Go to dashboard"
+          icon="arrow-right"
+          onPress={() => navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Main')}
+        />
+        <PrimaryButton title="Check plan status" variant="ghost" onPress={() => navigation.navigate('PlanPreparing')} style={styles.secondary} />
+      </ScrollView>
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
+  scroll: { flexGrow: 1, paddingBottom: spacing.lg },
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   icon: {
     width: 42,

@@ -205,9 +205,46 @@ export type ProgressSummary = {
   adherencePct: number;
   completed: number;
   planned: number;
+  standardCompletedThisWeek?: number;
+  quickCompletedThisWeek?: number;
   currentStreak: number;
   bestStreak: number;
+  completionHistory?: Array<{
+    date: string;
+    planId: string;
+    planDayId: string;
+    workoutMode: 'standard' | 'quick' | string;
+  }>;
   bodyTrend?: Array<{ date: string; weight: number; chest?: number; waist?: number; biceps?: number }>;
+  weeklyReview?: WeeklyProgressReview;
+};
+
+export type WeeklyProgressReview = {
+  status: 'pending' | 'ready';
+  weekStartDate: string;
+  generatedAt: string;
+  nextInDays: number;
+  stats: {
+    workoutsCompleted: number;
+    workoutsPlanned: number;
+    adherencePct: number;
+    currentStreak: number;
+    mealsLogged: number;
+    dietDaysLogged: number;
+    workoutFeedbackCount: number;
+    checkInCount: number;
+    bodyLogCount: number;
+  };
+  headline?: string;
+  summary?: string;
+  wins?: string[];
+  workoutInsight?: string;
+  workoutRecommendation?: string;
+  nutritionInsight?: string;
+  nutritionRecommendation?: string;
+  nextFocusTitle?: string;
+  nextFocusReason?: string;
+  nextFocusDomain?: 'workout' | 'diet' | 'body';
 };
 
 export type TrainerInfo = {

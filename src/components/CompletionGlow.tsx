@@ -3,8 +3,8 @@ import { Animated, Easing, LayoutChangeEvent, StyleSheet, View } from 'react-nat
 import LinearGradient from 'react-native-linear-gradient';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-const WASH = ['rgba(245,179,1,0.22)', 'rgba(245,179,1,0.06)', 'rgba(245,179,1,0)'];
-const BAND = ['rgba(255,236,179,0)', 'rgba(255,236,179,0.55)', 'rgba(255,236,179,0)'];
+const WASH = ['rgba(240,206,120,0.08)', 'rgba(240,206,120,0.025)', 'rgba(240,206,120,0)'];
+const BAND = ['rgba(255,236,179,0)', 'rgba(255,236,179,0.28)', 'rgba(255,236,179,0)'];
 const SPARKLE_COLOR = '#ffe08a';
 
 // Glints framing the completion check on the left of the card. They stay
@@ -48,10 +48,9 @@ function Sparkle({ top, left, size, delay, gap }: { top: number; left: number; s
  * as the first child of the card so it sits behind the content; it never
  * intercepts touches.
  *
- * A gilded wash always warms the card (the static golden look). When
- * `animated` is true — reserved for today's freshly completed workout — a
- * highlight sweeps across on a calm loop and a few glints twinkle by the
- * check. Previously completed days keep the golden look without any motion.
+ * A restrained wash appears only for the workout that was just completed.
+ * Previously completed days stay neutral and use their status badge as the
+ * sole completion cue, keeping a long plan from becoming visually noisy.
  */
 export function CompletionGlow({ radius = 22, animated = true }: { radius?: number; animated?: boolean }) {
   const shine = useRef(new Animated.Value(0)).current;
@@ -83,7 +82,7 @@ export function CompletionGlow({ radius = 22, animated = true }: { radius?: numb
 
   return (
     <View style={[styles.root, { borderRadius: radius }]} pointerEvents="none" onLayout={onLayout}>
-      <LinearGradient colors={WASH} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      {animated ? <LinearGradient colors={WASH} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} /> : null}
       {animated && size.width > 0 ? (
         <Animated.View
           style={[

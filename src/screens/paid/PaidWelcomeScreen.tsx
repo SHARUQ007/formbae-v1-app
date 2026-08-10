@@ -1,4 +1,4 @@
-import { View, StyleSheet } from 'react-native';
+import { ScrollView, View, StyleSheet } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer } from '../../components/Card';
@@ -17,36 +17,39 @@ export function PaidWelcomeScreen({ navigation }: Props) {
 
   return (
     <ScreenContainer withBottomInset>
-      <View style={styles.top}>
-        <View style={styles.check}>
-          <Feather name="check" size={34} color={colors.white} />
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        <View style={styles.top}>
+          <View style={styles.check}>
+            <Feather name="check" size={34} color={colors.onPrimary} />
+          </View>
         </View>
-      </View>
 
-      <GradientHero
-        eyebrow="Payment confirmed"
-        title="Welcome to FormBae"
-        subtitle="Your trainer-backed plan is being set up. We're matching you with the right coach for your goal."
-      />
+        <GradientHero
+          eyebrow="Payment confirmed"
+          title="Welcome to FormBae"
+          subtitle="Your trainer-backed plan is being set up. We're matching you with the right coach for your goal."
+        />
 
-      <View style={styles.spacer} />
+        <View style={styles.spacer} />
 
-      <PrimaryButton
-        title={status?.trainerAssigned ? 'View plan status' : 'Find my trainer'}
-        icon="arrow-right"
-        onPress={() => navigation.navigate(status?.trainerAssigned ? 'PlanPreparing' : 'FindingTrainer')}
-      />
+        <PrimaryButton
+          title={status?.trainerAssigned ? 'View plan status' : 'Find my trainer'}
+          icon="arrow-right"
+          onPress={() => navigation.navigate(status?.trainerAssigned ? 'PlanPreparing' : 'FindingTrainer')}
+        />
+      </ScrollView>
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
+  scroll: { flexGrow: 1, paddingBottom: spacing.lg },
   top: { alignItems: 'center', marginTop: spacing.xl, marginBottom: spacing.lg },
   check: {
     width: 76,
     height: 76,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.gold,
     alignItems: 'center',
     justifyContent: 'center',
   },

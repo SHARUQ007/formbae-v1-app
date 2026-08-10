@@ -12,9 +12,10 @@ type Props = {
   subtitle?: string;
   onBack?: () => void;
   right?: ReactNode;
+  largeText?: boolean;
 };
 
-export function WorkoutScreenHeader({ eyebrow, title, subtitle, onBack, right }: Props) {
+export function WorkoutScreenHeader({ eyebrow, title, subtitle, onBack, right, largeText = false }: Props) {
   return (
     <View style={styles.root}>
       {onBack ? (
@@ -23,9 +24,9 @@ export function WorkoutScreenHeader({ eyebrow, title, subtitle, onBack, right }:
         </TouchableOpacity>
       ) : null}
       <View style={styles.copy}>
-        {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
-        <Text style={styles.title} numberOfLines={1}>{title}</Text>
-        {subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text> : null}
+        {eyebrow ? <Text style={[styles.eyebrow, largeText && styles.eyebrowLarge]}>{eyebrow}</Text> : null}
+        <Text style={[styles.title, largeText && styles.titleLarge]}>{title}</Text>
+        {subtitle ? <Text style={[styles.subtitle, largeText && styles.subtitleLarge]}>{subtitle}</Text> : null}
       </View>
       {right ? <View style={styles.right}>{right}</View> : null}
     </View>
@@ -45,8 +46,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   copy: { flex: 1, minWidth: 0 },
-  eyebrow: { ...typography.overline, color: '#9a5b00', textTransform: 'uppercase', marginBottom: 1 },
+  eyebrow: { ...typography.overline, color: colors.gold, textTransform: 'uppercase', marginBottom: 1 },
+  eyebrowLarge: { fontSize: 12, lineHeight: 17 },
   title: { ...typography.title, color: colors.ink },
+  titleLarge: { fontSize: 23, lineHeight: 30 },
   subtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  subtitleLarge: { fontSize: 15, lineHeight: 22, marginTop: 2 },
   right: { marginLeft: spacing.xs },
 });

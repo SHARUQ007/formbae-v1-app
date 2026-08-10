@@ -82,10 +82,9 @@ function ContextualActionButton({ accessibilityState, onPress }: BottomTabBarBut
   return (
     <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.actionShell} accessibilityRole="button" accessibilityLabel={`Today hub: ${target.detail}`}>
       <View style={[styles.actionButton, focused && styles.actionButtonFocused]}>
-        <Icon name={target.icon} size={23} color={colors.white} />
+        <Icon name={target.icon} size={22} color={colors.onPrimary} />
       </View>
-      <Text style={styles.actionLabel} numberOfLines={1}>{target.label}</Text>
-      <Text style={styles.actionDetail} numberOfLines={1}>{target.detail}</Text>
+      <Text style={styles.actionLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{target.label}</Text>
     </TouchableOpacity>
   );
 }
@@ -100,11 +99,11 @@ export function MainTabNavigator() {
       screenOptions={{
         headerShown: false,
         lazy: true,
-        tabBarActiveTintColor: colors.accent,
+        tabBarActiveTintColor: colors.gold,
         tabBarInactiveTintColor: colors.inkSubtle,
         tabBarStyle: appTabBarStyle,
-        tabBarItemStyle: { borderRadius: 22 },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '700', marginTop: 2 },
+        tabBarItemStyle: { borderRadius: radius.md, minHeight: 52 },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginTop: 2 },
       }}
     >
       <Tab.Screen
@@ -137,38 +136,31 @@ export function MainTabNavigator() {
 
 const styles = StyleSheet.create({
   actionShell: {
-    width: 78,
+    width: 70,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -22,
+    marginTop: -18,
   },
   actionButton: {
-    width: 56,
-    height: 56,
+    width: 52,
+    height: 52,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accent,
+    backgroundColor: colors.primaryAction,
     borderWidth: 3,
-    borderColor: colors.white,
-    ...shadows.accent,
+    borderColor: colors.panel,
+    ...shadows.md,
   },
   actionButtonFocused: {
-    backgroundColor: colors.black,
+    backgroundColor: colors.primaryAction,
+    borderColor: colors.goldMuted,
   },
   actionLabel: {
     ...typography.caption,
-    maxWidth: 74,
+    maxWidth: 68,
     marginTop: 3,
-    color: colors.accentDark,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  actionDetail: {
-    fontSize: 9,
-    lineHeight: 11,
-    maxWidth: 74,
-    color: colors.inkSubtle,
+    color: colors.ink,
     fontWeight: '700',
     textAlign: 'center',
   },

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { ScrollView, View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -54,7 +54,11 @@ export function SplashScreen({ navigation }: Props) {
   }, [ready, token, status, navigation]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <ScrollView
+      style={styles.screen}
+      contentContainerStyle={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={styles.header}>
         <LogoMark size={58} />
         <View>
@@ -82,12 +86,13 @@ export function SplashScreen({ navigation }: Props) {
       <View style={styles.footer}>
         <Text style={styles.footerText}>Your workouts, diet diary, and trainer updates are being prepared.</Text>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg, overflow: 'hidden', paddingHorizontal: spacing.lg },
+  screen: { flex: 1, backgroundColor: colors.bg },
+  container: { flexGrow: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.lg },
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl },
   main: { flex: 1, justifyContent: 'center', paddingVertical: spacing.xl },
   center: {
@@ -119,7 +124,7 @@ const styles = StyleSheet.create({
   adviceTitle: { ...typography.hero, color: colors.ink, textAlign: 'center' },
   adviceBody: { ...typography.body, color: colors.inkMuted, textAlign: 'center' },
   progressTrack: { width: '100%', height: 8, borderRadius: radius.pill, backgroundColor: colors.panelMuted, overflow: 'hidden', marginTop: spacing.md },
-  progressFill: { width: '64%', height: '100%', borderRadius: radius.pill, backgroundColor: colors.accent },
+  progressFill: { width: '64%', height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
   footer: { paddingBottom: spacing.xl },
   footerText: { ...typography.caption, color: colors.inkMuted, textAlign: 'center' },
 });

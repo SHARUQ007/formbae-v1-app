@@ -1,6 +1,7 @@
 import { loadWorkoutPlanCached } from '../services/preloadService';
 import { loadDietDiaryEntries, type MealType } from '../store/dietDiaryStore';
 import type { PlanDay, TodayPayload } from '../types/api';
+import { mealForCurrentTime } from './dietDiaryTime';
 
 export type ContextualTarget =
   | { kind: 'diet'; label: string; detail: string; icon: string; mealType: MealType }
@@ -15,16 +16,12 @@ export type ContextualSnapshot = {
 };
 
 export function currentMealType(date = new Date()): MealType {
-  const hour = date.getHours();
-  if (hour >= 5 && hour < 11) return 'Breakfast';
-  if (hour >= 11 && hour < 16) return 'Lunch';
-  if (hour >= 18 && hour < 23) return 'Dinner';
-  return 'Snack';
+  return mealForCurrentTime(date);
 }
 
 export function isMealWindow(date = new Date()) {
   const hour = date.getHours();
-  return (hour >= 5 && hour < 16) || (hour >= 18 && hour < 23);
+  return hour >= 5 && hour < 23;
 }
 
 export function isToday(value: string) {
@@ -53,7 +50,7 @@ export function resolveTargetFromSnapshot(snapshot: Omit<ContextualSnapshot, 'ta
       kind: 'diet',
       label: mealType,
       detail: 'Food memory',
-      icon: 'edit-3',
+      icon: 'book-open',
       mealType,
     };
   }

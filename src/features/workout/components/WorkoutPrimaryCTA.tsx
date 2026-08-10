@@ -14,27 +14,33 @@ type Props = {
   trailing?: ReactNode;
   onPress: () => void;
   disabled?: boolean;
+  large?: boolean;
   style?: ViewStyle;
 };
 
-export function WorkoutPrimaryCTA({ title, subtitle, icon = 'arrow-right', trailing, onPress, disabled, style }: Props) {
+export function WorkoutPrimaryCTA({ title, subtitle, icon = 'arrow-right', trailing, onPress, disabled, large, style }: Props) {
   return (
     <TouchableOpacity
       activeOpacity={0.88}
       disabled={disabled}
       onPress={onPress}
-      style={[styles.button, disabled && styles.disabled, style]}
+      style={[styles.button, large && styles.buttonLarge, disabled && styles.disabled, style]}
       accessibilityRole="button"
       accessibilityLabel={subtitle ? `${title}. ${subtitle}` : title}
       accessibilityState={{ disabled: !!disabled }}
     >
       <View style={styles.copy}>
-        <Text style={styles.title} numberOfLines={1}>{title}</Text>
-        {subtitle ? <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text> : null}
+        <Text style={[styles.title, large && styles.titleLarge]}>{title}</Text>
+        {subtitle ? <Text style={[styles.subtitle, large && styles.subtitleLarge]}>{subtitle}</Text> : null}
       </View>
       {trailing || (
-        <View style={styles.icon}>
-          <Feather name={icon} size={20} color={colors.white} />
+        <View style={[styles.icon, large && styles.iconLarge]}>
+          <Feather
+            name={icon}
+            size={large ? 25 : 20}
+            color={colors.onPrimary}
+            style={icon === 'play' ? styles.playGlyph : undefined}
+          />
         </View>
       )}
     </TouchableOpacity>
@@ -44,17 +50,26 @@ export function WorkoutPrimaryCTA({ title, subtitle, icon = 'arrow-right', trail
 const styles = StyleSheet.create({
   button: {
     minHeight: 64,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryAction,
     paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    ...shadows.accent,
+    ...shadows.card,
   },
-  copy: { flex: 1, minWidth: 0 },
-  title: { ...typography.button, color: colors.white },
-  subtitle: { ...typography.caption, color: colors.onAccentMuted, marginTop: 1 },
+  buttonLarge: {
+    minHeight: 88,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    gap: spacing.lg,
+  },
+  copy: { flex: 1, minWidth: 0, justifyContent: 'center' },
+  title: { ...typography.button, color: colors.onPrimary, flexShrink: 1 },
+  titleLarge: { fontSize: 22, lineHeight: 28, fontWeight: '900' },
+  subtitle: { ...typography.caption, color: 'rgba(8,9,12,0.64)', marginTop: 1, flexShrink: 1 },
+  subtitleLarge: { fontSize: 15, lineHeight: 21, marginTop: 2 },
   icon: {
     width: 38,
     height: 38,
@@ -62,7 +77,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.32)',
+    borderColor: 'rgba(8,9,12,0.22)',
+    flexShrink: 0,
+    alignSelf: 'center',
   },
+  iconLarge: {
+    width: 56,
+    height: 56,
+    borderWidth: 1,
+    backgroundColor: 'rgba(8,9,12,0.025)',
+  },
+  playGlyph: { transform: [{ translateX: 1 }] },
   disabled: { opacity: 0.48 },
 });

@@ -22,8 +22,8 @@ export function ListRow({
 }) {
   const danger = tone === 'danger';
   const fg = danger ? colors.error : colors.ink;
-  const iconBg = danger ? colors.errorLight : colors.accentLight;
-  const iconFg = danger ? colors.error : colors.accent;
+  const iconBg = danger ? colors.errorLight : 'transparent';
+  const iconFg = danger ? colors.error : colors.inkMuted;
 
   const body = (
     <View style={styles.row}>
@@ -32,11 +32,11 @@ export function ListRow({
           <Feather name={icon} size={18} color={iconFg} />
         </View>
       ) : null}
-      <Text style={[styles.label, { color: fg }]} numberOfLines={1}>
+      <Text style={[styles.label, { color: fg }]}>
         {label}
       </Text>
       {value ? (
-        <Text style={styles.value} numberOfLines={1}>
+        <Text style={styles.value}>
           {value}
         </Text>
       ) : null}
@@ -55,8 +55,8 @@ export function ListRow({
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, gap: spacing.md },
-  iconWrap: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
-  label: { ...typography.bodyBold, flex: 1 },
-  value: { ...typography.body, color: colors.inkMuted },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, minHeight: 58, gap: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  iconWrap: { width: 30, height: 30, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
+  label: { ...typography.bodyBold, flex: 1, minWidth: 0 },
+  value: { ...typography.body, color: colors.inkMuted, flexShrink: 1, maxWidth: '46%', textAlign: 'right' },
 });

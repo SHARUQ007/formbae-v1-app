@@ -1,4 +1,4 @@
-import { NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useRef } from 'react';
 import { SplashScreen } from '../screens/auth/SplashScreen';
@@ -9,8 +9,22 @@ import { MainTabNavigator } from './MainTabNavigator';
 import { useAuthStore } from '../store/authStore';
 import { trackMobileActivity } from '../services/activityService';
 import type { RootStackParamList } from './types';
+import { colors } from '../theme/colors';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+const navigationTheme = {
+  ...DarkTheme,
+  colors: {
+    ...DarkTheme.colors,
+    primary: colors.gold,
+    background: colors.bg,
+    card: colors.panel,
+    text: colors.ink,
+    border: colors.border,
+    notification: colors.gold,
+  },
+};
 
 function getActiveRoutePath(state: ReturnType<NonNullable<React.ComponentRef<typeof NavigationContainer>['getRootState']>> | undefined): string {
   if (!state?.routes?.length) return '/mobile/unknown';
@@ -57,6 +71,7 @@ export function RootNavigator() {
 
   return (
     <NavigationContainer
+      theme={navigationTheme}
       ref={navigationRef}
       onReady={() => {
         if (token) {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Alert,
   Animated,
@@ -32,7 +33,7 @@ import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
 
-type CoachTab = 'about' | 'change';
+type CoachTab = 'about' | 'change' | 'detail';
 
 function photoUrl(value: string) {
   const url = value.trim();
@@ -72,6 +73,13 @@ function formatUnlockDate(value: string) {
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
+function formatNextSlot(value: string) {
+  if (!value) return 'Choose after access';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return 'Choose after access';
+  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', weekday: 'short' });
+}
+
 function isAiCoach(coach: CoachOption) {
   const kind = String(coach.trainerKind || '').trim().toLowerCase();
   if (kind === 'ai') return true;
@@ -101,6 +109,7 @@ export function TrainerScreen() {
   const navigation = useNavigation();
   const tabBarHeight = useBottomTabBarHeight();
   const [tab, setTab] = useState<CoachTab>('about');
+  const [viewingCoach, setViewingCoach] = useState<CoachOption | null>(null);
   const [changingId, setChangingId] = useState('');
   const [payingTrainerId, setPayingTrainerId] = useState('');
   const { user, status, refreshStatus } = useAuthStore();
@@ -143,6 +152,7 @@ export function TrainerScreen() {
         await refreshStatus().catch(() => undefined);
         await loadCoachBundleCached({ force: true }).catch(() => undefined);
         await reload();
+        setViewingCoach(null);
         setTab('about');
       } catch (e) {
         Alert.alert('Could not unlock coach', e instanceof Error ? e.message : 'Please try again.');
@@ -178,6 +188,7 @@ export function TrainerScreen() {
               await refreshStatus().catch(() => undefined);
               await loadCoachBundleCached({ force: true }).catch(() => undefined);
               await reload();
+              setViewingCoach(null);
               setTab('about');
             } catch (e) {
               Alert.alert('Could not change coach', e instanceof Error ? e.message : 'Please try again.');
@@ -218,9 +229,12 @@ export function TrainerScreen() {
   return (
     <ScreenContainer>
       <CoachHeader
-        title={tab === 'change' ? 'Upgrade coach' : 'Your coach'}
+        title={tab === 'change' ? 'Upgrade coach' : tab === 'detail' ? 'Coach profile' : 'Your coach'}
         onBack={() => {
-          if (tab === 'change') {
+          if (tab === 'detail') {
+            setViewingCoach(null);
+            setTab('change');
+          } else if (tab === 'change') {
             setTab('about');
           } else if (navigation.canGoBack()) {
             navigation.goBack();
@@ -252,11 +266,37 @@ export function TrainerScreen() {
                 coach={coach}
                 current={coach.trainerId === currentCoach.trainerId}
                 changing={changingId === coach.trainerId || payingTrainerId === coach.trainerId}
-                onPress={() => confirmChangeCoach(coach)}
+                onPress={() => {
+                  setViewingCoach(coach);
+                  setTab('detail');
+                }}
               />
             ))}
           </View>
         </ScrollView>
+      ) : null}
+
+      {tab === 'detail' && viewingCoach ? (
+        <CoachDetailPage
+          coach={viewingCoach}
+          current={viewingCoach.trainerId === currentCoach.trainerId}
+          loading={changingId === viewingCoach.trainerId || payingTrainerId === viewingCoach.trainerId}
+          tabBarHeight={tabBarHeight}
+          onContinue={() => {
+            if (viewingCoach.blockedUntil) {
+              Alert.alert(
+                'Coach change locked',
+                `${viewingCoach.reason} You can change again after ${formatUnlockDate(viewingCoach.blockedUntil)}.`,
+              );
+              return;
+            }
+            if (viewingCoach.requiresUpgrade) {
+              startTrainerUpgrade(viewingCoach);
+              return;
+            }
+            confirmChangeCoach(viewingCoach);
+          }}
+        />
       ) : null}
     </ScreenContainer>
   );
@@ -283,18 +323,18 @@ function CoachHero({ coach, ai }: { coach: CoachOption; ai: boolean }) {
           <Image source={{ uri: image }} style={styles.heroImage} resizeMode="cover" />
         ) : (
           <View style={styles.aiPhotoFallback}>
-            <Feather name="user" size={28} color={colors.white} />
+            <Feather name="user" size={28} color={colors.inkMuted} />
           </View>
         )}
         <View style={styles.heroText}>
           <Text style={styles.kicker}>{ai ? 'AI trainer' : 'Your coach'}</Text>
-          <Text style={styles.heroName} numberOfLines={1}>{coach.name}</Text>
+          <Text style={styles.heroName}>{coach.name}</Text>
         </View>
         <Badge label={coach.tier} tone="accent" icon="award" />
       </View>
       {ai ? (
         <View style={styles.aiPromise}>
-          <Feather name="zap" size={18} color={colors.white} />
+          <Feather name="zap" size={18} color={colors.goldMuted} />
           <Text style={styles.aiPromiseText}>Plans from your logs, feedback, and next two-week schedule.</Text>
         </View>
       ) : null}
@@ -338,20 +378,39 @@ function CoachAbout({
 function GoldUpgradeButton({ onPress }: { onPress: () => void }) {
   const shimmer = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
+  const [reduceMotion, setReduceMotion] = useState(false);
 
   useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => undefined);
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      shimmer.stopAnimation();
+      pulse.stopAnimation();
+      shimmer.setValue(0);
+      pulse.setValue(0);
+      return undefined;
+    }
+
     const shimmerLoop = Animated.loop(
-      Animated.timing(shimmer, {
-        toValue: 1,
-        duration: 2400,
-        easing: Easing.inOut(Easing.cubic),
-        useNativeDriver: true,
-      }),
+      Animated.sequence([
+        Animated.delay(500),
+        Animated.timing(shimmer, {
+          toValue: 1,
+          duration: 1500,
+          easing: Easing.inOut(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.delay(1800),
+      ]),
     );
     const pulseLoop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 1200, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
       ]),
     );
     shimmerLoop.start();
@@ -360,25 +419,34 @@ function GoldUpgradeButton({ onPress }: { onPress: () => void }) {
       shimmerLoop.stop();
       pulseLoop.stop();
     };
-  }, [pulse, shimmer]);
+  }, [pulse, reduceMotion, shimmer]);
 
-  const shimmerTranslate = shimmer.interpolate({ inputRange: [0, 1], outputRange: [-130, 330] });
-  const glowScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.035] });
-  const glowOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0.88] });
+  const shimmerTranslate = shimmer.interpolate({ inputRange: [0, 1], outputRange: [-120, 360] });
+  const glowScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.98, 1.025] });
+  const glowOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.38, 0.7] });
 
   return (
-    <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.goldButtonWrap} accessibilityRole="button" accessibilityLabel="Upgrade trainer">
-      <Animated.View style={[styles.goldGlow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]} />
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={onPress}
+      style={styles.goldButtonWrap}
+      accessibilityRole="button"
+      accessibilityLabel="Upgrade to a personal coach"
+    >
+      <Animated.View pointerEvents="none" style={[styles.goldGlow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]} />
       <View style={styles.goldButton}>
-        <Animated.View style={[styles.goldShimmer, { transform: [{ translateX: shimmerTranslate }, { rotate: '16deg' }] }]} />
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.goldShimmer, { transform: [{ translateX: shimmerTranslate }, { rotate: '16deg' }] }]}
+        />
         <View style={styles.goldIcon}>
-          <Feather name="star" size={24} color="#2a1700" />
+          <Feather name="star" size={22} color="#251800" />
         </View>
         <View style={styles.goldTextBlock}>
-          <Text style={styles.goldTitle}>Upgrade to a real coach</Text>
-          <Text style={styles.goldSubtitle}>Unlock human trainer guidance when you are ready.</Text>
+          <Text style={styles.goldTitle}>Upgrade your coach</Text>
+          <Text style={styles.goldSubtitle}>Compare personal coaches and available access.</Text>
         </View>
-        <Feather name="arrow-right" size={24} color="#2a1700" />
+        <Feather name="arrow-right" size={22} color="#251800" />
       </View>
     </TouchableOpacity>
   );
@@ -388,8 +456,8 @@ function ChangeCoachHeader() {
   return (
     <View style={styles.changeHeader}>
       <View style={styles.changeHeaderText}>
-        <Text style={styles.changeTitle}>Pick your trainer</Text>
-        <Text style={styles.changeSubtitle}>Visible coaches only. Upgrade opens secure Razorpay checkout for real coach access.</Text>
+        <Text style={styles.changeTitle}>Choose a coach</Text>
+        <Text style={styles.changeSubtitle}>Compare experience, availability, and access before continuing.</Text>
       </View>
     </View>
   );
@@ -401,8 +469,159 @@ function InfoTile({ icon, label, value }: { icon: string; label: string; value: 
       <Feather name={icon} size={16} color={colors.accentDark} />
       <View style={styles.infoText}>
         <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue} numberOfLines={1}>{value}</Text>
+        <Text style={styles.infoValue}>{value}</Text>
       </View>
+    </View>
+  );
+}
+
+function CoachDetailPage({
+  coach,
+  current,
+  loading,
+  tabBarHeight,
+  onContinue,
+}: {
+  coach: CoachOption;
+  current: boolean;
+  loading: boolean;
+  tabBarHeight: number;
+  onContinue: () => void;
+}) {
+  const image = photoUrl(coach.photoUrl);
+  const firstName = coach.name.trim().split(/\s+/)[0] || 'coach';
+  const isAi = isAiCoach(coach);
+  const isLocked = Boolean(coach.blockedUntil);
+  const languages = coach.languages?.filter(Boolean).join(', ') || 'English';
+  const availability = coach.availableSlotCount > 0 ? `${coach.availableSlotCount} slots open` : 'Shared after access';
+
+  return (
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={[styles.detailScroll, { paddingBottom: tabBarHeight + spacing.xl }]}
+    >
+      <View style={styles.detailHero}>
+        <View style={styles.detailHeroTop}>
+          {image ? (
+            <Image source={{ uri: image }} style={styles.detailImage} resizeMode="cover" />
+          ) : (
+            <Avatar name={coach.name} size={94} tone={current ? 'accent' : 'neutral'} />
+          )}
+          <View style={styles.detailIdentity}>
+            <Text style={styles.detailKicker}>{isAi ? 'AI trainer' : 'Personal coaching'}</Text>
+            <Text style={styles.detailName}>{coach.name}</Text>
+            <Text style={styles.detailRole}>{formatCoachLabel(coach)}</Text>
+          </View>
+        </View>
+        <View style={styles.detailBadgeRow}>
+          <Badge label={coach.tier || 'Coach'} tone="gold" icon="award" />
+          {current ? <Badge label="Current coach" tone="neutral" icon="check" /> : null}
+        </View>
+        <Text style={styles.detailPrice}>{formatPrice(coach.monthlyFee)}</Text>
+        <Text style={styles.detailIntro}>{coachBlurb(coach)}</Text>
+      </View>
+
+      <View style={styles.detailSection}>
+        <Text style={styles.detailSectionTitle}>How {firstName} will help</Text>
+        <Card style={styles.benefitCard}>
+          <CoachBenefit
+            icon="clipboard"
+            title="Personal plan reviews"
+            body="Your training plan is reviewed against your progress, schedule, and feedback."
+          />
+          <CoachBenefit
+            icon="message-circle"
+            title="Accountability check-ins"
+            body="Regular guidance keeps decisions simple and your training consistent."
+          />
+          <CoachBenefit
+            icon="trending-up"
+            title="Form and progression guidance"
+            body="Get practical direction on technique, training load, and when to progress."
+            last
+          />
+        </Card>
+      </View>
+
+      <View style={styles.detailSection}>
+        <Text style={styles.detailSectionTitle}>Coach details</Text>
+        <View style={styles.detailGrid}>
+          <DetailFact icon="globe" label="Languages" value={languages} />
+          <DetailFact icon="calendar" label="Availability" value={availability} />
+          <DetailFact icon="clock" label="Next opening" value={formatNextSlot(coach.nextSlotAt)} />
+          <DetailFact icon="credit-card" label="Coach access" value={formatPrice(coach.monthlyFee)} />
+        </View>
+      </View>
+
+      <Card style={styles.checkoutNote}>
+        <View style={styles.checkoutNoteIcon}>
+          <Feather name={current ? 'check' : 'shield'} size={18} color={current ? colors.success : colors.ink} />
+        </View>
+        <View style={styles.checkoutNoteText}>
+          <Text style={styles.checkoutNoteTitle}>{current ? 'This is your current coach' : 'Secure coach access'}</Text>
+          <Text style={styles.checkoutNoteBody}>
+            {current
+              ? 'Your current plan and workout history are already connected to this coach.'
+              : 'Both options continue to the coach paywall. You can choose an available slot after payment is verified.'}
+          </Text>
+        </View>
+      </Card>
+
+      {isLocked ? <Text style={styles.detailReason}>{coach.reason} Available {formatUnlockDate(coach.blockedUntil)}.</Text> : null}
+
+      <View style={styles.detailActions}>
+        <PrimaryButton
+          title="Book a slot"
+          icon="calendar"
+          variant="secondary"
+          size="lg"
+          loading={loading}
+          disabled={current || isLocked}
+          onPress={onContinue}
+        />
+        <PrimaryButton
+          title={current ? 'Current coach' : `Proceed with ${firstName}`}
+          icon={current ? 'check' : 'arrow-right'}
+          size="lg"
+          loading={loading}
+          disabled={current || isLocked}
+          onPress={onContinue}
+        />
+      </View>
+    </ScrollView>
+  );
+}
+
+function CoachBenefit({
+  icon,
+  title,
+  body,
+  last = false,
+}: {
+  icon: string;
+  title: string;
+  body: string;
+  last?: boolean;
+}) {
+  return (
+    <View style={[styles.benefitRow, last && styles.benefitRowLast]}>
+      <View style={styles.benefitIcon}>
+        <Feather name={icon} size={18} color={colors.goldMuted} />
+      </View>
+      <View style={styles.benefitText}>
+        <Text style={styles.benefitTitle}>{title}</Text>
+        <Text style={styles.benefitBody}>{body}</Text>
+      </View>
+    </View>
+  );
+}
+
+function DetailFact({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return (
+    <View style={styles.detailFact}>
+      <Feather name={icon} size={17} color={colors.inkMuted} />
+      <Text style={styles.detailFactLabel}>{label}</Text>
+      <Text style={styles.detailFactValue}>{value}</Text>
     </View>
   );
 }
@@ -421,23 +640,31 @@ function CoachOptionCard({
   const image = photoUrl(coach.photoUrl);
   const label = formatCoachLabel(coach);
   const blurb = coachBlurb(coach);
-  const disabled = current || changing;
-  const actionLabel = current ? 'Selected' : coach.requiresUpgrade ? 'Upgrade' : 'Choose';
+  const disabled = changing;
+  const actionLabel = current ? 'View' : 'View profile';
   return (
-    <TouchableOpacity activeOpacity={0.84} onPress={onPress} disabled={disabled} style={[styles.optionCard, current && styles.optionCurrent, coach.requiresUpgrade && styles.optionUpgrade]}>
+    <TouchableOpacity
+      activeOpacity={0.84}
+      onPress={onPress}
+      disabled={disabled}
+      style={[styles.optionCard, current && styles.optionCurrent, coach.requiresUpgrade && styles.optionUpgrade]}
+      accessibilityRole="button"
+      accessibilityLabel={`View ${coach.name}'s coach profile`}
+      accessibilityState={{ disabled }}
+    >
       <View style={styles.optionTop}>
         {image ? <Image source={{ uri: image }} style={styles.optionImage} /> : <Avatar name={coach.name} size={62} tone={current ? 'accent' : 'neutral'} />}
         <View style={styles.optionText}>
           <View style={styles.optionNameRow}>
-            <Text style={styles.optionName} numberOfLines={1}>{coach.name}</Text>
+            <Text style={styles.optionName}>{coach.name}</Text>
           </View>
-          <Text style={styles.optionMeta} numberOfLines={1}>{label}</Text>
+          <Text style={styles.optionMeta}>{label}</Text>
         </View>
         <View style={[styles.optionStatus, current && styles.optionStatusCurrent, coach.requiresUpgrade && styles.optionStatusUpgrade]}>
           <Feather name={current ? 'check' : coach.requiresUpgrade ? 'star' : 'arrow-right'} size={16} color={current ? colors.ink : coach.requiresUpgrade ? '#2a1700' : colors.white} />
         </View>
       </View>
-      <Text style={styles.optionDescription} numberOfLines={2}>{blurb}</Text>
+      <Text style={styles.optionDescription}>{blurb}</Text>
       <View style={styles.optionMetaRow}>
         <View style={styles.optionChip}>
           <Feather name="award" size={13} color={colors.inkMuted} />
@@ -452,8 +679,8 @@ function CoachOptionCard({
       </View>
       <View style={styles.optionFooter}>
         <Text style={styles.optionPrice}>{formatPrice(coach.monthlyFee)}</Text>
-        <View style={[styles.selectPill, (!coach.canSelect || current) && styles.selectPillDisabled]}>
-          {changing ? <ActivityIndicator size="small" color={current ? colors.inkMuted : colors.white} /> : <Text style={[styles.selectText, (!coach.canSelect || current) && styles.selectTextDisabled]}>{actionLabel}</Text>}
+        <View style={[styles.selectPill, current && styles.selectPillSecondary]}>
+          {changing ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <Text style={[styles.selectText, current && styles.selectTextSecondary]}>{actionLabel}</Text>}
         </View>
       </View>
       {!coach.canSelect && !current ? <Text style={styles.optionReason}>{coach.blockedUntil ? `${coach.reason} Available ${formatUnlockDate(coach.blockedUntil)}.` : coach.reason}</Text> : null}
@@ -463,8 +690,10 @@ function CoachOptionCard({
 
 const styles = StyleSheet.create({
   hero: {
-    backgroundColor: colors.inkStrong,
-    borderRadius: 28,
+    backgroundColor: colors.panel,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
     padding: spacing.md,
     marginBottom: spacing.md,
     gap: spacing.md,
@@ -475,28 +704,26 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 22,
-    backgroundColor: '#1f1f1f',
+    backgroundColor: colors.panelMuted,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
+    borderColor: colors.borderStrong,
     alignItems: 'center',
     justifyContent: 'center',
   },
   heroText: { flex: 1 },
-  kicker: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
-  heroName: { ...typography.title, color: colors.white, marginTop: 2 },
+  kicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
+  heroName: { ...typography.title, color: colors.ink, marginTop: 2 },
   aiPromise: {
     minHeight: 50,
-    borderRadius: radius.lg,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  aiPromiseText: { ...typography.caption, color: colors.white, flex: 1, lineHeight: 18, fontWeight: '800' },
+  aiPromiseText: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 18, fontWeight: '600' },
   screenHeader: {
     minHeight: 52,
     flexDirection: 'row',
@@ -519,15 +746,13 @@ const styles = StyleSheet.create({
   aboutCard: { gap: spacing.md, padding: spacing.md },
   aboutTitle: { ...typography.subtitle, color: colors.ink },
   aboutBody: { ...typography.body, color: colors.inkMuted, lineHeight: 22 },
-  quickGrid: { gap: spacing.sm },
+  quickGrid: { borderTopWidth: 1, borderTopColor: colors.border, marginTop: spacing.xs },
   infoTile: {
     minHeight: 54,
-    borderRadius: radius.lg,
-    backgroundColor: colors.panelMuted,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: 0,
     paddingVertical: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
@@ -543,78 +768,161 @@ const styles = StyleSheet.create({
   },
   goldGlow: {
     position: 'absolute',
-    top: 6,
-    right: 10,
-    bottom: 6,
-    left: 10,
-    borderRadius: 34,
-    backgroundColor: '#f3bd3f',
+    top: 8,
+    right: 12,
+    bottom: 8,
+    left: 12,
+    borderRadius: radius.xl,
+    backgroundColor: '#d8a92f',
   },
   goldButton: {
     minHeight: 80,
-    borderRadius: 28,
+    borderRadius: radius.xl,
     overflow: 'hidden',
-    backgroundColor: '#f2c24d',
+    backgroundColor: '#f0c85e',
     borderWidth: 1,
-    borderColor: '#ffe49a',
-    padding: spacing.md,
+    borderColor: '#ffe7a3',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
   },
   goldShimmer: {
     position: 'absolute',
-    top: -30,
-    bottom: -30,
-    width: 82,
-    backgroundColor: 'rgba(255,255,255,0.34)',
+    top: -32,
+    bottom: -32,
+    width: 76,
+    backgroundColor: 'rgba(255,255,255,0.28)',
   },
   goldIcon: {
-    width: 50,
-    height: 50,
+    width: 48,
+    height: 48,
     borderRadius: radius.pill,
-    backgroundColor: '#fff3bf',
+    backgroundColor: 'rgba(255,248,219,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(37,24,0,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(42,23,0,0.12)',
   },
   goldTextBlock: { flex: 1 },
-  goldTitle: { ...typography.bodyBold, color: '#2a1700', fontWeight: '900' },
-  goldSubtitle: { ...typography.caption, color: 'rgba(42,23,0,0.68)', marginTop: 3, lineHeight: 17 },
+  goldTitle: { ...typography.bodyBold, color: '#251800', fontWeight: '900' },
+  goldSubtitle: { ...typography.caption, color: 'rgba(37,24,0,0.68)', marginTop: 3, lineHeight: 17 },
   changeHeader: {
     marginBottom: spacing.md,
     paddingHorizontal: 2,
   },
   changeHeaderText: { gap: 6 },
-  changeTitle: { ...typography.title, color: colors.ink, fontSize: 30, lineHeight: 34 },
+  changeTitle: { ...typography.hero, color: colors.ink },
   changeSubtitle: { ...typography.body, color: colors.inkMuted, lineHeight: 22 },
   coachList: { gap: spacing.md },
-  optionCard: {
-    borderRadius: 28,
-    backgroundColor: colors.white,
+  detailScroll: { paddingTop: spacing.xs },
+  detailHero: {
+    borderRadius: radius.lg,
+    backgroundColor: colors.panel,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
     padding: spacing.lg,
     gap: spacing.md,
   },
-  optionCurrent: { borderColor: colors.ink, backgroundColor: colors.panelMuted },
+  detailHeroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  detailImage: { width: 86, height: 86, borderRadius: radius.lg, backgroundColor: colors.panelMuted },
+  detailIdentity: { flex: 1, minWidth: 0 },
+  detailKicker: { ...typography.overline, color: colors.goldMuted, textTransform: 'uppercase' },
+  detailName: { ...typography.title, color: colors.inkStrong, fontSize: 23, lineHeight: 28, marginTop: 3 },
+  detailRole: { ...typography.bodyBold, color: colors.inkMuted, marginTop: 2 },
+  detailBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  detailPrice: { ...typography.title, color: colors.ink },
+  detailIntro: { ...typography.body, color: colors.inkMuted, lineHeight: 23 },
+  detailSection: { marginTop: spacing.xl },
+  detailSectionTitle: {
+    ...typography.overline,
+    color: colors.inkMuted,
+    textTransform: 'uppercase',
+    marginBottom: spacing.sm,
+  },
+  benefitCard: { paddingVertical: spacing.xs, paddingHorizontal: spacing.md },
+  benefitRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  benefitRowLast: { borderBottomWidth: 0 },
+  benefitIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    backgroundColor: colors.panelRaised,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  benefitText: { flex: 1 },
+  benefitTitle: { ...typography.bodyBold, color: colors.ink },
+  benefitBody: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: 3 },
+  detailGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  detailFact: {
+    width: '48%',
+    minHeight: 112,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  detailFactLabel: { ...typography.caption, color: colors.inkSubtle, marginTop: spacing.sm },
+  detailFactValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
+  checkoutNote: {
+    marginTop: spacing.xl,
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: colors.panelMuted,
+  },
+  checkoutNoteIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelRaised,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkoutNoteText: { flex: 1 },
+  checkoutNoteTitle: { ...typography.bodyBold, color: colors.ink },
+  checkoutNoteBody: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: 3 },
+  detailReason: { ...typography.caption, color: colors.error, marginTop: spacing.md },
+  detailActions: { gap: spacing.sm, marginTop: spacing.lg },
+  optionCard: {
+    borderRadius: radius.lg,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: 12,
+  },
+  optionCurrent: { borderColor: colors.goldMuted, backgroundColor: colors.panelMuted },
   optionUpgrade: { borderColor: '#dcc47a' },
   optionTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   optionImage: { width: 62, height: 62, borderRadius: 22, backgroundColor: colors.panelMuted },
   optionText: { flex: 1, minWidth: 0 },
   optionNameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  optionName: { ...typography.subtitle, color: colors.ink, flex: 1, fontSize: 23, lineHeight: 28 },
+  optionName: { ...typography.subtitle, color: colors.ink, flex: 1, fontSize: 19, lineHeight: 24 },
   optionMeta: { ...typography.bodyBold, color: colors.inkMuted, marginTop: 2 },
   optionStatus: {
     width: 40,
     height: 40,
     borderRadius: radius.pill,
-    backgroundColor: colors.ink,
+    backgroundColor: colors.accentFill,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  optionStatusCurrent: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border },
+  optionStatusCurrent: { backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
   optionStatusUpgrade: { backgroundColor: '#f4c84d' },
   optionDescription: { ...typography.body, color: colors.inkMuted, lineHeight: 22 },
   optionMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
@@ -630,11 +938,11 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   optionChipText: { ...typography.caption, color: colors.inkMuted, fontWeight: '800', textTransform: 'capitalize' },
-  optionFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  optionPrice: { ...typography.subtitle, color: colors.ink },
-  selectPill: { minWidth: 104, alignItems: 'center', borderRadius: radius.pill, backgroundColor: colors.ink, paddingHorizontal: spacing.md, paddingVertical: 12 },
-  selectPillDisabled: { backgroundColor: colors.panelMuted },
-  selectText: { ...typography.caption, color: colors.white, fontWeight: '800' },
-  selectTextDisabled: { color: colors.inkMuted },
+  optionFooter: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  optionPrice: { ...typography.subtitle, color: colors.ink, flexShrink: 1 },
+  selectPill: { minWidth: 104, alignItems: 'center', borderRadius: radius.md, backgroundColor: colors.primaryAction, paddingHorizontal: spacing.md, paddingVertical: 11 },
+  selectPillSecondary: { backgroundColor: colors.panelMuted, borderWidth: 1, borderColor: colors.border },
+  selectText: { ...typography.caption, color: colors.onPrimary, fontWeight: '800' },
+  selectTextSecondary: { color: colors.inkMuted },
   optionReason: { ...typography.caption, color: colors.error, marginTop: spacing.sm },
 });

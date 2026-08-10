@@ -31,17 +31,10 @@ export type PaidStackParamList = {
 
 export type MainTabParamList = {
   Workouts: NavigatorScreenParams<WorkoutStackParamList> | undefined;
-  Diet: { action?: 'camera'; requestId?: number; mealType?: 'Breakfast' | 'Lunch' | 'Dinner' | 'Snack' } | undefined;
+  Diet: { action?: 'camera'; requestId?: number; mealType?: 'Breakfast' | 'Lunch' | 'Evening' | 'Dinner' } | undefined;
   Action: undefined;
-  Progress: undefined;
+  Progress: { action?: 'overview' | 'logBody'; requestId?: number } | undefined;
   Profile: NavigatorScreenParams<ProfileStackParamList> | undefined;
-};
-
-export type WorkoutVideoItem = {
-  id: string;
-  title: string;
-  subtitle?: string;
-  videoUrl: string;
 };
 
 export type WorkoutStackParamList = {
@@ -50,7 +43,17 @@ export type WorkoutStackParamList = {
   PlanRefresh: undefined;
   WorkoutSummary: { planDayId: string; title: string; mode?: 'standard' | 'quick'; initialDetail?: WorkoutDayDetail };
   WorkoutDetail: { planDayId: string; title: string; mode?: 'standard' | 'quick'; initialDetail?: WorkoutDayDetail };
-  WorkoutVideo: { title: string; subtitle?: string; videoUrl: string; videos?: WorkoutVideoItem[]; initialIndex?: number };
+  WorkoutVideo: {
+    title: string;
+    subtitle?: string;
+    videoUrl: string;
+    planDayId: string;
+    workoutMode: 'standard' | 'quick';
+    exerciseId?: string;
+    exerciseName: string;
+    order?: string;
+    focus?: string;
+  };
 };
 
 export type ProfileStackParamList = {

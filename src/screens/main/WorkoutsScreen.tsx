@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Easing, Image, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
@@ -10,8 +11,8 @@ import { ErrorState, EmptyState, LoadingState } from '../../components/States';
 import { SkeletonBlock } from '../../components/Skeleton';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
-import { CompletionGlow } from '../../components/CompletionGlow';
-import { loadWorkoutDayCached, loadWorkoutPlanCached } from '../../services/preloadService';
+import { WeeklyBodyMap } from '../../components/WeeklyBodyMap';
+import { loadProfileSettingsCached, loadWorkoutDayCached, loadWorkoutPlanCached } from '../../services/preloadService';
 import { fetchUserPlans, selectWorkoutPlan } from '../../services/workoutService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
 import { getSiteUrl } from '../../constants/config';
@@ -21,8 +22,8 @@ import { appTabBarStyle, hiddenTabBarStyle } from '../../navigation/tabBarStyle'
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
-import { shadows } from '../../theme/shadows';
 import { typography } from '../../theme/typography';
+import { deriveCurrentWeekStreak, deriveWorkoutMuscles, resolveBodyGender } from '../../utils/weeklyMuscles';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutList'>;
 
@@ -182,7 +183,7 @@ function GoldenStreakBadge({ streak, celebrationNonce }: { streak: number; celeb
   const flareGlowScale = flare.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1.7] });
 
   return (
-    <View style={[styles.streakBadge, burning && styles.streakBadgeBurning]} accessibilityLabel={`${streak} day streak`}>
+    <View style={[styles.streakBadge, burning && styles.streakBadgeBurning]} accessibilityLabel={`${streak} consecutive workout days this week`}>
       <View style={styles.streakIconWrap}>
         <Animated.View style={[styles.streakLayer, { opacity: flareGlowOpacity }]} pointerEvents="none">
           <Animated.View style={[styles.flareCircle, { transform: [{ scale: flareGlowScale }] }]} />
@@ -218,16 +219,22 @@ function GoldenStreakBadge({ streak, celebrationNonce }: { streak: number; celeb
           );
         })}
       </View>
-      <Animated.Text style={[styles.streakValue, burning && styles.streakValueBurning, { transform: [{ scale: pop }] }]}>{streak}</Animated.Text>
+      <View style={styles.streakCopy}>
+        <Animated.Text style={[styles.streakValue, burning && styles.streakValueBurning, { transform: [{ scale: pop }] }]}>{streak}</Animated.Text>
+        <Text style={styles.streakPeriod}>week streak</Text>
+      </View>
     </View>
   );
 }
 
 function WorkoutDashboardScreen({ navigation }: Props) {
+  const tabBarHeight = useBottomTabBarHeight();
   const [days, setDays] = useState<PlanDay[]>([]);
   const [title, setTitle] = useState('My workout plan');
   const [planId, setPlanId] = useState('');
   const [selectedTodayPlanDayId, setSelectedTodayPlanDayId] = useState('');
+  const [focusedPlanDayId, setFocusedPlanDayId] = useState('');
+  const [planDaySelectionTouched, setPlanDaySelectionTouched] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [trainerPhotoFailed, setTrainerPhotoFailed] = useState(false);
   const [progress, setProgress] = useState<ProgressSummary | null>(null);
@@ -238,17 +245,20 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [summaryOpening, setSummaryOpening] = useState(false);
   const [streakCelebrationNonce, setStreakCelebrationNonce] = useState(0);
-  const [justCompletedPlanDayId, setJustCompletedPlanDayId] = useState('');
   const [plansOpen, setPlansOpen] = useState(false);
   const [plans, setPlans] = useState<UserPlanSummary[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
   const [switchingPlanId, setSwitchingPlanId] = useState('');
+  const [bodyGender, setBodyGender] = useState<ReturnType<typeof resolveBodyGender>>('neutral');
 
   const load = useCallback(async (options?: { force?: boolean }) => {
     setError(null);
     try {
       await flushWorkoutQueue();
-      const data = await loadWorkoutPlanCached({ force: options?.force });
+      const [data, settings] = await Promise.all([
+        loadWorkoutPlanCached({ force: options?.force }),
+        loadProfileSettingsCached({ force: options?.force }).catch(() => null),
+      ]);
       const plan = (data.plan || data.today?.plan) as { planId?: string; days?: PlanDay[]; title?: string; selectedWorkoutMode?: string } | undefined;
       const loadedDays = plan?.days || [];
       const loadedPlanId = plan?.planId || data.today?.plan?.planId || plan?.title || 'default';
@@ -257,11 +267,14 @@ function WorkoutDashboardScreen({ navigation }: Props) {
       const warmDay = loadedDays.find((day) => day.planDayId === selectedDayId) || loadedDays.find((day) => !day.completed) || loadedDays[0];
       setPlanId(loadedPlanId);
       setSelectedTodayPlanDayId(selectedDayId);
+      setFocusedPlanDayId(warmDay?.planDayId || '');
+      setPlanDaySelectionTouched(false);
       setDays(loadedDays);
       setTitle(plan?.title || 'My workout plan');
       setProgress(data.today?.progress || null);
       setTrainer(data.today?.assignedTrainer || null);
       setAiPlanRefresh(data.aiPlanRefresh || null);
+      setBodyGender(resolveBodyGender(settings?.profile?.gender));
       setTrainerPhotoFailed(false);
       if (warmDay?.planDayId) {
         loadWorkoutDayCached(warmDay.planDayId, 'standard').catch(() => undefined);
@@ -285,7 +298,6 @@ function WorkoutDashboardScreen({ navigation }: Props) {
           await AsyncStorage.removeItem(PENDING_STREAK_CELEBRATION_KEY).catch(() => undefined);
           if (pendingCompletion.planDayId) {
             setDays((value) => markPlanDayCompleted(value, pendingCompletion.planDayId));
-            setJustCompletedPlanDayId(pendingCompletion.planDayId);
           }
           setStreakCelebrationNonce((value) => value + 1);
         }
@@ -303,11 +315,23 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const todayDay = useMemo(() => {
     if (!days.length) return null;
     const selected = days.find((day) => day.planDayId === selectedTodayPlanDayId);
-    if (selected && !selected.completed) return selected;
+    if (selected) return selected;
     return days.find((day) => !day.completed) || days[0];
   }, [days, selectedTodayPlanDayId]);
+  const focusedDay = useMemo(
+    () => days.find((day) => day.planDayId === focusedPlanDayId) || todayDay || days[0] || null,
+    [days, focusedPlanDayId, todayDay],
+  );
+  useEffect(() => {
+    if (!planDaySelectionTouched && todayDay?.planDayId && focusedPlanDayId !== todayDay.planDayId) {
+      setFocusedPlanDayId(todayDay.planDayId);
+    }
+  }, [focusedPlanDayId, planDaySelectionTouched, todayDay?.planDayId]);
+  const focusedMuscles = useMemo(() => deriveWorkoutMuscles(focusedDay), [focusedDay]);
   const onSwitchTodayWorkout = async (day: PlanDay) => {
     setSelectedTodayPlanDayId(day.planDayId);
+    setFocusedPlanDayId(day.planDayId);
+    setPlanDaySelectionTouched(false);
     setSwitcherOpen(false);
     await AsyncStorage.setItem(`${TODAY_WORKOUT_KEY_PREFIX}${planId || title || 'default'}`, day.planDayId).catch(() => undefined);
   };
@@ -325,41 +349,34 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     }
   };
 
-  const onSelectPlan = (plan: UserPlanSummary) => {
-    if (plan.isActive || switchingPlanId) {
+  const onSelectPlan = async (plan: UserPlanSummary) => {
+    if (plan.isActive || switchingPlanId) return;
+    setSwitchingPlanId(plan.planId);
+    try {
+      await selectWorkoutPlan(plan.planId);
+      setPlans((current) => current.map((entry) => ({
+        ...entry,
+        isActive: entry.planId === plan.planId,
+      })));
+      await AsyncStorage.removeItem(`${TODAY_WORKOUT_KEY_PREFIX}${planId || title || 'default'}`).catch(() => undefined);
+      setSelectedTodayPlanDayId('');
+      setFocusedPlanDayId('');
+      setPlanDaySelectionTouched(false);
+      await load({ force: true });
       setPlansOpen(false);
-      return;
+    } catch (e) {
+      setPlansOpen(false);
+      await waitForNextFrame();
+      Alert.alert('Could not switch plan', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setSwitchingPlanId('');
     }
-    Alert.alert(
-      'Switch workout plan?',
-      `Make "${plan.title || 'this plan'}" your active plan? Your current plan stays saved — you can switch back anytime.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Switch',
-          onPress: async () => {
-            setSwitchingPlanId(plan.planId);
-            try {
-              await selectWorkoutPlan(plan.planId);
-              await AsyncStorage.removeItem(`${TODAY_WORKOUT_KEY_PREFIX}${planId || title || 'default'}`).catch(() => undefined);
-              setSelectedTodayPlanDayId('');
-              setPlansOpen(false);
-              await load({ force: true });
-            } catch (e) {
-              Alert.alert('Could not switch plan', e instanceof Error ? e.message : 'Please try again.');
-            } finally {
-              setSwitchingPlanId('');
-            }
-          },
-        },
-      ],
-    );
   };
 
   const openWorkoutSummary = async (day: PlanDay | null, mode: 'standard' | 'quick') => {
     if (!day || summaryOpening) return;
     setSummaryOpening(true);
-    const initialDetail = await withTimeout(loadWorkoutDayCached(day.planDayId, mode), 4500);
+    const initialDetail = await withTimeout(loadWorkoutDayCached(day.planDayId, mode, { force: Boolean(day.completed) }), 4500);
     navigation.getParent()?.setOptions({ tabBarStyle: hiddenTabBarStyle });
     await waitForNextFrame();
     navigation.navigate('WorkoutSummary', {
@@ -378,16 +395,12 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         <SkeletonBlock style={styles.skeletonTitle} />
         <SkeletonBlock style={styles.skeletonSummary} />
         <SkeletonBlock style={styles.skeletonHero} />
-        <View style={styles.days}>
-          {[0, 1, 2].map((item) => (
-            <View key={item} style={styles.dayCard}>
-              <SkeletonBlock style={styles.dayBadge} />
-              <View style={styles.dayInfo}>
-                <SkeletonBlock style={styles.skeletonDayTitle} />
-                <SkeletonBlock style={styles.skeletonMeta} />
-              </View>
-            </View>
-          ))}
+        <View style={styles.skeletonWeek}>
+          <SkeletonBlock style={styles.skeletonWeekHeader} />
+          <View style={styles.skeletonWeekDays}>
+            {[0, 1, 2, 3, 4, 5, 6].map((item) => <SkeletonBlock key={item} style={styles.skeletonWeekDay} />)}
+          </View>
+          <SkeletonBlock style={styles.skeletonFocusedWorkout} />
         </View>
       </ScreenContainer>
     );
@@ -397,14 +410,16 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const todayCount = todayDay?.exercises?.length ?? 0;
   const planProgress = days.length ? doneCount / days.length : 0;
   const planProgressPct = Math.round(planProgress * 100);
-  const currentStreak = progress?.currentStreak ?? 0;
+  const currentStreak = progress?.completionHistory
+    ? deriveCurrentWeekStreak(progress.completionHistory)
+    : Math.min(7, progress?.currentStreak ?? 0);
   const trainerPhoto = resolveTrainerPhotoUrl(trainer?.trainerPhotoUrl);
 
   return (
     <ScreenContainer>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
         {error ? (
@@ -430,7 +445,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                 <View style={styles.todayTopRight}>
                   <Text style={styles.todayDay}>Day {todayDay?.dayNumber || '-'}</Text>
                   <TouchableOpacity onPress={() => setSwitcherOpen(true)} style={styles.switchButton} accessibilityRole="button" accessibilityLabel="Switch today's workout">
-                    <Feather name="repeat" size={14} color={colors.white} />
+                    <Feather name="repeat" size={14} color={colors.inkMuted} />
                     <Text style={styles.switchText}>Switch</Text>
                   </TouchableOpacity>
                 </View>
@@ -443,15 +458,15 @@ function WorkoutDashboardScreen({ navigation }: Props) {
 
               <View style={styles.heroActions}>
                 <PrimaryButton
-                  title={todayDay?.completed ? 'Review today workout' : "Today's Workout"}
+                  title={todayDay?.completed ? 'Review workout' : 'Start workout'}
                   icon="activity"
                   variant="inverted"
                   onPress={() => openWorkoutSummary(todayDay, 'standard')}
                 />
                 <PrimaryButton
-                  title="Short on time workout"
+                  title="Short workout"
                   icon="clock"
-                  variant="heroSecondary"
+                  variant="secondary"
                   onPress={() => openWorkoutSummary(todayDay, 'quick')}
                 />
               </View>
@@ -464,10 +479,10 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                     <Feather name="refresh-cw" size={20} color={colors.accentDark} />
                   </View>
                   <View style={styles.aiRefreshCopy}>
-                    <Text style={styles.aiRefreshKicker}>2-week AI update</Text>
-                    <Text style={styles.aiRefreshTitle}>{aiPlanRefresh.trainerName || 'Ava'} can build your next plan</Text>
+                    <Text style={styles.aiRefreshKicker}>Plan check-in</Text>
+                    <Text style={styles.aiRefreshTitle}>Update your next training block</Text>
                     <Text style={styles.aiRefreshText}>
-                      Complete a guided check-in so your next workout block reflects what you did, skipped, and need changed.
+                      Tell {aiPlanRefresh.trainerName || 'your coach'} what worked and what needs to change.
                     </Text>
                   </View>
                 </View>
@@ -475,7 +490,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                   <Badge label={`${aiPlanRefresh.planAgeDays}d old`} tone="accent" icon="calendar" />
                 </View>
                 <PrimaryButton
-                  title="Answer and rebuild plan"
+                  title="Start check-in"
                   icon="edit-3"
                   onPress={() => navigation.navigate('PlanRefresh')}
                   style={styles.aiRefreshButton}
@@ -497,8 +512,8 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                 </View>
                 <View style={styles.trainerInfo}>
                   <Text style={styles.trainerLabel}>Your coach</Text>
-                  <Text style={styles.trainerName} numberOfLines={1}>{trainer.name || 'FormBae Trainer'}</Text>
-                  <Text style={styles.trainerDescription} numberOfLines={2}>
+                  <Text style={styles.trainerName}>{trainer.name || 'FormBae Trainer'}</Text>
+                  <Text style={styles.trainerDescription}>
                     {trainer.trainerDescription || 'Guiding your workout plan, check-ins and weekly progress.'}
                   </Text>
                 </View>
@@ -516,7 +531,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                 <View style={styles.trainerInfo}>
                   <Text style={styles.trainerLabel}>Your coach</Text>
                   <Text style={styles.trainerName}>Coach not assigned yet</Text>
-                  <Text style={styles.trainerDescription} numberOfLines={2}>
+                  <Text style={styles.trainerDescription}>
                     Open coach details to see assignment status and available options.
                   </Text>
                 </View>
@@ -526,60 +541,110 @@ function WorkoutDashboardScreen({ navigation }: Props) {
               </Card>
             )}
 
-            <Card variant="flat" style={styles.weekProgress}>
-              <View style={styles.weekProgressTop}>
-                <Text style={styles.weekProgressTitle}>Full plan progress</Text>
-                <View style={styles.weekProgressMetaGroup}>
-                  <Text style={styles.weekProgressPercent}>{planProgressPct}%</Text>
-                  <Text style={styles.weekProgressMeta}>
-                    {doneCount}/{days.length} days
-                  </Text>
+            <View style={styles.weekSection}>
+              <View style={styles.weekHeader}>
+                <View style={styles.weekHeaderCopy}>
+                  <Text style={styles.weekTitle}>This week</Text>
+                  <Text style={styles.weekMeta}>{doneCount} of {days.length} workouts complete</Text>
                 </View>
+                <Text style={styles.weekPercent}>{planProgressPct}%</Text>
               </View>
               <ProgressBar value={planProgress} />
-            </Card>
 
-            <SectionTitle>Full workout plan</SectionTitle>
-            <View style={styles.days}>
-              {days.map((day) => {
-                const count = day.exercises?.length ?? 0;
-                const isToday = day.planDayId === todayDay?.planDayId;
-                return (
-                  <Card
-                    key={day.planDayId}
-                    onPress={() => openWorkoutSummary(day, 'standard')}
-                    style={StyleSheet.flatten([
-                      styles.dayCard,
-                      isToday && !day.completed && styles.todayPlanCard,
-                      day.completed && styles.dayCardDone,
-                    ])}
-                  >
-                    {day.completed ? <CompletionGlow radius={22} animated={day.planDayId === justCompletedPlanDayId} /> : null}
-                    {day.completed ? (
-                      <CompletedDayBadge animated={day.planDayId === justCompletedPlanDayId} />
-                    ) : (
-                      <View style={[styles.dayBadge, isToday && styles.dayBadgeToday]}>
-                        <Text style={[styles.dayNum, isToday && styles.dayNumToday]}>{day.dayNumber}</Text>
+              <View style={styles.weekPicker} accessibilityRole="radiogroup">
+                <View pointerEvents="none" style={styles.weekTrack} />
+                {days.map((day) => {
+                  const selected = day.planDayId === focusedDay?.planDayId;
+                  const isToday = day.planDayId === todayDay?.planDayId;
+                  return (
+                    <TouchableOpacity
+                      key={day.planDayId}
+                      activeOpacity={0.82}
+                      onPress={() => {
+                        setPlanDaySelectionTouched(true);
+                        setFocusedPlanDayId(day.planDayId);
+                      }}
+                      style={styles.weekDay}
+                      hitSlop={{ top: 6, bottom: 6 }}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={`Day ${day.dayNumber}. ${day.focus || 'Workout'}. ${day.completed ? 'Completed' : isToday ? 'Today' : 'Scheduled'}`}
+                    >
+                      <View
+                        style={[
+                          styles.weekDayNode,
+                          day.completed && styles.weekDayNodeDone,
+                          isToday && !day.completed && styles.weekDayNodeToday,
+                          selected && !day.completed && styles.weekDayNodeSelected,
+                          selected && isToday && !day.completed && styles.weekDayNodeSelectedToday,
+                        ]}
+                      >
+                        {day.completed ? (
+                          <Feather name="check" size={15} color={colors.onPrimary} />
+                        ) : (
+                          <Text style={[styles.weekDayNumber, isToday && styles.weekDayNumberToday, selected && styles.weekDayNumberSelected]}>
+                            {day.dayNumber}
+                          </Text>
+                        )}
                       </View>
-                    )}
-                    <View style={styles.dayInfo}>
-                      <Text style={styles.dayTitle} numberOfLines={1}>
-                        {day.focus || 'Workout'}
-                      </Text>
-                      <Text style={styles.meta}>
-                        {count} exercise{count === 1 ? '' : 's'} · Day {day.dayNumber}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {focusedDay ? (
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={() => openWorkoutSummary(focusedDay, 'standard')}
+                  style={styles.workoutOverviewCard}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open day ${focusedDay.dayNumber}, ${focusedDay.focus || 'Workout'}. ${focusedMuscles.length ? `AI target muscles: ${focusedMuscles.join(', ')}` : 'AI muscle analysis unavailable.'}`}
+                >
+                  <View style={styles.workoutOverviewHeader}>
+                    <View style={styles.focusedWorkoutCopy}>
+                      <View style={styles.focusedWorkoutStateRow}>
+                        <Text style={styles.focusedWorkoutDay}>Day {focusedDay.dayNumber}</Text>
+                        <View style={styles.workoutStateDivider} />
+                        <Text style={[styles.focusedWorkoutState, focusedDay.planDayId === todayDay?.planDayId && styles.focusedWorkoutStateToday]}>
+                          {focusedDay.completed ? 'Completed' : focusedDay.planDayId === todayDay?.planDayId ? 'Today' : 'Scheduled'}
+                        </Text>
+                      </View>
+                      <Text style={styles.focusedWorkoutTitle}>{focusedDay.focus || 'Workout'}</Text>
+                      <Text style={styles.focusedWorkoutMeta}>
+                        {focusedDay.exercises?.length ?? 0} exercise{(focusedDay.exercises?.length ?? 0) === 1 ? '' : 's'}
                       </Text>
                     </View>
-                    {day.completed ? (
-                      <Badge label="Done" tone="goldSolid" icon="check" style={styles.doneBadge} />
-                    ) : isToday ? (
-                      <Badge label="Today" tone="gold" style={styles.todayBadge} />
-                    ) : (
-                      <Feather name="chevron-right" size={20} color={colors.inkSubtle} />
-                    )}
-                  </Card>
-                );
-              })}
+                    <View style={styles.focusedWorkoutOpen}>
+                      <Feather name="arrow-right" size={20} color={colors.ink} />
+                    </View>
+                  </View>
+
+                  <View style={styles.workoutOverviewDivider} />
+
+                  <View style={styles.targetMapHeaderCopy}>
+                    <Text style={styles.targetMapEyebrow}>Targeted muscles</Text>
+                    <Text style={styles.targetMapHint}>Highlighted areas update with the selected day</Text>
+                  </View>
+
+                  <WeeklyBodyMap gender={bodyGender} muscles={focusedMuscles} compact />
+
+                  {focusedMuscles.length ? (
+                    <View style={styles.targetMuscleLegend}>
+                      {focusedMuscles.map((muscle) => (
+                        <View key={muscle} style={styles.targetMuscleChip}>
+                          <View style={styles.targetMuscleDot} />
+                          <Text style={styles.targetMuscleText}>{muscle}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <View style={styles.targetAnalysisEmpty}>
+                      <Text style={styles.targetAnalysisEmptyTitle}>AI muscle analysis unavailable</Text>
+                      <Text style={styles.targetAnalysisEmptyText}>This plan needs to be re-saved by your trainer before target areas can be shown.</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ) : null}
             </View>
 
             <TouchableOpacity
@@ -590,13 +655,13 @@ function WorkoutDashboardScreen({ navigation }: Props) {
               accessibilityLabel="Switch to another workout plan"
             >
               <View style={styles.switchPlanIcon}>
-                <Feather name="layers" size={18} color={colors.white} />
+                <Feather name="layers" size={18} color={colors.goldMuted} />
               </View>
               <View style={styles.switchPlanText}>
                 <Text style={styles.switchPlanTitle}>Switch workout plan</Text>
                 <Text style={styles.switchPlanMeta}>Browse every plan made for you</Text>
               </View>
-              <Feather name="chevron-right" size={20} color={colors.onAccentMuted} />
+              <Feather name="chevron-right" size={20} color={colors.inkSubtle} />
             </TouchableOpacity>
           </>
         )}
@@ -618,7 +683,12 @@ function WorkoutDashboardScreen({ navigation }: Props) {
       />
       {summaryOpening ? (
         <View pointerEvents="auto" style={styles.summaryLoadingOverlay}>
-          <LoadingState message="Preparing workout..." />
+          <LoadingState
+            card
+            eyebrow="Workout setup"
+            message="Preparing your workout"
+            hint="Loading exercises, targets, and timers."
+          />
         </View>
       ) : null}
     </ScreenContainer>
@@ -665,7 +735,7 @@ function WorkoutSwitchModal({
                     {selected ? <Feather name="check" size={16} color={colors.white} /> : <Text style={styles.switchDayText}>{day.dayNumber}</Text>}
                   </View>
                   <View style={styles.switchRowText}>
-                    <Text style={styles.switchRowTitle} numberOfLines={1}>{day.focus || 'Workout'}</Text>
+                    <Text style={styles.switchRowTitle}>{day.focus || 'Workout'}</Text>
                     <Text style={styles.switchRowMeta}>
                       Day {day.dayNumber} · {count} exercise{count === 1 ? '' : 's'}{day.completed ? ' · completed' : ''}
                     </Text>
@@ -740,8 +810,8 @@ function PlanSwitcherModal({
                       <Feather name={plan.isActive ? 'check' : 'layers'} size={18} color={plan.isActive ? colors.white : colors.accentDark} />
                     </View>
                     <View style={styles.planRowText}>
-                      <Text style={styles.planRowTitle} numberOfLines={1}>{plan.title || 'Workout plan'}</Text>
-                      {meta ? <Text style={styles.planRowMeta} numberOfLines={1}>{meta}</Text> : null}
+                      <Text style={styles.planRowTitle}>{plan.title || 'Workout plan'}</Text>
+                      {meta ? <Text style={styles.planRowMeta}>{meta}</Text> : null}
                     </View>
                     {plan.isActive ? (
                       <View style={styles.planActivePill}>
@@ -763,36 +833,6 @@ function PlanSwitcherModal({
   );
 }
 
-function CompletedDayBadge({ animated }: { animated: boolean }) {
-  const scale = useRef(new Animated.Value(1)).current;
-  const glow = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (!animated) return;
-    scale.setValue(0.45);
-    glow.setValue(0);
-    Animated.parallel([
-      Animated.sequence([
-        Animated.spring(scale, { toValue: 1.16, friction: 4, tension: 150, useNativeDriver: true }),
-        Animated.spring(scale, { toValue: 1, friction: 6, tension: 110, useNativeDriver: true }),
-      ]),
-      Animated.sequence([
-        Animated.timing(glow, { toValue: 1, duration: 180, useNativeDriver: true }),
-        Animated.timing(glow, { toValue: 0, duration: 520, useNativeDriver: true }),
-      ]),
-    ]).start();
-  }, [animated, glow, scale]);
-
-  return (
-    <View style={styles.completedDayBadgeWrap}>
-      <Animated.View pointerEvents="none" style={[styles.completedDayBadgeGlow, { opacity: glow, transform: [{ scale: glow.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1.7] }) }] }]} />
-      <Animated.View style={[styles.dayBadge, styles.dayBadgeDone, { transform: [{ scale }] }]}>
-        <Feather name="check" size={18} color={colors.white} />
-      </Animated.View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   summaryLoadingOverlay: {
     position: 'absolute',
@@ -807,33 +847,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
   },
-  scroll: { paddingBottom: 110 },
+  scroll: {},
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
   headerText: { flex: 1 },
   eyebrow: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 2 },
   summary: { ...typography.caption, color: colors.inkMuted, marginTop: -spacing.xs },
   streakBadge: {
-    width: 86,
-    height: 54,
-    borderRadius: radius.pill,
-    backgroundColor: colors.panel,
+    minWidth: 72,
+    minHeight: 46,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
+    borderLeftWidth: 1,
+    borderLeftColor: colors.border,
     paddingHorizontal: 10,
-    shadowColor: colors.black,
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
-    overflow: 'hidden',
+    paddingVertical: spacing.xs,
   },
   streakBadgeBurning: {
     borderColor: GOLD,
-    backgroundColor: '#fffdf5',
+    backgroundColor: colors.panelWarm,
   },
   streakIconWrap: {
     width: 30,
@@ -863,32 +896,34 @@ const styles = StyleSheet.create({
     backgroundColor: GOLD,
   },
   streakValue: {
-    minWidth: 34,
-    textAlign: 'left',
+    minWidth: 28,
+    textAlign: 'center',
     fontSize: 22,
     lineHeight: 26,
     fontWeight: '900',
     color: colors.ink,
   },
+  streakCopy: { alignItems: 'center', justifyContent: 'center' },
+  streakPeriod: { fontSize: 9, lineHeight: 11, fontWeight: '800', color: colors.inkMuted },
   streakValueBurning: { color: GOLD_DARK },
-  todayHero: { backgroundColor: colors.accent, borderColor: colors.accentDark, overflow: 'hidden', padding: spacing.lg },
+  todayHero: { backgroundColor: colors.panel, borderColor: colors.borderStrong, overflow: 'hidden', padding: 20 },
   todayTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   todayTopRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  todayDay: { ...typography.caption, color: colors.onAccentMuted, fontWeight: '700' },
+  todayDay: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
   switchButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    borderRadius: radius.pill,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.36)',
+    borderColor: colors.border,
     paddingHorizontal: spacing.sm,
     paddingVertical: 7,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: colors.panelMuted,
   },
-  switchText: { ...typography.caption, color: colors.white, fontWeight: '800' },
-  todayTitle: { ...typography.title, color: colors.white, marginTop: spacing.lg },
-  todayMeta: { ...typography.body, color: colors.onAccentMuted, marginTop: 4 },
+  switchText: { ...typography.caption, color: colors.ink, fontWeight: '700' },
+  todayTitle: { ...typography.title, color: colors.ink, marginTop: spacing.lg },
+  todayMeta: { ...typography.body, color: colors.inkMuted, marginTop: 4 },
   heroActions: { gap: spacing.sm, marginTop: spacing.lg },
   aiRefreshCard: { marginTop: spacing.md },
   aiRefreshHead: { flexDirection: 'row', gap: spacing.md },
@@ -898,7 +933,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     borderWidth: 1,
     borderColor: colors.accentSurface,
   },
@@ -933,38 +968,135 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.accentLight,
   },
-  weekProgress: { marginTop: spacing.md },
-  weekProgressTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
-  weekProgressTitle: { ...typography.bodyBold, color: colors.ink },
-  weekProgressMetaGroup: { alignItems: 'flex-end' },
-  weekProgressPercent: { ...typography.subtitle, color: colors.ink, lineHeight: 22 },
-  weekProgressMeta: { ...typography.caption, color: colors.inkMuted },
-  days: { gap: spacing.sm },
+  weekSection: { marginTop: spacing.xl },
+  weekHeader: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.md, marginBottom: spacing.sm },
+  weekHeaderCopy: { flex: 1, minWidth: 0 },
+  weekTitle: { ...typography.subtitle, color: colors.ink },
+  weekMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  weekPercent: { ...typography.bodyBold, color: colors.inkMuted },
+  weekPicker: {
+    flexDirection: 'row',
+    marginTop: spacing.lg,
+    paddingHorizontal: 8,
+    paddingTop: spacing.md,
+    paddingBottom: 10,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  weekTrack: {
+    position: 'absolute',
+    left: 30,
+    right: 30,
+    top: 32,
+    height: 1,
+    backgroundColor: colors.borderStrong,
+    zIndex: 0,
+  },
+  weekDay: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    zIndex: 1,
+  },
+  weekDayNode: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekDayNodeDone: { backgroundColor: colors.primaryAction, borderColor: colors.primaryAction },
+  weekDayNodeToday: { backgroundColor: colors.panelWarm, borderColor: colors.goldMuted },
+  weekDayNodeSelected: { backgroundColor: colors.panelRaised, borderColor: colors.borderStrong, borderWidth: 2 },
+  weekDayNodeSelectedToday: { backgroundColor: colors.panelWarm, borderColor: colors.goldMuted },
+  weekDayNumber: { ...typography.label, color: colors.inkMuted, fontWeight: '700' },
+  weekDayNumberToday: { color: colors.gold },
+  weekDayNumberSelected: { color: colors.ink },
+  workoutOverviewCard: {
+    marginTop: spacing.md,
+    borderRadius: radius.xl,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    padding: spacing.lg,
+  },
+  workoutOverviewHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  workoutOverviewDivider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.md },
+  targetMapHeaderCopy: { flex: 1, minWidth: 0 },
+  targetMapEyebrow: { ...typography.overline, color: colors.goldMuted, textTransform: 'uppercase' },
+  targetMapHint: { ...typography.caption, color: colors.inkMuted, marginTop: 3 },
+  targetMuscleLegend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+  },
+  targetMuscleChip: {
+    width: '48.5%',
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderRadius: radius.sm,
+    backgroundColor: colors.panelRaised,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+  },
+  targetMuscleDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.gold },
+  targetMuscleText: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
+  targetAnalysisEmpty: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+  },
+  targetAnalysisEmptyTitle: { ...typography.caption, color: colors.ink, fontWeight: '800' },
+  targetAnalysisEmptyText: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: 3 },
+  focusedWorkoutCopy: { flex: 1, minWidth: 0 },
+  focusedWorkoutStateRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  focusedWorkoutDay: { ...typography.caption, color: colors.inkSubtle },
+  workoutStateDivider: { width: 3, height: 3, borderRadius: 2, backgroundColor: colors.inkSubtle },
+  focusedWorkoutState: { ...typography.caption, color: colors.inkMuted },
+  focusedWorkoutStateToday: { color: colors.goldMuted, fontWeight: '700' },
+  focusedWorkoutTitle: { ...typography.title, color: colors.ink, marginTop: spacing.xs },
+  focusedWorkoutMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 4 },
+  focusedWorkoutOpen: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    backgroundColor: colors.panelRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   switchPlanButton: {
     marginTop: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.accentDark,
-    backgroundColor: colors.accent,
-    padding: spacing.md,
-    ...shadows.sm,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.md,
   },
   switchPlanIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
   switchPlanText: { flex: 1 },
-  switchPlanTitle: { ...typography.bodyBold, color: colors.white },
-  switchPlanMeta: { ...typography.caption, color: colors.onAccentMuted, marginTop: 2 },
+  switchPlanTitle: { ...typography.bodyBold, color: colors.ink },
+  switchPlanMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   planRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -984,57 +1116,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  planRowBadgeActive: { backgroundColor: colors.accent },
+  planRowBadgeActive: { backgroundColor: colors.accentFill },
   planRowText: { flex: 1, minWidth: 0 },
   planRowTitle: { ...typography.bodyBold, color: colors.ink },
   planRowMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   planActivePill: {
     borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentFill,
     paddingHorizontal: spacing.sm,
     paddingVertical: 5,
   },
   planActivePillText: { ...typography.caption, color: colors.white, fontWeight: '800' },
-  dayCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
-  todayPlanCard: { borderColor: 'rgba(245,179,1,0.7)', borderWidth: 1.5, backgroundColor: 'rgba(245,179,1,0.08)' },
-  dayCardDone: { borderColor: GOLD, borderWidth: 1.5, backgroundColor: '#fffaf0' },
-  dayBadge: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.accentLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  completedDayBadgeWrap: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  completedDayBadgeGlow: {
-    position: 'absolute',
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: GOLD,
-  },
-  dayBadgeToday: { backgroundColor: 'rgba(245,179,1,0.18)', borderWidth: 1.5, borderColor: GOLD },
-  dayBadgeDone: { backgroundColor: colors.accent, borderWidth: 1.5, borderColor: GOLD },
-  doneBadge: { alignSelf: 'center' },
-  todayBadge: { alignSelf: 'center', borderWidth: 1, borderColor: GOLD },
-  dayNum: { ...typography.subtitle, color: colors.accentDark, fontWeight: '800' },
-  dayNumToday: { color: colors.accentDark },
-  dayInfo: { flex: 1 },
-  dayTitle: { ...typography.bodyBold, color: colors.ink },
-  meta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   skeletonTitle: { width: '62%', height: 30, marginBottom: spacing.sm },
   skeletonSummary: { width: '74%', height: 14, marginBottom: spacing.md },
   skeletonHero: { height: 238, borderRadius: radius.xl, marginBottom: spacing.md },
-  skeletonDayTitle: { width: '72%', height: 16 },
-  skeletonMeta: { width: '48%', height: 12, marginTop: spacing.sm },
+  skeletonWeek: { marginTop: spacing.lg, gap: spacing.md },
+  skeletonWeekHeader: { width: '42%', height: 20 },
+  skeletonWeekDays: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 8 },
+  skeletonWeekDay: { width: 34, height: 34, borderRadius: radius.pill },
+  skeletonFocusedWorkout: { height: 112, borderRadius: radius.lg },
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
   modalBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.overlay },
   switchSheet: {
     maxHeight: '76%',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.lg,
@@ -1078,7 +1185,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.panelMuted,
   },
-  switchDayBadgeSelected: { backgroundColor: colors.accent },
+  switchDayBadgeSelected: { backgroundColor: colors.accentFill },
   switchDayText: { ...typography.bodyBold, color: colors.accentDark },
   switchRowText: { flex: 1 },
   switchRowTitle: { ...typography.bodyBold, color: colors.ink },

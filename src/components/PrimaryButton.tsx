@@ -35,11 +35,13 @@ export function PrimaryButton({
 }: Props) {
   const isDisabled = !!loading || !!disabled;
   const fg =
-    variant === 'primary' || variant === 'heroSecondary'
-      ? colors.white
+    variant === 'primary' || variant === 'inverted'
+      ? colors.onPrimary
+      : variant === 'heroSecondary'
+        ? colors.white
       : variant === 'danger'
         ? colors.error
-        : colors.accentDark;
+        : colors.ink;
 
   const handlePress = () => {
     trackMobileInteraction(`/button/${title}`);
@@ -52,13 +54,13 @@ export function PrimaryButton({
         styles.button,
         { minHeight: heights[size] },
         variantStyles[variant],
-        variant === 'primary' && shadows.accent,
+        variant === 'primary' && shadows.sm,
         isDisabled && styles.disabled,
         style,
       ]}
       onPress={handlePress}
       disabled={isDisabled}
-      activeOpacity={0.85}
+      activeOpacity={0.9}
       accessibilityRole="button"
       accessibilityLabel={title}
       accessibilityState={{ disabled: isDisabled, busy: !!loading }}
@@ -76,22 +78,23 @@ export function PrimaryButton({
 }
 
 const variantStyles: Record<Variant, ViewStyle> = {
-  primary: { backgroundColor: colors.accent },
-  secondary: { backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.accent },
+  primary: { backgroundColor: colors.primaryAction, borderWidth: 1, borderColor: colors.primaryAction },
+  secondary: { backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.borderStrong },
   ghost: { backgroundColor: 'transparent' },
   danger: { backgroundColor: colors.errorLight, borderWidth: 1, borderColor: '#f6caca' },
-  inverted: { backgroundColor: colors.white },
+  inverted: { backgroundColor: colors.primaryAction },
   heroSecondary: { backgroundColor: 'rgba(255,255,255,0.13)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.45)' },
 };
 
 const styles = StyleSheet.create({
   button: {
-    borderRadius: radius.pill,
+    borderRadius: radius.md,
     paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  content: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  content: { maxWidth: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   disabled: { opacity: 0.5 },
-  text: { ...typography.button, textAlign: 'center' },
+  text: { ...typography.button, flexShrink: 1, textAlign: 'center' },
 });

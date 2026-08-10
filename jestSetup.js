@@ -9,6 +9,7 @@ jest.mock('react-native-linear-gradient', () => {
   const { View } = require('react-native');
   return { __esModule: true, default: (props) => React.createElement(View, props) };
 });
+jest.mock('lottie-react-native', () => 'LottieView');
 jest.mock('react-native-svg', () => {
   const React = require('react');
   const { View } = require('react-native');

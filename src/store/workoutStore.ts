@@ -44,6 +44,7 @@ type QueuedAction = {
   action: 'exercise' | 'exerciseUndo' | 'day' | 'dayUndo';
   exerciseId?: string;
   workoutMode?: string;
+  streakOnly?: boolean;
 };
 
 async function readQueue(): Promise<QueuedAction[]> {

@@ -6,9 +6,10 @@ import type { MealType } from '../store/dietDiaryStore';
 export type RemoteDietDiaryEntry = {
   entryId: string;
   clientId?: string;
-  mealType: MealType;
+  mealType: MealType | 'Snack';
   note: string;
   createdAt: string;
+  loggedAt?: string;
   imageMime: string;
   imageUrl: string;
 };

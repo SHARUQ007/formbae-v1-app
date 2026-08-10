@@ -30,15 +30,15 @@ export function GradientHero({
 
 const styles = StyleSheet.create({
   hero: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.xl,
+    backgroundColor: colors.panel,
+    borderRadius: radius.lg,
     padding: spacing.lg,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: colors.black,
-    ...shadows.accent,
+    borderColor: colors.borderStrong,
+    ...shadows.sm,
   },
-  eyebrow: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase', marginBottom: 8 },
+  eyebrow: { ...typography.overline, color: colors.gold, textTransform: 'uppercase', marginBottom: 8 },
   title: { ...typography.hero, color: colors.white },
-  subtitle: { ...typography.body, color: colors.onAccentMuted, marginTop: 8 },
+  subtitle: { ...typography.body, color: colors.inkMuted, marginTop: 8 },
 });

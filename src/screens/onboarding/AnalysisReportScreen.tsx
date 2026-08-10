@@ -182,7 +182,7 @@ export function AnalysisReportScreen({ navigation }: Props) {
             {insightChips.map(([label, value]) => (
               <View key={label} style={styles.insightChip}>
                 <Text style={styles.insightLabel}>{label}</Text>
-                <Text style={styles.insightValue} numberOfLines={2}>
+                <Text style={styles.insightValue}>
                   {value}
                 </Text>
               </View>
@@ -196,7 +196,7 @@ export function AnalysisReportScreen({ navigation }: Props) {
             >
               <View style={styles.projectionHeader}>
                 <View style={styles.projectionKicker}>
-                  <Text style={styles.eyebrowGold} numberOfLines={2}>
+                  <Text style={styles.eyebrowGold}>
                     30-day consistency projection
                   </Text>
                 </View>
@@ -382,10 +382,10 @@ function TrainerMatchCard({
           )}
         </View>
         <View style={styles.trainerCopy}>
-          <Text style={styles.trainerName} numberOfLines={2}>
+          <Text style={styles.trainerName}>
             {trainer.name}
           </Text>
-          <Text style={styles.trainerMeta} numberOfLines={2}>
+          <Text style={styles.trainerMeta}>
             {trainer.coachType || 'Personal trainer'}
           </Text>
         </View>
@@ -523,7 +523,7 @@ function ProjectionChart({
       </Svg>
       <View style={styles.chartLabels}>
         {data.map((point) => (
-          <Text key={point.week} style={styles.chartLabel} numberOfLines={1}>
+          <Text key={point.week} style={styles.chartLabel}>
             {point.week}
           </Text>
         ))}
@@ -1044,11 +1044,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 16,
+    paddingVertical: 10,
   },
   trainerPrimaryText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#09090b',
+    textAlign: 'center',
   },
   trainerSecondaryBtn: {
     minHeight: 40,
@@ -1059,11 +1061,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 16,
+    paddingVertical: 10,
   },
   trainerSecondaryText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#ffffff',
+    textAlign: 'center',
   },
   unlockButton: {
     minHeight: 64,
@@ -1073,6 +1077,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     shadowColor: '#000',
     shadowOpacity: 0.32,
     shadowRadius: 26,
@@ -1086,5 +1092,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#09090b',
+    flexShrink: 1,
+    textAlign: 'center',
   },
 });

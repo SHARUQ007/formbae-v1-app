@@ -50,5 +50,5 @@ const styles = StyleSheet.create({
   logoTagline: { color: colors.inkMuted, marginTop: 1 },
   lockup: { alignItems: 'center', gap: 14 },
   word: { fontSize: 26, fontWeight: '800', color: colors.ink, letterSpacing: -0.4 },
-  wordAccent: { color: colors.accent },
+  wordAccent: { color: colors.ink },
 });

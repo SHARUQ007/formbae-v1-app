@@ -1,46 +1,53 @@
 export const colors = {
   // Surfaces
-  bg: '#f6f5f2',
-  bgTint: '#ebe9e4',
-  panel: '#ffffff',
-  panelMuted: '#f3f2ef',
+  bg: '#05060a',
+  bgTint: '#090a0f',
+  panel: '#111217',
+  panelMuted: '#17181e',
+  panelRaised: '#1d1e24',
+  panelWarm: '#201e19',
 
   // Text
-  ink: '#111111',
-  inkStrong: '#050505',
-  inkMuted: '#60605c',
-  inkSubtle: '#96948d',
+  ink: '#f7f7f8',
+  inkStrong: '#ffffff',
+  inkMuted: '#b6b6be',
+  inkSubtle: '#7d7e88',
 
   // Brand
-  accent: '#050505',
-  accentDark: '#000000',
-  accentDarker: '#000000',
-  accentLight: '#f4f3f0',
-  accentSurface: '#dedbd3',
+  accent: '#f0ce78',
+  accentDark: '#f0ce78',
+  accentDarker: '#0b0c10',
+  accentFill: '#242119',
+  accentLight: 'rgba(240,206,120,0.10)',
+  accentSurface: 'rgba(240,206,120,0.28)',
+  gold: '#f0ce78',
+  goldMuted: '#bda45f',
+  primaryAction: '#f7f7f5',
+  onPrimary: '#08090c',
 
   // Gradient
-  gradientStart: '#242424',
-  gradientMid: '#0f0f0f',
-  gradientEnd: '#000000',
+  gradientStart: '#20211f',
+  gradientMid: '#111216',
+  gradientEnd: '#05060a',
 
   // Lines
-  border: '#e5e2dc',
-  borderStrong: '#c9c5bc',
+  border: '#2b2c33',
+  borderStrong: '#4a4b54',
 
   // Status
-  success: '#111111',
-  successLight: '#f4f3f0',
-  warn: '#c2410c',
-  warnLight: '#fdf1e7',
-  error: '#dc2626',
-  errorLight: '#fdecec',
-  info: '#404040',
-  infoLight: '#eeeeec',
-  star: '#111111',
+  success: '#83d6a4',
+  successLight: 'rgba(74,222,128,0.12)',
+  warn: '#f0ce78',
+  warnLight: 'rgba(240,206,120,0.12)',
+  error: '#ff818c',
+  errorLight: 'rgba(255,91,108,0.12)',
+  info: '#91bdf8',
+  infoLight: 'rgba(96,165,250,0.12)',
+  star: '#f0ce78',
 
   // Misc
   white: '#ffffff',
   black: '#000000',
-  overlay: 'rgba(0,0,0,0.58)',
-  onAccentMuted: 'rgba(255,255,255,0.85)',
+  overlay: 'rgba(0,0,0,0.78)',
+  onAccentMuted: 'rgba(255,255,255,0.68)',
 };

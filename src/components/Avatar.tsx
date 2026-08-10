@@ -29,8 +29,8 @@ export function Avatar({
   tone?: 'accent' | 'neutral';
   iconId?: string;
 }) {
-  const bg = tone === 'accent' ? colors.accent : colors.panelMuted;
-  const fg = tone === 'accent' ? colors.white : colors.inkMuted;
+  const bg = tone === 'accent' ? colors.accentFill : colors.panelMuted;
+  const fg = tone === 'accent' ? colors.gold : colors.inkMuted;
   const iconName = iconId ? AVATAR_ICONS[iconId] : undefined;
   return (
     <View style={[styles.wrap, { width: size, height: size, borderRadius: radius.pill, backgroundColor: bg }]}>

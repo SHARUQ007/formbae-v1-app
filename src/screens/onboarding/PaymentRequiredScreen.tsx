@@ -21,7 +21,7 @@ import { typography } from '../../theme/typography';
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'PaymentRequired'>;
 
 export function PaymentRequiredScreen({ navigation }: Props) {
-  const { user, status, refreshStatus } = useAuthStore();
+  const { user, status, refreshStatus, logout } = useAuthStore();
   const [plans, setPlans] = useState<PaymentPlan[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [paywallId, setPaywallId] = useState<string>('monsoon-offer');
@@ -95,18 +95,43 @@ export function PaymentRequiredScreen({ navigation }: Props) {
     }
   };
 
+  const onLogout = () => {
+    Alert.alert('Log out?', 'You can sign back in later to continue from this report.', [
+      { text: 'Stay', style: 'cancel' },
+      {
+        text: 'Log out',
+        style: 'destructive',
+        onPress: async () => {
+          await logout();
+          navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Auth');
+        },
+      },
+    ]);
+  };
+
   return (
     <ScreenContainer withBottomInset>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-        <TouchableOpacity
-          onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('AnalysisReport'))}
-          style={styles.backButton}
-          accessibilityRole="button"
-          accessibilityLabel="Back to your report"
-        >
-          <Feather name="chevron-left" size={22} color={colors.ink} />
-          <Text style={styles.backText}>Back to report</Text>
-        </TouchableOpacity>
+        <View style={styles.topActions}>
+          <TouchableOpacity
+            onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('AnalysisReport'))}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Back to your report"
+          >
+            <Feather name="chevron-left" size={22} color={colors.ink} />
+            <Text style={styles.backText}>Back to report</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onLogout}
+            style={styles.logoutButton}
+            accessibilityRole="button"
+            accessibilityLabel="Log out"
+          >
+            <Feather name="log-out" size={16} color={colors.inkMuted} />
+            <Text style={styles.logoutText}>Log out</Text>
+          </TouchableOpacity>
+        </View>
         <ScreenTitle>Your plan is ready to unlock</ScreenTitle>
         <ScreenSubtitle>We have used your report to shape your first plan. Choose an option below to activate it securely.</ScreenSubtitle>
 
@@ -152,20 +177,29 @@ export function PaymentRequiredScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   scroll: { paddingBottom: spacing.lg },
+  topActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.md },
   backButton: {
     alignSelf: 'flex-start',
     minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginBottom: spacing.md,
     paddingHorizontal: spacing.sm,
     borderRadius: radius.pill,
     backgroundColor: colors.panel,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  backText: { ...typography.label, color: colors.ink },
+  backText: { ...typography.label, color: colors.ink, flexShrink: 1 },
+  logoutButton: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.pill,
+  },
+  logoutText: { ...typography.label, color: colors.inkMuted, flexShrink: 1 },
   plans: { gap: spacing.sm, marginBottom: spacing.md },
   planCard: {
     flexDirection: 'row',
@@ -191,7 +225,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  radioSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
+  radioSelected: { backgroundColor: colors.accentFill, borderColor: colors.accent },
   payBtn: { marginTop: spacing.sm },
   secureRow: { flexDirection: 'row', gap: 6, marginTop: spacing.lg, alignItems: 'flex-start' },
   note: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 17 },

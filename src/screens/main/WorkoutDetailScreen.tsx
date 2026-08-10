@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   KeyboardAvoidingView,
@@ -16,12 +17,14 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { TechniqueVideoBackdrop } from '../../components/TechniqueVideoBackdrop';
-import { loadWorkoutDayCached } from '../../services/preloadService';
-import { resolveWorkoutVideo } from '../../services/workoutService';
+import { WeeklyBodyMap } from '../../components/WeeklyBodyMap';
+import { loadProfileSettingsCached, loadWorkoutDayCached } from '../../services/preloadService';
+import { getWorkoutVideoOverride, resolveWorkoutVideo } from '../../services/workoutService';
 import { submitWorkoutFeedback, type WorkoutFeedbackSentiment } from '../../services/workoutFeedbackService';
 import {
   completeWithQueue,
@@ -33,19 +36,30 @@ import { useRestTimer } from '../../hooks/useRestTimer';
 import { deriveWorkoutResumeIndex, remainingRestSeconds } from '../../hooks/useWorkoutSession';
 import { WorkoutPrimaryCTA } from '../../features/workout/components/WorkoutPrimaryCTA';
 import type { WorkoutDayDetail, WorkoutExerciseDetail } from '../../types/api';
-import type { WorkoutStackParamList } from '../../navigation/types';
+import type { MainTabParamList, WorkoutStackParamList } from '../../navigation/types';
 import { hiddenTabBarStyle } from '../../navigation/tabBarStyle';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
+import { shadows } from '../../theme/shadows';
 import { isPlayableVideo } from '../../utils/video';
+import { deriveExerciseMuscles, deriveWorkoutMuscles, resolveBodyGender, type BodyGender } from '../../utils/weeklyMuscles';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutDetail'>;
 
 type RewardType = 'set' | 'movement' | 'workout';
 type RewardState = { id: number; type: RewardType; title: string; subtitle: string } | null;
 type SetLog = { setNumber: number; reps: string; weight: string; durationSec?: number };
+type SetSaveResult = {
+  movementComplete: boolean;
+  workoutComplete: boolean;
+  savedSetNumber: number;
+  setTotal: number;
+  exerciseName: string;
+};
+
+const SET_REWARD_LINES = ['Strong work.', 'That set counts.', 'Momentum building.', 'Nicely done.'];
 
 function videoResolveKey(exercise: WorkoutExerciseDetail) {
   return `${exercise.exerciseId || ''}:${exercise.exerciseName}:${exercise.order}`;
@@ -65,7 +79,7 @@ function cleanExerciseNotes(notes: string) {
     .split('|')
     .map((part) => part.trim())
     .filter(Boolean)
-    .filter((part) => !/^(Type|Section|Meta Name|Meta Sets|Meta Reps|Meta Duration|Meta Rest|Display)\s*:/i.test(part))
+    .filter((part) => !/^(Type|Section|Meta Name|Meta Sets|Meta Reps|Meta Duration|Meta Rest|Display|Target Muscles?|Muscles?)\s*:/i.test(part))
     .join(' · ');
 }
 
@@ -100,16 +114,6 @@ function exerciseCues(notes: string, exercise?: WorkoutExerciseDetail | null) {
   if (name.includes('row')) return ['Keep your torso stable and pull with your elbow.', 'Pause briefly at the top before lowering with control.'];
   if (name.includes('deadlift')) return ['Brace hard before lifting and keep the bar close.', 'Hinge from the hips and finish tall without overextending.'];
   return ['Move with control and stop the set if form breaks.', 'Match the target reps while keeping breathing steady.'];
-}
-
-function exerciseBenefit(exercise?: WorkoutExerciseDetail | null, tags: string[] = []) {
-  const text = `${exercise?.exerciseName || ''} ${exercise?.notes || ''}`.toLowerCase();
-  if (tags.includes('Conditioning')) return 'Builds work capacity and keeps your heart rate up without overcomplicating the session.';
-  if (tags.includes('Mobility')) return 'Improves range of motion so the rest of your training feels cleaner.';
-  if (text.includes('squat') || tags.includes('Legs')) return 'Builds lower-body strength while training bracing, balance, and control.';
-  if (text.includes('press') || tags.includes('Chest') || tags.includes('Shoulders')) return 'Builds pressing strength and upper-body control for today’s session.';
-  if (text.includes('row') || tags.includes('Back')) return 'Balances pressing work and strengthens your pulling pattern.';
-  return 'Keeps today’s workout aligned with your plan and current training level.';
 }
 
 function displayValue(value: string, fallback = '-') {
@@ -200,7 +204,9 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [resolvedVideoUrls, setResolvedVideoUrls] = useState<Record<string, string>>({});
   const [resolvingVideoKeys, setResolvingVideoKeys] = useState<Set<string>>(new Set());
+  const [bodyGender, setBodyGender] = useState<BodyGender>('neutral');
   const pendingNextIndexRef = useRef<number | null>(null);
+  const pendingPostSaveRef = useRef<(() => void) | null>(null);
   const resolvingVideoRequestsRef = useRef<Map<string, Promise<string>>>(new Map());
 
   useLayoutEffect(() => {
@@ -259,6 +265,18 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   }, [load]);
 
   useEffect(() => {
+    let mounted = true;
+    loadProfileSettingsCached()
+      .then((settings) => {
+        if (mounted) setBodyGender(resolveBodyGender(settings.profile?.gender));
+      })
+      .catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!movementStarted || setPaused || timer.running) return undefined;
     const interval = setInterval(() => {
       setSetElapsed((value) => value + 1);
@@ -293,8 +311,12 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const activeRest = Number(activeExercise?.restSec || 0);
   const activeNotes = cleanExerciseNotes(activeExercise?.notes || '');
   const activeFocusTags = exerciseFocusTags(activeExercise, detail);
+  const dayMuscles = useMemo(() => deriveWorkoutMuscles(detail), [detail]);
+  const activeMuscles = useMemo(
+    () => deriveExerciseMuscles(activeExercise, dayMuscles),
+    [activeExercise, dayMuscles],
+  );
   const activeCues = exerciseCues(activeNotes, activeExercise);
-  const activeBenefit = exerciseBenefit(activeExercise, activeFocusTags);
   const activeVideoKey = activeExercise ? videoResolveKey(activeExercise) : '';
   const activeVideoResolving = activeVideoKey ? resolvingVideoKeys.has(activeVideoKey) : false;
   const activeNeedsWeight = isWeightedExercise(activeExercise);
@@ -308,24 +330,19 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     : restTargetExercise?.exerciseName || 'finish workout';
 
   const videoUrlForExercise = useCallback(
-    (exercise: WorkoutExerciseDetail) => resolvedVideoUrls[videoResolveKey(exercise)] || exercise.videoUrl || '',
-    [resolvedVideoUrls],
-  );
-
-  const workoutVideos = useMemo(
-    () => trackableExercises
-      .map((exercise) => ({
-        exercise,
-        videoUrl: videoUrlForExercise(exercise),
-      }))
-      .filter(({ videoUrl }) => isPlayableVideo(videoUrl))
-      .map((exercise) => ({
-        id: videoResolveKey(exercise.exercise),
-        title: exercise.exercise.exerciseName,
-        subtitle: getSectionLabel(exercise.exercise.notes, detail?.focus || 'Workout'),
-        videoUrl: exercise.videoUrl,
-      })),
-    [detail?.focus, trackableExercises, videoUrlForExercise],
+    (exercise: WorkoutExerciseDetail) => {
+      const replacement = detail?.planDayId
+        ? getWorkoutVideoOverride({
+            planDayId: detail.planDayId,
+            workoutMode: detail.workoutMode,
+            exerciseId: exercise.exerciseId,
+            exerciseName: exercise.exerciseName,
+            order: exercise.order,
+          })
+        : '';
+      return replacement || resolvedVideoUrls[videoResolveKey(exercise)] || exercise.videoUrl || '';
+    },
+    [detail?.planDayId, detail?.workoutMode, resolvedVideoUrls],
   );
 
   const resolveExerciseVideo = useCallback(
@@ -393,23 +410,20 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         Alert.alert('Video is still being prepared', 'Try again in a moment. We are searching for the best technique video for this movement.');
         return;
       }
-      const currentItem = {
-        id: videoResolveKey(exercise),
-        title: exercise.exerciseName,
-        subtitle: getSectionLabel(exercise.notes, detail?.focus || 'Workout'),
-        videoUrl: resolvedUrl,
-      };
-      const videos = workoutVideos.some((item) => item.id === currentItem.id) ? workoutVideos : [currentItem, ...workoutVideos];
-      const initialIndex = Math.max(0, videos.findIndex((item) => item.id === currentItem.id));
+      if (!detail?.planDayId) return;
       navigation.navigate('WorkoutVideo', {
         title: exercise.exerciseName,
         subtitle: getSectionLabel(exercise.notes, detail?.focus || 'Workout'),
         videoUrl: resolvedUrl,
-        videos,
-        initialIndex,
+        planDayId: detail.planDayId,
+        workoutMode: detail.workoutMode,
+        exerciseId: exercise.exerciseId,
+        exerciseName: exercise.exerciseName,
+        order: exercise.order,
+        focus: detail.focus,
       });
     },
-    [detail?.focus, navigation, resolveExerciseVideo, videoUrlForExercise, workoutVideos],
+    [detail?.focus, detail?.planDayId, detail?.workoutMode, navigation, resolveExerciseVideo, videoUrlForExercise],
   );
 
   useEffect(() => {
@@ -477,6 +491,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       action: 'exercise',
       exerciseId: activeExercise.exerciseId,
       workoutMode: detail.workoutMode,
+      streakOnly: detail.dayComplete,
     });
   };
 
@@ -503,8 +518,9 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     setSetEntryOpen(true);
   };
 
-  const logCurrentSetAndAdvance = async () => {
-    if (!activeExercise) return;
+  const logCurrentSetAndAdvance = async (): Promise<SetSaveResult | undefined> => {
+    if (!activeExercise) return undefined;
+    pendingPostSaveRef.current = null;
     const nextSetCount = Math.min(activeSets, activeSetCount + 1);
     const nextLog: SetLog = {
       setNumber: nextSetCount,
@@ -524,20 +540,16 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     setSetLogs(nextLogs);
     setMovementStarted(false);
     setSetPaused(false);
-    setSetEntryOpen(false);
 
     const movementComplete = nextSetCount >= activeSets;
     const completesWorkout = movementComplete && activeExerciseIndex + 1 >= trackableExercises.length;
-    if (!completesWorkout) {
-      setReward({
-        id: Date.now(),
-        type: movementComplete ? 'movement' : 'set',
-        title: movementComplete ? 'Movement complete' : `Set ${nextSetCount} logged`,
-        subtitle: movementComplete
-          ? `${activeExercise.exerciseName} done.`
-          : `${activeSets - nextSetCount} set${activeSets - nextSetCount === 1 ? '' : 's'} left.`,
-      });
-    }
+    const saveResult: SetSaveResult = {
+      movementComplete,
+      workoutComplete: completesWorkout,
+      savedSetNumber: nextSetCount,
+      setTotal: activeSets,
+      exerciseName: activeExercise.exerciseName,
+    };
 
     if (movementComplete) {
       await completeActiveExercise(nextSets, nextLogs);
@@ -547,31 +559,33 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
 
     const nextIndex = movementComplete ? activeExerciseIndex + 1 : activeExerciseIndex;
     if (completesWorkout) {
-      setWorkoutCompleteOpen(true);
-      return;
+      return saveResult;
     }
     if (activeRest > 0) {
-      pendingNextIndexRef.current = nextIndex;
-      setPendingNextIndex(nextIndex);
-      timer.start(activeRest);
-      await saveWorkoutProgress({
-        planDayId,
-        completedExerciseIds: Array.from(movementComplete ? new Set([...completed, activeExercise.exerciseId]) : completed),
-        setProgressByExercise: nextSets,
-        setLogsByExercise: nextLogs,
-        selectedAlternatesByExercise: selectedAlternates,
-        activeExerciseId: trackableExercises[nextIndex]?.exerciseId,
-        rest: {
-          nextExerciseId: trackableExercises[nextIndex]?.exerciseId || activeExercise.exerciseId,
-          startedAt: Date.now(),
-          durationSec: activeRest,
-        },
-        updatedAt: new Date().toISOString(),
-      });
+      pendingPostSaveRef.current = () => {
+        pendingNextIndexRef.current = nextIndex;
+        setPendingNextIndex(nextIndex);
+        timer.start(activeRest);
+        saveWorkoutProgress({
+          planDayId,
+          completedExerciseIds: Array.from(movementComplete ? new Set([...completed, activeExercise.exerciseId]) : completed),
+          setProgressByExercise: nextSets,
+          setLogsByExercise: nextLogs,
+          selectedAlternatesByExercise: selectedAlternates,
+          activeExerciseId: trackableExercises[nextIndex]?.exerciseId,
+          rest: {
+            nextExerciseId: trackableExercises[nextIndex]?.exerciseId || activeExercise.exerciseId,
+            startedAt: Date.now(),
+            durationSec: activeRest,
+          },
+          updatedAt: new Date().toISOString(),
+        }).catch(() => undefined);
+      };
     } else {
-      moveToExercise(nextIndex);
+      pendingPostSaveRef.current = () => moveToExercise(nextIndex);
     }
     setSetElapsed(0);
+    return saveResult;
   };
 
   const skipRest = () => {
@@ -636,7 +650,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         ? 'Complete set'
         : 'Begin set';
 
-  const onFinish = useCallback(async () => {
+  const onFinish = useCallback(async (destination: 'workouts' | 'progress' | 'body' = 'workouts') => {
     if (!detail) return;
     setFinishing(true);
     try {
@@ -645,6 +659,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         planDayId: detail.planDayId,
         action: 'day',
         workoutMode: detail.workoutMode,
+        streakOnly: detail.dayComplete,
       });
       await clearWorkoutProgress(planDayId);
       await AsyncStorage.setItem(
@@ -654,7 +669,14 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       if (!result.synced) {
         Alert.alert('Saved offline', 'Your workout will sync when you are back online.');
       }
+      setWorkoutCompleteOpen(false);
+      const tabNavigation = navigation.getParent<BottomTabNavigationProp<MainTabParamList>>();
       navigation.popToTop();
+      if (destination === 'progress') {
+        tabNavigation?.navigate('Progress', { action: 'overview', requestId: Date.now() });
+      } else if (destination === 'body') {
+        tabNavigation?.navigate('Progress', { action: 'logBody', requestId: Date.now() });
+      }
     } finally {
       setFinishing(false);
     }
@@ -705,7 +727,10 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         visible={workoutCompleteOpen}
         title={detail.focus || detail.planTitle || 'Workout'}
         movementCount={trackableExercises.length}
-        onContinue={onFinish}
+        setCount={Object.values(setLogs).reduce((total, logs) => total + logs.length, 0)}
+        onViewProgress={() => onFinish('progress')}
+        onLogBody={() => onFinish('body')}
+        onDone={() => onFinish('workouts')}
         finishing={finishing}
       />
       <Header
@@ -744,16 +769,33 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
 
       <View style={[styles.executionShell, compactStep && styles.executionShellCompact, movementStarted && styles.executionShellActive]}>
           <View style={styles.movementHead}>
-            <View style={styles.activeStep}>
-              <Text style={styles.activeStepText}>{activeExerciseIndex + 1}</Text>
-            </View>
+            <Text style={styles.movementKicker}>Movement {activeExerciseIndex + 1} of {trackableExercises.length}</Text>
             <TouchableOpacity onPress={() => setFlowOpen(true)} style={styles.stepFlowButton} accessibilityRole="button" accessibilityLabel="Open workout flow">
-              <Text style={styles.stepFlowText}>{activeExerciseIndex + 1}/{trackableExercises.length}</Text>
-              <Feather name="list" size={16} color={colors.accentDark} />
+              <Feather name="list" size={16} color={colors.inkMuted} />
+              <Text style={styles.stepFlowText}>View plan</Text>
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.activeName} adjustsFontSizeToFit minimumFontScale={0.82}>{activeExercise.exerciseName}</Text>
+          <Text style={styles.activeName}>{activeExercise.exerciseName}</Text>
+
+          {activeMuscles.length ? (
+            <View style={styles.muscleMapCard}>
+              <View style={styles.muscleMapCopy}>
+                <Text style={styles.muscleMapKicker}>Muscles working</Text>
+                <Text style={styles.muscleMapTitle}>Highlighted for this movement</Text>
+                <View style={styles.muscleMapTags}>
+                  {activeMuscles.map((muscle) => (
+                    <View key={muscle} style={styles.muscleMapTag}>
+                      <Text style={styles.muscleMapTagText}>{muscle}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+              <View style={styles.muscleMapFigure}>
+                <WeeklyBodyMap gender={bodyGender} muscles={activeMuscles} mini showLabels={false} />
+              </View>
+            </View>
+          ) : null}
 
           {!movementStarted ? (
             <ScrollView
@@ -764,75 +806,73 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
               <TouchableOpacity
                 onPress={() => openExerciseVideo(activeExercise)}
                 activeOpacity={0.86}
-                style={styles.videoStepCardLarge}
+                style={styles.videoGuideCard}
                 accessibilityRole="button"
                 accessibilityLabel={`Open video for ${activeExercise.exerciseName}`}
               >
-                <View style={styles.videoPlaceholderImage}>
+                <View style={styles.videoGuidePreview}>
                   <TechniqueVideoBackdrop resolving={activeVideoResolving} />
                 </View>
-                <View style={styles.videoStepFooter}>
-                  <View style={styles.videoStepText}>
-                    <Text style={styles.videoStepKicker}>Technique video</Text>
-                    <Text style={styles.videoStepTitleLarge}>{activeVideoResolving ? 'Finding form video' : 'Watch form first'}</Text>
-                    <Text style={styles.videoStepMeta}>{activeVideoResolving ? 'Preparing before you open it.' : `Open before set ${activeSetNumber}.`}</Text>
-                  </View>
-                  <Feather name="chevron-right" size={26} color={colors.white} />
+                <View style={styles.videoGuideCopy}>
+                  <Text style={styles.videoGuideKicker}>Technique</Text>
+                  <Text style={styles.videoGuideTitle}>{activeVideoResolving ? 'Preparing video' : 'Watch demonstration'}</Text>
+                  <Text style={styles.videoGuideMeta}>{activeVideoResolving ? 'Finding a clear form reference' : `Review before set ${activeSetNumber}`}</Text>
+                </View>
+                <View style={styles.videoGuideArrow}>
+                  <Feather name="chevron-right" size={19} color={colors.inkMuted} />
                 </View>
               </TouchableOpacity>
 
-              <View style={styles.prepGrid}>
-                <MetricPill label="Set" value={`${activeSetNumber}/${activeSets}`} icon="target" />
-                <MetricPill label="Target" value={displayValue(activeExercise.reps)} icon="repeat" />
-                <MetricPill label="Rest" value={`${displayValue(activeExercise.restSec, '0')}s`} icon="clock" />
+              <View style={styles.prescriptionStrip}>
+                <View style={styles.prescriptionMetric}>
+                  <Text style={styles.prescriptionMetricLabel}>Set</Text>
+                  <Text style={styles.prescriptionMetricValue}>{activeSetNumber} of {activeSets}</Text>
+                </View>
+                <View style={styles.prescriptionDivider} />
+                <View style={[styles.prescriptionMetric, styles.prescriptionMetricWide]}>
+                  <Text style={styles.prescriptionMetricLabel}>Target</Text>
+                  <Text style={styles.prescriptionMetricValue}>
+                    {displayValue(activeExercise.reps)}
+                  </Text>
+                </View>
+                <View style={styles.prescriptionDivider} />
+                <View style={styles.prescriptionMetric}>
+                  <Text style={styles.prescriptionMetricLabel}>Rest</Text>
+                  <Text style={styles.prescriptionMetricValue}>{displayValue(activeExercise.restSec, '0')}s</Text>
+                </View>
               </View>
 
-              <View style={styles.exerciseInsightCard}>
-                <View style={styles.insightHeader}>
-                  <View style={styles.insightIcon}>
-                    <Feather name="zap" size={18} color={colors.accentDark} />
-                  </View>
-                  <View style={styles.insightTitleBlock}>
-                    <Text style={styles.insightKicker}>Workout focus</Text>
-                    <Text style={styles.insightTitle}>What this move is doing</Text>
-                  </View>
+              <View style={styles.coachCueCard}>
+                <View style={styles.coachCueHeader}>
+                  <Text style={styles.coachCueKicker}>Form notes</Text>
+                  <Text style={styles.coachCueTags}>
+                    {activeFocusTags.length ? activeFocusTags.join(' · ') : 'Technique'}
+                  </Text>
                 </View>
-                <Text style={styles.insightBody}>{activeBenefit}</Text>
-                {activeFocusTags.length ? (
-                  <View style={styles.focusChipRow}>
-                    {activeFocusTags.map((tag) => (
-                      <View key={tag} style={styles.focusChip}>
-                        <Text style={styles.focusChipText}>{tag}</Text>
-                      </View>
-                    ))}
+                <Text style={styles.coachCuePrimary}>{activeCues[0]}</Text>
+                {activeCues[1] ? (
+                  <View style={styles.coachCueSecondaryRow}>
+                    <Text style={styles.coachCueIndex}>02</Text>
+                    <Text style={styles.coachCueSecondary}>{activeCues[1]}</Text>
                   </View>
                 ) : null}
-              </View>
-
-              <View style={styles.cueCard}>
-                <View style={styles.cueHeader}>
-                  <Feather name="check-circle" size={18} color={colors.accentDark} />
-                  <Text style={styles.cueTitle}>Set cues</Text>
-                </View>
-                {activeCues.map((cue) => (
-                  <View key={cue} style={styles.cueRow}>
-                    <View style={styles.cueDot} />
-                    <Text style={styles.cueText}>{cue}</Text>
-                  </View>
-                ))}
               </View>
 
               {activeLastLog ? (
                 <View style={styles.lastLogCard}>
                   <Feather name="check-circle" size={18} color={colors.accentDark} />
-                  <Text style={styles.lastLogText} numberOfLines={2}>
+                  <Text style={styles.lastLogText}>
                     Last set: {activeLastLog.reps || '-'} reps{activeLastLog.weight ? ` · ${activeLastLog.weight} kg` : ''}{activeLastLog.durationSec ? ` · ${formatTimer(activeLastLog.durationSec)}` : ''}
                   </Text>
                 </View>
               ) : null}
             </ScrollView>
           ) : (
-            <>
+            <ScrollView
+              style={styles.liveScroller}
+              contentContainerStyle={styles.liveContent}
+              showsVerticalScrollIndicator={false}
+            >
               <View style={styles.liveWorkoutCard}>
                 <View style={styles.liveTimerHeader}>
                   <View>
@@ -857,10 +897,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
               </View>
               <View style={styles.instructionCard}>
                 <View style={styles.instructionHead}>
-                  <View style={styles.instructionIcon}>
-                    <Feather name="info" size={18} color={colors.white} />
-                  </View>
-                  <Text style={styles.instructionTitle}>Instructions</Text>
+                  <Text style={styles.instructionTitle}>Form notes</Text>
                 </View>
                 <Text style={styles.instructionText}>
                   {activeNotes || `Keep control through the full range. Match the target ${displayValue(activeExercise.reps)} and stop if form breaks.`}
@@ -874,12 +911,12 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                 accessibilityLabel={`Open video for ${activeExercise.exerciseName}`}
               >
                 <View style={styles.videoMiniIcon}>
-                  <Feather name="play" size={17} color={colors.white} />
+                  <Feather name="play" size={16} color={colors.gold} style={styles.videoMiniPlayGlyph} />
                 </View>
                 <Text style={styles.videoMiniText}>{activeVideoResolving ? 'Finding video' : 'Technique video'}</Text>
-                <Feather name="chevron-right" size={20} color={colors.white} />
+                <Feather name="chevron-right" size={20} color={colors.inkMuted} />
               </TouchableOpacity>
-            </>
+            </ScrollView>
           )}
       </View>
 
@@ -893,7 +930,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
               accessibilityRole="button"
               accessibilityLabel={setPaused ? 'Resume set' : 'Pause set'}
             >
-              <Feather name={setPaused ? 'play' : 'pause'} size={22} color={colors.accentDark} />
+              <Feather name={setPaused ? 'play' : 'pause'} size={21} color={colors.ink} />
               <Text style={styles.pauseSessionText}>{setPaused ? 'Resume' : 'Pause'}</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -904,7 +941,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
               accessibilityLabel="Complete set"
             >
               <Text style={styles.completeSessionText}>Complete</Text>
-              <Feather name="check" size={22} color={colors.white} />
+              <Feather name="check" size={22} color={colors.onPrimary} />
             </TouchableOpacity>
           </View>
         ) : (
@@ -914,6 +951,8 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
             icon={timer.running ? 'skip-forward' : activeDone && activeExerciseIndex >= trackableExercises.length - 1 ? 'flag' : 'play'}
             onPress={primaryCta}
             disabled={finishing}
+            large
+            style={styles.workoutSetCta}
           />
         )}
       </View>
@@ -956,6 +995,16 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
           setSetPaused(false);
         }}
         onSave={logCurrentSetAndAdvance}
+        onCelebrationComplete={(result) => {
+          setSetEntryOpen(false);
+          if (result.workoutComplete) {
+            setWorkoutCompleteOpen(true);
+          } else {
+            const continueWorkout = pendingPostSaveRef.current;
+            pendingPostSaveRef.current = null;
+            continueWorkout?.();
+          }
+        }}
       />
       <ExerciseFeedbackSheet
         visible={feedbackOpen}
@@ -991,8 +1040,8 @@ function Header({
         <Feather name="chevron-left" size={24} color={colors.ink} />
       </TouchableOpacity>
       <View style={styles.headerText}>
-        <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
-        {subtitle ? <Text style={styles.headerSubtitle} numberOfLines={1}>{subtitle}</Text> : null}
+        <Text style={styles.headerTitle}>{title}</Text>
+        {subtitle ? <Text style={styles.headerSubtitle}>{subtitle}</Text> : null}
       </View>
       {right}
     </View>
@@ -1018,8 +1067,8 @@ function ExerciseRow({
         {done ? <Feather name="check" size={15} color={colors.white} /> : <Text style={[styles.exerciseNumText, active && styles.exerciseNumTextActive]}>{index + 1}</Text>}
       </View>
       <View style={styles.exerciseRowText}>
-        <Text style={styles.exerciseRowTitle} numberOfLines={1}>{exercise.exerciseName}</Text>
-        <Text style={styles.exerciseRowMeta} numberOfLines={1}>{displayValue(exercise.sets, '1')} sets · {displayValue(exercise.reps)} · {displayValue(exercise.restSec, '0')}s rest</Text>
+        <Text style={styles.exerciseRowTitle}>{exercise.exerciseName}</Text>
+        <Text style={styles.exerciseRowMeta}>{displayValue(exercise.sets, '1')} sets · {displayValue(exercise.reps)} · {displayValue(exercise.restSec, '0')}s rest</Text>
       </View>
       <Feather name={active ? 'play-circle' : 'chevron-right'} size={19} color={active ? colors.accent : colors.inkSubtle} />
     </TouchableOpacity>
@@ -1100,12 +1149,17 @@ function ExerciseFeedbackSheet({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalRoot}>
         <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onClose} />
-        <View style={styles.feedbackSheet}>
+        <ScrollView
+          style={styles.feedbackSheet}
+          contentContainerStyle={styles.sheetScrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHead}>
             <View style={styles.sheetTitleBlock}>
               <Text style={styles.sheetKicker}>Workout feedback</Text>
-              <Text style={styles.sheetTitle} numberOfLines={1}>{exerciseName}</Text>
+              <Text style={styles.sheetTitle}>{exerciseName}</Text>
               <Text style={styles.sheetSub}>Tell your trainer what to adjust next time.</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Close feedback">
@@ -1148,21 +1202,9 @@ function ExerciseFeedbackSheet({
             <Text style={styles.sheetSaveText}>{submitting ? 'Saving...' : 'Save feedback'}</Text>
             <Feather name="arrow-right" size={18} color={colors.white} />
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </Modal>
-  );
-}
-
-function MetricPill({ label, value, icon }: { label: string; value: string; icon: string }) {
-  return (
-    <View style={styles.metricPill}>
-      <Feather name={icon} size={18} color={colors.accentDark} />
-      <View style={styles.metricPillText}>
-        <Text style={styles.metricPillLabel}>{label}</Text>
-        <Text style={styles.metricPillValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>{value}</Text>
-      </View>
-    </View>
   );
 }
 
@@ -1170,40 +1212,121 @@ function WorkoutCompleteScreen({
   visible,
   title,
   movementCount,
-  onContinue,
+  setCount,
+  onViewProgress,
+  onLogBody,
+  onDone,
   finishing,
 }: {
   visible: boolean;
   title: string;
   movementCount: number;
-  onContinue: () => void;
+  setCount: number;
+  onViewProgress: () => void;
+  onLogBody: () => void;
+  onDone: () => void;
   finishing: boolean;
 }) {
+  const cardOpacity = useRef(new Animated.Value(0)).current;
+  const cardLift = useRef(new Animated.Value(24)).current;
+  const rewardScale = useRef(new Animated.Value(0.7)).current;
+
+  useEffect(() => {
+    if (!visible) return;
+    cardOpacity.setValue(0);
+    cardLift.setValue(24);
+    rewardScale.setValue(0.7);
+    Animated.parallel([
+      Animated.timing(cardOpacity, { toValue: 1, duration: 260, useNativeDriver: true }),
+      Animated.timing(cardLift, { toValue: 0, duration: 320, useNativeDriver: true }),
+      Animated.spring(rewardScale, { toValue: 1, friction: 5, tension: 90, delay: 100, useNativeDriver: true }),
+    ]).start();
+  }, [cardLift, cardOpacity, rewardScale, visible]);
+
   if (!visible) return null;
   return (
-    <View style={styles.completeOverlay}>
-      <View style={styles.completeCard}>
-        <View style={styles.completeIcon}>
-          <Feather name="award" size={44} color={colors.accentDark} />
+    <ScrollView
+      style={styles.completeOverlay}
+      contentContainerStyle={styles.completeOverlayContent}
+      showsVerticalScrollIndicator={false}
+    >
+      <Animated.View
+        style={[
+          styles.completeCard,
+          { opacity: cardOpacity, transform: [{ translateY: cardLift }] },
+        ]}
+      >
+        <Animated.View style={[styles.completeIcon, { transform: [{ scale: rewardScale }] }]}>
+          <Feather name="check" size={36} color={colors.onPrimary} />
+        </Animated.View>
+        <View style={styles.completeStatusPill}>
+          <View style={styles.completeStatusDot} />
+          <Text style={styles.completeStatusText}>Today counts</Text>
         </View>
-        <Text style={styles.completeKicker}>Workout completed</Text>
-        <Text style={styles.completeTitle}>{title}</Text>
-        <Text style={styles.completeText}>
-          {movementCount} movement{movementCount === 1 ? '' : 's'} finished. Your sets are saved and ready to sync.
-        </Text>
+        <Text style={styles.completeTitle}>You showed up.</Text>
+        <Text style={styles.completeWorkoutName}>{title}</Text>
+        <Text style={styles.completeText}>That is how momentum gets built—one finished session at a time.</Text>
+
+        <View style={styles.completeStats}>
+          <View style={styles.completeStat}>
+            <Text style={styles.completeStatValue}>{movementCount}</Text>
+            <Text style={styles.completeStatLabel}>movements</Text>
+          </View>
+          <View style={styles.completeStatDivider} />
+          <View style={styles.completeStat}>
+            <Text style={styles.completeStatValue}>{setCount}</Text>
+            <Text style={styles.completeStatLabel}>sets saved</Text>
+          </View>
+        </View>
+
+        <View style={styles.completeNextCard}>
+          <View style={styles.completeNextIcon}>
+            <Feather name="sunrise" size={19} color={colors.gold} />
+          </View>
+          <View style={styles.completeNextCopy}>
+            <Text style={styles.completeNextKicker}>Keep the rhythm</Text>
+            <Text style={styles.completeNextText}>Your next session will be ready when you return.</Text>
+          </View>
+        </View>
+
         <TouchableOpacity
-          onPress={onContinue}
+          onPress={onViewProgress}
           disabled={finishing}
           activeOpacity={0.86}
-          style={styles.completeButton}
+          style={styles.completePrimaryButton}
           accessibilityRole="button"
-          accessibilityLabel="Finish workout"
+          accessibilityLabel="See today's progress"
         >
-          <Text style={styles.completeButtonText}>{finishing ? 'Saving...' : 'Done'}</Text>
-          <Feather name="arrow-right" size={22} color={colors.accentDark} />
+          <View style={styles.completeButtonCopy}>
+            <Text style={styles.completePrimaryText}>{finishing ? 'Saving workout…' : "See today's progress"}</Text>
+            {!finishing ? <Text style={styles.completePrimarySub}>Streak, consistency, and history</Text> : null}
+          </View>
+          {finishing ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <Feather name="arrow-right" size={22} color={colors.onPrimary} />}
         </TouchableOpacity>
-      </View>
-    </View>
+
+        <TouchableOpacity
+          onPress={onLogBody}
+          disabled={finishing}
+          activeOpacity={0.86}
+          style={styles.completeSecondaryButton}
+          accessibilityRole="button"
+          accessibilityLabel="Add an optional body update"
+        >
+          <Feather name="trending-up" size={19} color={colors.gold} />
+          <Text style={styles.completeSecondaryText}>Add a body update</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={onDone}
+          disabled={finishing}
+          style={styles.completeDoneButton}
+          accessibilityRole="button"
+          accessibilityLabel="Return to workouts"
+        >
+          <Text style={styles.completeDoneText}>Not now</Text>
+        </TouchableOpacity>
+      </Animated.View>
+    </ScrollView>
   );
 }
 
@@ -1235,7 +1358,7 @@ function RestSheet({
             <Feather name="arrow-right" size={16} color={colors.white} />
           </TouchableOpacity>
         </View>
-        <Text style={styles.restSheetNext} numberOfLines={2}>Up next: {nextLabel}</Text>
+        <Text style={styles.restSheetNext}>Up next: {nextLabel}</Text>
         <TouchableOpacity onPress={onAddTime} style={styles.restAddTimeButton} accessibilityRole="button" accessibilityLabel="Add fifteen seconds">
           <Feather name="plus" size={16} color={colors.accentDark} />
           <Text style={styles.restAddTimeText}>Add 15 seconds</Text>
@@ -1261,6 +1384,7 @@ function SetEntryModal({
   onAdjustWeight,
   onCancel,
   onSave,
+  onCelebrationComplete,
 }: {
   visible: boolean;
   exerciseName: string;
@@ -1276,85 +1400,234 @@ function SetEntryModal({
   onAdjustReps: (delta: number) => void;
   onAdjustWeight: (delta: number) => void;
   onCancel: () => void;
-  onSave: () => void;
+  onSave: () => Promise<SetSaveResult | undefined>;
+  onCelebrationComplete: (result: SetSaveResult) => void;
 }) {
+  const modalInsets = useSafeAreaInsets();
+  const [savePhase, setSavePhase] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+  const [saveResult, setSaveResult] = useState<SetSaveResult | null>(null);
+  const successScale = useRef(new Animated.Value(0.65)).current;
+  const successOpacity = useRef(new Animated.Value(0)).current;
+  const successLift = useRef(new Animated.Value(16)).current;
+
+  useEffect(() => {
+    if (!visible) return;
+    setSavePhase('idle');
+    setSaveResult(null);
+    successScale.setValue(0.65);
+    successOpacity.setValue(0);
+    successLift.setValue(16);
+  }, [successLift, successOpacity, successScale, visible]);
+
+  const handleClose = () => {
+    if (savePhase === 'idle' || savePhase === 'error') onCancel();
+  };
+
+  const handleSave = async () => {
+    if (savePhase !== 'idle' && savePhase !== 'error') return;
+    setSavePhase('saving');
+    try {
+      const result = await onSave();
+      if (!result) throw new Error('Set could not be saved');
+      setSaveResult(result);
+      setSavePhase('success');
+      successScale.setValue(0.65);
+      successOpacity.setValue(0);
+      successLift.setValue(16);
+      Animated.sequence([
+        Animated.parallel([
+          Animated.spring(successScale, { toValue: 1, friction: 5, tension: 100, useNativeDriver: true }),
+          Animated.timing(successOpacity, { toValue: 1, duration: 170, useNativeDriver: true }),
+          Animated.timing(successLift, { toValue: 0, duration: 240, useNativeDriver: true }),
+        ]),
+        Animated.delay(result.workoutComplete ? 1100 : 850),
+        Animated.timing(successOpacity, { toValue: 0, duration: 160, useNativeDriver: true }),
+      ]).start(({ finished }) => {
+        if (finished) onCelebrationComplete(result);
+      });
+    } catch {
+      setSavePhase('error');
+    }
+  };
+
+  const controlsLocked = savePhase === 'saving' || savePhase === 'success';
+  const saveButtonLabel = savePhase === 'saving'
+    ? 'Saving…'
+    : savePhase === 'error'
+      ? 'Try saving again'
+      : 'Save set';
+  const rewardKicker = saveResult?.workoutComplete
+    ? 'Workout complete'
+    : saveResult?.movementComplete
+      ? 'Movement complete'
+      : saveResult ? `Set ${saveResult.savedSetNumber} saved` : '';
+  const rewardTitle = saveResult?.workoutComplete
+    ? 'You finished strong.'
+    : saveResult?.movementComplete
+      ? 'Movement complete.'
+      : saveResult
+        ? SET_REWARD_LINES[(saveResult.savedSetNumber - 1) % SET_REWARD_LINES.length]
+        : '';
+  const rewardMessage = saveResult?.workoutComplete
+    ? 'Every set is saved. Your session recap is ready.'
+    : saveResult?.movementComplete
+      ? `All ${saveResult.setTotal} sets are saved. Your next movement is ready.`
+      : saveResult
+        ? `${saveResult.setTotal - saveResult.savedSetNumber} ${saveResult.setTotal - saveResult.savedSetNumber === 1 ? 'set' : 'sets'} left. Catch your breath, then go again.`
+        : '';
+  const rewardProgress = saveResult
+    ? `${Math.min(100, Math.round((saveResult.savedSetNumber / Math.max(1, saveResult.setTotal)) * 100))}%` as `${number}%`
+    : '0%';
+
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalRoot}>
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={onCancel} />
-        <View style={styles.setEntrySheet}>
-          <View style={styles.sheetHandle} />
-          <View style={styles.sheetHead}>
-            <View style={styles.setEntryHeadText}>
-              <Text style={styles.sheetKicker}>Log set {setNumber} of {setTotal}</Text>
-              <Text style={styles.sheetTitle} numberOfLines={1}>{exerciseName}</Text>
-              <Text style={styles.sheetSub}>Time under work: {formatTimer(elapsed)}</Text>
-            </View>
-            <TouchableOpacity onPress={onCancel} style={styles.closeButton}>
-              <Feather name="x" size={20} color={colors.inkMuted} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.setEntryTarget}>
-            <Feather name="target" size={18} color={colors.accentDark} />
-            <Text style={styles.setEntryTargetText}>Target: {targetReps}</Text>
-          </View>
-
-          <View style={styles.sheetInputStack}>
-            <View style={styles.sheetInputGroup}>
-              <Text style={styles.logInputLabel}>Reps completed</Text>
-              <View style={styles.sheetStepperInputRow}>
-                <TouchableOpacity onPress={() => onAdjustReps(-1)} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Decrease reps">
-                  <Feather name="minus" size={20} color={colors.accentDark} />
-                </TouchableOpacity>
-                <TextInput
-                  value={reps}
-                  onChangeText={onReps}
-                  keyboardType="number-pad"
-                  placeholder={targetReps}
-                  placeholderTextColor={colors.inkSubtle}
-                  style={styles.sheetLogInput}
-                  textAlign="center"
-                />
-                <TouchableOpacity onPress={() => onAdjustReps(1)} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Increase reps">
-                  <Feather name="plus" size={20} color={colors.accentDark} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {needsWeight ? (
-              <View style={styles.sheetInputGroup}>
-                <Text style={styles.logInputLabel}>Weight used</Text>
-                <View style={styles.sheetStepperInputRow}>
-                  <TouchableOpacity onPress={() => onAdjustWeight(-1)} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Decrease weight">
-                    <Feather name="minus" size={20} color={colors.accentDark} />
-                  </TouchableOpacity>
-                  <TextInput
-                    value={weight}
-                    onChangeText={onWeight}
-                    keyboardType="decimal-pad"
-                    placeholder="0 kg"
-                    placeholderTextColor={colors.inkSubtle}
-                    style={styles.sheetLogInput}
-                    textAlign="center"
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={handleClose} />
+        <View style={[
+          styles.setEntrySheet,
+          !needsWeight && styles.setEntrySheetCompact,
+          savePhase === 'success' && styles.setEntrySheetSuccess,
+        ]}>
+          <View style={[
+            styles.sheetHandle,
+            styles.setEntryHandle,
+            savePhase === 'success' && styles.setEntryHandleSuccess,
+          ]} />
+          {savePhase === 'success' && saveResult ? (
+            <Animated.View
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={`${rewardKicker}. ${rewardTitle} ${rewardMessage}`}
+              style={[
+                styles.setSaveSuccess,
+                {
+                  paddingBottom: modalInsets.bottom + spacing.xl,
+                  opacity: successOpacity,
+                  transform: [{ translateY: successLift }],
+                },
+              ]}
+            >
+              <Animated.View style={[styles.setSaveSuccessIcon, { transform: [{ scale: successScale }] }]}>
+                <View style={styles.setSaveSuccessIconInner}>
+                  <Feather
+                    name={saveResult.workoutComplete ? 'award' : 'check'}
+                    size={30}
+                    color={colors.onPrimary}
                   />
-                  <TouchableOpacity onPress={() => onAdjustWeight(1)} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Increase weight">
-                    <Feather name="plus" size={20} color={colors.accentDark} />
+                </View>
+              </Animated.View>
+              <Text style={styles.setSaveSuccessKicker}>{rewardKicker}</Text>
+              <Text style={styles.setSaveSuccessTitle}>{rewardTitle}</Text>
+              <Text style={styles.setSaveSuccessExercise} numberOfLines={2}>{saveResult.exerciseName}</Text>
+
+              <View style={styles.setSaveProgressMeta}>
+                <Text style={styles.setSaveProgressLabel}>Movement progress</Text>
+                <Text style={styles.setSaveProgressValue}>{saveResult.savedSetNumber}/{saveResult.setTotal} sets</Text>
+              </View>
+              <View style={styles.setSaveProgressTrack}>
+                <View style={[styles.setSaveProgressFill, { width: rewardProgress }]} />
+              </View>
+              <Text style={styles.setSaveSuccessMessage}>{rewardMessage}</Text>
+            </Animated.View>
+          ) : (
+            <>
+              <ScrollView
+                style={styles.setEntryContentScroll}
+                contentContainerStyle={styles.setEntryContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                <View style={styles.sheetHead}>
+                  <View style={styles.setEntryHeadText}>
+                    <Text style={styles.sheetKicker}>Log set {setNumber} of {setTotal}</Text>
+                    <Text style={styles.sheetTitle}>{exerciseName}</Text>
+                    <Text style={styles.sheetSub}>Time under work: {formatTimer(elapsed)}</Text>
+                  </View>
+                  <TouchableOpacity onPress={handleClose} disabled={controlsLocked} style={styles.closeButton}>
+                    <Feather name="x" size={20} color={colors.inkMuted} />
                   </TouchableOpacity>
                 </View>
-              </View>
-            ) : null}
-          </View>
 
-          <View style={styles.sheetActionRow}>
-            <TouchableOpacity onPress={onCancel} style={styles.sheetSecondaryButton} accessibilityRole="button" accessibilityLabel="Resume set">
-              <Text style={styles.sheetSecondaryText}>Resume</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={onSave} style={styles.sheetSaveButton} accessibilityRole="button" accessibilityLabel="Save set">
-              <Text style={styles.sheetSaveText}>Save set</Text>
-              <Feather name="arrow-right" size={20} color={colors.white} />
-            </TouchableOpacity>
-          </View>
+                <View style={styles.setEntryTarget}>
+                  <Feather name="target" size={18} color={colors.accentDark} />
+                  <Text style={styles.setEntryTargetText}>Target: {targetReps}</Text>
+                </View>
+
+                <View style={styles.sheetInputStack}>
+                  <View style={styles.sheetInputGroup}>
+                    <Text style={styles.logInputLabel}>Reps completed</Text>
+                    <View style={styles.sheetStepperInputRow}>
+                      <TouchableOpacity onPress={() => onAdjustReps(-1)} disabled={controlsLocked} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Decrease reps">
+                        <Feather name="minus" size={20} color={colors.accentDark} />
+                      </TouchableOpacity>
+                      <TextInput
+                        value={reps}
+                        onChangeText={onReps}
+                        keyboardType="number-pad"
+                        placeholder={targetReps}
+                        placeholderTextColor={colors.inkSubtle}
+                        style={styles.sheetLogInput}
+                        textAlign="center"
+                        editable={!controlsLocked}
+                      />
+                      <TouchableOpacity onPress={() => onAdjustReps(1)} disabled={controlsLocked} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Increase reps">
+                        <Feather name="plus" size={20} color={colors.accentDark} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {needsWeight ? (
+                    <View style={styles.sheetInputGroup}>
+                      <Text style={styles.logInputLabel}>Weight used</Text>
+                      <View style={styles.sheetStepperInputRow}>
+                        <TouchableOpacity onPress={() => onAdjustWeight(-1)} disabled={controlsLocked} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Decrease weight">
+                          <Feather name="minus" size={20} color={colors.accentDark} />
+                        </TouchableOpacity>
+                        <TextInput
+                          value={weight}
+                          onChangeText={onWeight}
+                          keyboardType="decimal-pad"
+                          placeholder="0 kg"
+                          placeholderTextColor={colors.inkSubtle}
+                          style={styles.sheetLogInput}
+                          textAlign="center"
+                          editable={!controlsLocked}
+                        />
+                        <TouchableOpacity onPress={() => onAdjustWeight(1)} disabled={controlsLocked} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Increase weight">
+                          <Feather name="plus" size={20} color={colors.accentDark} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
+              </ScrollView>
+
+              <View style={[styles.sheetActionDock, { paddingBottom: modalInsets.bottom + spacing.sm }]}>
+                <TouchableOpacity onPress={handleClose} disabled={controlsLocked} style={styles.sheetSecondaryButton} accessibilityRole="button" accessibilityLabel="Resume set">
+                  <Text style={styles.sheetSecondaryText}>Resume</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleSave}
+                  disabled={controlsLocked}
+                  activeOpacity={0.82}
+                  style={[
+                    styles.sheetSaveButton,
+                    savePhase === 'saving' && styles.sheetSaveButtonSaving,
+                    savePhase === 'error' && styles.sheetSaveButtonError,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={saveButtonLabel}
+                  accessibilityState={{ disabled: controlsLocked, busy: savePhase === 'saving' }}
+                >
+                  {savePhase === 'saving' ? <ActivityIndicator size="small" color={colors.onPrimary} /> : null}
+                  {savePhase === 'error' ? <Feather name="alert-circle" size={20} color={colors.ink} /> : null}
+                  <Text accessibilityLiveRegion="polite" style={[styles.sheetSaveText, savePhase === 'error' && styles.sheetSaveTextError]}>
+                    {saveButtonLabel}
+                  </Text>
+                  {savePhase === 'idle' ? <Feather name="arrow-right" size={20} color={colors.onPrimary} /> : null}
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -1416,25 +1689,25 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     borderWidth: 1,
     borderColor: colors.border,
   },
   headerText: { flex: 1 },
-  headerTitle: { ...typography.subtitle, color: colors.ink },
-  headerSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  headerTitle: { fontSize: 18, lineHeight: 25, fontWeight: '600', color: colors.ink },
+  headerSubtitle: { fontSize: 15, lineHeight: 22, fontWeight: '500', color: colors.inkMuted, marginTop: 2 },
   feedbackButton: {
     width: 42,
     height: 42,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accentLight,
+    backgroundColor: colors.panel,
     borderWidth: 1,
-    borderColor: colors.accentSurface,
+    borderColor: colors.border,
   },
   timerBar: {
-    backgroundColor: colors.accentDark,
+    backgroundColor: colors.accentFill,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -1451,8 +1724,8 @@ const styles = StyleSheet.create({
   timerBtn: { color: colors.white, fontWeight: '700', fontSize: 13 },
   sessionProgress: {
     paddingHorizontal: spacing.lg,
-    marginTop: spacing.xs,
-    marginBottom: spacing.sm,
+    marginTop: 2,
+    marginBottom: spacing.xs,
   },
   sessionProgressText: {
     flexDirection: 'row',
@@ -1463,21 +1736,17 @@ const styles = StyleSheet.create({
   executionShell: {
     flex: 1,
     marginHorizontal: spacing.lg,
-    borderRadius: 28,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
+    paddingTop: spacing.sm,
     justifyContent: 'flex-start',
     overflow: 'hidden',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   executionShellActive: {
-    backgroundColor: colors.white,
+    backgroundColor: colors.bg,
   },
   executionShellCompact: {
-    padding: spacing.md,
-    borderRadius: 26,
+    marginHorizontal: spacing.md,
+    paddingTop: spacing.xs,
   },
   restCard: {
     flex: 1,
@@ -1493,7 +1762,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentFill,
     marginBottom: spacing.lg,
   },
   restKicker: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
@@ -1534,7 +1803,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentFill,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
@@ -1556,6 +1825,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  movementKicker: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.gold, textTransform: 'uppercase', letterSpacing: 1.8 },
   prescriptionRow: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -1595,7 +1865,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
   },
   setRunRow: {
     flexDirection: 'row',
@@ -1605,7 +1875,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 62,
     borderRadius: radius.lg,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     borderWidth: 1,
     borderColor: colors.accentSurface,
     paddingHorizontal: spacing.sm,
@@ -1629,7 +1899,7 @@ const styles = StyleSheet.create({
   stepperInputRow: {
     minHeight: 48,
     borderRadius: radius.pill,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     borderWidth: 1,
     borderColor: colors.accentSurface,
     flexDirection: 'row',
@@ -1652,9 +1922,9 @@ const styles = StyleSheet.create({
     ...typography.subtitle,
     color: colors.ink,
   },
-  lastLogText: { ...typography.caption, color: colors.accentDark, fontWeight: '800', flex: 1 },
+  lastLogText: { fontSize: 15, lineHeight: 21, color: colors.accentDark, fontWeight: '700', flex: 1 },
   lastLogCard: {
-    minHeight: 58,
+    minHeight: 64,
     borderRadius: radius.lg,
     backgroundColor: colors.accentLight,
     borderWidth: 1,
@@ -1684,37 +1954,41 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     backgroundColor: colors.bg,
   },
+  workoutSetCta: { minHeight: 92 },
   primarySessionButton: {
-    height: 78,
+    minHeight: 78,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentFill,
     borderWidth: 4,
     borderColor: colors.white,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     shadowColor: colors.accentDark,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.28,
     shadowRadius: 18,
     elevation: 8,
   },
-  restPrimaryButton: { backgroundColor: colors.accentDark },
-  donePrimaryButton: { backgroundColor: colors.accent },
+  restPrimaryButton: { backgroundColor: colors.accentFill },
+  donePrimaryButton: { backgroundColor: colors.accentFill },
   primarySessionIcon: {
     width: 46,
     height: 46,
     borderRadius: radius.pill,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primarySessionText: { fontSize: 20, lineHeight: 25, fontWeight: '900', color: colors.white, maxWidth: '58%' },
+  primarySessionText: { fontSize: 20, lineHeight: 25, fontWeight: '900', color: colors.white, flexShrink: 1, textAlign: 'center' },
   primarySessionLabelBlock: {
+    flex: 1,
+    minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    maxWidth: '58%',
   },
   primarySessionSubText: { ...typography.caption, color: colors.onAccentMuted, fontWeight: '800', marginTop: 1 },
   activeActionRow: {
@@ -1723,35 +1997,29 @@ const styles = StyleSheet.create({
   },
   pauseSessionButton: {
     flex: 0.9,
-    minHeight: 74,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentLight,
+    minHeight: 76,
+    borderRadius: radius.md,
+    backgroundColor: colors.panel,
     borderWidth: 1,
-    borderColor: colors.accentSurface,
+    borderColor: colors.borderStrong,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
   },
-  pauseSessionText: { fontSize: 18, lineHeight: 23, fontWeight: '900', color: colors.accentDark },
+  pauseSessionText: { fontSize: 18, lineHeight: 24, fontWeight: '800', color: colors.ink },
   completeSessionButton: {
     flex: 1.25,
-    minHeight: 74,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accent,
-    borderWidth: 4,
-    borderColor: colors.white,
+    minHeight: 76,
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryAction,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    shadowColor: colors.accentDark,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.24,
-    shadowRadius: 16,
-    elevation: 7,
+    ...shadows.card,
   },
-  completeSessionText: { fontSize: 19, lineHeight: 24, fontWeight: '900', color: colors.white },
+  completeSessionText: { fontSize: 20, lineHeight: 26, fontWeight: '900', color: colors.onPrimary },
   secondaryActionRow: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -1773,15 +2041,13 @@ const styles = StyleSheet.create({
   stepShell: {
     flex: 1,
     marginHorizontal: spacing.lg,
-    borderRadius: 28,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.bg,
     padding: spacing.md,
     overflow: 'hidden',
   },
   stepShellCompact: {
-    borderRadius: 24,
+    borderRadius: radius.md,
     padding: spacing.sm,
   },
   stepperRow: {
@@ -1792,16 +2058,16 @@ const styles = StyleSheet.create({
   },
   stepperDot: {
     flex: 1,
-    height: 5,
+    height: 3,
     borderRadius: radius.pill,
     backgroundColor: colors.border,
   },
   stepperDotDone: {
-    backgroundColor: colors.accent,
+    backgroundColor: colors.goldMuted,
   },
   stepperDotActive: {
-    height: 7,
-    backgroundColor: colors.accent,
+    height: 3,
+    backgroundColor: colors.gold,
   },
   stepHeader: {
     flexDirection: 'row',
@@ -1810,37 +2076,44 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   stepFlowButton: {
-    minWidth: 62,
-    height: 38,
-    borderRadius: radius.pill,
+    minHeight: 36,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
-    backgroundColor: colors.accentLight,
+    gap: 6,
+    paddingLeft: spacing.sm,
+  },
+  stepFlowText: { fontSize: 14, lineHeight: 20, color: colors.inkMuted, fontWeight: '700' },
+  videoGuideCard: {
+    minHeight: 112,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panel,
     borderWidth: 1,
-    borderColor: colors.accentSurface,
-    paddingHorizontal: spacing.sm,
-  },
-  stepFlowText: { ...typography.caption, color: colors.accentDark, fontWeight: '800' },
-  videoStepCardLarge: {
-    minHeight: 188,
-    borderRadius: 26,
-    backgroundColor: colors.inkStrong,
+    borderColor: colors.border,
     overflow: 'hidden',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    padding: spacing.md,
-    marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 7,
   },
-  videoPlaceholderImage: {
-    flex: 1,
+  videoGuidePreview: {
+    width: 104,
+    alignSelf: 'stretch',
     minHeight: 96,
-    borderRadius: 20,
-    backgroundColor: colors.accentDarker,
+    borderRadius: radius.md,
+    backgroundColor: colors.bgTint,
+    overflow: 'hidden',
+  },
+  videoGuideCopy: { flex: 1, minWidth: 0, justifyContent: 'center' },
+  videoGuideKicker: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.gold, textTransform: 'uppercase' },
+  videoGuideTitle: { fontSize: 17, lineHeight: 23, color: colors.ink, marginTop: 3, fontWeight: '800' },
+  videoGuideMeta: { fontSize: 14, lineHeight: 20, color: colors.inkMuted, marginTop: 2 },
+  videoGuideArrow: {
+    width: 28,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
+    marginRight: 2,
   },
   videoPlaceholderLogo: {
     position: 'absolute',
@@ -1868,7 +2141,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentFill,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
@@ -1881,16 +2154,18 @@ const styles = StyleSheet.create({
   },
   videoStepTitleLarge: { fontSize: 22, lineHeight: 27, fontWeight: '800', color: colors.white, marginTop: 3 },
   videoStepCardCompactActive: {
-    minHeight: 68,
-    borderRadius: 20,
-    backgroundColor: colors.inkStrong,
+    minHeight: 62,
+    backgroundColor: colors.panel,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   videoMiniIcon: {
     width: 34,
@@ -1899,86 +2174,57 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.5)',
-  },
-  videoMiniText: { ...typography.bodyBold, color: colors.white, flex: 1 },
-  prepGrid: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  metricPill: {
-    flex: 1,
-    minHeight: 74,
-    borderRadius: radius.lg,
-    backgroundColor: colors.panelMuted,
-    borderWidth: 1,
     borderColor: colors.accentSurface,
-    padding: spacing.sm,
-    justifyContent: 'center',
-    gap: 6,
+    backgroundColor: colors.accentLight,
   },
-  metricPillText: { minWidth: 0 },
-  metricPillLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
-  metricPillValue: { ...typography.subtitle, color: colors.ink, marginTop: 2, fontWeight: '800' },
-  exerciseInsightCard: {
-    borderRadius: 20,
-    backgroundColor: colors.panelMuted,
-    borderWidth: 1,
+  videoMiniPlayGlyph: { transform: [{ translateX: 1 }] },
+  videoMiniText: { ...typography.bodyBold, color: colors.ink, flex: 1 },
+  prescriptionStrip: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    minHeight: 84,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
     borderColor: colors.border,
-    padding: spacing.md,
-    gap: spacing.sm,
-    marginTop: spacing.xs,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 12,
   },
-  insightHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  insightIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentDark,
-    alignItems: 'center',
+  prescriptionMetric: {
+    flex: 0.8,
     justifyContent: 'center',
   },
-  insightTitleBlock: { flex: 1 },
-  insightKicker: { ...typography.overline, color: colors.inkMuted, textTransform: 'uppercase' },
-  insightTitle: { ...typography.bodyBold, color: colors.ink, marginTop: 1 },
-  insightBody: { ...typography.body, color: colors.inkMuted },
-  focusChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  focusChip: {
-    borderRadius: radius.pill,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
+  prescriptionMetricWide: { flex: 1.5, paddingHorizontal: spacing.sm },
+  prescriptionMetricLabel: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.inkSubtle, textTransform: 'uppercase', letterSpacing: 1.4 },
+  prescriptionMetricValue: { fontSize: 17, lineHeight: 24, color: colors.ink, marginTop: 4, fontWeight: '700' },
+  prescriptionDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: colors.border,
+    marginHorizontal: spacing.sm,
   },
-  focusChipText: { ...typography.caption, color: colors.ink, fontWeight: '900' },
-  cueCard: {
-    borderRadius: 24,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    gap: spacing.xs,
+  coachCueCard: {
+    borderLeftWidth: 2,
+    borderLeftColor: colors.goldMuted,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.xs,
+    paddingVertical: spacing.sm,
     marginTop: spacing.xs,
   },
-  cueHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: 2 },
-  cueTitle: { ...typography.bodyBold, color: colors.ink },
-  cueRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs },
-  cueDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.accentDark,
-    marginTop: 8,
-  },
-  cueText: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 19 },
+  coachCueHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.sm },
+  coachCueKicker: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.gold, textTransform: 'uppercase' },
+  coachCueTags: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: colors.inkSubtle, textAlign: 'right', flexShrink: 1 },
+  coachCuePrimary: { fontSize: 18, lineHeight: 26, fontWeight: '600', color: colors.ink, marginTop: spacing.sm },
+  coachCueSecondaryRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.sm },
+  coachCueIndex: { ...typography.overline, color: colors.inkSubtle, letterSpacing: 1 },
+  coachCueSecondary: { fontSize: 15, lineHeight: 22, fontWeight: '500', color: colors.inkMuted, flex: 1 },
   liveWorkoutCard: {
-    borderRadius: 28,
-    backgroundColor: colors.accentDarker,
-    padding: spacing.lg,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.xs,
     gap: spacing.md,
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
   },
   liveTimerHeader: {
     flexDirection: 'row',
@@ -1986,19 +2232,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
   },
-  liveTimerLabel: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
-  liveTimer: { fontSize: 48, lineHeight: 52, fontWeight: '900', color: colors.white },
-  liveTimerMeta: { ...typography.bodyBold, color: colors.white, marginTop: 2 },
+  liveTimerLabel: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.gold, textTransform: 'uppercase' },
+  liveTimer: { fontSize: 48, lineHeight: 52, fontWeight: '900', color: colors.ink },
+  liveTimerMeta: { fontSize: 17, lineHeight: 24, fontWeight: '600', color: colors.ink, marginTop: 2 },
   liveProgressTrack: {
     height: 8,
     borderRadius: radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: colors.border,
     overflow: 'hidden',
   },
   liveProgressFill: {
     height: '100%',
     borderRadius: radius.pill,
-    backgroundColor: colors.white,
+    backgroundColor: colors.gold,
   },
   liveMetricRow: {
     flexDirection: 'row',
@@ -2007,40 +2253,26 @@ const styles = StyleSheet.create({
   liveMetricPill: {
     flex: 1,
     minHeight: 56,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.16)',
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
   },
-  liveMetricLabel: { ...typography.caption, color: colors.onAccentMuted, fontWeight: '800' },
-  liveMetricValue: { ...typography.subtitle, color: colors.white, marginTop: 1 },
+  liveMetricLabel: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.inkSubtle, textTransform: 'uppercase' },
+  liveMetricValue: { fontSize: 18, lineHeight: 25, fontWeight: '600', color: colors.ink, marginTop: 2 },
   instructionCard: {
-    flex: 1,
-    minHeight: 166,
-    borderRadius: 28,
-    backgroundColor: colors.panelMuted,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
+    borderLeftWidth: 2,
+    borderLeftColor: colors.goldMuted,
+    paddingLeft: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingRight: spacing.xs,
     marginTop: spacing.md,
   },
-  instructionHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
-  instructionIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accent,
-  },
-  instructionTitle: { ...typography.subtitle, color: colors.ink },
-  instructionText: { fontSize: 20, lineHeight: 29, fontWeight: '600', color: colors.ink },
+  instructionHead: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
+  instructionTitle: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.gold, textTransform: 'uppercase' },
+  instructionText: { fontSize: 18, lineHeight: 27, fontWeight: '600', color: colors.ink },
   videoStepCard: {
     minHeight: 104,
     borderRadius: 26,
-    backgroundColor: colors.inkStrong,
+    backgroundColor: colors.accentDarker,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
@@ -2056,7 +2288,7 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentFill,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2068,47 +2300,122 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFill,
     zIndex: 35,
     backgroundColor: colors.bg,
+  },
+  completeOverlayContent: {
+    flexGrow: 1,
     padding: spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   completeCard: {
     width: '100%',
-    borderRadius: 38,
-    backgroundColor: colors.accentDarker,
+    maxWidth: 430,
+    borderRadius: 34,
+    backgroundColor: colors.panelRaised,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
     padding: spacing.xl,
     alignItems: 'center',
-    shadowColor: colors.accentDark,
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.22,
-    shadowRadius: 26,
-    elevation: 10,
+    ...shadows.lg,
   },
   completeIcon: {
-    width: 96,
-    height: 96,
+    width: 76,
+    height: 76,
     borderRadius: radius.pill,
-    backgroundColor: '#f5b301',
+    backgroundColor: colors.gold,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
+    ...shadows.accent,
   },
-  completeKicker: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
-  completeTitle: { ...typography.hero, color: colors.white, textAlign: 'center', marginTop: spacing.sm },
-  completeText: { ...typography.body, color: colors.onAccentMuted, textAlign: 'center', marginTop: spacing.sm },
-  completeButton: {
-    minHeight: 64,
+  completeStatusPill: {
+    minHeight: 30,
     borderRadius: radius.pill,
-    backgroundColor: '#f5b301',
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  completeStatusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.gold },
+  completeStatusText: { ...typography.caption, color: colors.gold, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.2 },
+  completeTitle: { fontSize: 30, lineHeight: 37, fontWeight: '900', color: colors.ink, textAlign: 'center' },
+  completeWorkoutName: { ...typography.subtitle, color: colors.ink, textAlign: 'center', marginTop: spacing.xs },
+  completeText: { ...typography.body, color: colors.inkMuted, textAlign: 'center', marginTop: spacing.sm, maxWidth: 330 },
+  completeStats: {
+    minHeight: 76,
+    alignSelf: 'stretch',
+    borderRadius: radius.xl,
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.lg,
+  },
+  completeStat: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  completeStatValue: { fontSize: 24, lineHeight: 30, color: colors.ink, fontWeight: '900' },
+  completeStatLabel: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  completeStatDivider: { width: StyleSheet.hairlineWidth, height: 38, backgroundColor: colors.borderStrong },
+  completeNextCard: {
+    alignSelf: 'stretch',
+    minHeight: 68,
+    borderRadius: radius.xl,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    padding: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  completeNextIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  completeNextCopy: { flex: 1, minWidth: 0 },
+  completeNextKicker: { ...typography.caption, color: colors.gold, fontWeight: '900' },
+  completeNextText: { fontSize: 14, lineHeight: 19, color: colors.inkMuted, marginTop: 1 },
+  completePrimaryButton: {
+    minHeight: 72,
+    borderRadius: radius.xl,
+    backgroundColor: colors.primaryAction,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    alignSelf: 'stretch',
+    ...shadows.card,
+  },
+  completeButtonCopy: { flex: 1, minWidth: 0 },
+  completePrimaryText: { ...typography.bodyBold, color: colors.onPrimary, fontWeight: '900' },
+  completePrimarySub: { ...typography.caption, color: 'rgba(8,9,12,0.64)', marginTop: 1 },
+  completeSecondaryButton: {
+    minHeight: 56,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.panelMuted,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    paddingHorizontal: spacing.xl,
-    marginTop: spacing.xl,
     alignSelf: 'stretch',
+    marginTop: spacing.sm,
   },
-  completeButtonText: { ...typography.bodyBold, color: colors.accentDark },
+  completeSecondaryText: { ...typography.bodyBold, color: colors.ink },
+  completeDoneButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: spacing.xs },
+  completeDoneText: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
   stepSetPanel: {
     borderRadius: 22,
     backgroundColor: colors.panelMuted,
@@ -2148,7 +2455,7 @@ const styles = StyleSheet.create({
   scrollContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
   sessionHero: {
     borderRadius: 24,
-    backgroundColor: colors.inkStrong,
+    backgroundColor: colors.accentDarker,
     padding: spacing.md,
     marginBottom: spacing.md,
   },
@@ -2156,7 +2463,7 @@ const styles = StyleSheet.create({
   progressBlock: { marginTop: spacing.sm },
   activeCard: {
     borderRadius: 28,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.md,
@@ -2164,19 +2471,38 @@ const styles = StyleSheet.create({
   },
   activeHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
   activeStep: {
-    width: 42,
-    height: 42,
-    borderRadius: radius.lg,
-    backgroundColor: '#fff8e6',
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    backgroundColor: colors.accentLight,
     borderWidth: 1,
-    borderColor: '#f5b301',
+    borderColor: colors.accentSurface,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  activeStepText: { ...typography.subtitle, color: colors.accentDark, fontWeight: '800' },
+  activeStepText: { ...typography.bodyBold, color: colors.accentDark, fontWeight: '800' },
   activeText: { flex: 1 },
   activeKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
-  activeName: { fontSize: 30, lineHeight: 35, fontWeight: '800', color: colors.ink, marginTop: spacing.md, letterSpacing: -0.35 },
+  activeName: { fontSize: 28, lineHeight: 35, fontWeight: '800', color: colors.ink, marginTop: spacing.sm, letterSpacing: -0.3 },
+  muscleMapCard: {
+    minHeight: 126,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: spacing.md,
+    marginTop: spacing.sm,
+    overflow: 'hidden',
+  },
+  muscleMapCopy: { flex: 1, minWidth: 0, paddingVertical: spacing.md },
+  muscleMapKicker: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.gold, textTransform: 'uppercase' },
+  muscleMapTitle: { fontSize: 16, lineHeight: 22, fontWeight: '700', color: colors.ink, marginTop: 3 },
+  muscleMapTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: spacing.sm },
+  muscleMapTag: { borderRadius: radius.pill, backgroundColor: colors.accentLight, paddingHorizontal: 9, paddingVertical: 5 },
+  muscleMapTagText: { fontSize: 13, lineHeight: 18, fontWeight: '700', color: colors.accentDark },
+  muscleMapFigure: { width: 148, alignSelf: 'stretch', justifyContent: 'center' },
   activeStatus: {
     width: 36,
     height: 36,
@@ -2185,10 +2511,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.accentLight,
   },
-  activeStatusDone: { backgroundColor: colors.accent },
+  activeStatusDone: { backgroundColor: colors.accentFill },
   activeStatusLive: { backgroundColor: colors.warn },
-  prepScroller: { flex: 1, marginTop: spacing.sm },
-  prepContent: { paddingBottom: spacing.sm },
+  prepScroller: { flex: 1, marginTop: spacing.xs },
+  prepContent: { paddingBottom: spacing.sm, gap: spacing.sm },
+  liveScroller: { flex: 1 },
+  liveContent: { paddingBottom: spacing.sm },
   videoBox: { alignItems: 'center', justifyContent: 'center' },
   videoActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   videoActionButton: { flex: 1 },
@@ -2197,7 +2525,7 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     padding: spacing.md,
     marginBottom: spacing.md,
   },
@@ -2225,7 +2553,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  setDotDone: { backgroundColor: colors.accent, borderColor: colors.accent },
+  setDotDone: { backgroundColor: colors.accentFill, borderColor: colors.accent },
   setDotText: { ...typography.bodyBold, color: colors.inkMuted },
   setDotTextDone: { color: colors.white },
   coachNote: {
@@ -2247,7 +2575,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: colors.accentSurface,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     padding: spacing.md,
   },
   flowButtonIcon: {
@@ -2267,7 +2595,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     borderRadius: radius.xl,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.md,
@@ -2281,8 +2609,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.panelMuted,
   },
-  exerciseNumDone: { backgroundColor: colors.accent },
-  exerciseNumActive: { backgroundColor: colors.white },
+  exerciseNumDone: { backgroundColor: colors.accentFill },
+  exerciseNumActive: { backgroundColor: colors.panelRaised },
   exerciseNumText: { ...typography.bodyBold, color: colors.inkMuted },
   exerciseNumTextActive: { color: colors.accentDark },
   exerciseRowText: { flex: 1 },
@@ -2291,17 +2619,114 @@ const styles = StyleSheet.create({
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
   modalBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.overlay },
   feedbackSheet: {
+    maxHeight: '90%',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    backgroundColor: colors.white,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.lg,
+    backgroundColor: colors.panelRaised,
   },
   setEntrySheet: {
+    maxHeight: '78%',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
+    overflow: 'hidden',
+  },
+  setEntrySheetCompact: { maxHeight: '62%' },
+  setEntrySheetSuccess: {
+    minHeight: '46%',
+    backgroundColor: colors.panelWarm,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: colors.accentSurface,
+  },
+  setEntryHandle: { marginTop: spacing.sm, marginBottom: 0 },
+  setEntryHandleSuccess: { backgroundColor: colors.goldMuted },
+  setSaveSuccess: {
+    flex: 1,
+    minHeight: 360,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
+  },
+  setSaveSuccessIcon: {
+    width: 88,
+    height: 88,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  setSaveSuccessIconInner: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.pill,
+    backgroundColor: colors.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.accent,
+  },
+  setSaveSuccessKicker: {
+    ...typography.overline,
+    color: colors.gold,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+  },
+  setSaveSuccessTitle: {
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '900',
+    letterSpacing: -0.4,
+    color: colors.ink,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
+  setSaveSuccessExercise: {
+    ...typography.body,
+    color: colors.inkMuted,
+    textAlign: 'center',
+    marginTop: 3,
+  },
+  setSaveProgressMeta: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.lg,
+  },
+  setSaveProgressLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
+  setSaveProgressValue: { ...typography.caption, color: colors.gold, fontWeight: '900' },
+  setSaveProgressTrack: {
+    alignSelf: 'stretch',
+    height: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.borderStrong,
+    overflow: 'hidden',
+    marginTop: spacing.xs,
+  },
+  setSaveProgressFill: {
+    height: '100%',
+    borderRadius: radius.pill,
+    backgroundColor: colors.gold,
+  },
+  setSaveSuccessMessage: {
+    ...typography.caption,
+    color: colors.inkMuted,
+    textAlign: 'center',
+    marginTop: spacing.md,
+    maxWidth: 320,
+  },
+  setEntryContentScroll: { flexGrow: 0, flexShrink: 1 },
+  setEntryContent: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
+  },
+  sheetScrollContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.lg,
@@ -2322,7 +2747,7 @@ const styles = StyleSheet.create({
   setEntryTargetText: { ...typography.bodyBold, color: colors.accentDark },
   sheetInputStack: {
     gap: spacing.md,
-    marginBottom: spacing.lg,
+    paddingBottom: spacing.sm,
   },
   sheetInputGroup: {
     gap: 6,
@@ -2343,7 +2768,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     borderWidth: 1,
     borderColor: colors.accentSurface,
   },
@@ -2356,9 +2781,14 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: colors.ink,
   },
-  sheetActionRow: {
+  sheetActionDock: {
     flexDirection: 'row',
     gap: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: colors.panelRaised,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
   },
   sheetSecondaryButton: {
     flex: 0.82,
@@ -2375,18 +2805,28 @@ const styles = StyleSheet.create({
     flex: 1.18,
     minHeight: 58,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.gold,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
+    ...shadows.accent,
   },
-  sheetSaveText: { ...typography.bodyBold, color: colors.white },
+  sheetSaveButtonSaving: { opacity: 0.86 },
+  sheetSaveButtonError: {
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.error,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  sheetSaveText: { ...typography.bodyBold, color: colors.onPrimary, fontWeight: '900' },
+  sheetSaveTextError: { color: colors.ink },
   flowSheet: {
     maxHeight: '76%',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.lg,
@@ -2395,7 +2835,7 @@ const styles = StyleSheet.create({
     maxHeight: '82%',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.lg,
@@ -2420,7 +2860,7 @@ const styles = StyleSheet.create({
   statsList: { gap: spacing.sm, paddingBottom: spacing.md },
   statsExerciseCard: {
     borderRadius: radius.xl,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.md,
@@ -2442,7 +2882,7 @@ const styles = StyleSheet.create({
   },
   loggedSetPill: {
     borderRadius: radius.pill,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     borderWidth: 1,
     borderColor: colors.accentSurface,
     paddingHorizontal: spacing.sm,
@@ -2483,7 +2923,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.sm,
   },
-  sentimentSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
+  sentimentSelected: { backgroundColor: colors.accentFill, borderColor: colors.accent },
   sentimentText: { ...typography.bodyBold, color: colors.accentDark },
   sentimentTextSelected: { color: colors.white },
   feedbackInput: {
@@ -2505,9 +2945,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   rewardCard: {
+    width: '100%',
+    maxWidth: 360,
     minWidth: 240,
     borderRadius: radius.xl,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     borderWidth: 1,
     borderColor: colors.accentSurface,
     alignItems: 'center',
@@ -2523,7 +2965,7 @@ const styles = StyleSheet.create({
     width: 58,
     height: 58,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentFill,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.sm,

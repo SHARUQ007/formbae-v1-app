@@ -5,6 +5,7 @@ import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { shadows } from '../theme/shadows';
 import { typography } from '../theme/typography';
+import { radius } from '../theme/radius';
 
 type CardVariant = 'elevated' | 'flat' | 'accent' | 'outline';
 
@@ -19,7 +20,7 @@ export function Card({ children, style, variant = 'elevated', onPress }: CardPro
   const content = <View style={[styles.card, cardVariants[variant], style]}>{children}</View>;
   if (onPress) {
     return (
-      <TouchableOpacity activeOpacity={0.85} onPress={onPress}>
+      <TouchableOpacity activeOpacity={0.92} onPress={onPress}>
         {content}
       </TouchableOpacity>
     );
@@ -90,11 +91,11 @@ export function ScreenHeader({
         </TouchableOpacity>
       ) : null}
       <View style={styles.headerText}>
-        <Text style={styles.headerTitle} numberOfLines={1}>
+        <Text style={styles.headerTitle}>
           {title}
         </Text>
         {subtitle ? (
-          <Text style={styles.headerSubtitle} numberOfLines={1}>
+          <Text style={styles.headerSubtitle}>
             {subtitle}
           </Text>
         ) : null}
@@ -108,22 +109,22 @@ const cardVariants: Record<CardVariant, ViewStyle> = {
   elevated: { backgroundColor: colors.panel, borderColor: colors.border, borderWidth: 1, ...shadows.sm },
   flat: { backgroundColor: colors.panelMuted, borderColor: colors.border, borderWidth: 1 },
   outline: { backgroundColor: colors.panel, borderColor: colors.borderStrong, borderWidth: 1 },
-  accent: { backgroundColor: colors.panel, borderColor: colors.accent, borderWidth: 1.5, ...shadows.sm },
+  accent: { backgroundColor: colors.panelWarm, borderColor: colors.accentSurface, borderWidth: 1 },
 };
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 22,
-    padding: spacing.md,
+    borderRadius: radius.lg,
+    padding: 20,
   },
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
     paddingHorizontal: spacing.lg,
   },
-  title: { ...typography.hero, color: colors.ink, marginBottom: spacing.sm },
+  title: { ...typography.hero, color: colors.ink, marginBottom: spacing.xs },
   subtitle: { ...typography.body, color: colors.inkMuted, marginBottom: spacing.lg },
-  section: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase', marginBottom: spacing.sm, marginTop: spacing.lg },
+  section: { ...typography.bodyBold, color: colors.ink, marginBottom: spacing.sm, marginTop: spacing.xl },
   header: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.lg, minHeight: 42 },
   backBtn: {
     width: 42,

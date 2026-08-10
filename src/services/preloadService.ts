@@ -5,11 +5,13 @@ import { fetchMessages } from './messageService';
 import { fetchProgress } from './progressService';
 import { fetchSettings } from './settingsService';
 import { fetchCoachHub } from './trainerService';
-import { fetchWorkoutDay, fetchWorkoutPlan } from './workoutService';
+import { fetchUserPlans, fetchWorkoutDay, fetchWorkoutPlan } from './workoutService';
 
 export const CACHE_KEYS = {
   workoutPlan: 'workoutPlan',
-  progressBundle: 'progressBundle',
+  // Bump when the progress response contract changes so an older persisted
+  // bundle cannot hide a newly generated weekly review after an app update.
+  progressBundle: 'progressBundle:v3',
   dietDiary: 'dietDiary',
   profileSettings: 'profileSettings',
   coachBundle: 'coachBundle',
@@ -32,8 +34,19 @@ export function loadProgressBundleCached(options?: { force?: boolean }) {
   return getCachedResource(
     CACHE_KEYS.progressBundle,
     async () => {
-      const [progress, checkIns] = await Promise.all([fetchProgress(), fetchCheckIns()]);
-      return { progress, checkIns: checkIns.checkIns, dueThisWeek: checkIns.dueThisWeek };
+      const [progress, checkIns, userPlans, settings] = await Promise.all([
+        fetchProgress(),
+        fetchCheckIns(),
+        fetchUserPlans(),
+        loadProfileSettingsCached(options),
+      ]);
+      return {
+        progress,
+        checkIns: checkIns.checkIns,
+        dueThisWeek: checkIns.dueThisWeek,
+        planDays: userPlans.plans.flatMap((plan) => plan.days ?? []),
+        gender: settings.profile?.gender || '',
+      };
     },
     { force: options?.force },
   );

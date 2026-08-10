@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
   },
   avatarChip: { minWidth: 124, paddingVertical: spacing.sm },
   chipIcon: { width: 30, height: 30, borderRadius: radius.pill, backgroundColor: colors.panelMuted, alignItems: 'center', justifyContent: 'center' },
-  chipIconSelected: { backgroundColor: colors.white },
+  chipIconSelected: { backgroundColor: colors.panelRaised },
   chipSelected: { borderColor: colors.accent, backgroundColor: colors.accentLight },
   chipText: { ...typography.caption, color: colors.inkMuted },
   chipTextSelected: { color: colors.accentDark },

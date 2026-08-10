@@ -8,10 +8,10 @@ import { typography } from '../../../theme/typography';
 export function WorkoutMetricChip({ icon, label, value }: { icon: string; label: string; value: string }) {
   return (
     <View style={styles.root}>
-      <Feather name={icon} size={16} color="#9a5b00" />
+      <Feather name={icon} size={16} color={colors.gold} />
       <View style={styles.copy}>
         <Text style={styles.label}>{label}</Text>
-        <Text style={styles.value} numberOfLines={1}>{value}</Text>
+        <Text style={styles.value}>{value}</Text>
       </View>
     </View>
   );
@@ -28,7 +28,7 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     gap: 5,
   },
-  copy: { gap: 1 },
+  copy: { gap: 1, minWidth: 0 },
   label: { ...typography.overline, color: colors.inkMuted, textTransform: 'uppercase' },
-  value: { ...typography.subtitle, color: colors.ink },
+  value: { ...typography.subtitle, color: colors.ink, flexShrink: 1 },
 });

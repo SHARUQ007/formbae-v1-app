@@ -3,6 +3,6 @@ module.exports = {
   setupFiles: ['./jestSetup.js'],
   watchman: false,
   transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native|@react-navigation|react-native-vector-icons|react-native-screens|react-native-safe-area-context)/)',
+    'node_modules/(?!((jest-)?react-native|@react-native|@react-navigation|react-native-body-highlighter|react-native-vector-icons|react-native-screens|react-native-safe-area-context)/)',
   ],
 };

@@ -16,10 +16,12 @@ import {
   View,
 } from 'react-native';
 import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image-picker';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { ScreenContainer, ScreenTitle, Card } from '../../components/Card';
+import { ScreenContainer, Card } from '../../components/Card';
+import { FoodBowlGraphic } from '../../components/FoodBowlGraphic';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { EmptyState } from '../../components/States';
 import {
@@ -47,12 +49,25 @@ import { radius } from '../../theme/radius';
 import { shadows } from '../../theme/shadows';
 import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
+import { isDateInCurrentWeek } from '../../utils/weeklyMuscles';
+import {
+  isFutureLocalDay as isFutureDay,
+  isMealSlotInFuture,
+  isSameLocalDay as isSameDay,
+  mealForCurrentTime,
+  nextMealSlot as nextMemorySlot,
+  previousMealSlot as previousMemorySlot,
+  previousUnloggedMealSlot,
+  shiftLocalDate as shiftDate,
+  timestampForMealSlot as timestampForFoodSlot,
+  timestampValue,
+} from '../../utils/dietDiaryTime';
 
 const meals: Array<{ type: MealType; icon: string; label: string; hint: string }> = [
-  { type: 'Breakfast', icon: 'sunrise', label: 'Morning', hint: 'After waking' },
-  { type: 'Lunch', icon: 'sun', label: 'Afternoon', hint: 'Midday food' },
-  { type: 'Dinner', icon: 'sunset', label: 'Evening', hint: 'Later meal' },
-  { type: 'Snack', icon: 'moon', label: 'Night', hint: 'Late bites' },
+  { type: 'Breakfast', icon: 'sunrise', label: 'Breakfast', hint: 'Morning meal' },
+  { type: 'Lunch', icon: 'sun', label: 'Lunch', hint: 'Midday meal' },
+  { type: 'Evening', icon: 'sunset', label: 'Evening', hint: 'Evening meal' },
+  { type: 'Dinner', icon: 'moon', label: 'Dinner', hint: 'Night meal' },
 ];
 
 const confettiColors = ['#050505', '#ffffff', '#d9d6ce', '#8f8b82'];
@@ -101,54 +116,11 @@ function formatDiaryDate(value: Date) {
 }
 
 function entryTimestamp(entry: DietDiaryEntry) {
-  const time = new Date(entry.createdAt).getTime();
-  return Number.isNaN(time) ? 0 : time;
-}
-
-function isSameDay(a: Date | string, b: Date | string) {
-  const first = new Date(a);
-  const second = new Date(b);
-  return first.toDateString() === second.toDateString();
-}
-
-function shiftDate(value: Date, days: number) {
-  const next = new Date(value);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
-function isFutureDay(value: Date) {
-  const today = new Date();
-  const normalized = new Date(value);
-  normalized.setHours(0, 0, 0, 0);
-  today.setHours(0, 0, 0, 0);
-  return normalized.getTime() > today.getTime();
-}
-
-function mealTime(type: MealType) {
-  if (type === 'Breakfast') return { hour: 8, minute: 30 };
-  if (type === 'Lunch') return { hour: 13, minute: 30 };
-  if (type === 'Dinner') return { hour: 19, minute: 30 };
-  return { hour: 22, minute: 0 };
-}
-
-function timestampForFoodSlot(value: Date, mealType: MealType) {
-  const slot = mealTime(mealType);
-  const next = new Date(value);
-  next.setHours(slot.hour, slot.minute, 0, 0);
-  return next.toISOString();
+  return timestampValue(entry.createdAt);
 }
 
 function mealLabel(type: MealType) {
   return meals.find((meal) => meal.type === type)?.label || type;
-}
-
-function mealForCurrentTime(now = new Date()): MealType {
-  const hour = now.getHours();
-  if (hour >= 5 && hour < 11) return 'Breakfast';
-  if (hour >= 11 && hour < 16) return 'Lunch';
-  if (hour >= 16 && hour < 21) return 'Dinner';
-  return 'Snack';
 }
 
 function feedbackStatusText(feedback?: DietCoachFeedback | null) {
@@ -156,7 +128,8 @@ function feedbackStatusText(feedback?: DietCoachFeedback | null) {
     const days = feedback?.nextInDays ?? 7;
     return `Insights unlock in ${days} day${days === 1 ? '' : 's'}`;
   }
-  return 'Personalized feedback · refreshes weekly';
+  const days = feedback.nextInDays ?? 7;
+  return `Next AI feedback in ${days} day${days === 1 ? '' : 's'}`;
 }
 
 function isMemoryEntry(entry: DietDiaryEntry) {
@@ -167,34 +140,13 @@ function uniqueMemoryEntries(entries: DietDiaryEntry[]) {
   const seen = new Set<string>();
   return entries.filter((entry) => {
     if (!isMemoryEntry(entry)) return false;
-    const key = entry.remoteId || `${entry.createdAt}:${entry.mealType}:${entry.note?.trim().toLowerCase()}`;
+    // Entries are unique records even when the same food is logged more than
+    // once for one meal. Only collapse the same local/remote record after sync.
+    const key = entry.remoteId || entry.id;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
-}
-
-function mealIndex(type: MealType) {
-  const index = meals.findIndex((meal) => meal.type === type);
-  return index >= 0 ? index : 0;
-}
-
-function previousMemorySlot(date: Date, mealType: MealType) {
-  const index = mealIndex(mealType);
-  if (index > 0) {
-    return { date, mealType: meals[index - 1].type };
-  }
-  return { date: shiftDate(date, -1), mealType: meals[meals.length - 1].type };
-}
-
-function nextMemorySlot(date: Date, mealType: MealType) {
-  const index = mealIndex(mealType);
-  if (index < meals.length - 1) {
-    return { date, mealType: meals[index + 1].type };
-  }
-  const dateAfter = shiftDate(date, 1);
-  if (isFutureDay(dateAfter)) return null;
-  return { date: dateAfter, mealType: meals[0].type };
 }
 
 function imageSource(entry: DietDiaryEntry) {
@@ -225,7 +177,7 @@ function DietTab({
       accessibilityRole="tab"
       accessibilityState={{ selected: active }}
     >
-      <Feather name={icon} size={18} color={active ? colors.white : colors.inkMuted} />
+      <Feather name={icon} size={18} color={active ? colors.accent : colors.inkMuted} />
       <Text style={[styles.dietTabText, active && styles.dietTabTextActive]}>{label}</Text>
     </TouchableOpacity>
   );
@@ -236,10 +188,14 @@ export function DietScreen(props: Props) {
 }
 
 function DietScreenContent({ route, navigation }: Props) {
+  const tabBarHeight = useBottomTabBarHeight();
   const [entries, setEntries] = useState<DietDiaryEntry[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [selectedMeal, setSelectedMeal] = useState<MealType>(() => route.params?.mealType || mealForCurrentTime());
+  const [selectedMeal, setSelectedMeal] = useState<MealType>(() => {
+    const requested = route.params?.mealType;
+    return requested && !isMealSlotInFuture(new Date(), requested) ? requested : mealForCurrentTime();
+  });
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [dietFeedback, setDietFeedback] = useState<DietCoachFeedback | null>(null);
   const [preview, setPreview] = useState<DietDiaryEntry | null>(null);
@@ -253,31 +209,62 @@ function DietScreenContent({ route, navigation }: Props) {
   const celebrationProgress = useRef(new Animated.Value(0)).current;
   const handledCameraRequestRef = useRef<number | null>(null);
 
-  const load = useCallback(async (options?: { force?: boolean }) => {
+  const load = useCallback(async (options?: { force?: boolean; retryPending?: boolean }) => {
     const local = await loadDietDiaryEntries();
     setEntries(local);
     try {
       const remote = await loadDietDiaryCached({ force: options?.force });
       setDietFeedback(remote.feedback ?? null);
-      setEntries(await mergeRemoteDietDiaryEntries(remote.entries));
+      let merged = await mergeRemoteDietDiaryEntries(remote.entries);
+
+      if (options?.retryPending) {
+        const pendingTextEntries = merged.filter(
+          (entry) => isMemoryEntry(entry) && !entry.remoteId && Boolean(entry.note?.trim()),
+        );
+        if (pendingTextEntries.length) {
+          // Keep writes ordered because the legacy backend stores a user's
+          // diary as one document. Sequential retries prevent lost updates.
+          for (const entry of pendingTextEntries) {
+            try {
+              const uploaded = await uploadTextDietDiaryEntry({
+                clientId: entry.id,
+                mealType: entry.mealType,
+                note: entry.note || '',
+                createdAt: entry.createdAt,
+              });
+              await updateDietDiaryEntry(entry.id, {
+                remoteId: uploaded.entry.entryId,
+                remoteImageUrl: uploaded.entry.imageUrl,
+                createdAt: uploaded.entry.createdAt,
+                loggedAt: uploaded.entry.loggedAt || entry.loggedAt,
+                syncedAt: new Date().toISOString(),
+                syncError: undefined,
+              });
+            } catch (error) {
+              await updateDietDiaryEntry(entry.id, {
+                syncError: error instanceof Error ? error.message : 'Could not sync meal yet.',
+              });
+            }
+          }
+          merged = await loadDietDiaryEntries();
+        }
+      }
+
+      setEntries(merged);
     } catch {
       // Offline/local-only mode is still useful for the diary.
     }
   }, []);
 
   useEffect(() => {
-    load();
+    load({ retryPending: true });
   }, [load]);
 
-  const visibleEntries = useMemo(
-    () => entries.filter((entry) => isSameDay(entry.createdAt, selectedDate)),
-    [entries, selectedDate],
-  );
   const diarySections = useMemo(() => {
     const sections: Array<{ key: string; title: string; entries: DietDiaryEntry[] }> = [];
     const byDate = new Map<string, DietDiaryEntry[]>();
     [...entries]
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .sort((a, b) => entryTimestamp(b) - entryTimestamp(a))
       .forEach((entry) => {
         const date = new Date(entry.createdAt);
         const key = Number.isNaN(date.getTime()) ? 'unknown' : date.toDateString();
@@ -286,7 +273,8 @@ function DietScreenContent({ route, navigation }: Props) {
         byDate.set(key, bucket);
       });
     byDate.forEach((dateEntries, key) => {
-      const sortedDateEntries = [...dateEntries].sort((a, b) => entryTimestamp(a) - entryTimestamp(b));
+      // A diary is read from the current/latest meal backward through the day.
+      const sortedDateEntries = [...dateEntries].sort((a, b) => entryTimestamp(b) - entryTimestamp(a));
       sections.push({
         key,
         title: key === 'unknown' ? 'Unknown date' : formatDiaryDate(new Date(dateEntries[0].createdAt)),
@@ -295,8 +283,10 @@ function DietScreenContent({ route, navigation }: Props) {
     });
     return sections;
   }, [entries]);
-  const memoryPoints = useMemo(() => uniqueMemoryEntries(visibleEntries).length, [visibleEntries]);
-  const totalMemoryPoints = useMemo(() => uniqueMemoryEntries(entries).length, [entries]);
+  const weeklyMemoryPoints = useMemo(
+    () => uniqueMemoryEntries(entries.filter((entry) => isDateInCurrentWeek(entry.createdAt))).length,
+    [entries],
+  );
   const canGoForward = !isSameDay(selectedDate, new Date()) && !isFutureDay(shiftDate(selectedDate, 1));
   const canMoveMemoryForward = useMemo(
     () => Boolean(nextMemorySlot(selectedDate, selectedMeal)),
@@ -312,11 +302,31 @@ function DietScreenContent({ route, navigation }: Props) {
     setSelectedMeal(next.mealType);
   }, [selectedDate, selectedMeal]);
 
-  const saveAsset = useCallback(async (asset?: Asset, mealType: MealType = selectedMeal) => {
+  const changeSelectedDate = useCallback((direction: -1 | 1) => {
+    setSelectedDate((value) => {
+      const next = shiftDate(value, direction);
+      if (isSameDay(next, new Date()) && isMealSlotInFuture(next, selectedMeal)) {
+        setSelectedMeal(mealForCurrentTime());
+      }
+      return next;
+    });
+  }, [selectedMeal]);
+
+  const selectMeal = useCallback((mealType: MealType) => {
+    if (isMealSlotInFuture(selectedDate, mealType)) return;
+    setSelectedMeal(mealType);
+  }, [selectedDate]);
+
+  const saveAsset = useCallback(async (
+    asset?: Asset,
+    mealType: MealType = selectedMeal,
+    mealDate: Date = selectedDate,
+  ) => {
     if (!asset?.uri) return;
     setSaving(true);
     try {
-      const localEntry = await addDietDiaryEntry(asset, mealType, undefined, timestampForFoodSlot(selectedDate, mealType));
+      const loggedMeal = isMealSlotInFuture(mealDate, mealType) ? mealForCurrentTime() : mealType;
+      const localEntry = await addDietDiaryEntry(asset, loggedMeal, undefined, timestampForFoodSlot(mealDate, loggedMeal));
       await load();
       try {
         const uploaded = await uploadDietDiaryEntry({
@@ -329,6 +339,8 @@ function DietScreenContent({ route, navigation }: Props) {
         await updateDietDiaryEntry(localEntry.id, {
           remoteId: uploaded.entry.entryId,
           remoteImageUrl: uploaded.entry.imageUrl,
+          createdAt: uploaded.entry.createdAt,
+          loggedAt: uploaded.entry.loggedAt || localEntry.loggedAt,
           syncedAt: new Date().toISOString(),
           syncError: undefined,
         });
@@ -346,7 +358,10 @@ function DietScreenContent({ route, navigation }: Props) {
     }
   }, [load, selectedDate, selectedMeal]);
 
-  const addFromCamera = useCallback(async (mealType: MealType = selectedMeal) => {
+  const addFromCamera = useCallback(async (
+    mealType: MealType = selectedMeal,
+    mealDate: Date = selectedDate,
+  ) => {
     const result = await launchCamera({
       mediaType: 'photo',
       cameraType: 'back',
@@ -361,8 +376,8 @@ function DietScreenContent({ route, navigation }: Props) {
       Alert.alert('Camera unavailable', result.errorMessage);
       return;
     }
-    await saveAsset(result.assets?.[0], mealType);
-  }, [saveAsset, selectedMeal]);
+    await saveAsset(result.assets?.[0], mealType, mealDate);
+  }, [saveAsset, selectedDate, selectedMeal]);
 
   const addFromLibrary = async () => {
     const result = await launchImageLibrary({
@@ -427,24 +442,37 @@ function DietScreenContent({ route, navigation }: Props) {
     ]).start(() => setSavedMeal(null));
   }, [celebrationProgress, saveToastOpacity, saveToastScale]);
 
-  const saveTextEntry = async () => {
+  const saveTextEntry = async (options?: { finishAfterSave?: boolean; moveToPreviousMissed?: boolean }) => {
     const note = textEntry.trim();
     if (!note) {
       Alert.alert('Add remembered food', 'Write one food or meal you remember eating.');
-      return;
+      return false;
     }
     setSaving(true);
     const entryMeal = selectedMeal;
     const entryDate = selectedDate;
     try {
       const localEntry = await addTextDietDiaryEntry(entryMeal, note, timestampForFoodSlot(entryDate, entryMeal));
+      const entriesAfterSave = [localEntry, ...entries.filter((entry) => entry.id !== localEntry.id)];
+      setEntries(entriesAfterSave);
       setTextEntry('');
-      await load();
       setMemorySessionPoints((points) => points + 1);
       showSavedMealAnimation(entryMeal, note);
-      const nextSlot = previousMemorySlot(entryDate, entryMeal);
-      setSelectedDate(nextSlot.date);
-      setSelectedMeal(nextSlot.mealType);
+      if (options?.finishAfterSave) {
+        setTextModalOpen(false);
+        setActiveTab('diary');
+      } else if (options?.moveToPreviousMissed) {
+        const previousMissed = previousUnloggedMealSlot(
+          entryDate,
+          entryMeal,
+          (slot) => entriesAfterSave.some(
+            (entry) => entry.mealType === slot.mealType && isSameDay(entry.createdAt, slot.date),
+          ),
+        );
+        setSelectedDate(previousMissed.date);
+        setSelectedMeal(previousMissed.mealType);
+      }
+      await load();
       try {
         const uploaded = await uploadTextDietDiaryEntry({
           clientId: localEntry.id,
@@ -455,6 +483,8 @@ function DietScreenContent({ route, navigation }: Props) {
         await updateDietDiaryEntry(localEntry.id, {
           remoteId: uploaded.entry.entryId,
           remoteImageUrl: uploaded.entry.imageUrl,
+          createdAt: uploaded.entry.createdAt,
+          loggedAt: uploaded.entry.loggedAt || localEntry.loggedAt,
           syncedAt: new Date().toISOString(),
           syncError: undefined,
         });
@@ -465,14 +495,28 @@ function DietScreenContent({ route, navigation }: Props) {
         });
         await load();
       }
+      return true;
     } catch (e) {
       Alert.alert('Could not save meal', e instanceof Error ? e.message : 'Please try again.');
+      return false;
     } finally {
       setSaving(false);
     }
   };
 
+  const finishMemoryGame = async () => {
+    if (saving) return;
+    if (textEntry.trim()) {
+      await saveTextEntry({ finishAfterSave: true });
+      return;
+    }
+    setTextModalOpen(false);
+  };
+
   const openMemoryGame = () => {
+    const now = new Date();
+    setSelectedDate(now);
+    setSelectedMeal(mealForCurrentTime(now));
     setMemorySessionPoints(0);
     setTextEntry('');
     setTextModalOpen(true);
@@ -480,7 +524,7 @@ function DietScreenContent({ route, navigation }: Props) {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load({ force: true });
+    await load({ force: true, retryPending: true });
     setRefreshing(false);
   };
 
@@ -488,16 +532,22 @@ function DietScreenContent({ route, navigation }: Props) {
     const requestId = route.params?.action === 'camera' ? route.params.requestId : undefined;
     if (!requestId || handledCameraRequestRef.current === requestId) return;
     handledCameraRequestRef.current = requestId;
-    const mealType = route.params?.mealType || selectedMeal;
+    const currentDate = new Date();
+    const requestedMeal = route.params?.mealType || selectedMeal;
+    const mealType = isMealSlotInFuture(currentDate, requestedMeal) ? mealForCurrentTime(currentDate) : requestedMeal;
+    setSelectedDate(currentDate);
     setSelectedMeal(mealType);
     navigation.setParams({ action: undefined, requestId: undefined, mealType: undefined });
-    const timer = setTimeout(() => addFromCamera(mealType), 250);
+    const timer = setTimeout(() => addFromCamera(mealType, currentDate), 250);
     return () => clearTimeout(timer);
   }, [route.params?.action, route.params?.requestId, route.params?.mealType, selectedMeal, navigation, addFromCamera]);
 
   useEffect(() => {
     if (route.params?.action === 'camera' || !route.params?.mealType) return;
-    setSelectedMeal(route.params.mealType);
+    const currentDate = new Date();
+    const requestedMeal = route.params.mealType;
+    setSelectedDate(currentDate);
+    setSelectedMeal(isMealSlotInFuture(currentDate, requestedMeal) ? mealForCurrentTime(currentDate) : requestedMeal);
     navigation.setParams({ mealType: undefined });
   }, [route.params?.action, route.params?.mealType, navigation]);
 
@@ -579,7 +629,7 @@ function DietScreenContent({ route, navigation }: Props) {
                           <Text style={styles.diaryMeal}>{mealLabel(entry.mealType)}</Text>
                           {entry.syncError ? <Feather name="cloud-off" size={14} color={colors.warn} /> : null}
                         </View>
-                        <Text style={styles.diaryFoodName} numberOfLines={2}>
+                        <Text style={styles.diaryFoodName}>
                           {isTextEntry ? entry.note : 'Food photo'}
                         </Text>
                         <Text style={styles.diaryFoodTime}>{formatFoodTime(entry.createdAt)}</Text>
@@ -600,10 +650,21 @@ function DietScreenContent({ route, navigation }: Props) {
     <ScreenContainer>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scroll}
+        contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
-        <ScreenTitle>Diet</ScreenTitle>
+        <View style={styles.dietHeaderRow}>
+          <Text style={styles.dietScreenTitle}>Diet</Text>
+          <View style={styles.weeklyPointsBadge} accessibilityLabel={`${weeklyMemoryPoints} food memory points this week`}>
+            <View style={styles.weeklyPointsIcon}>
+              <Feather name="star" size={17} color={colors.gold} />
+            </View>
+            <View style={styles.weeklyPointsCopy}>
+              <Text style={styles.weeklyPointsValue}>{weeklyMemoryPoints}</Text>
+              <Text style={styles.weeklyPointsLabel}>WEEKLY POINTS</Text>
+            </View>
+          </View>
+        </View>
 
         <View style={styles.dietTabs}>
           <DietTab label="Log" icon="plus-circle" active={activeTab === 'log'} onPress={() => setActiveTab('log')} />
@@ -617,7 +678,7 @@ function DietScreenContent({ route, navigation }: Props) {
           <View style={styles.diaryScreen}>
             <View style={styles.feedbackHero}>
               <View style={styles.feedbackHeroIcon}>
-                <Feather name="message-circle" size={24} color={colors.white} />
+                <Feather name="message-circle" size={24} color={colors.accent} />
               </View>
               <View style={styles.feedbackHeroText}>
                 <Text style={styles.feedbackEyebrow}>Diet feedback</Text>
@@ -668,7 +729,7 @@ function DietScreenContent({ route, navigation }: Props) {
                     <View style={styles.feedbackList}>
                       {dietFeedback.highlights.slice(0, 4).map((highlight) => (
                         <View key={highlight} style={styles.feedbackListItem}>
-                          <Feather name="check" size={16} color={colors.white} />
+                          <Feather name="check" size={16} color={colors.goldMuted} />
                           <Text style={styles.feedbackListText}>{highlight}</Text>
                         </View>
                       ))}
@@ -684,21 +745,15 @@ function DietScreenContent({ route, navigation }: Props) {
           <>
             <View style={styles.logPanel}>
               <View style={styles.logHero}>
-                <View style={styles.logHeroTop}>
-                  <Text style={styles.logEyebrow}>Food logging</Text>
-                  <View style={styles.logScorePill}>
-                    <Text style={styles.logScorePillValue}>{memoryPoints}</Text>
-                    <Text style={styles.logScorePillLabel}>today</Text>
-                  </View>
-                </View>
+                <Text style={styles.logEyebrow}>Food logging</Text>
                 <Text style={styles.logTitle}>Remember what you ate</Text>
-                <Text style={styles.logCopy}>{totalMemoryPoints} lifetime points · add one item at a time</Text>
+                <Text style={styles.logCopy}>Every saved item adds one point to this week.</Text>
               </View>
 
               <View style={styles.logControlsCard}>
                 <View style={styles.dateNavigator}>
                   <TouchableOpacity
-                    onPress={() => setSelectedDate((value) => shiftDate(value, -1))}
+                    onPress={() => changeSelectedDate(-1)}
                     style={styles.dateArrow}
                     accessibilityRole="button"
                     accessibilityLabel="Previous log date"
@@ -710,7 +765,7 @@ function DietScreenContent({ route, navigation }: Props) {
                     <Text style={styles.dateValue}>{formatDiaryDate(selectedDate)}</Text>
                   </View>
                   <TouchableOpacity
-                    onPress={() => setSelectedDate((value) => shiftDate(value, 1))}
+                    onPress={() => changeSelectedDate(1)}
                     disabled={!canGoForward}
                     style={[styles.dateArrow, !canGoForward && styles.dateArrowDisabled]}
                     accessibilityRole="button"
@@ -724,18 +779,20 @@ function DietScreenContent({ route, navigation }: Props) {
                 <View style={styles.mealGridCompact}>
                   {meals.map((meal) => {
                     const selected = selectedMeal === meal.type;
+                    const disabled = isMealSlotInFuture(selectedDate, meal.type);
                     return (
                       <TouchableOpacity
                         key={meal.type}
                         activeOpacity={0.85}
-                        onPress={() => setSelectedMeal(meal.type)}
-                        style={[styles.mealPill, selected && styles.mealPillSelected]}
+                        onPress={() => selectMeal(meal.type)}
+                        disabled={disabled}
+                        style={[styles.mealPill, selected && styles.mealPillSelected, disabled && styles.mealPillDisabled]}
                         accessibilityRole="button"
-                        accessibilityState={{ selected }}
+                        accessibilityState={{ selected, disabled }}
                         accessibilityLabel={`Select ${meal.label}`}
                       >
-                        <Feather name={meal.icon} size={16} color={selected ? colors.white : colors.inkMuted} />
-                        <Text style={[styles.mealPillText, selected && styles.mealPillTextSelected]}>{meal.label}</Text>
+                        <Feather name={meal.icon} size={16} color={selected ? colors.accent : disabled ? colors.inkSubtle : colors.inkMuted} />
+                        <Text style={[styles.mealPillText, selected && styles.mealPillTextSelected, disabled && styles.mealPillTextDisabled]}>{meal.label}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -743,6 +800,7 @@ function DietScreenContent({ route, navigation }: Props) {
               </View>
 
               <View style={styles.actions}>
+                <FoodBowlGraphic />
                 <PrimaryButton title="Start memory game" icon="plus" onPress={openMemoryGame} loading={saving} />
                 <View style={styles.secondaryActionRow}>
                   <PrimaryButton title="Photo" icon="camera" variant="secondary" onPress={() => addFromCamera()} disabled={saving} style={styles.secondaryAction} />
@@ -753,7 +811,7 @@ function DietScreenContent({ route, navigation }: Props) {
 
             <TouchableOpacity activeOpacity={0.86} style={styles.feedbackPreview} onPress={() => setActiveTab('feedback')}>
               <View style={styles.feedbackPreviewIcon}>
-                <Feather name="message-circle" size={19} color={colors.white} />
+                <Feather name="message-circle" size={19} color={colors.accent} />
               </View>
               <View style={styles.feedbackPreviewText}>
                 <Text style={styles.feedbackPreviewTitle}>Diet feedback</Text>
@@ -767,7 +825,7 @@ function DietScreenContent({ route, navigation }: Props) {
 
       <Modal visible={!!preview} transparent animationType="fade" onRequestClose={() => setPreview(null)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <ScrollView style={styles.modalCard} showsVerticalScrollIndicator={false} bounces={false}>
             {preview?.uri ? (
               <Image source={imageSource(preview)} style={styles.previewImage} resizeMode="cover" />
             ) : preview ? (
@@ -781,7 +839,7 @@ function DietScreenContent({ route, navigation }: Props) {
             ) : null}
             {preview ? (
               <View style={styles.previewBody}>
-                <View>
+                <View style={styles.previewBodyCopy}>
                   <Text style={styles.previewTitle}>{mealLabel(preview.mealType)}</Text>
                   <Text style={styles.previewTime}>{formatEntryTime(preview.createdAt)}</Text>
                 </View>
@@ -791,13 +849,18 @@ function DietScreenContent({ route, navigation }: Props) {
               </View>
             ) : null}
             <PrimaryButton title="Close" variant="secondary" onPress={() => setPreview(null)} style={styles.closePreview} />
-          </View>
+          </ScrollView>
         </View>
       </Modal>
 
       <Modal visible={textModalOpen} transparent animationType="slide" onRequestClose={() => setTextModalOpen(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalBackdrop}>
-          <View style={styles.textModalCard}>
+          <ScrollView
+            style={styles.textModalCard}
+            contentContainerStyle={styles.textModalContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             <View style={styles.textModalHeader}>
               <View>
                 <Text style={styles.textModalEyebrow}>Food memory · +1 each</Text>
@@ -819,7 +882,9 @@ function DietScreenContent({ route, navigation }: Props) {
               <View style={styles.memorySlotCenter}>
                 <Text style={styles.memorySlotLabel}>Logging</Text>
                 <Text style={styles.memorySlotValue}>{mealLabel(selectedMeal)}</Text>
-                <Text style={styles.memorySlotDate}>{formatDiaryDate(selectedDate)}</Text>
+                <Text style={styles.memorySlotDate}>
+                  {formatDiaryDate(selectedDate)} · {formatFoodTime(timestampForFoodSlot(selectedDate, selectedMeal))}
+                </Text>
               </View>
               <TouchableOpacity
                 onPress={() => moveMemorySlot(1)}
@@ -837,7 +902,7 @@ function DietScreenContent({ route, navigation }: Props) {
                 <Text style={styles.memorySessionValue}>+{memorySessionPoints}</Text>
                 <Text style={styles.memorySessionLabel}>this round</Text>
               </View>
-              <Text style={styles.memorySessionHint}>After each entry, the game moves one slot back automatically.</Text>
+              <Text style={styles.memorySessionHint}>Add +1 saves this entry, then takes you to the closest earlier meal you missed.</Text>
             </View>
             <TextInput
               value={textEntry}
@@ -852,10 +917,10 @@ function DietScreenContent({ route, navigation }: Props) {
             />
             <Text style={styles.characterCount}>{textEntry.trim().length}/280</Text>
             <View style={styles.textModalActions}>
-              <PrimaryButton title="Finish" variant="secondary" onPress={() => setTextModalOpen(false)} disabled={saving} style={styles.modalActionButton} />
-              <PrimaryButton title="Add +1" icon="plus" onPress={saveTextEntry} loading={saving} style={styles.modalActionButton} />
+              <PrimaryButton title={textEntry.trim() ? 'Save & finish' : 'Finish'} variant="secondary" onPress={finishMemoryGame} disabled={saving} style={styles.modalActionButton} />
+              <PrimaryButton title="Add +1" icon="plus" onPress={() => saveTextEntry({ moveToPreviousMissed: true })} loading={saving} style={styles.modalActionButton} />
             </View>
-          </View>
+          </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
 
@@ -914,14 +979,14 @@ function DietScreenContent({ route, navigation }: Props) {
           </View>
           <Animated.View style={[styles.saveToast, { transform: [{ scale: saveToastScale }] }]}>
             <View style={styles.saveToastIcon}>
-              <Feather name="award" size={34} color={colors.white} />
+              <Feather name="award" size={34} color={colors.accent} />
             </View>
             <View style={styles.pointsBurst}>
               <Text style={styles.pointsBurstText}>+1</Text>
             </View>
-            <Text style={styles.saveToastTitle}>Nice memory</Text>
+            <Text style={styles.saveToastTitle}>Meal saved</Text>
             <Text style={styles.saveToastMeal}>{mealLabel(savedMeal.mealType)}</Text>
-            <Text style={styles.saveToastNote} numberOfLines={2}>{savedMeal.note}</Text>
+            <Text style={styles.saveToastNote}>{savedMeal.note}</Text>
           </Animated.View>
         </Animated.View>
       ) : null}
@@ -930,12 +995,47 @@ function DietScreenContent({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  scroll: { paddingBottom: 110 },
+  scroll: {},
+  dietHeaderRow: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  dietScreenTitle: { ...typography.display, color: colors.ink, flexShrink: 1 },
+  weeklyPointsBadge: {
+    height: 46,
+    minWidth: 132,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: spacing.sm,
+    paddingHorizontal: 10,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  weeklyPointsIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelWarm,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weeklyPointsCopy: { flex: 1, minWidth: 0, justifyContent: 'center', alignItems: 'flex-start' },
+  weeklyPointsValue: { fontSize: 18, lineHeight: 19, fontWeight: '900', color: colors.ink },
+  weeklyPointsLabel: { fontSize: 8, lineHeight: 10, letterSpacing: 0.7, fontWeight: '800', color: colors.inkMuted },
   dietTabs: {
     flexDirection: 'row',
     gap: spacing.xs,
     padding: 4,
-    borderRadius: radius.pill,
+    borderRadius: radius.md,
     backgroundColor: colors.panelMuted,
     borderWidth: 1,
     borderColor: colors.border,
@@ -944,50 +1044,57 @@ const styles = StyleSheet.create({
   dietTab: {
     flex: 1,
     minHeight: 46,
-    borderRadius: radius.pill,
+    borderRadius: radius.sm,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
   },
-  dietTabActive: { backgroundColor: colors.black },
+  dietTabActive: {
+    backgroundColor: colors.panelRaised,
+    borderWidth: 1,
+    borderColor: colors.goldMuted,
+  },
   dietTabText: { ...typography.bodyBold, color: colors.inkMuted },
-  dietTabTextActive: { color: colors.white },
+  dietTabTextActive: { color: colors.ink },
   feedbackScreen: { gap: spacing.md },
   diaryScreen: { gap: spacing.md },
   feedbackHero: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    borderRadius: 26,
-    backgroundColor: colors.black,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
     padding: spacing.lg,
-    ...shadows.accent,
   },
   feedbackHeroIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
   feedbackHeroText: { flex: 1 },
-  feedbackEyebrow: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
-  feedbackTitle: { ...typography.title, color: colors.white, marginTop: 2 },
-  feedbackMeta: { ...typography.bodyBold, color: colors.onAccentMuted, marginTop: spacing.xs },
+  feedbackEyebrow: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
+  feedbackTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
+  feedbackMeta: { ...typography.body, color: colors.inkMuted, marginTop: spacing.xs },
   feedbackCard: { gap: spacing.sm },
   countdownRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   countdownBadge: {
     width: 66,
     height: 66,
-    borderRadius: radius.xl,
-    backgroundColor: colors.black,
+    borderRadius: radius.md,
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  countdownValue: { fontSize: 26, lineHeight: 28, fontWeight: '900', color: colors.white },
-  countdownUnit: { fontSize: 10, lineHeight: 12, color: colors.onAccentMuted, fontWeight: '700' },
+  countdownValue: { fontSize: 26, lineHeight: 28, fontWeight: '900', color: colors.accent },
+  countdownUnit: { fontSize: 10, lineHeight: 12, color: colors.inkMuted, fontWeight: '700' },
   countdownCopy: { flex: 1 },
   feedbackSectionTitle: { ...typography.subtitle, color: colors.ink },
   feedbackBody: { ...typography.body, color: colors.inkMuted },
@@ -1002,26 +1109,24 @@ const styles = StyleSheet.create({
   },
   foodPillText: { ...typography.caption, color: colors.ink, fontWeight: '800' },
   feedbackFocusText: { ...typography.bodyBold, color: colors.ink },
-  feedbackList: { gap: spacing.xs, marginTop: spacing.xs },
+  feedbackList: { marginTop: spacing.xs, borderTopWidth: 1, borderTopColor: colors.border },
   feedbackListItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    borderRadius: radius.pill,
-    backgroundColor: colors.black,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: spacing.sm,
   },
-  feedbackListText: { ...typography.caption, color: colors.white, flex: 1, fontWeight: '800' },
+  feedbackListText: { ...typography.body, color: colors.ink, flex: 1 },
   feedbackStatsCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: radius.xl,
+    borderRadius: radius.lg,
     backgroundColor: colors.panel,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.md,
-    ...shadows.sm,
   },
   feedbackStat: { flex: 1, alignItems: 'center' },
   feedbackStatDivider: { width: 1, height: 42, backgroundColor: colors.border },
@@ -1038,16 +1143,14 @@ const styles = StyleSheet.create({
   diaryFeedEyebrow: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
   diaryFeedTitle: { ...typography.subtitle, color: colors.ink, marginTop: 2 },
   diaryFeedCount: {
-    minWidth: 68,
-    height: 52,
-    borderRadius: radius.lg,
-    backgroundColor: colors.black,
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'center',
-    paddingHorizontal: spacing.sm,
+    paddingLeft: spacing.md,
+    borderLeftWidth: 1,
+    borderLeftColor: colors.borderStrong,
   },
-  diaryFeedCountValue: { fontSize: 22, lineHeight: 25, fontWeight: '900', color: colors.white },
-  diaryFeedCountLabel: { fontSize: 10, lineHeight: 12, color: colors.onAccentMuted, fontWeight: '800' },
+  diaryFeedCountValue: { ...typography.subtitle, color: colors.ink },
+  diaryFeedCountLabel: { ...typography.caption, color: colors.inkMuted },
   diaryFeed: { gap: spacing.lg },
   diaryDateSection: { gap: spacing.sm },
   diaryDateHeader: {
@@ -1057,25 +1160,22 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: 2,
   },
-  diaryDateTitle: { ...typography.bodyBold, color: colors.ink },
-  diaryDateCount: { ...typography.caption, color: colors.inkMuted },
-  diaryList: { gap: spacing.sm },
+  diaryDateTitle: { ...typography.bodyBold, color: colors.ink, flex: 1, minWidth: 0 },
+  diaryDateCount: { ...typography.caption, color: colors.inkMuted, flexShrink: 1, textAlign: 'right' },
+  diaryList: { borderTopWidth: 1, borderTopColor: colors.border },
   diaryListCard: {
-    minHeight: 96,
-    borderRadius: radius.xl,
-    backgroundColor: colors.panel,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.sm,
+    minHeight: 88,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    ...shadows.sm,
   },
   diaryThumb: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.lg,
+    width: 62,
+    height: 62,
+    borderRadius: radius.md,
     overflow: 'hidden',
     backgroundColor: colors.black,
     alignItems: 'center',
@@ -1089,54 +1189,31 @@ const styles = StyleSheet.create({
   diaryFoodName: { ...typography.subtitle, color: colors.ink, marginTop: 3 },
   diaryFoodTime: { ...typography.caption, color: colors.inkMuted, marginTop: 3 },
   logPanel: {
-    borderRadius: radius.xl,
-    backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.sm,
-    gap: spacing.md,
-    ...shadows.sm,
+    backgroundColor: 'transparent',
+    gap: 10,
   },
   logHero: {
-    borderRadius: 26,
-    backgroundColor: colors.black,
-    padding: spacing.lg,
-    gap: spacing.sm,
-  },
-  logHeroTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  logScorePill: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 5,
-    borderRadius: radius.pill,
-    backgroundColor: colors.white,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
-  },
-  logScorePillValue: { fontSize: 17, lineHeight: 20, fontWeight: '900', color: colors.black },
-  logScorePillLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
-  logEyebrow: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
-  logTitle: { ...typography.title, color: colors.white },
-  logCopy: { ...typography.caption, color: colors.onAccentMuted, lineHeight: 18 },
-  logControlsCard: {
-    borderRadius: 24,
+    borderRadius: radius.lg,
     backgroundColor: colors.panel,
     borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    gap: spacing.md,
+    borderColor: colors.borderStrong,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    gap: 6,
+  },
+  logEyebrow: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
+  logTitle: { ...typography.title, color: colors.ink },
+  logCopy: { ...typography.caption, color: colors.inkMuted, lineHeight: 18 },
+  logControlsCard: {
+    paddingVertical: spacing.xs,
+    gap: 10,
   },
   mealGridCompact: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   mealPill: {
     flexGrow: 1,
     minWidth: '47%',
     minHeight: 44,
-    borderRadius: radius.pill,
+    borderRadius: radius.md,
     backgroundColor: colors.panelMuted,
     borderWidth: 1,
     borderColor: colors.border,
@@ -1146,26 +1223,24 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     paddingHorizontal: spacing.sm,
   },
-  mealPillSelected: { backgroundColor: colors.black, borderColor: colors.black },
+  mealPillSelected: { backgroundColor: colors.accentLight, borderColor: colors.goldMuted },
+  mealPillDisabled: { opacity: 0.38 },
   mealPillText: { ...typography.bodyBold, color: colors.inkMuted },
-  mealPillTextSelected: { color: colors.white },
+  mealPillTextSelected: { color: colors.accent },
+  mealPillTextDisabled: { color: colors.inkSubtle },
   feedbackPreview: {
     marginTop: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    borderRadius: radius.xl,
-    backgroundColor: colors.panel,
-    borderWidth: 1,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
     borderColor: colors.border,
-    padding: spacing.md,
-    ...shadows.sm,
+    paddingVertical: spacing.md,
   },
   feedbackPreviewIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.pill,
-    backgroundColor: colors.black,
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1177,8 +1252,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
-    borderRadius: radius.lg,
-    backgroundColor: colors.bg,
+    borderRadius: radius.md,
+    backgroundColor: colors.panel,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.sm,
@@ -1187,7 +1262,7 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: radius.pill,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -1197,11 +1272,11 @@ const styles = StyleSheet.create({
   dateCenter: { flex: 1, alignItems: 'center' },
   dateLabel: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
   dateValue: { ...typography.subtitle, color: colors.ink, marginTop: 2 },
-  memoryScoreValue: { fontSize: 30, lineHeight: 34, fontWeight: '900', color: colors.black },
+  memoryScoreValue: { fontSize: 30, lineHeight: 34, fontWeight: '900', color: colors.ink },
   memoryScoreLabel: { ...typography.caption, color: colors.inkMuted, marginTop: -2 },
   memoryTitle: { ...typography.subtitle, color: colors.ink },
   memoryText: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.xs },
-  actions: { gap: spacing.sm, marginTop: spacing.md },
+  actions: { gap: spacing.sm, marginTop: spacing.sm },
   secondaryActionRow: { flexDirection: 'row', gap: spacing.sm },
   secondaryAction: { flex: 1, paddingHorizontal: spacing.sm },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
@@ -1220,7 +1295,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: radius.lg,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.sm,
@@ -1236,14 +1311,14 @@ const styles = StyleSheet.create({
   photoMeal: { ...typography.bodyBold, color: colors.ink },
   photoTime: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   modalBackdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'center', padding: spacing.lg },
-  modalCard: { backgroundColor: colors.panel, borderRadius: radius.xl, overflow: 'hidden' },
+  modalCard: { width: '100%', maxHeight: '88%', backgroundColor: colors.panel, borderRadius: radius.xl, overflow: 'hidden' },
   previewImage: { width: '100%', aspectRatio: 1 },
   previewNote: { minHeight: 240, padding: spacing.xl, gap: spacing.md, justifyContent: 'center', backgroundColor: colors.accentLight },
   previewFoodIcon: {
     width: 58,
     height: 58,
     borderRadius: radius.lg,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     alignItems: 'center',
     justifyContent: 'center',
     ...shadows.sm,
@@ -1251,11 +1326,13 @@ const styles = StyleSheet.create({
   previewNoteLabel: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
   previewNoteText: { ...typography.title, color: colors.accentDarker },
   previewBody: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: spacing.lg },
+  previewBodyCopy: { flex: 1, minWidth: 0, marginRight: spacing.sm },
   previewTitle: { ...typography.title, color: colors.ink },
   previewTime: { ...typography.body, color: colors.inkMuted, marginTop: 2 },
   deleteButton: { width: 44, height: 44, borderRadius: radius.pill, backgroundColor: colors.errorLight, alignItems: 'center', justifyContent: 'center' },
   closePreview: { marginHorizontal: spacing.lg, marginBottom: spacing.lg },
-  textModalCard: { backgroundColor: colors.panel, borderRadius: radius.xl, padding: spacing.lg, gap: spacing.md },
+  textModalCard: { width: '100%', maxHeight: '90%', backgroundColor: colors.panel, borderRadius: radius.xl },
+  textModalContent: { padding: spacing.lg, gap: spacing.md },
   textModalHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md },
   textModalEyebrow: { ...typography.overline, color: colors.accent },
   textModalTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
@@ -1264,28 +1341,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    borderRadius: 24,
-    backgroundColor: colors.black,
+    borderRadius: radius.md,
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
     padding: spacing.sm,
   },
   memorySlotArrow: {
     width: 48,
     height: 48,
     borderRadius: radius.pill,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
   memorySlotArrowDisabled: { opacity: 0.38 },
   memorySlotCenter: { flex: 1, alignItems: 'center', paddingHorizontal: spacing.sm },
-  memorySlotLabel: { ...typography.overline, color: colors.onAccentMuted, textTransform: 'uppercase' },
-  memorySlotValue: { ...typography.title, color: colors.white, marginTop: 1 },
-  memorySlotDate: { ...typography.caption, color: colors.onAccentMuted, marginTop: 2 },
+  memorySlotLabel: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
+  memorySlotValue: { ...typography.title, color: colors.ink, marginTop: 1 },
+  memorySlotDate: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   memorySessionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    borderRadius: 20,
+    borderRadius: radius.md,
     backgroundColor: colors.panelMuted,
     padding: spacing.md,
   },
@@ -1293,13 +1372,13 @@ const styles = StyleSheet.create({
     width: 68,
     height: 58,
     borderRadius: radius.lg,
-    backgroundColor: colors.white,
+    backgroundColor: colors.panelRaised,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.border,
   },
-  memorySessionValue: { ...typography.title, color: colors.ink },
+  memorySessionValue: { ...typography.title, color: colors.accent },
   memorySessionLabel: { fontSize: 10, lineHeight: 12, color: colors.inkMuted, fontWeight: '700' },
   memorySessionHint: { ...typography.caption, color: colors.inkMuted, flex: 1 },
   textInput: {
@@ -1337,22 +1416,21 @@ const styles = StyleSheet.create({
   saveToast: {
     width: '100%',
     alignItems: 'center',
-    borderRadius: radius.xl,
+    borderRadius: radius.lg,
     backgroundColor: colors.panel,
     borderWidth: 1,
     borderColor: colors.borderStrong,
     padding: spacing.xl,
-    ...shadows.lg,
+    ...shadows.card,
   },
   saveToastIcon: {
-    width: 74,
-    height: 74,
+    width: 58,
+    height: 58,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentFill,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
-    ...shadows.accent,
   },
   pointsBurst: {
     position: 'absolute',

@@ -14,7 +14,7 @@ export function WorkoutsNavigator() {
   return (
     <Stack.Navigator
       screenOptions={{
-        gestureEnabled: false,
+        gestureEnabled: true,
         headerBackButtonDisplayMode: 'minimal',
         headerBackTitle: '',
         headerTintColor: colors.accentDark,
@@ -27,7 +27,7 @@ export function WorkoutsNavigator() {
       <Stack.Screen name="Coach" component={TrainerScreen} options={{ headerShown: false }} />
       <Stack.Screen name="PlanRefresh" component={PlanRefreshScreen} options={{ headerShown: false }} />
       <Stack.Screen name="WorkoutSummary" component={WorkoutSummaryScreen} options={{ headerShown: false, animation: 'none' }} />
-      <Stack.Screen name="WorkoutDetail" component={WorkoutDetailScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="WorkoutDetail" component={WorkoutDetailScreen} options={{ headerShown: false, gestureEnabled: false }} />
       <Stack.Screen name="WorkoutVideo" component={WorkoutVideoScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   );

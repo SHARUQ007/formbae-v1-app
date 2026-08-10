@@ -6,12 +6,27 @@ import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { radius } from '../theme/radius';
 import { typography } from '../theme/typography';
+import { shadows } from '../theme/shadows';
 
-export function LoadingState({ message = 'Loading…' }: { message?: string }) {
+type LoadingStateProps = {
+  message?: string;
+  eyebrow?: string;
+  hint?: string;
+  card?: boolean;
+};
+
+export function LoadingState({ message = 'Loading…', eyebrow, hint, card = false }: LoadingStateProps) {
   return (
-    <View style={styles.loadingWrap} accessibilityLabel={message} accessibilityLiveRegion="polite">
-      <MotionAnimation kind="loading" size={108} />
-      <Text style={styles.loadingText}>{message}</Text>
+    <View
+      style={[styles.loadingWrap, card && styles.loadingCard]}
+      accessibilityLabel={message}
+      accessibilityLiveRegion="polite"
+      accessibilityRole="progressbar"
+    >
+      {eyebrow ? <Text style={styles.loadingEyebrow}>{eyebrow}</Text> : null}
+      <MotionAnimation kind="loading" size={card ? 84 : 76} />
+      <Text style={[styles.loadingText, card && styles.loadingTitle]}>{message}</Text>
+      {hint ? <Text style={styles.loadingHint}>{hint}</Text> : null}
     </View>
   );
 }
@@ -60,9 +75,35 @@ export function EmptyState({
 
 const styles = StyleSheet.create({
   loadingWrap: { paddingVertical: spacing.lg, alignItems: 'center', justifyContent: 'center' },
-  loadingText: { ...typography.caption, color: colors.inkSubtle, textAlign: 'center', marginTop: spacing.md },
+  loadingCard: {
+    width: '100%',
+    maxWidth: 330,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.sm,
+  },
+  loadingEyebrow: {
+    ...typography.overline,
+    color: colors.inkSubtle,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+    marginBottom: spacing.md,
+  },
+  loadingText: { ...typography.bodyBold, color: colors.ink, textAlign: 'center', marginTop: spacing.md },
+  loadingTitle: { ...typography.subtitle, color: colors.inkStrong, marginTop: spacing.lg },
+  loadingHint: {
+    ...typography.caption,
+    color: colors.inkMuted,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+    maxWidth: 250,
+  },
   wrap: { paddingVertical: spacing.xl, paddingHorizontal: spacing.lg, alignItems: 'center', justifyContent: 'center' },
-  iconCircle: { width: 60, height: 60, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md },
+  iconCircle: { width: 48, height: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md },
   text: { ...typography.body, color: colors.inkMuted, textAlign: 'center', marginTop: spacing.xs },
   errorTitle: { ...typography.subtitle, color: colors.ink },
   emptyTitle: { ...typography.subtitle, color: colors.ink },
