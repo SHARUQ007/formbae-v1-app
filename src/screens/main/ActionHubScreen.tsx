@@ -209,8 +209,8 @@ export function ActionHubScreen({ navigation }: Props) {
     const code = accountabilityBae?.inviteCode;
     if (!code) return;
     await Share.share({
-      title: 'Join my Accountability Bae',
-      message: `Be my Accountability Bae on FormBae. Use friend code ${code}.`,
+      title: 'Be my FormBae accountability partner',
+      message: `Want to keep each other consistent on FormBae? We’ll get one daily challenge, check in privately, and unlock each other’s proof only after we both show up.\n\nUse my partner code: ${code}`,
     });
   };
 
@@ -320,21 +320,9 @@ export function ActionHubScreen({ navigation }: Props) {
           <Text style={styles.subtitle}>Show up for yourself—and someone else.</Text>
         </View>
 
-        <AccountabilityBaeCard
-          data={accountabilityBae}
-          busy={baeBusy}
-          friendCode={friendCode}
-          onFriendCodeChange={setFriendCode}
-          onStart={startBaeMatch}
-          onJoinFriend={joinFriend}
-          onShareFriendCode={shareFriendCode}
-          onSubmitProof={openProofPicker}
-          onLeave={leaveBae}
-        />
-
         <View style={styles.personalSectionHead}>
           <View>
-            <Text style={styles.sectionEyebrow}>FOR YOU</Text>
+            <Text style={styles.sectionEyebrow}>YOUR FOCUS</Text>
             <Text style={styles.personalSectionTitle}>Today’s promise</Text>
           </View>
           <View style={styles.personalStatus}><View style={[styles.personalStatusDot, commitmentComplete && styles.personalStatusDotDone]} /><Text style={styles.personalStatusText}>{commitmentComplete ? 'Complete' : commitment ? 'In progress' : 'Not started'}</Text></View>
@@ -379,8 +367,28 @@ export function ActionHubScreen({ navigation }: Props) {
           </View>
         </View>
 
+        <View style={styles.partnerSectionHead}>
+          <View style={styles.partnerSectionCopy}>
+            <Text style={styles.sectionEyebrow}>WITH A PARTNER</Text>
+            <Text style={styles.personalSectionTitle}>Show up together</Text>
+          </View>
+          <MaterialCommunityIcon name="shield-account-outline" size={22} color={colors.goldMuted} />
+        </View>
+
+        <AccountabilityBaeCard
+          data={accountabilityBae}
+          busy={baeBusy}
+          friendCode={friendCode}
+          onFriendCodeChange={setFriendCode}
+          onStart={startBaeMatch}
+          onJoinFriend={joinFriend}
+          onShareFriendCode={shareFriendCode}
+          onSubmitProof={openProofPicker}
+          onLeave={leaveBae}
+        />
+
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Overview</Text>
+          <Text style={styles.sectionTitle}>Your consistency</Text>
           <View style={styles.snapshotGrid}>
             <SnapshotStat icon="shield" label="Promises kept" value={`${accountability?.keptCount || 0} total`} />
             <SnapshotStat icon="zap" label="Accountability" value={`${accountability?.streak || 0} day streak`} />
@@ -393,7 +401,7 @@ export function ActionHubScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>More</Text>
+          <Text style={styles.sectionTitle}>Keep moving</Text>
           <View style={styles.quickList}>
             {quickActions.map((action) => (
               <QuickAction key={action.kind} icon={action.icon} title={action.title} body={action.body} onPress={action.onPress} />
@@ -429,7 +437,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
         <Text style={styles.baeEyebrow}>ACCOUNTABILITY BAE</Text>
         <Text style={styles.baeTitle}>Daily partner challenge</Text>
       </View>
-      {data.status === 'matched' ? <View style={styles.baeLivePill}><View style={styles.baeLiveDot} /><Text style={styles.baeLiveText}>Matched</Text></View> : null}
+      {data.status === 'matched' ? <View style={styles.baeLivePill}><View style={styles.baeLiveDot} /><Text style={styles.baeLiveText}>Active</Text></View> : null}
     </View>
   );
 
@@ -471,21 +479,22 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
         {header}
         <View style={styles.baeWaitingHero}>
           <View style={styles.baeWaitingIcon}>{busy ? <ActivityIndicator color={colors.gold} /> : <MaterialCommunityIcon name={friendMode ? 'account-multiple-plus-outline' : 'radar'} size={28} color={colors.gold} />}</View>
-          <Text style={styles.baeWaitingKicker}>{friendMode ? 'FRIEND MATCH' : 'MATCHING IN PROGRESS'}</Text>
-          <Text style={styles.baeWaitingTitle}>{friendMode ? 'Connect with a friend' : `Finding your ${data.preference} partner`}</Text>
-          <Text style={styles.baeMuted}>{friendMode ? 'Share your code, or enter the code your friend sent you.' : 'We will connect you when a compatible person is available.'}</Text>
+          <Text style={styles.baeWaitingKicker}>{friendMode ? 'INVITE READY' : 'MATCHING IN PROGRESS'}</Text>
+          <Text style={styles.baeWaitingTitle}>{friendMode ? 'Bring your partner in' : 'Finding the right partner'}</Text>
+          <Text style={styles.baeMuted}>{friendMode ? 'Share your private code. You’ll connect as soon as your friend enters it.' : `We’re looking for a compatible ${data.preference} partner. You can leave this screen—we’ll keep looking.`}</Text>
         </View>
         {friendMode ? (
           <>
             <View style={styles.friendInviteBox}>
-              <View><Text style={styles.friendCodeLabel}>YOUR FRIEND CODE</Text><Text style={styles.friendCodeValue}>{data.inviteCode}</Text></View>
-              <TouchableOpacity style={styles.friendShareButton} onPress={onShareFriendCode} accessibilityRole="button"><Feather name="share-2" size={17} color={colors.onPrimary} /><Text style={styles.friendShareText}>Share</Text></TouchableOpacity>
+              <View><Text style={styles.friendCodeLabel}>PARTNER CODE</Text><Text style={styles.friendCodeValue}>{data.inviteCode}</Text></View>
+              <TouchableOpacity style={styles.friendShareButton} onPress={onShareFriendCode} accessibilityRole="button"><Feather name="share-2" size={17} color={colors.onPrimary} /><Text style={styles.friendShareText}>Invite</Text></TouchableOpacity>
             </View>
+            <Text style={styles.friendJoinLabel}>Already have their code?</Text>
             <View style={styles.friendJoinRow}>
               <TextInput
                 value={friendCode}
                 onChangeText={(value) => onFriendCodeChange(value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                placeholder="FRIEND CODE"
+                placeholder="ENTER PARTNER CODE"
                 placeholderTextColor={colors.inkSubtle}
                 autoCapitalize="characters"
                 autoCorrect={false}
@@ -493,7 +502,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
                 style={styles.friendCodeInput}
                 accessibilityLabel="Friend code"
               />
-              <TouchableOpacity style={[styles.friendJoinButton, (!friendCode.trim() || busy) && styles.baeDisabled]} onPress={onJoinFriend} disabled={!friendCode.trim() || busy} accessibilityRole="button"><Text style={styles.friendJoinText}>Join</Text></TouchableOpacity>
+              <TouchableOpacity style={[styles.friendJoinButton, (!friendCode.trim() || busy) && styles.baeDisabled]} onPress={onJoinFriend} disabled={!friendCode.trim() || busy} accessibilityRole="button"><Text style={styles.friendJoinText}>Connect</Text></TouchableOpacity>
             </View>
           </>
         ) : null}
@@ -504,12 +513,18 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
 
   const challenge = data.challenge;
   const partnerName = data.partner?.displayName || 'Your partner';
+  const proofCount = Number(Boolean(data.youSubmitted)) + Number(Boolean(data.partnerSubmitted));
+  const proofGuidance = data.youSubmitted
+    ? `${partnerName} is next. Your check-in is safely locked until you both submit.`
+    : data.partnerSubmitted
+      ? `${partnerName} checked in. Add yours to unlock both photos.`
+      : 'Be the first to check in. Your photo stays private until you both submit.';
   return (
     <View style={styles.baeCard}>
       {header}
       <View style={styles.baePartnerRow}>
         <View style={styles.baePartnerAvatar}><Text style={styles.baePartnerInitial}>{partnerName.charAt(0).toUpperCase()}</Text></View>
-        <View style={styles.baePartnerCopy}><Text style={styles.baePartnerLabel}>YOUR ACCOUNTABILITY BAE</Text><Text style={styles.baePartnerName}>{partnerName}</Text></View>
+        <View style={styles.baePartnerCopy}><Text style={styles.baePartnerLabel}>YOUR PARTNER</Text><Text style={styles.baePartnerName}>{partnerName}</Text></View>
         <TouchableOpacity onPress={onLeave} style={styles.baeMoreButton} accessibilityRole="button" accessibilityLabel="Leave Accountability Bae match"><Feather name="more-horizontal" size={20} color={colors.inkMuted} /></TouchableOpacity>
       </View>
       {challenge ? (
@@ -527,20 +542,27 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
       ) : null}
       <View style={styles.proofSectionHead}>
         <Text style={styles.proofSectionTitle}>Today’s proof</Text>
-        <Text style={styles.proofSectionCount}>{Number(Boolean(data.youSubmitted)) + Number(Boolean(data.partnerSubmitted))} of 2 submitted</Text>
+        <Text style={styles.proofSectionCount}>{proofCount} of 2 checked in</Text>
+      </View>
+      <View style={styles.proofProgress}>
+        <View style={[styles.proofProgressStep, proofCount >= 1 && styles.proofProgressStepDone]} />
+        <View style={[styles.proofProgressStep, proofCount >= 2 && styles.proofProgressStepDone]} />
       </View>
       <View style={styles.proofGrid}>
         <ProofTile label="You" submitted={Boolean(data.youSubmitted)} imageUrl={data.yourProofUrl} locked={false} />
         <ProofTile label={partnerName} submitted={Boolean(data.partnerSubmitted)} imageUrl={data.partnerProofUrl} locked={Boolean(data.partnerSubmitted && !data.bothSubmitted)} />
       </View>
       {data.bothSubmitted ? (
-        <View style={styles.baeCompleteBanner}><View style={styles.baeCompleteIcon}><Feather name="check" size={18} color={colors.onPrimary} /></View><View style={styles.baeCompleteCopy}><Text style={styles.baeCompleteTitle}>Challenge complete</Text><Text style={styles.baeCompleteText}>You both showed up today.</Text></View></View>
+        <View style={styles.baeCompleteBanner}><View style={styles.baeCompleteIcon}><Feather name="check" size={18} color={colors.onPrimary} /></View><View style={styles.baeCompleteCopy}><Text style={styles.baeCompleteTitle}>You both showed up</Text><Text style={styles.baeCompleteText}>Today’s challenge is complete. Come back tomorrow to keep the rhythm.</Text></View></View>
       ) : (
-        <TouchableOpacity style={[styles.baeProofButton, busy && styles.baeDisabled]} onPress={onSubmitProof} disabled={busy} accessibilityRole="button">
-          {busy ? <ActivityIndicator color={colors.onPrimary} /> : <><Feather name="camera" size={19} color={colors.onPrimary} /><Text style={styles.baeProofButtonText}>{data.youSubmitted ? 'Replace my proof' : 'Submit my proof'}</Text></>}
-        </TouchableOpacity>
+        <>
+          <Text style={styles.proofGuidance}>{proofGuidance}</Text>
+          <TouchableOpacity style={[styles.baeProofButton, busy && styles.baeDisabled]} onPress={onSubmitProof} disabled={busy} accessibilityRole="button">
+            {busy ? <ActivityIndicator color={colors.onPrimary} /> : <><Feather name="camera" size={19} color={colors.onPrimary} /><Text style={styles.baeProofButtonText}>{data.youSubmitted ? 'Update my check-in' : 'Check in with a photo'}</Text></>}
+          </TouchableOpacity>
+        </>
       )}
-      <View style={styles.baeSafety}><Feather name="eye-off" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>Your partner’s photo unlocks only after you both submit.</Text></View>
+      <View style={styles.baeSafety}><Feather name="eye-off" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>Photos unlock together—never one-sided.</Text></View>
     </View>
   );
 }
@@ -654,14 +676,16 @@ const styles = StyleSheet.create({
   headerStreakText: { ...typography.caption, color: colors.gold, fontWeight: '800' },
   title: { ...typography.display, color: colors.ink, marginTop: spacing.sm },
   subtitle: { ...typography.body, color: colors.inkMuted, marginTop: 2, maxWidth: 340 },
-  personalSectionHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.xl, marginBottom: spacing.sm },
+  personalSectionHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.lg, marginBottom: spacing.sm },
+  partnerSectionHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.xl, marginBottom: spacing.sm },
+  partnerSectionCopy: { flex: 1 },
   sectionEyebrow: { ...typography.overline, color: colors.inkSubtle },
   personalSectionTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
   personalStatus: { minHeight: 26, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.sm, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border },
   personalStatusDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.gold },
   personalStatusDotDone: { backgroundColor: colors.success },
   personalStatusText: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '800' },
-  baeCard: { borderRadius: 24, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.accentSurface, padding: spacing.lg, marginTop: spacing.lg, overflow: 'hidden', ...shadows.card },
+  baeCard: { borderRadius: 24, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, overflow: 'hidden', ...shadows.card },
   baeLoading: { minHeight: 110, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   baeHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   baeBrandIcon: { width: 46, height: 46, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
@@ -676,8 +700,8 @@ const styles = StyleSheet.create({
   baeDuoAvatar: { position: 'absolute', width: 54, height: 54, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: colors.panel },
   baeDuoAvatarBack: { left: 0, top: 8, backgroundColor: colors.panelRaised },
   baeDuoAvatarFront: { right: 0, top: 0, backgroundColor: colors.accentFill, borderColor: colors.panel },
-  baeIntroTitle: { fontSize: 23, lineHeight: 29, color: colors.ink, fontWeight: '900', letterSpacing: -0.3, marginTop: spacing.sm },
-  baeIntro: { ...typography.caption, color: colors.inkMuted, lineHeight: 19, marginTop: spacing.xs, textAlign: 'center', maxWidth: 280 },
+  baeIntroTitle: { fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: '900', letterSpacing: -0.3, marginTop: spacing.sm, textAlign: 'center' },
+  baeIntro: { ...typography.caption, color: colors.inkMuted, lineHeight: 19, marginTop: spacing.xs, textAlign: 'center', maxWidth: 300 },
   baeSteps: { minHeight: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: spacing.lg, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
   baeStep: { alignItems: 'center', gap: 4, minWidth: 58 },
   baeStepIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.accentLight },
@@ -699,6 +723,7 @@ const styles = StyleSheet.create({
   friendCodeValue: { fontSize: 22, lineHeight: 27, color: colors.ink, fontWeight: '900', letterSpacing: 2, marginTop: 2 },
   friendShareButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: radius.md, backgroundColor: colors.primaryAction, paddingHorizontal: 13 },
   friendShareText: { ...typography.caption, color: colors.onPrimary, fontWeight: '900' },
+  friendJoinLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '700', marginTop: spacing.md },
   friendJoinRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   friendCodeInput: { flex: 1, height: 48, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panelMuted, color: colors.ink, fontSize: 14, fontWeight: '900', letterSpacing: 1.5, textAlign: 'center', paddingHorizontal: spacing.sm },
   friendJoinButton: { minWidth: 76, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, backgroundColor: colors.primaryAction },
@@ -725,6 +750,9 @@ const styles = StyleSheet.create({
   proofSectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: spacing.lg },
   proofSectionTitle: { ...typography.bodyBold, color: colors.ink },
   proofSectionCount: { ...typography.caption, color: colors.inkMuted },
+  proofProgress: { height: 4, flexDirection: 'row', gap: 4, marginTop: spacing.sm },
+  proofProgressStep: { flex: 1, borderRadius: radius.pill, backgroundColor: colors.panelRaised },
+  proofProgressStepDone: { backgroundColor: colors.success },
   proofGrid: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   proofTile: { flex: 1, minWidth: 0 },
   proofImageWrap: { width: '100%', aspectRatio: 1.05, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: colors.panelMuted, borderWidth: 1, borderColor: colors.border },
@@ -736,6 +764,7 @@ const styles = StyleSheet.create({
   proofLabel: { ...typography.caption, color: colors.ink, fontWeight: '900' },
   proofStatus: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', marginTop: 1 },
   proofStatusDone: { color: colors.success },
+  proofGuidance: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: spacing.md },
   baeProofButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderRadius: radius.md, backgroundColor: colors.primaryAction, marginTop: spacing.md },
   baeProofButtonText: { ...typography.button, color: colors.onPrimary },
   baeCompleteBanner: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, backgroundColor: colors.successLight, paddingHorizontal: spacing.md, marginTop: spacing.md },

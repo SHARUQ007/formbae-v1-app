@@ -33,9 +33,9 @@ function ContextualActionButton({ accessibilityState, onPress }: BottomTabBarBut
     <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.actionShell} accessibilityRole="button" accessibilityLabel="Accountability">
       <View style={[styles.actionButton, focused && styles.actionButtonFocused]}>
         <MaterialCommunityIcon
-          name={focused ? 'account-check' : 'account-check-outline'}
+          name={focused ? 'heart' : 'heart-outline'}
           size={28}
-          color={colors.onPrimary}
+          color={focused ? colors.gold : colors.onPrimary}
         />
       </View>
       <Text style={styles.actionLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Accountability</Text>
