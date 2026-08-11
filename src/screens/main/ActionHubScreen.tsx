@@ -312,9 +312,12 @@ export function ActionHubScreen({ navigation }: Props) {
         contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
       >
         <View style={styles.header}>
-          <Text style={styles.kicker}>{dateLabel}</Text>
+          <View style={styles.headerMeta}>
+            <Text style={styles.kicker}>{dateLabel}</Text>
+            <View style={styles.headerStreak}><Feather name="zap" size={13} color={colors.gold} /><Text style={styles.headerStreakText}>{accountability?.streak || 0} day streak</Text></View>
+          </View>
           <Text style={styles.title}>Accountability</Text>
-          <Text style={styles.subtitle}>One clear promise. Follow through today.</Text>
+          <Text style={styles.subtitle}>Show up for yourself—and someone else.</Text>
         </View>
 
         <AccountabilityBaeCard
@@ -329,9 +332,17 @@ export function ActionHubScreen({ navigation }: Props) {
           onLeave={leaveBae}
         />
 
+        <View style={styles.personalSectionHead}>
+          <View>
+            <Text style={styles.sectionEyebrow}>FOR YOU</Text>
+            <Text style={styles.personalSectionTitle}>Today’s promise</Text>
+          </View>
+          <View style={styles.personalStatus}><View style={[styles.personalStatusDot, commitmentComplete && styles.personalStatusDotDone]} /><Text style={styles.personalStatusText}>{commitmentComplete ? 'Complete' : commitment ? 'In progress' : 'Not started'}</Text></View>
+        </View>
+
         <View style={[styles.hero, commitmentComplete && styles.heroComplete]}>
           <View style={styles.heroTop}>
-            <View style={styles.heroIcon}>
+            <View style={[styles.heroIcon, commitmentComplete && styles.heroIconComplete]}>
               <Feather name={commitmentComplete ? 'check' : commitment ? 'shield' : snapshot.target.icon} size={22} color={commitmentComplete ? colors.onPrimary : colors.inkStrong} />
             </View>
             <View style={styles.recommendedPill}>
@@ -339,7 +350,7 @@ export function ActionHubScreen({ navigation }: Props) {
               <Text style={styles.recommendedText}>{commitmentComplete ? 'Promise kept' : commitment ? 'Committed' : 'Recommended'}</Text>
             </View>
           </View>
-          <Text style={styles.heroLabel}>Today's commitment</Text>
+          <Text style={styles.heroLabel}>ONE CLEAR ACTION</Text>
           <Text style={styles.heroTitle}>{commitment?.title || targetTitle(snapshot)}</Text>
           <Text style={styles.heroMeta}>{commitmentComplete ? 'You followed through. That is how consistency gets built.' : commitment ? 'Your reminder is set. Do it now or mark it complete when you finish.' : targetMeta(snapshot)}</Text>
           {commitmentComplete ? (
@@ -415,8 +426,8 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
     <View style={styles.baeHeader}>
       <View style={styles.baeBrandIcon}><MaterialCommunityIcon name="account-heart-outline" size={23} color={colors.gold} /></View>
       <View style={styles.baeHeaderCopy}>
-        <Text style={styles.baeEyebrow}>Daily partner challenge</Text>
-        <Text style={styles.baeTitle}>Accountability Bae</Text>
+        <Text style={styles.baeEyebrow}>ACCOUNTABILITY BAE</Text>
+        <Text style={styles.baeTitle}>Daily partner challenge</Text>
       </View>
       {data.status === 'matched' ? <View style={styles.baeLivePill}><View style={styles.baeLiveDot} /><Text style={styles.baeLiveText}>Matched</Text></View> : null}
     </View>
@@ -426,7 +437,21 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
     return (
       <View style={styles.baeCard}>
         {header}
-        <Text style={styles.baeIntro}>Get one shared challenge each day. You both submit photo proof before midnight.</Text>
+        <View style={styles.baeIntroHero}>
+          <View style={styles.baeDuoVisual}>
+            <View style={[styles.baeDuoAvatar, styles.baeDuoAvatarBack]}><MaterialCommunityIcon name="account-outline" size={25} color={colors.inkMuted} /></View>
+            <View style={[styles.baeDuoAvatar, styles.baeDuoAvatarFront]}><MaterialCommunityIcon name="account" size={25} color={colors.gold} /></View>
+          </View>
+          <Text style={styles.baeIntroTitle}>Better together</Text>
+          <Text style={styles.baeIntro}>One daily challenge. Two photo check-ins. Done by midnight.</Text>
+        </View>
+        <View style={styles.baeSteps}>
+          <BaeStep icon="user-plus" label="Match" />
+          <View style={styles.baeStepLine} />
+          <BaeStep icon="target" label="Challenge" />
+          <View style={styles.baeStepLine} />
+          <BaeStep icon="camera" label="Proof" />
+        </View>
         <Text style={styles.baePrompt}>Who should we match you with?</Text>
         <View style={styles.baePreferenceRow}>
           <BaePreference icon="gender-male" label="Male" onPress={() => onStart('male')} disabled={busy} />
@@ -446,7 +471,8 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
         {header}
         <View style={styles.baeWaitingHero}>
           <View style={styles.baeWaitingIcon}>{busy ? <ActivityIndicator color={colors.gold} /> : <MaterialCommunityIcon name={friendMode ? 'account-multiple-plus-outline' : 'radar'} size={28} color={colors.gold} />}</View>
-          <Text style={styles.baeWaitingTitle}>{friendMode ? 'Connect with a friend' : `Finding a ${data.preference} partner`}</Text>
+          <Text style={styles.baeWaitingKicker}>{friendMode ? 'FRIEND MATCH' : 'MATCHING IN PROGRESS'}</Text>
+          <Text style={styles.baeWaitingTitle}>{friendMode ? 'Connect with a friend' : `Finding your ${data.preference} partner`}</Text>
           <Text style={styles.baeMuted}>{friendMode ? 'Share your code, or enter the code your friend sent you.' : 'We will connect you when a compatible person is available.'}</Text>
         </View>
         {friendMode ? (
@@ -488,15 +514,21 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
       </View>
       {challenge ? (
         <View style={styles.baeChallenge}>
-          <View style={styles.baeChallengeIcon}><MaterialCommunityIcon name={challenge.icon} size={27} color={colors.gold} /></View>
+          <View style={styles.baeChallengeTop}>
+            <View style={styles.baeChallengeIcon}><MaterialCommunityIcon name={challenge.icon} size={24} color={colors.gold} /></View>
+            <View style={styles.baeDuePill}><Feather name="clock" size={12} color={colors.gold} /><Text style={styles.baeDue}>{challenge.dueLabel}</Text></View>
+          </View>
           <View style={styles.baeChallengeCopy}>
             <Text style={styles.baeChallengeKicker}>TODAY’S CHALLENGE</Text>
             <Text style={styles.baeChallengeTitle}>{challenge.title}</Text>
             <Text style={styles.baeChallengePrompt}>{challenge.prompt}</Text>
           </View>
-          <Text style={styles.baeDue}>{challenge.dueLabel}</Text>
         </View>
       ) : null}
+      <View style={styles.proofSectionHead}>
+        <Text style={styles.proofSectionTitle}>Today’s proof</Text>
+        <Text style={styles.proofSectionCount}>{Number(Boolean(data.youSubmitted)) + Number(Boolean(data.partnerSubmitted))} of 2 submitted</Text>
+      </View>
       <View style={styles.proofGrid}>
         <ProofTile label="You" submitted={Boolean(data.youSubmitted)} imageUrl={data.yourProofUrl} locked={false} />
         <ProofTile label={partnerName} submitted={Boolean(data.partnerSubmitted)} imageUrl={data.partnerProofUrl} locked={Boolean(data.partnerSubmitted && !data.bothSubmitted)} />
@@ -522,6 +554,15 @@ function BaePreference({ icon, label, onPress, disabled }: { icon: string; label
   );
 }
 
+function BaeStep({ icon, label }: { icon: string; label: string }) {
+  return (
+    <View style={styles.baeStep}>
+      <View style={styles.baeStepIcon}><Feather name={icon} size={15} color={colors.gold} /></View>
+      <Text style={styles.baeStepLabel}>{label}</Text>
+    </View>
+  );
+}
+
 function ProofTile({ label, submitted, imageUrl, locked }: { label: string; submitted: boolean; imageUrl?: string; locked: boolean }) {
   const source = accountabilityBaeProofSource(imageUrl);
   return (
@@ -529,9 +570,11 @@ function ProofTile({ label, submitted, imageUrl, locked }: { label: string; subm
       <View style={styles.proofImageWrap}>
         {source && !locked ? <Image source={source} style={styles.proofImage} resizeMode="cover" /> : <View style={styles.proofPlaceholder}><Feather name={locked ? 'lock' : submitted ? 'check' : 'camera'} size={23} color={submitted ? colors.success : colors.inkSubtle} /></View>}
         <View style={[styles.proofStatusDot, submitted && styles.proofStatusDotDone]} />
+        <View style={styles.proofMeta}>
+          <Text style={styles.proofLabel} numberOfLines={1}>{label}</Text>
+          <Text style={[styles.proofStatus, submitted && styles.proofStatusDone]}>{locked ? 'Unlocks together' : submitted ? 'Submitted' : 'Waiting'}</Text>
+        </View>
       </View>
-      <Text style={styles.proofLabel} numberOfLines={1}>{label}</Text>
-      <Text style={[styles.proofStatus, submitted && styles.proofStatusDone]}>{locked ? 'Unlocks together' : submitted ? 'Submitted' : 'Waiting'}</Text>
     </View>
   );
 }
@@ -604,31 +647,53 @@ function targetReason(snapshot: ContextualSnapshot) {
 
 const styles = StyleSheet.create({
   scroll: {},
-  header: { marginTop: spacing.sm },
+  header: { marginTop: spacing.sm, paddingBottom: spacing.xs },
+  headerMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   kicker: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
-  title: { ...typography.hero, color: colors.ink, marginTop: spacing.xs },
-  subtitle: { ...typography.body, color: colors.inkMuted, marginTop: spacing.xs, maxWidth: 320 },
-  baeCard: { borderRadius: radius.xl, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.accentSurface, padding: spacing.lg, marginTop: spacing.lg, ...shadows.card },
+  headerStreak: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, backgroundColor: colors.accentLight, paddingHorizontal: spacing.sm },
+  headerStreakText: { ...typography.caption, color: colors.gold, fontWeight: '800' },
+  title: { ...typography.display, color: colors.ink, marginTop: spacing.sm },
+  subtitle: { ...typography.body, color: colors.inkMuted, marginTop: 2, maxWidth: 340 },
+  personalSectionHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.xl, marginBottom: spacing.sm },
+  sectionEyebrow: { ...typography.overline, color: colors.inkSubtle },
+  personalSectionTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
+  personalStatus: { minHeight: 26, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.sm, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border },
+  personalStatusDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.gold },
+  personalStatusDotDone: { backgroundColor: colors.success },
+  personalStatusText: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '800' },
+  baeCard: { borderRadius: 24, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.accentSurface, padding: spacing.lg, marginTop: spacing.lg, overflow: 'hidden', ...shadows.card },
   baeLoading: { minHeight: 110, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   baeHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  baeBrandIcon: { width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
+  baeBrandIcon: { width: 46, height: 46, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
   baeHeaderCopy: { flex: 1, minWidth: 0 },
   baeEyebrow: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
-  baeTitle: { ...typography.subtitle, color: colors.ink, marginTop: 1 },
+  baeTitle: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
   baeLivePill: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, backgroundColor: colors.successLight, paddingHorizontal: 8, paddingVertical: 6 },
   baeLiveDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.success },
   baeLiveText: { fontSize: 10, lineHeight: 12, color: colors.success, fontWeight: '900' },
-  baeIntro: { ...typography.body, color: colors.inkMuted, lineHeight: 21, marginTop: spacing.md },
+  baeIntroHero: { alignItems: 'center', paddingHorizontal: spacing.sm, paddingTop: spacing.lg },
+  baeDuoVisual: { width: 88, height: 62, position: 'relative' },
+  baeDuoAvatar: { position: 'absolute', width: 54, height: 54, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: colors.panel },
+  baeDuoAvatarBack: { left: 0, top: 8, backgroundColor: colors.panelRaised },
+  baeDuoAvatarFront: { right: 0, top: 0, backgroundColor: colors.accentFill, borderColor: colors.panel },
+  baeIntroTitle: { fontSize: 23, lineHeight: 29, color: colors.ink, fontWeight: '900', letterSpacing: -0.3, marginTop: spacing.sm },
+  baeIntro: { ...typography.caption, color: colors.inkMuted, lineHeight: 19, marginTop: spacing.xs, textAlign: 'center', maxWidth: 280 },
+  baeSteps: { minHeight: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: spacing.lg, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
+  baeStep: { alignItems: 'center', gap: 4, minWidth: 58 },
+  baeStepIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.accentLight },
+  baeStepLabel: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '800' },
+  baeStepLine: { width: 30, height: 1, backgroundColor: colors.borderStrong, marginHorizontal: spacing.xs, marginBottom: 17 },
   baePrompt: { ...typography.bodyBold, color: colors.ink, marginTop: spacing.lg },
   baePreferenceRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-  baePreference: { flex: 1, minHeight: 84, alignItems: 'center', justifyContent: 'center', gap: spacing.xs, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted },
+  baePreference: { flex: 1, minHeight: 88, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted },
   baePreferenceText: { ...typography.caption, color: colors.ink, fontWeight: '900' },
   baeSafety: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.md },
   baeSafetyText: { ...typography.caption, color: colors.inkMuted, flexShrink: 1 },
   baeMuted: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, textAlign: 'center' },
-  baeWaitingHero: { alignItems: 'center', marginTop: spacing.lg, paddingHorizontal: spacing.md },
-  baeWaitingIcon: { width: 58, height: 58, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
-  baeWaitingTitle: { ...typography.subtitle, color: colors.ink, textAlign: 'center', marginTop: spacing.sm },
+  baeWaitingHero: { alignItems: 'center', marginTop: spacing.xl, paddingHorizontal: spacing.md },
+  baeWaitingIcon: { width: 68, height: 68, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
+  baeWaitingKicker: { ...typography.overline, color: colors.gold, textAlign: 'center', marginTop: spacing.md },
+  baeWaitingTitle: { ...typography.title, color: colors.ink, textAlign: 'center', marginTop: spacing.xs },
   friendInviteBox: { minHeight: 74, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panelWarm, paddingHorizontal: spacing.md, marginTop: spacing.lg },
   friendCodeLabel: { ...typography.overline, color: colors.inkMuted },
   friendCodeValue: { fontSize: 22, lineHeight: 27, color: colors.ink, fontWeight: '900', letterSpacing: 2, marginTop: 2 },
@@ -642,28 +707,34 @@ const styles = StyleSheet.create({
   baeTextButtonLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
   baeDisabled: { opacity: 0.45 },
   baePartnerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md },
-  baePartnerAvatar: { width: 42, height: 42, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.borderStrong },
+  baePartnerAvatar: { width: 46, height: 46, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentFill, borderWidth: 1, borderColor: colors.accentSurface },
   baePartnerInitial: { ...typography.subtitle, color: colors.ink, fontWeight: '900' },
   baePartnerCopy: { flex: 1, minWidth: 0 },
   baePartnerLabel: { ...typography.overline, color: colors.inkMuted },
   baePartnerName: { ...typography.bodyBold, color: colors.ink, marginTop: 1 },
   baeMoreButton: { width: 40, height: 40, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
-  baeChallenge: { borderRadius: radius.lg, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panelWarm, padding: spacing.md, marginTop: spacing.md },
-  baeChallengeIcon: { width: 48, height: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, marginBottom: spacing.sm },
+  baeChallenge: { borderRadius: radius.xl, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panelWarm, padding: spacing.md, marginTop: spacing.md },
+  baeChallengeTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
+  baeChallengeIcon: { width: 42, height: 42, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight },
+  baeDuePill: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.sm, borderRadius: radius.pill, backgroundColor: colors.accentLight },
   baeChallengeCopy: {},
   baeChallengeKicker: { ...typography.overline, color: colors.gold },
   baeChallengeTitle: { fontSize: 20, lineHeight: 25, color: colors.ink, fontWeight: '900', marginTop: 2 },
   baeChallengePrompt: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: 3 },
-  baeDue: { ...typography.caption, color: colors.gold, fontWeight: '800', marginTop: spacing.sm },
-  proofGrid: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  baeDue: { fontSize: 10, lineHeight: 13, color: colors.gold, fontWeight: '800' },
+  proofSectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: spacing.lg },
+  proofSectionTitle: { ...typography.bodyBold, color: colors.ink },
+  proofSectionCount: { ...typography.caption, color: colors.inkMuted },
+  proofGrid: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   proofTile: { flex: 1, minWidth: 0 },
-  proofImageWrap: { width: '100%', aspectRatio: 1.25, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.panelMuted, borderWidth: 1, borderColor: colors.border },
+  proofImageWrap: { width: '100%', aspectRatio: 1.05, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: colors.panelMuted, borderWidth: 1, borderColor: colors.border },
   proofImage: { width: '100%', height: '100%' },
-  proofPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  proofPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 38 },
   proofStatusDot: { position: 'absolute', right: 8, top: 8, width: 9, height: 9, borderRadius: radius.pill, backgroundColor: colors.inkSubtle, borderWidth: 2, borderColor: colors.panel },
   proofStatusDotDone: { backgroundColor: colors.success },
-  proofLabel: { ...typography.caption, color: colors.ink, fontWeight: '900', marginTop: spacing.xs },
-  proofStatus: { fontSize: 10, lineHeight: 13, color: colors.inkSubtle, fontWeight: '700', marginTop: 1 },
+  proofMeta: { position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 47, justifyContent: 'center', backgroundColor: 'rgba(10,10,13,0.88)', paddingHorizontal: spacing.sm },
+  proofLabel: { ...typography.caption, color: colors.ink, fontWeight: '900' },
+  proofStatus: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', marginTop: 1 },
   proofStatusDone: { color: colors.success },
   baeProofButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderRadius: radius.md, backgroundColor: colors.primaryAction, marginTop: spacing.md },
   baeProofButtonText: { ...typography.button, color: colors.onPrimary },
@@ -673,12 +744,12 @@ const styles = StyleSheet.create({
   baeCompleteTitle: { ...typography.bodyBold, color: colors.ink },
   baeCompleteText: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
   hero: {
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     backgroundColor: colors.panel,
     borderWidth: 1,
     borderColor: colors.border,
     padding: spacing.lg,
-    marginTop: spacing.lg,
+    marginTop: 0,
     ...shadows.sm,
   },
   heroComplete: { borderColor: colors.accentSurface, backgroundColor: colors.panelWarm },
@@ -686,9 +757,12 @@ const styles = StyleSheet.create({
   heroIcon: {
     width: 40,
     height: 40,
+    borderRadius: radius.md,
+    backgroundColor: colors.panelRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  heroIconComplete: { backgroundColor: colors.success },
   recommendedPill: {
     minHeight: 28,
     paddingHorizontal: spacing.xs,

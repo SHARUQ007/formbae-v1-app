@@ -5,6 +5,8 @@ export function resolveRootRoute(screen: RecommendedNextScreen): keyof RootStack
   switch (screen) {
     case 'home':
       return 'Main';
+    case 'renewal':
+      return 'Renewal';
     case 'payment_sync':
     case 'paid_welcome':
     case 'plan_preparing':

@@ -7,6 +7,7 @@ export type RootStackParamList = {
   Onboarding: { screen?: keyof OnboardingStackParamList } | undefined;
   PaidTransition: { screen?: keyof PaidStackParamList } | undefined;
   Main: undefined;
+  Renewal: undefined;
 };
 
 export type AuthStackParamList = {

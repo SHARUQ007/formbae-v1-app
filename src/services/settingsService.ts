@@ -10,6 +10,11 @@ export type MobileAccessStatus = {
   premiumStartDate?: string;
   premiumEndDate?: string;
   premiumDaysRemaining?: number;
+  accessState?: 'active' | 'grace' | 'expired' | 'open';
+  inGracePeriod?: boolean;
+  gracePeriodDays?: number;
+  graceEndDate?: string;
+  graceDaysRemaining?: number;
   trainerAccessRemainingWeeks?: number;
   trainerAccessTotalWeeks?: number;
   trainerAccessLabel?: string;

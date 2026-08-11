@@ -5,7 +5,8 @@ import { SplashScreen } from '../screens/auth/SplashScreen';
 import { AuthNavigator } from './AuthNavigator';
 import { OnboardingNavigator } from './OnboardingNavigator';
 import { PaidTransitionNavigator } from './PaidTransitionNavigator';
-import { MainTabNavigator } from './MainTabNavigator';
+import { MainSubscriptionScreen } from './MainSubscriptionScreen';
+import { SubscriptionRenewalScreen } from '../screens/paid/SubscriptionRenewalScreen';
 import { useAuthStore } from '../store/authStore';
 import { trackMobileActivity } from '../services/activityService';
 import type { RootStackParamList } from './types';
@@ -89,7 +90,8 @@ export function RootNavigator() {
         <Stack.Screen name="Auth" component={AuthNavigator} />
         <Stack.Screen name="Onboarding" component={OnboardingNavigator} />
         <Stack.Screen name="PaidTransition" component={PaidTransitionNavigator} />
-        <Stack.Screen name="Main" component={MainTabNavigator} />
+        <Stack.Screen name="Main" component={MainSubscriptionScreen} />
+        <Stack.Screen name="Renewal" component={SubscriptionRenewalScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

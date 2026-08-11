@@ -172,14 +172,20 @@ export function TrophyDetailsScreen({ navigation }: Props) {
                 value="+1"
               />
               <TrophyRule
+                icon="calendar-check-outline"
+                title="Missed workout"
+                value="−1"
+              />
+              <TrophyRule
+                icon="notebook-remove-outline"
+                title="3 missed food logs"
+                value="−1"
+              />
+              <TrophyRule
                 icon="fire"
                 title="Streak"
                 value="Bonus"
-              />
-              <TrophyRule
-                icon="calendar-check-outline"
-                title="Behind plan"
-                value="−3"
+                wide
               />
             </View>
             <View style={styles.safeZoneCard}>
@@ -231,9 +237,9 @@ function TrophyHeader({ onBack, onInfo, score }: { onBack: () => void; onInfo?: 
   );
 }
 
-function TrophyRule({ icon, title, value }: { icon: string; title: string; value: string }) {
+function TrophyRule({ icon, title, value, wide = false }: { icon: string; title: string; value: string; wide?: boolean }) {
   return (
-    <View style={styles.trophyRule}>
+    <View style={[styles.trophyRule, wide && styles.trophyRuleWide]}>
       <View style={styles.trophyRuleIcon}><MaterialCommunityIcon name={icon} size={22} color={colors.gold} /></View>
       <View style={styles.trophyRuleValueRow}>
         <Text style={styles.trophyRuleValue}>{value}</Text>
@@ -312,6 +318,7 @@ const styles = StyleSheet.create({
   infoSafeZoneText: { fontSize: 10, lineHeight: 13, color: colors.success, fontWeight: '900' },
   rulesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   trophyRule: { width: '47.5%', minHeight: 132, flexGrow: 1, alignItems: 'flex-start', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted, padding: spacing.md },
+  trophyRuleWide: { width: '100%', minHeight: 112 },
   trophyRuleIcon: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight },
   trophyRuleValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 'auto' },
   trophyRuleValue: { fontSize: 23, lineHeight: 28, color: colors.ink, fontWeight: '900' },

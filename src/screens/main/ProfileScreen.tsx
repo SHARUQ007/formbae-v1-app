@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenTitle } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
@@ -14,7 +15,7 @@ import { syncReminders } from '../../services/notificationService';
 import { CACHE_KEYS, loadProfileSettingsCached } from '../../services/preloadService';
 import { titleCase } from '../../utils/format';
 import { useAuthStore } from '../../store/authStore';
-import type { ProfileStackParamList } from '../../navigation/types';
+import type { ProfileStackParamList, RootStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
 import { shadows } from '../../theme/shadows';
@@ -57,6 +58,7 @@ function formatAccessDate(value?: string | null) {
 }
 
 function formatAccessWindow(access: NonNullable<Awaited<ReturnType<typeof fetchSettings>>['access']>) {
+  if (access.inGracePeriod && access.graceEndDate) return `Grace period ends ${formatAccessDate(access.graceEndDate)}`;
   const start = formatAccessDate(access.premiumStartDate);
   const end = formatAccessDate(access.premiumEndDate);
   if (start && end) return `${start} - ${end}`;
@@ -141,10 +143,13 @@ export function ProfileScreen({ navigation }: Props) {
   const languages = parseLanguages(profile.languagePreferencesJson);
   const workoutSetting = lifestyle.workoutSetting === 'home' ? 'Home' : lifestyle.workoutSetting === 'gym' ? 'Gym' : '';
   const accessActive = access.tier === 'premium' || status?.hasPaid;
+  const inGrace = Boolean(access.inGracePeriod || status?.subscription?.state === 'grace');
+  const graceDaysRemaining = access.graceDaysRemaining ?? status?.subscription?.graceDaysRemaining ?? 0;
   const accessLabel = String(access.label || (accessActive ? 'Active' : 'Payment required'));
   const planName = typeof access.planName === 'string' ? access.planName : '';
   const displayName = firstRealName(current?.user?.name, profile.name, lifestyle.name, lifestyle.fullName, lifestyle.firstName, status?.name);
   const displayContact = current?.user?.mobile || status?.phone || status?.email || '';
+  const openRenewal = () => navigation.getParent()?.getParent<NativeStackNavigationProp<RootStackParamList>>()?.navigate('Renewal');
 
   const planRows = [
     { icon: 'target', label: 'Goal', value: titleCase(profile.fitnessGoal) },
@@ -211,7 +216,7 @@ export function ProfileScreen({ navigation }: Props) {
           <Text style={styles.name}>{displayName}</Text>
           <Text style={styles.phone}>{displayContact}</Text>
           <View style={styles.heroBadge}>
-            <Feather name={accessActive ? 'shield' : 'alert-circle'} size={16} color={accessActive ? colors.accentDark : colors.warn} />
+            <Feather name={inGrace ? 'clock' : accessActive ? 'shield' : 'alert-circle'} size={16} color={accessActive ? colors.accentDark : colors.warn} />
             <Text style={[styles.heroBadgeText, !accessActive && styles.warnText]}>{accessLabel}{planName ? ` · ${planName}` : ''}</Text>
           </View>
         </View>
@@ -237,8 +242,8 @@ export function ProfileScreen({ navigation }: Props) {
               <Feather name="credit-card" size={22} color={colors.gold} />
             </View>
             <View style={styles.accessText}>
-              <Text style={styles.accessTitle}>{accessActive ? 'Access active' : 'Access required'}</Text>
-              <Text style={styles.accessSubtitle}>{accessLabel}</Text>
+              <Text style={styles.accessTitle}>{inGrace ? `${graceDaysRemaining} day${graceDaysRemaining === 1 ? '' : 's'} left to renew` : accessActive ? 'Access active' : 'Access required'}</Text>
+              <Text style={styles.accessSubtitle}>{inGrace ? 'Full access continues during your grace period' : accessLabel}</Text>
             </View>
           </View>
           <View style={styles.accessRows}>
@@ -252,11 +257,13 @@ export function ProfileScreen({ navigation }: Props) {
               <View style={styles.manageCopy}>
                 <Text style={styles.manageTitle}>Manage subscription</Text>
                 <Text style={styles.manageText}>
-                  Refund requests: <Text style={styles.supportEmail}>team@formbae.in</Text>. Send your payment ID or mobile number within 5 days of payment for review.
+                  {inGrace ? <>Renew before the grace period ends to keep your access uninterrupted.</> : <>Refund requests: <Text style={styles.supportEmail}>team@formbae.in</Text>. Send your payment ID or mobile number within 5 days of payment for review.</>}
                 </Text>
               </View>
             </View>
-            {accessActive ? (
+            {inGrace ? (
+              <PrimaryButton title="Renew subscription" icon="arrow-right" onPress={openRenewal} style={styles.manageRenewButton} />
+            ) : accessActive ? (
               <TouchableOpacity activeOpacity={0.8} style={styles.cancelButton} onPress={confirmCancel} disabled={cancelling}>
                 <Feather name="x-circle" size={16} color={colors.error} />
                 <Text style={styles.cancelButtonText}>{cancelling ? 'Cancelling...' : 'Cancel subscription'}</Text>
@@ -425,6 +432,7 @@ const styles = StyleSheet.create({
   manageCopy: { flex: 1 },
   manageTitle: { ...typography.bodyBold, color: colors.ink },
   manageText: { ...typography.caption, color: colors.inkMuted, marginTop: 2, lineHeight: 20 },
+  manageRenewButton: { marginTop: 0 },
   supportEmail: { color: colors.accentDark, fontWeight: '800' },
   cancelButton: {
     alignSelf: 'flex-start',
@@ -466,4 +474,4 @@ const styles = StyleSheet.create({
   dangerText: { color: colors.error },
   logout: { marginTop: spacing.lg },
   version: { ...typography.caption, textAlign: 'center', color: colors.inkSubtle, marginTop: spacing.md },
-});
+  });

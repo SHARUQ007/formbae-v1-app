@@ -149,7 +149,7 @@ export function ProgressScreen({ route, navigation }: Props) {
     workoutCount: fallbackWorkoutCount,
     starCount: reviewStats.mealsLogged,
     currentStreak: weeklyStreak,
-    breakdown: { workouts: fallbackWorkoutCount * 3, stars: fallbackFoodLogPoints, streakAchievement: 0, streakMomentum: weeklyStreak * 2, weeklyPace: 0 },
+    breakdown: { workouts: fallbackWorkoutCount * 3, stars: fallbackFoodLogPoints, streakAchievement: 0, streakMomentum: weeklyStreak * 2, weeklyPace: 0, foodPace: 0 },
   };
   const trophyBandSize = Math.max(1, trophies.nextMilestone - trophies.safeZone);
   const trophyBandProgress = Math.max(0, Math.min(1, (trophies.score - trophies.safeZone) / trophyBandSize));

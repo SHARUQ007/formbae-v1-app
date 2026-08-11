@@ -4,6 +4,7 @@ export type OnboardingStatus =
   | 'questionnaire_completed'
   | 'analysis_ready'
   | 'payment_pending'
+  | 'subscription_expired'
   | 'paid'
   | 'trainer_assigned'
   | 'plan_ready'
@@ -15,6 +16,7 @@ export type RecommendedNextScreen =
   | 'analysis_report'
   | 'payment'
   | 'payment_sync'
+  | 'renewal'
   | 'paid_welcome'
   | 'plan_preparing'
   | 'trainer_match'
@@ -35,6 +37,13 @@ export type UserStatus = {
   planReady: boolean;
   onboardingStatus: OnboardingStatus;
   recommendedNextScreen: RecommendedNextScreen;
+  subscription?: {
+    state: 'active' | 'grace' | 'expired' | 'open';
+    premiumEndDate: string;
+    graceEndDate: string;
+    graceDaysRemaining: number;
+    gracePeriodDays: number;
+  };
 };
 
 export type SessionUser = {
@@ -246,6 +255,7 @@ export type TrophySummary = {
     streakAchievement: number;
     streakMomentum: number;
     weeklyPace: number;
+    foodPace: number;
   };
 };
 
