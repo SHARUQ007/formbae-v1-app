@@ -64,8 +64,8 @@ export function TrophyDetailsScreen({ navigation }: Props) {
     try {
       const invite = await fetchTrophyInvite();
       await Share.share({
-        title: 'Join my FormBae leaderboard',
-        message: `Join my FormBae trophy leaderboard. Use code ${invite.code}\n${invite.shareUrl}`,
+        title: 'Join my FormBae Friends Leaderboard',
+        message: `I’m building my workout streak on FormBae — join my Friends Leaderboard and let’s keep each other consistent. 🏆\n\nTrack your workouts, earn trophies, and turn showing up into a friendly challenge.\n\nYour invite code: ${invite.code}\n${invite.shareUrl}`,
       });
     } catch (shareError) {
       Alert.alert('Could not share invite', shareError instanceof Error ? shareError.message : 'Please try again.');
