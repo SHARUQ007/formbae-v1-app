@@ -11,7 +11,7 @@ export const CACHE_KEYS = {
   workoutPlan: 'workoutPlan',
   // Bump when the progress response contract changes so an older persisted
   // bundle cannot hide a newly generated weekly review after an app update.
-  progressBundle: 'progressBundle:v5',
+  progressBundle: 'progressBundle:v8',
   dietDiary: 'dietDiary',
   profileSettings: 'profileSettings',
   coachBundle: 'coachBundle',
@@ -46,6 +46,7 @@ export function loadProgressBundleCached(options?: { force?: boolean }) {
         dueThisWeek: checkIns.dueThisWeek,
         planDays: userPlans.plans.flatMap((plan) => plan.days ?? []),
         gender: settings.profile?.gender || '',
+        userName: settings.user?.name || settings.profile?.name || '',
       };
     },
     { force: options?.force },

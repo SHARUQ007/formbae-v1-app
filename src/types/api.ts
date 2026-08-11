@@ -274,6 +274,26 @@ export type AccountabilitySummary = {
   commitmentCount: number;
 };
 
+export type AccountabilityBaeSummary = {
+  status: 'inactive' | 'waiting' | 'matched';
+  preference: 'male' | 'female' | 'friend' | '';
+  inviteCode: string;
+  partner?: { userId: string; displayName: string } | null;
+  challenge?: {
+    id: string;
+    title: string;
+    prompt: string;
+    icon: string;
+    date: string;
+    dueLabel: string;
+  } | null;
+  youSubmitted?: boolean;
+  partnerSubmitted?: boolean;
+  bothSubmitted?: boolean;
+  yourProofUrl?: string;
+  partnerProofUrl?: string;
+};
+
 export type WeeklyProgressReview = {
   status: 'pending' | 'ready';
   weekStartDate: string;

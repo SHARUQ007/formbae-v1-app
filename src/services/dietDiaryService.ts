@@ -61,6 +61,7 @@ export async function uploadDietDiaryEntry(params: {
     },
   });
   invalidateCachedResource('dietDiary');
+  invalidateCachedResource('progressBundle');
   return response;
 }
 
@@ -80,12 +81,14 @@ export async function uploadTextDietDiaryEntry(params: {
     },
   });
   invalidateCachedResource('dietDiary');
+  invalidateCachedResource('progressBundle');
   return response;
 }
 
 export async function deleteRemoteDietDiaryEntry(entryId: string) {
   const response = await apiRequest<{ ok: boolean }>(`/diet/diary/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
   invalidateCachedResource('dietDiary');
+  invalidateCachedResource('progressBundle');
   return response;
 }
 

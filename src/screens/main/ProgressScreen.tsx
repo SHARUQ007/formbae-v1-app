@@ -137,17 +137,19 @@ export function ProgressScreen({ route, navigation }: Props) {
   const weeklyStreak = progress.completionHistory
     ? deriveCurrentWeekStreak(progress.completionHistory)
     : Math.min(7, progress.currentStreak);
-  const fallbackTrophyScore = (progress.completionHistory?.length ?? progress.completed) * 5 + weeklyStreak * 2;
+  const fallbackWorkoutCount = progress.completionHistory?.length ?? progress.completed;
+  const fallbackFoodLogPoints = Math.floor(reviewStats.mealsLogged / 3);
+  const fallbackTrophyScore = fallbackWorkoutCount * 3 + fallbackFoodLogPoints + weeklyStreak * 2;
   const trophies = progress.trophies ?? {
     score: fallbackTrophyScore,
     change: 0,
     safeZone: Math.floor(fallbackTrophyScore / 25) * 25,
     nextMilestone: (Math.floor(fallbackTrophyScore / 25) + 1) * 25,
     pointsToNext: 25 - (fallbackTrophyScore % 25),
-    workoutCount: progress.completionHistory?.length ?? progress.completed,
+    workoutCount: fallbackWorkoutCount,
     starCount: reviewStats.mealsLogged,
     currentStreak: weeklyStreak,
-    breakdown: { workouts: 0, stars: 0, streakAchievement: 0, streakMomentum: 0, weeklyPace: 0 },
+    breakdown: { workouts: fallbackWorkoutCount * 3, stars: fallbackFoodLogPoints, streakAchievement: 0, streakMomentum: weeklyStreak * 2, weeklyPace: 0 },
   };
   const trophyBandSize = Math.max(1, trophies.nextMilestone - trophies.safeZone);
   const trophyBandProgress = Math.max(0, Math.min(1, (trophies.score - trophies.safeZone) / trophyBandSize));
@@ -320,9 +322,8 @@ export function ProgressScreen({ route, navigation }: Props) {
                 <Text style={styles.trophyValue}>{trophies.score}</Text>
                 {trophies.change !== 0 ? <Text style={[styles.trophyChange, trophies.change < 0 && styles.trophyChangeDown]}>{trophies.change > 0 ? '+' : ''}{trophies.change}</Text> : null}
               </View>
-              <Text style={styles.trophyRemaining}>{trophies.pointsToNext} to trophy {trophies.nextMilestone}</Text>
+              <Text style={styles.trophyRemaining} numberOfLines={1} adjustsFontSizeToFit>{trophies.pointsToNext} trophies to safe zone</Text>
             </View>
-            <Feather name="chevron-right" size={21} color={colors.inkSubtle} />
           </View>
           <View style={styles.trophyFooter}>
             <View style={styles.trophyStat}>
@@ -342,27 +343,31 @@ export function ProgressScreen({ route, navigation }: Props) {
             <View style={[styles.trophyStat, styles.trophyStatDivider]}>
               <MaterialCommunityIcon name="shield-check" size={19} color={colors.success} />
               <View style={styles.trophyStatCopy}>
-                <Text style={styles.trophyStatValue}>{trophies.safeZone}</Text>
-                <Text style={styles.trophyStatLabel}>Safe zone</Text>
+                <Text style={styles.trophyStatValue}>{trophies.nextMilestone}</Text>
+                <Text style={styles.trophyStatLabel}>Next safe zone</Text>
               </View>
             </View>
           </View>
+          <View style={styles.weeklyOverview}>
+            <View style={styles.overviewHead}>
+              <View>
+                <Text style={styles.overviewKicker}>This week</Text>
+                <Text style={styles.overviewTitle}>{reviewStats.workoutsCompleted} of {reviewStats.workoutsPlanned || 0} workouts</Text>
+              </View>
+              <Text style={styles.overviewValue}>{adherence}%</Text>
+            </View>
+            <View style={styles.overviewBar}><ProgressBar value={completionRate} /></View>
+          </View>
+          <View style={styles.rankingsCta}>
+            <View style={styles.rankingsIcon}><MaterialCommunityIcon name="podium-gold" size={20} color={colors.gold} /></View>
+            <View style={styles.rankingsCopy}>
+              <Text style={styles.rankingsTitle}>View rankings</Text>
+              <Text style={styles.rankingsSubtitle}>Open friends leaderboard</Text>
+            </View>
+            <Feather name="arrow-right" size={20} color={colors.gold} />
+          </View>
         </Card>
         </TouchableOpacity>
-
-        <Card style={styles.overviewCard}>
-          <View style={styles.overviewHead}>
-            <View>
-              <Text style={styles.overviewKicker}>This week</Text>
-              <Text style={styles.overviewTitle}>{reviewStats.workoutsCompleted} of {reviewStats.workoutsPlanned || 0} workouts</Text>
-            </View>
-            <Text style={styles.overviewValue}>{adherence}%</Text>
-          </View>
-          <View style={styles.overviewBar}><ProgressBar value={completionRate} /></View>
-          <View style={styles.overviewMeta}>
-            <View style={styles.overviewMetaItem}><Feather name="book-open" size={15} color={colors.inkMuted} /><Text style={styles.overviewMetaText}>{reviewStats.mealsLogged} food logs</Text></View>
-          </View>
-        </Card>
 
         <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.88} accessibilityRole="button" accessibilityLabel={`Open progress report. Next report in ${nextReviewDays} days`}>
           <View style={styles.reportCard}>
@@ -378,13 +383,7 @@ export function ProgressScreen({ route, navigation }: Props) {
           </View>
         </TouchableOpacity>
 
-        <View style={styles.sectionRow}>
-          <SectionTitle style={styles.sectionRowTitle}>Body measurements</SectionTitle>
-          <TouchableOpacity onPress={() => setLogMode('body')} style={styles.logChip} accessibilityRole="button" accessibilityLabel="Log body measurements">
-            <Feather name="plus" size={19} color={colors.onPrimary} />
-            <Text style={styles.logChipText}>Log</Text>
-          </TouchableOpacity>
-        </View>
+        <SectionTitle>Body measurements</SectionTitle>
 
         {measuredMetrics.length ? (
           activeMetric ? (
@@ -420,13 +419,12 @@ export function ProgressScreen({ route, navigation }: Props) {
                     <View style={styles.legendItem}><View style={styles.legendActual} /><Text style={styles.legendText}>Logged</Text></View>
                     {activeForecast.length ? <View style={styles.legendItem}><View style={styles.legendForecast} /><Text style={styles.legendText}>{progress.bodyForecast?.source === 'ai' ? 'AI forecast' : 'Trend forecast'}</Text></View> : null}
                   </View>
-                  <TrendLineChart points={activeSeries} forecast={activeForecast} />
+                  <TrendLineChart points={activeSeries} forecast={activeForecast} minimumValue={activeMetric.key === 'weight' ? 20 : undefined} />
                   {activeForecast.length ? (
                     <View style={styles.forecastNote}>
                       <Feather name="zap" size={14} color={colors.gold} />
                       <View style={styles.forecastNoteCopy}>
-                        <Text style={styles.forecastNoteTitle}>Forecast refreshes in {progress.bodyForecast?.nextInDays ?? 7}d</Text>
-                        <Text style={styles.forecastNoteText}>{progress.bodyForecast?.summary}</Text>
+                        <Text style={styles.forecastNoteTitle}>Forecast refreshes in {nextReviewDays} day{nextReviewDays === 1 ? '' : 's'}</Text>
                       </View>
                     </View>
                   ) : (
@@ -436,6 +434,9 @@ export function ProgressScreen({ route, navigation }: Props) {
               ) : (
                 <View style={styles.trendFirstLog}><Feather name="trending-up" size={20} color={colors.inkMuted} /><Text style={styles.trendFirstLogText}>Add one more {activeMetric.label.toLowerCase()} log to start the trend.</Text></View>
               )}
+              <View style={styles.trendLogAction}>
+                <PrimaryButton title="Log body measurement" icon="plus" onPress={() => setLogMode('body')} />
+              </View>
             </Card>
           ) : null
         ) : (
@@ -554,9 +555,9 @@ function TrophyRing({ value }: { value: number }) {
   );
 }
 
-function TrendLineChart({ points, forecast = [] }: { points: SeriesPoint[]; forecast?: SeriesPoint[] }) {
+function TrendLineChart({ points, forecast = [], minimumValue }: { points: SeriesPoint[]; forecast?: SeriesPoint[]; minimumValue?: number }) {
   const [width, setWidth] = useState(0);
-  const height = 202;
+  const height = 250;
   const padTop = 24;
   const padBottom = 30;
   const padLeft = 36;
@@ -573,7 +574,7 @@ function TrendLineChart({ points, forecast = [] }: { points: SeriesPoint[]; fore
     const min = Math.min(...values);
     const visualPadding = Math.max((max - min) * 0.16, 0.5);
     const chartMax = max + visualPadding;
-    const chartMin = Math.max(0, min - visualPadding);
+    const chartMin = minimumValue === undefined ? Math.max(0, min - visualPadding) : Math.min(min - visualPadding, minimumValue);
     const range = Math.max(chartMax - chartMin, 1);
     const innerW = Math.max(width - padLeft - padRight, 1);
     const innerH = height - padTop - padBottom;
@@ -589,7 +590,7 @@ function TrendLineChart({ points, forecast = [] }: { points: SeriesPoint[]; fore
     const lastIndex = data.length - 1;
     const forecastBoundary = projected.length ? (xAt(lastIndex) + xAt(lastIndex + 1)) / 2 : 0;
     return { xAt, yAt, line, forecastLine, area, baseY, lastIndex, chartMin, chartMax, forecastBoundary };
-  }, [width, data, projected]);
+  }, [width, data, projected, minimumValue]);
 
   return (
     <View style={{ height }} onLayout={onLayout}>
@@ -678,13 +679,19 @@ const styles = StyleSheet.create({
   trophyValue: { fontSize: 48, lineHeight: 53, fontWeight: '900', letterSpacing: -1.3, color: colors.ink },
   trophyChange: { ...typography.caption, color: colors.success, fontWeight: '900', backgroundColor: colors.successLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill },
   trophyChangeDown: { color: colors.error, backgroundColor: colors.errorLight },
-  trophyRemaining: { ...typography.caption, color: colors.inkMuted, lineHeight: 17, marginTop: 2 },
+  trophyRemaining: { fontSize: 14, lineHeight: 19, fontWeight: '700', color: colors.inkMuted, marginTop: 2 },
   trophyFooter: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md },
   trophyStat: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
-  trophyStatCopy: { minWidth: 0 },
+  trophyStatCopy: { minWidth: 0, alignItems: 'center' },
   trophyStatDivider: { borderLeftWidth: 1, borderLeftColor: colors.border },
-  trophyStatValue: { fontSize: 18, lineHeight: 20, fontWeight: '900', color: colors.ink },
-  trophyStatLabel: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700' },
+  trophyStatValue: { fontSize: 18, lineHeight: 20, fontWeight: '900', color: colors.ink, textAlign: 'center' },
+  trophyStatLabel: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', textAlign: 'center' },
+  weeklyOverview: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md },
+  rankingsCta: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.accentLight, paddingHorizontal: spacing.md, marginTop: spacing.md },
+  rankingsIcon: { width: 38, height: 38, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentFill },
+  rankingsCopy: { flex: 1, minWidth: 0 },
+  rankingsTitle: { ...typography.bodyBold, color: colors.ink },
+  rankingsSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
 
   reportCard: { borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panel, padding: 20, marginTop: spacing.lg },
   reportTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
@@ -699,15 +706,11 @@ const styles = StyleSheet.create({
   reportFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.sm },
   reportFootText: { ...typography.caption, color: colors.inkMuted },
 
-  overviewCard: { gap: 0, backgroundColor: colors.panel, borderColor: colors.border, marginTop: spacing.sm },
   overviewHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.lg },
   overviewKicker: { ...typography.overline, color: colors.inkMuted, textTransform: 'uppercase' },
   overviewTitle: { ...typography.subtitle, color: colors.ink, marginTop: 3 },
   overviewValue: { fontSize: 30, lineHeight: 34, fontWeight: '900', letterSpacing: -0.5, color: colors.ink },
   overviewBar: { marginTop: spacing.md },
-  overviewMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, marginTop: spacing.md },
-  overviewMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  overviewMetaText: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
 
   reviewHero: { backgroundColor: colors.panel, borderColor: colors.border, gap: spacing.md },
   reviewHeroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
@@ -762,20 +765,6 @@ const styles = StyleSheet.create({
   signalValue: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
   signalValueComplete: { color: colors.gold },
 
-  sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.xl, marginBottom: spacing.sm },
-  sectionRowTitle: { flex: 1, marginTop: 0, marginBottom: 0 },
-  logChip: {
-    minHeight: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-    backgroundColor: colors.primaryAction,
-  },
-  logChipText: { ...typography.bodyBold, color: colors.onPrimary, fontWeight: '900' },
-
   trendCard: { gap: spacing.md, backgroundColor: colors.panel, borderColor: colors.border },
   metricChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   metricChip: {
@@ -803,10 +792,10 @@ const styles = StyleSheet.create({
   forecastNote: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
   forecastNoteCopy: { flex: 1 },
   forecastNoteTitle: { ...typography.caption, color: colors.gold, fontWeight: '800' },
-  forecastNoteText: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: 2 },
   forecastEmpty: { ...typography.caption, color: colors.inkSubtle, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, lineHeight: 18 },
   trendFirstLog: { minHeight: 112, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
   trendFirstLogText: { ...typography.caption, color: colors.inkMuted, textAlign: 'center' },
+  trendLogAction: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md },
 
   emptyMeasure: { alignItems: 'center', paddingVertical: spacing.lg, gap: spacing.xs },
   emptyIcon: {
