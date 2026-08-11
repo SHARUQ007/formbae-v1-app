@@ -302,6 +302,7 @@ export function ActionHubScreen({ navigation }: Props) {
   ].filter((action) => action.kind !== snapshot.target.kind);
   const commitment = accountability?.today;
   const commitmentComplete = commitment?.status === 'completed';
+  const commitmentActive = Boolean(commitment && !commitmentComplete);
 
   return (
     <ScreenContainer>
@@ -325,17 +326,20 @@ export function ActionHubScreen({ navigation }: Props) {
             <Text style={styles.sectionEyebrow}>YOUR FOCUS</Text>
             <Text style={styles.personalSectionTitle}>Today’s promise</Text>
           </View>
-          <View style={styles.personalStatus}><View style={[styles.personalStatusDot, commitmentComplete && styles.personalStatusDotDone]} /><Text style={styles.personalStatusText}>{commitmentComplete ? 'Complete' : commitment ? 'In progress' : 'Not started'}</Text></View>
+          <View style={[styles.personalStatus, !commitment && styles.personalStatusIdle, commitmentComplete && styles.personalStatusDone]}>
+            <View style={[styles.personalStatusDot, !commitment && styles.personalStatusDotIdle, commitmentComplete && styles.personalStatusDotDone]} />
+            <Text style={[styles.personalStatusText, commitmentComplete && styles.personalStatusTextDone]}>{commitmentComplete ? 'Complete' : commitment ? 'In progress' : 'Not started'}</Text>
+          </View>
         </View>
 
-        <View style={[styles.hero, commitmentComplete && styles.heroComplete]}>
+        <View style={[styles.hero, commitmentActive && styles.heroCommitted, commitmentComplete && styles.heroComplete]}>
           <View style={styles.heroTop}>
             <View style={[styles.heroIcon, commitmentComplete && styles.heroIconComplete]}>
               <Feather name={commitmentComplete ? 'check' : commitment ? 'shield' : snapshot.target.icon} size={22} color={commitmentComplete ? colors.onPrimary : colors.inkStrong} />
             </View>
-            <View style={styles.recommendedPill}>
+            <View style={[styles.recommendedPill, commitmentComplete && styles.recommendedPillDone]}>
               <View style={[styles.recommendedDot, commitmentComplete && styles.recommendedDotComplete]} />
-              <Text style={styles.recommendedText}>{commitmentComplete ? 'Promise kept' : commitment ? 'Committed' : 'Recommended'}</Text>
+              <Text style={[styles.recommendedText, commitmentComplete && styles.recommendedTextDone]}>{commitmentComplete ? 'Promise kept' : commitment ? 'Committed' : 'Recommended'}</Text>
             </View>
           </View>
           <Text style={styles.heroLabel}>ONE CLEAR ACTION</Text>
@@ -372,7 +376,7 @@ export function ActionHubScreen({ navigation }: Props) {
             <Text style={styles.sectionEyebrow}>WITH A PARTNER</Text>
             <Text style={styles.personalSectionTitle}>Show up together</Text>
           </View>
-          <MaterialCommunityIcon name="shield-account-outline" size={22} color={colors.goldMuted} />
+          <View style={styles.partnerSectionIcon}><MaterialCommunityIcon name="heart-outline" size={20} color={colors.gold} /></View>
         </View>
 
         <AccountabilityBaeCard
@@ -569,7 +573,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
 
 function BaePreference({ icon, label, onPress, disabled }: { icon: string; label: string; onPress: () => void; disabled: boolean }) {
   return (
-    <TouchableOpacity style={[styles.baePreference, disabled && styles.baeDisabled]} onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityLabel={`Match with a ${label.toLowerCase()} accountability partner`}>
+    <TouchableOpacity activeOpacity={0.78} style={[styles.baePreference, disabled && styles.baeDisabled]} onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityLabel={`Match with a ${label.toLowerCase()} accountability partner`}>
       <MaterialCommunityIcon name={icon} size={24} color={colors.gold} />
       <Text style={styles.baePreferenceText}>{label}</Text>
     </TouchableOpacity>
@@ -615,7 +619,7 @@ function commitmentMet(kind: string, targetId: string, snapshot: ContextualSnaps
 function SnapshotStat({ icon, label, value }: { icon: string; label: string; value: string }) {
   return (
     <View style={styles.snapshotCard}>
-      <Feather name={icon} size={18} color={colors.inkMuted} />
+      <View style={styles.snapshotIcon}><Feather name={icon} size={17} color={colors.gold} /></View>
       <Text style={styles.snapshotLabel}>{label}</Text>
       <Text style={styles.snapshotValue}>{value}</Text>
     </View>
@@ -632,7 +636,7 @@ function QuickAction({ icon, title, body, onPress }: { icon: string; title: stri
       accessibilityLabel={`${title}. ${body}`}
     >
       <View style={styles.quickIcon}>
-        <Feather name={icon} size={19} color={colors.ink} />
+        <Feather name={icon} size={18} color={colors.gold} />
       </View>
       <View style={styles.quickCopy}>
         <Text style={styles.quickTitle}>{title}</Text>
@@ -679,13 +683,18 @@ const styles = StyleSheet.create({
   personalSectionHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.lg, marginBottom: spacing.sm },
   partnerSectionHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.xl, marginBottom: spacing.sm },
   partnerSectionCopy: { flex: 1 },
+  partnerSectionIcon: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
   sectionEyebrow: { ...typography.overline, color: colors.inkSubtle },
   personalSectionTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
-  personalStatus: { minHeight: 26, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.sm, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border },
+  personalStatus: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.accentLight },
+  personalStatusIdle: { borderColor: colors.border, backgroundColor: colors.panelMuted },
+  personalStatusDone: { borderColor: 'rgba(131,214,164,0.28)', backgroundColor: colors.successLight },
   personalStatusDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.gold },
+  personalStatusDotIdle: { backgroundColor: colors.inkSubtle },
   personalStatusDotDone: { backgroundColor: colors.success },
   personalStatusText: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '800' },
-  baeCard: { borderRadius: 24, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, overflow: 'hidden', ...shadows.card },
+  personalStatusTextDone: { color: colors.success },
+  baeCard: { borderRadius: radius.xl, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, overflow: 'hidden', ...shadows.card },
   baeLoading: { minHeight: 110, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   baeHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   baeBrandIcon: { width: 46, height: 46, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
@@ -709,7 +718,7 @@ const styles = StyleSheet.create({
   baeStepLine: { width: 30, height: 1, backgroundColor: colors.borderStrong, marginHorizontal: spacing.xs, marginBottom: 17 },
   baePrompt: { ...typography.bodyBold, color: colors.ink, marginTop: spacing.lg },
   baePreferenceRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-  baePreference: { flex: 1, minHeight: 88, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted },
+  baePreference: { flex: 1, minHeight: 84, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panelMuted },
   baePreferenceText: { ...typography.caption, color: colors.ink, fontWeight: '900' },
   baeSafety: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.md },
   baeSafetyText: { ...typography.caption, color: colors.inkMuted, flexShrink: 1 },
@@ -781,6 +790,7 @@ const styles = StyleSheet.create({
     marginTop: 0,
     ...shadows.sm,
   },
+  heroCommitted: { borderColor: colors.accentSurface },
   heroComplete: { borderColor: colors.accentSurface, backgroundColor: colors.panelWarm },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   heroIcon: {
@@ -794,11 +804,14 @@ const styles = StyleSheet.create({
   heroIconComplete: { backgroundColor: colors.success },
   recommendedPill: {
     minHeight: 28,
-    paddingHorizontal: spacing.xs,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentLight,
   },
+  recommendedPillDone: { backgroundColor: colors.successLight },
   recommendedDot: {
     width: 6,
     height: 6,
@@ -807,6 +820,7 @@ const styles = StyleSheet.create({
   },
   recommendedDotComplete: { backgroundColor: colors.success },
   recommendedText: { ...typography.caption, color: colors.gold, fontWeight: '700' },
+  recommendedTextDone: { color: colors.success },
   heroLabel: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase', marginTop: spacing.lg },
   heroTitle: { ...typography.hero, color: colors.inkStrong, marginTop: spacing.xs },
   heroMeta: { ...typography.body, color: colors.inkMuted, marginTop: spacing.sm, lineHeight: 22 },
@@ -849,27 +863,37 @@ const styles = StyleSheet.create({
   reasonText: { ...typography.caption, color: colors.inkMuted, marginTop: 3, lineHeight: 18 },
   section: { marginTop: spacing.xl },
   sectionTitle: { ...typography.bodyBold, color: colors.ink, marginBottom: spacing.sm },
-  snapshotGrid: { flexDirection: 'row', gap: 0, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
+  snapshotGrid: { flexDirection: 'row', gap: spacing.sm },
   snapshotCard: {
     flex: 1,
-    minHeight: 112,
-    padding: spacing.md,
+    minHeight: 124,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panel,
+    padding: spacing.sm,
   },
-  snapshotLabel: { ...typography.caption, color: colors.inkSubtle, marginTop: spacing.md },
+  snapshotIcon: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, backgroundColor: colors.accentLight },
+  snapshotLabel: { fontSize: 10, lineHeight: 14, color: colors.inkSubtle, fontWeight: '700', marginTop: spacing.sm },
   snapshotValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
-  quickList: {},
+  quickList: { gap: spacing.sm },
   quickAction: {
-    minHeight: 74,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    paddingVertical: 12,
+    minHeight: 72,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panel,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 11,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   quickIcon: {
-    width: 32,
-    height: 32,
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    backgroundColor: colors.accentLight,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -38,7 +38,7 @@ function ContextualActionButton({ accessibilityState, onPress }: BottomTabBarBut
           color={focused ? colors.gold : colors.onPrimary}
         />
       </View>
-      <Text style={styles.actionLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Accountability</Text>
+      <Text style={[styles.actionLabel, focused && styles.actionLabelFocused]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Accountability</Text>
     </TouchableOpacity>
   );
 }
@@ -114,8 +114,8 @@ const styles = StyleSheet.create({
     ...shadows.md,
   },
   actionButtonFocused: {
-    backgroundColor: colors.primaryAction,
-    borderColor: colors.goldMuted,
+    backgroundColor: colors.accentFill,
+    borderColor: colors.gold,
   },
   actionLabel: {
     ...typography.caption,
@@ -125,4 +125,5 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
+  actionLabelFocused: { color: colors.gold },
 });
