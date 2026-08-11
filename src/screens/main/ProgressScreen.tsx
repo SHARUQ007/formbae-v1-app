@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Alert, LayoutChangeEvent, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
-import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Line as SvgLine, Path, Stop, Text as SvgText } from 'react-native-svg';
+import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Line as SvgLine, Path, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { Card, ScreenContainer, ScreenTitle, SectionTitle } from '../../components/Card';
 import { FormInput } from '../../components/FormInput';
 import { KeyboardScreen } from '../../components/KeyboardScreen';
@@ -19,7 +20,7 @@ import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
 import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
-import type { MainTabParamList } from '../../navigation/types';
+import type { ProgressStackParamList } from '../../navigation/types';
 import { deriveCurrentWeekStreak } from '../../utils/weeklyMuscles';
 
 type Loaded = {
@@ -30,16 +31,18 @@ type LogMode = 'body';
 const GOLD = '#f5b301';
 
 type MetricKey = 'weight' | 'waist' | 'chest' | 'biceps';
-const METRICS: Array<{ key: MetricKey; label: string; unit: string; icon: string }> = [
-  { key: 'weight', label: 'Weight', unit: 'kg', icon: 'trending-up' },
-  { key: 'waist', label: 'Waist', unit: 'cm', icon: 'minimize-2' },
-  { key: 'chest', label: 'Chest', unit: 'cm', icon: 'maximize-2' },
-  { key: 'biceps', label: 'Biceps', unit: 'cm', icon: 'activity' },
+const METRICS: Array<{ key: MetricKey; label: string; unit: string }> = [
+  { key: 'weight', label: 'Weight', unit: 'kg' },
+  { key: 'waist', label: 'Waist', unit: 'cm' },
+  { key: 'chest', label: 'Chest', unit: 'cm' },
+  { key: 'biceps', label: 'Biceps', unit: 'cm' },
 ];
 
 type SeriesPoint = { date: string; value: number };
 
-type Props = BottomTabScreenProps<MainTabParamList, 'Progress'>;
+type Props =
+  | NativeStackScreenProps<ProgressStackParamList, 'ProgressMain'>
+  | NativeStackScreenProps<ProgressStackParamList, 'ProgressReport'>;
 
 export function ProgressScreen({ route, navigation }: Props) {
   const tabBarHeight = useBottomTabBarHeight();
@@ -56,12 +59,14 @@ export function ProgressScreen({ route, navigation }: Props) {
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('weight');
 
   useEffect(() => {
+    if (route.name !== 'ProgressMain') return;
     const action = route.params?.action;
     if (!action) return;
     if (action === 'logBody') setLogMode('body');
     if (action === 'overview') refresh().catch(() => undefined);
-    navigation.setParams({ action: undefined, requestId: undefined });
-  }, [navigation, refresh, route.params?.action, route.params?.requestId]);
+    const mainNavigation = navigation as NativeStackScreenProps<ProgressStackParamList, 'ProgressMain'>['navigation'];
+    mainNavigation.setParams({ action: undefined, requestId: undefined });
+  }, [navigation, refresh, route]);
 
   const trend = useMemo(() => data?.progress.bodyTrend ?? [], [data]);
   const series = useMemo(() => {
@@ -132,8 +137,22 @@ export function ProgressScreen({ route, navigation }: Props) {
   const weeklyStreak = progress.completionHistory
     ? deriveCurrentWeekStreak(progress.completionHistory)
     : Math.min(7, progress.currentStreak);
-  const coachingSignals = reviewStats.workoutFeedbackCount + reviewStats.checkInCount + reviewStats.bodyLogCount;
+  const fallbackTrophyScore = (progress.completionHistory?.length ?? progress.completed) * 5 + weeklyStreak * 2;
+  const trophies = progress.trophies ?? {
+    score: fallbackTrophyScore,
+    change: 0,
+    safeZone: Math.floor(fallbackTrophyScore / 25) * 25,
+    nextMilestone: (Math.floor(fallbackTrophyScore / 25) + 1) * 25,
+    pointsToNext: 25 - (fallbackTrophyScore % 25),
+    workoutCount: progress.completionHistory?.length ?? progress.completed,
+    starCount: reviewStats.mealsLogged,
+    currentStreak: weeklyStreak,
+    breakdown: { workouts: 0, stars: 0, streakAchievement: 0, streakMomentum: 0, weeklyPace: 0 },
+  };
+  const trophyBandSize = Math.max(1, trophies.nextMilestone - trophies.safeZone);
+  const trophyBandProgress = Math.max(0, Math.min(1, (trophies.score - trophies.safeZone) / trophyBandSize));
   const nextReviewDays = review?.nextInDays ?? 7;
+  const reportCycleProgress = Math.max(0, Math.min(1, (7 - nextReviewDays) / 7));
   const nextFocusDomain = review?.nextFocusDomain ?? 'workout';
   const nextFocusCta = nextFocusDomain === 'diet'
     ? 'Log your next meal'
@@ -142,23 +161,94 @@ export function ProgressScreen({ route, navigation }: Props) {
       : 'Open your workout plan';
 
   const measuredMetrics = METRICS.filter((metric) => series[metric.key].length > 0);
-  const chartableMetrics = METRICS.filter((metric) => series[metric.key].length > 1);
   const lastLogged = trend[trend.length - 1]?.date;
-  const activeMetric = chartableMetrics.find((metric) => metric.key === selectedMetric) || chartableMetrics[0];
+  const activeMetric = measuredMetrics.find((metric) => metric.key === selectedMetric) || measuredMetrics[0];
   const activeSeries = activeMetric ? series[activeMetric.key] : [];
+  const activeForecast = activeMetric ? progress.bodyForecast?.metrics?.[activeMetric.key] ?? [] : [];
   const activeDelta = seriesDelta(activeSeries);
+  const activeLastLogged = activeSeries[activeSeries.length - 1]?.date;
 
   const openNextFocus = () => {
     if (nextFocusDomain === 'diet') {
-      navigation.navigate('Diet');
+      navigation.getParent()?.navigate('Diet');
       return;
     }
     if (nextFocusDomain === 'body') {
       setLogMode('body');
       return;
     }
-    navigation.navigate('Workouts', { screen: 'WorkoutList' });
+    navigation.getParent()?.navigate('Workouts', { screen: 'WorkoutList' });
   };
+
+  if (route.name === 'ProgressReport') {
+    return (
+      <ScreenContainer withBottomInset>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: spacing.xl }]}>
+          <View style={styles.logHeader}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Back to progress">
+              <Feather name="chevron-left" size={24} color={colors.ink} />
+            </TouchableOpacity>
+            <View style={styles.logHeaderText}>
+              <Text style={styles.eyebrow}>Weekly coaching</Text>
+              <Text style={styles.logTitle}>Progress report</Text>
+            </View>
+          </View>
+
+          <Card style={styles.reviewHero}>
+            <View style={styles.reviewHeroTop}>
+              <View style={styles.aiMark}><Text style={styles.aiMarkText}>A</Text></View>
+              <View style={styles.reviewHeroLabelCopy}>
+                <Text style={styles.reviewHeroKicker}>Ava's weekly note</Text>
+                <Text style={styles.reviewHeroMeta}>{reviewReady && review?.generatedAt ? formatShortDate(review.generatedAt) : 'Still collecting activity'}</Text>
+              </View>
+              <View style={[styles.reviewStatus, reviewReady && styles.reviewStatusReady]}>
+                <View style={[styles.reviewStatusDot, reviewReady && styles.reviewStatusDotReady]} />
+                <Text style={styles.reviewStatusText}>{reviewReady ? 'Ready' : `${nextReviewDays}d`}</Text>
+              </View>
+            </View>
+            <Text style={styles.reviewHeadline}>{reviewReady ? review?.headline : 'Keep building the week.'}</Text>
+            <Text style={styles.reviewSummary}>{reviewReady ? review?.summary : 'Your first report becomes available after a full week of workouts and food logs.'}</Text>
+            {reviewReady && review?.wins?.length ? (
+              <View style={styles.winList}>
+                {review.wins.slice(0, 3).map((win) => (
+                  <View key={win} style={styles.winRow}><Feather name="check" size={15} color={colors.gold} /><Text style={styles.winText}>{win}</Text></View>
+                ))}
+              </View>
+            ) : null}
+            <View style={styles.reviewEvidence}><Text style={styles.reviewEvidenceText}>Based on {reviewStats.workoutsCompleted} workouts and {reviewStats.mealsLogged} food logs.</Text></View>
+          </Card>
+
+          {reviewReady ? (
+            <>
+              <SectionTitle>Patterns</SectionTitle>
+              <View style={styles.insightStack}>
+                <InsightPanel icon="activity" eyebrow="Workout feedback" title="Training pattern" insight={review?.workoutInsight || ''} recommendation={review?.workoutRecommendation || ''} />
+                <InsightPanel icon="coffee" eyebrow="Diet feedback" title="Nutrition pattern" insight={review?.nutritionInsight || ''} recommendation={review?.nutritionRecommendation || ''} />
+              </View>
+              <Card style={styles.nextFocusCard}>
+                <View style={styles.nextFocusTop}>
+                  <View style={styles.nextFocusIcon}><Feather name="arrow-up-right" size={20} color={colors.onPrimary} /></View>
+                  <View style={styles.nextFocusCopy}><Text style={styles.nextFocusEyebrow}>Your next best move</Text><Text style={styles.nextFocusTitle}>{review?.nextFocusTitle}</Text></View>
+                </View>
+                <Text style={styles.nextFocusReason}>{review?.nextFocusReason}</Text>
+                <PrimaryButton title={nextFocusCta} icon="arrow-right" onPress={openNextFocus} variant="inverted" style={styles.nextFocusButton} />
+              </Card>
+            </>
+          ) : (
+            <Card style={styles.unlockCard}>
+              <Text style={styles.unlockEyebrow}>Building your first report</Text>
+              <Text style={styles.unlockTitle}>A useful report needs real activity</Text>
+              <View style={styles.unlockSignals}>
+                <SignalRow icon="activity" label="Complete a workout" value={reviewStats.workoutsCompleted > 0 ? 'Added' : 'Waiting'} complete={reviewStats.workoutsCompleted > 0} />
+                <SignalRow icon="book-open" label="Log your food" value={`${reviewStats.mealsLogged} added`} complete={reviewStats.mealsLogged > 0} />
+                <SignalRow icon="message-circle" label="Share workout feedback" value={reviewStats.workoutFeedbackCount > 0 ? 'Added' : 'Optional'} complete={reviewStats.workoutFeedbackCount > 0} />
+              </View>
+            </Card>
+          )}
+        </ScrollView>
+      </ScreenContainer>
+    );
+  }
 
   if (logMode) {
     return (
@@ -209,207 +299,145 @@ export function ProgressScreen({ route, navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
       >
         <View style={styles.header}>
-          <View>
-            <Text style={styles.eyebrow}>Weekly coaching</Text>
+          <View style={styles.headerCopy}>
             <ScreenTitle>Progress</ScreenTitle>
           </View>
-          <View style={styles.reviewCountdown} accessibilityLabel={`Next AI feedback in ${nextReviewDays} days`}>
-            <Feather name="clock" size={16} color={colors.gold} />
-            <View>
-              <Text style={styles.reviewCountdownValue}>{nextReviewDays}d</Text>
-              <Text style={styles.reviewCountdownLabel}>next review</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.75} accessibilityRole="button" accessibilityLabel={`Next report in ${nextReviewDays} days`}>
+            <View style={styles.reportCountdown}>
+              <Text style={styles.reportCountdownValue}>{nextReviewDays} day{nextReviewDays === 1 ? '' : 's'}</Text>
+              <Text style={styles.reportCountdownLabel}>Next report</Text>
             </View>
-          </View>
+          </TouchableOpacity>
         </View>
 
-        <Card style={styles.reviewHero}>
-          <View style={styles.reviewHeroTop}>
-            <View style={styles.aiMark}>
-              <Feather name="zap" size={20} color={colors.gold} />
-            </View>
-            <View style={styles.reviewHeroLabelCopy}>
-              <Text style={styles.reviewHeroKicker}>Ava AI · weekly review</Text>
-              <Text style={styles.reviewHeroMeta}>
-                {reviewReady && review?.generatedAt ? `Generated ${formatShortDate(review.generatedAt)}` : `Ready in ${nextReviewDays} day${nextReviewDays === 1 ? '' : 's'}`}
-              </Text>
-            </View>
-            <View style={[styles.reviewStatus, reviewReady && styles.reviewStatusReady]}>
-              <View style={[styles.reviewStatusDot, reviewReady && styles.reviewStatusDotReady]} />
-              <Text style={styles.reviewStatusText}>{reviewReady ? 'Ready' : 'Learning'}</Text>
-            </View>
-          </View>
-
-          <Text style={styles.reviewHeadline}>
-            {reviewReady ? review?.headline : 'Your weekly picture is taking shape.'}
-          </Text>
-          <Text style={styles.reviewSummary}>
-            {reviewReady
-              ? review?.summary
-              : 'Keep completing workouts and logging meals. Ava will connect those signals into your first personal review.'}
-          </Text>
-
-          {reviewReady && review?.wins?.length ? (
-            <View style={styles.winList}>
-              {review.wins.slice(0, 3).map((win) => (
-                <View key={win} style={styles.winRow}>
-                  <View style={styles.winCheck}><Feather name="check" size={13} color={colors.onPrimary} /></View>
-                  <Text style={styles.winText}>{win}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
-
-          <View style={styles.reviewEvidence}>
-            <Feather name="database" size={14} color={colors.inkMuted} />
-            <Text style={styles.reviewEvidenceText}>
-              Built from {reviewStats.workoutsCompleted} workout{reviewStats.workoutsCompleted === 1 ? '' : 's'}, {reviewStats.mealsLogged} food log{reviewStats.mealsLogged === 1 ? '' : 's'}, and {coachingSignals} coach signal{coachingSignals === 1 ? '' : 's'}.
-            </Text>
-          </View>
-        </Card>
-
-        <SectionTitle>This week</SectionTitle>
-        <View style={styles.weeklyStatGrid}>
-          <WeeklyStat icon="activity" value={`${reviewStats.workoutsCompleted}/${reviewStats.workoutsPlanned || 0}`} label="Workouts" />
-          <WeeklyStat icon="book-open" value={`${reviewStats.mealsLogged}`} label="Food logs" />
-          <WeeklyStat icon="zap" value={`${weeklyStreak}`} label="Week streak" />
-          <WeeklyStat icon="message-circle" value={`${coachingSignals}`} label="Coach signals" />
-        </View>
-
-        <Card style={styles.consistencyCard}>
-          <AdherenceRing pct={adherence} size={112} stroke={10} />
-          <View style={styles.consistencyInfo}>
-            <Text style={styles.consistencyEyebrow}>Follow-through</Text>
-            <Text style={styles.consistencyTitle}>{adherence}% workout consistency</Text>
-            <View style={styles.consistencyBar}><ProgressBar value={completionRate} /></View>
-            <Text style={styles.consistencyFact}>
-              {reviewStats.dietDaysLogged} nutrition day{reviewStats.dietDaysLogged === 1 ? '' : 's'} logged · Best workout streak {progress.bestStreak} days
-            </Text>
-          </View>
-        </Card>
-
-        {reviewReady ? (
-          <>
-            <SectionTitle>What Ava noticed</SectionTitle>
-            <View style={styles.insightStack}>
-              <InsightPanel
-                icon="activity"
-                eyebrow="Workout feedback"
-                title="Training pattern"
-                insight={review?.workoutInsight || ''}
-                recommendation={review?.workoutRecommendation || ''}
-              />
-              <InsightPanel
-                icon="coffee"
-                eyebrow="Diet feedback"
-                title="Nutrition pattern"
-                insight={review?.nutritionInsight || ''}
-                recommendation={review?.nutritionRecommendation || ''}
-              />
-            </View>
-
-            <Card style={styles.nextFocusCard}>
-              <View style={styles.nextFocusTop}>
-                <View style={styles.nextFocusIcon}><Feather name="arrow-up-right" size={20} color={colors.onPrimary} /></View>
-                <View style={styles.nextFocusCopy}>
-                  <Text style={styles.nextFocusEyebrow}>Your next best move</Text>
-                  <Text style={styles.nextFocusTitle}>{review?.nextFocusTitle}</Text>
-                </View>
+        <TouchableOpacity onPress={() => navigation.navigate('TrophyDetails')} activeOpacity={0.9} accessibilityRole="button" accessibilityLabel="Open trophy details and leaderboard">
+        <Card style={styles.trophyCard}>
+          <View style={styles.trophyMain}>
+            <TrophyRing value={trophyBandProgress} />
+            <View style={styles.trophyCopy}>
+              <Text style={styles.trophyLabel}>Trophies</Text>
+              <View style={styles.trophyValueRow}>
+                <Text style={styles.trophyValue}>{trophies.score}</Text>
+                {trophies.change !== 0 ? <Text style={[styles.trophyChange, trophies.change < 0 && styles.trophyChangeDown]}>{trophies.change > 0 ? '+' : ''}{trophies.change}</Text> : null}
               </View>
-              <Text style={styles.nextFocusReason}>{review?.nextFocusReason}</Text>
-              <PrimaryButton title={nextFocusCta} icon="arrow-right" onPress={openNextFocus} variant="inverted" style={styles.nextFocusButton} />
-              {nextFocusDomain !== 'body' ? (
-                <TouchableOpacity onPress={() => setLogMode('body')} style={styles.bodyInvestment} accessibilityRole="button" accessibilityLabel="Add a body update">
-                  <Feather name="plus" size={16} color={colors.gold} />
-                  <Text style={styles.bodyInvestmentText}>Add a body update for a richer next review</Text>
-                </TouchableOpacity>
-              ) : null}
-            </Card>
-          </>
-        ) : (
-          <Card style={styles.unlockCard}>
-            <Text style={styles.unlockEyebrow}>Building your first review</Text>
-            <Text style={styles.unlockTitle}>Three signals make it more useful</Text>
-            <View style={styles.unlockSignals}>
-              <SignalRow icon="activity" label="Complete a workout" value={reviewStats.workoutsCompleted > 0 ? 'Added' : 'Waiting'} complete={reviewStats.workoutsCompleted > 0} />
-              <SignalRow icon="book-open" label="Log meals honestly" value={`${reviewStats.mealsLogged} added`} complete={reviewStats.mealsLogged > 0} />
-              <SignalRow icon="message-circle" label="Share workout feedback" value={reviewStats.workoutFeedbackCount > 0 ? 'Added' : 'Optional'} complete={reviewStats.workoutFeedbackCount > 0} />
+              <Text style={styles.trophyRemaining}>{trophies.pointsToNext} to trophy {trophies.nextMilestone}</Text>
             </View>
-          </Card>
-        )}
+            <Feather name="chevron-right" size={21} color={colors.inkSubtle} />
+          </View>
+          <View style={styles.trophyFooter}>
+            <View style={styles.trophyStat}>
+              <MaterialCommunityIcon name="fire" size={20} color={colors.gold} />
+              <View style={styles.trophyStatCopy}>
+                <Text style={styles.trophyStatValue}>{trophies.currentStreak}</Text>
+                <Text style={styles.trophyStatLabel}>Streak</Text>
+              </View>
+            </View>
+            <View style={[styles.trophyStat, styles.trophyStatDivider]}>
+              <Feather name="star" size={19} color={colors.gold} />
+              <View style={styles.trophyStatCopy}>
+                <Text style={styles.trophyStatValue}>{trophies.starCount}</Text>
+                <Text style={styles.trophyStatLabel}>Star points</Text>
+              </View>
+            </View>
+            <View style={[styles.trophyStat, styles.trophyStatDivider]}>
+              <MaterialCommunityIcon name="shield-check" size={19} color={colors.success} />
+              <View style={styles.trophyStatCopy}>
+                <Text style={styles.trophyStatValue}>{trophies.safeZone}</Text>
+                <Text style={styles.trophyStatLabel}>Safe zone</Text>
+              </View>
+            </View>
+          </View>
+        </Card>
+        </TouchableOpacity>
+
+        <Card style={styles.overviewCard}>
+          <View style={styles.overviewHead}>
+            <View>
+              <Text style={styles.overviewKicker}>This week</Text>
+              <Text style={styles.overviewTitle}>{reviewStats.workoutsCompleted} of {reviewStats.workoutsPlanned || 0} workouts</Text>
+            </View>
+            <Text style={styles.overviewValue}>{adherence}%</Text>
+          </View>
+          <View style={styles.overviewBar}><ProgressBar value={completionRate} /></View>
+          <View style={styles.overviewMeta}>
+            <View style={styles.overviewMetaItem}><Feather name="book-open" size={15} color={colors.inkMuted} /><Text style={styles.overviewMetaText}>{reviewStats.mealsLogged} food logs</Text></View>
+          </View>
+        </Card>
+
+        <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.88} accessibilityRole="button" accessibilityLabel={`Open progress report. Next report in ${nextReviewDays} days`}>
+          <View style={styles.reportCard}>
+            <View style={styles.reportTop}>
+              <View style={styles.reportIcon}><Feather name="file-text" size={20} color={colors.gold} /></View>
+              <Text style={styles.reportLabel}>Weekly progress report</Text>
+              {reviewReady ? <View style={styles.reportReady}><View style={styles.reportReadyDot} /><Text style={styles.reportReadyText}>Latest ready</Text></View> : null}
+              <Feather name="chevron-right" size={21} color={colors.inkSubtle} />
+            </View>
+            <Text style={styles.reportTitle}>Next report in {nextReviewDays} day{nextReviewDays === 1 ? '' : 's'}</Text>
+            <View style={styles.reportTrack}><View style={[styles.reportTrackFill, { width: `${reportCycleProgress * 100}%` }]} /></View>
+            <View style={styles.reportFoot}><Text style={styles.reportFootText}>{reviewReady ? 'Open your latest insights' : 'Building from this week’s activity'}</Text></View>
+          </View>
+        </TouchableOpacity>
 
         <View style={styles.sectionRow}>
           <SectionTitle style={styles.sectionRowTitle}>Body measurements</SectionTitle>
           <TouchableOpacity onPress={() => setLogMode('body')} style={styles.logChip} accessibilityRole="button" accessibilityLabel="Log body measurements">
-            <Feather name="plus" size={14} color={colors.onPrimary} />
+            <Feather name="plus" size={19} color={colors.onPrimary} />
             <Text style={styles.logChipText}>Log</Text>
           </TouchableOpacity>
         </View>
 
         {measuredMetrics.length ? (
-          <>
-            <Card style={styles.measureCard}>
-              {lastLogged ? <Text style={styles.measureMeta}>Last logged {formatDate(lastLogged)}</Text> : null}
-              <View style={styles.measureGrid}>
+          activeMetric ? (
+            <Card style={styles.trendCard}>
+              <View style={styles.metricChips}>
                 {measuredMetrics.map((metric) => {
-                  const points = series[metric.key];
-                  const latest = points[points.length - 1];
-                  const delta = seriesDelta(points);
+                  const on = metric.key === activeMetric.key;
                   return (
-                    <MeasureTile
+                    <TouchableOpacity
                       key={metric.key}
-                      icon={metric.icon}
-                      label={metric.label}
-                      value={`${trimNumber(latest.value)}`}
-                      unit={metric.unit}
-                      delta={delta}
-                    />
+                      onPress={() => setSelectedMetric(metric.key)}
+                      style={[styles.metricChip, on && styles.metricChipOn]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on }}
+                    >
+                      <Text style={[styles.metricChipText, on && styles.metricChipTextOn]}>{metric.label}</Text>
+                    </TouchableOpacity>
                   );
                 })}
               </View>
-            </Card>
-
-            {activeMetric ? (
-              <>
-                <SectionTitle>Body trend</SectionTitle>
-                <Card style={styles.trendCard}>
-                  <View style={styles.metricChips}>
-                    {chartableMetrics.map((metric) => {
-                      const on = metric.key === activeMetric.key;
-                      return (
-                        <TouchableOpacity
-                          key={metric.key}
-                          onPress={() => setSelectedMetric(metric.key)}
-                          style={[styles.metricChip, on && styles.metricChipOn]}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: on }}
-                        >
-                          <Text style={[styles.metricChipText, on && styles.metricChipTextOn]}>{metric.label}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+              <View style={styles.trendSummary}>
+                <View>
+                  <Text style={styles.trendValue}>{trimNumber(activeSeries[activeSeries.length - 1].value)}<Text style={styles.trendUnit}> {activeMetric.unit}</Text></Text>
+                  {activeLastLogged ? <Text style={styles.trendDate}>Updated {formatDate(activeLastLogged)}</Text> : null}
+                </View>
+                {activeDelta ? (
+                  <View style={styles.trendDelta}><Feather name={deltaIcon(activeDelta.dir)} size={13} color={colors.inkMuted} /><Text style={styles.trendDeltaText}>{activeDelta.text} {activeMetric.unit}</Text></View>
+                ) : null}
+              </View>
+              {activeSeries.length > 1 ? (
+                <>
+                  <View style={styles.trendLegend}>
+                    <View style={styles.legendItem}><View style={styles.legendActual} /><Text style={styles.legendText}>Logged</Text></View>
+                    {activeForecast.length ? <View style={styles.legendItem}><View style={styles.legendForecast} /><Text style={styles.legendText}>{progress.bodyForecast?.source === 'ai' ? 'AI forecast' : 'Trend forecast'}</Text></View> : null}
                   </View>
-                  <View style={styles.trendHead}>
-                    <View>
-                      <Text style={styles.trendMetricLabel}>{activeMetric.label}</Text>
-                      <Text style={styles.trendMetricValue}>
-                        {trimNumber(activeSeries[activeSeries.length - 1].value)}
-                        <Text style={styles.trendMetricUnit}> {activeMetric.unit}</Text>
-                      </Text>
-                    </View>
-                    {activeDelta ? (
-                      <View style={styles.trendDeltaChip}>
-                        <Feather name={deltaIcon(activeDelta.dir)} size={13} color={colors.inkMuted} />
-                        <Text style={styles.trendDeltaText}>
-                          {activeDelta.text} {activeMetric.unit} since {formatShortDate(activeSeries[0].date)}
-                        </Text>
+                  <TrendLineChart points={activeSeries} forecast={activeForecast} />
+                  {activeForecast.length ? (
+                    <View style={styles.forecastNote}>
+                      <Feather name="zap" size={14} color={colors.gold} />
+                      <View style={styles.forecastNoteCopy}>
+                        <Text style={styles.forecastNoteTitle}>Forecast refreshes in {progress.bodyForecast?.nextInDays ?? 7}d</Text>
+                        <Text style={styles.forecastNoteText}>{progress.bodyForecast?.summary}</Text>
                       </View>
-                    ) : null}
-                  </View>
-                  <TrendLineChart points={activeSeries} />
-                </Card>
-              </>
-            ) : null}
-          </>
+                    </View>
+                  ) : (
+                    <Text style={styles.forecastEmpty}>The weekly forecast will appear after the next model refresh.</Text>
+                  )}
+                </>
+              ) : (
+                <View style={styles.trendFirstLog}><Feather name="trending-up" size={20} color={colors.inkMuted} /><Text style={styles.trendFirstLogText}>Add one more {activeMetric.label.toLowerCase()} log to start the trend.</Text></View>
+              )}
+            </Card>
+          ) : null
         ) : (
           <Card style={styles.emptyMeasure}>
             <View style={styles.emptyIcon}>
@@ -449,16 +477,6 @@ function deltaIcon(dir: Delta['dir']) {
   if (dir === 'down') return 'arrow-down-right';
   if (dir === 'up') return 'arrow-up-right';
   return 'minus';
-}
-
-function WeeklyStat({ icon, value, label }: { icon: string; value: string; label: string }) {
-  return (
-    <View style={styles.weeklyStat}>
-      <View style={styles.weeklyStatIcon}><Feather name={icon} size={16} color={colors.gold} /></View>
-      <Text style={styles.weeklyStatValue}>{value}</Text>
-      <Text style={styles.weeklyStatLabel}>{label}</Text>
-    </View>
-  );
 }
 
 function InsightPanel({
@@ -504,83 +522,74 @@ function SignalRow({ icon, label, value, complete }: { icon: string; label: stri
   );
 }
 
-function MeasureTile({ icon, label, value, unit, delta }: { icon: string; label: string; value: string; unit: string; delta: Delta | null }) {
-  return (
-    <View style={styles.measureTile}>
-      <View style={styles.measureTileTop}>
-        <Feather name={icon} size={15} color={colors.inkMuted} />
-        {delta ? (
-          <View style={styles.measureDelta}>
-            <Feather name={deltaIcon(delta.dir)} size={11} color={colors.inkMuted} />
-            <Text style={styles.measureDeltaText}>{delta.text}</Text>
-          </View>
-        ) : null}
-      </View>
-      <Text style={styles.measureValue}>
-        {value}
-        <Text style={styles.measureUnit}> {unit}</Text>
-      </Text>
-      <Text style={styles.measureLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function AdherenceRing({ pct, size = 128, stroke = 12 }: { pct: number; size?: number; stroke?: number }) {
-  const clamped = Math.max(0, Math.min(100, pct));
-  const r = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * r;
-  const dash = (clamped / 100) * circumference;
+function TrophyRing({ value }: { value: number }) {
+  const size = 106;
+  const stroke = 8;
   const center = size / 2;
+  const ringRadius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * ringRadius;
+  const progress = Math.max(0, Math.min(1, value));
+  const dash = Math.max(progress * circumference, progress > 0 ? 4 : 0);
+
   return (
-    <View style={[styles.ringWrap, { width: size, height: size }]}>
+    <View style={[styles.trophyRing, { width: size, height: size }]} accessibilityLabel={`${Math.round(progress * 100)} percent toward the next trophy safe zone`}>
       <Svg width={size} height={size}>
-        <Circle cx={center} cy={center} r={r} stroke={colors.border} strokeWidth={stroke} fill="none" />
+        <Circle cx={center} cy={center} r={ringRadius} stroke={colors.borderStrong} strokeWidth={stroke} fill="none" />
         <Circle
           cx={center}
           cy={center}
-          r={r}
-          stroke={colors.ink}
+          r={ringRadius}
+          stroke={colors.gold}
           strokeWidth={stroke}
           fill="none"
           strokeLinecap="round"
-          strokeDasharray={`${dash} ${circumference - dash}`}
+          strokeDasharray={`${dash} ${Math.max(0, circumference - dash)}`}
           transform={`rotate(-90 ${center} ${center})`}
         />
       </Svg>
-      <View style={styles.ringCenter}>
-        <Text style={styles.ringPct}>{Math.round(clamped)}%</Text>
-        <Text style={styles.ringLabel}>adherence</Text>
+      <View style={styles.trophyRingCenter}>
+        <MaterialCommunityIcon name="trophy" size={37} color={colors.gold} />
       </View>
     </View>
   );
 }
 
-function TrendLineChart({ points }: { points: SeriesPoint[] }) {
+function TrendLineChart({ points, forecast = [] }: { points: SeriesPoint[]; forecast?: SeriesPoint[] }) {
   const [width, setWidth] = useState(0);
-  const height = 156;
-  const padTop = 16;
-  const padBottom = 26;
-  const padX = 12;
+  const height = 202;
+  const padTop = 24;
+  const padBottom = 30;
+  const padLeft = 36;
+  const padRight = 12;
   const data = points.slice(-8);
+  const projected = forecast.slice(0, 4);
 
   const onLayout = (e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width);
 
   const geometry = useMemo(() => {
     if (width <= 0 || data.length < 2) return null;
-    const values = data.map((point) => point.value);
+    const values = [...data, ...projected].map((point) => point.value);
     const max = Math.max(...values);
     const min = Math.min(...values);
-    const range = Math.max(max - min, 1);
-    const innerW = Math.max(width - padX * 2, 1);
+    const visualPadding = Math.max((max - min) * 0.16, 0.5);
+    const chartMax = max + visualPadding;
+    const chartMin = Math.max(0, min - visualPadding);
+    const range = Math.max(chartMax - chartMin, 1);
+    const innerW = Math.max(width - padLeft - padRight, 1);
     const innerH = height - padTop - padBottom;
-    const xAt = (i: number) => padX + (i / (data.length - 1)) * innerW;
-    const yAt = (v: number) => padTop + (1 - (v - min) / range) * innerH;
+    const totalPoints = data.length + projected.length;
+    const xAt = (i: number) => padLeft + (i / Math.max(1, totalPoints - 1)) * innerW;
+    const yAt = (v: number) => padTop + (1 - (v - chartMin) / range) * innerH;
     const line = data.map((point, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i).toFixed(1)} ${yAt(point.value).toFixed(1)}`).join(' ');
+    const forecastLine = projected.length
+      ? [data[data.length - 1], ...projected].map((point, i) => `${i === 0 ? 'M' : 'L'} ${xAt(data.length - 1 + i).toFixed(1)} ${yAt(point.value).toFixed(1)}`).join(' ')
+      : '';
     const baseY = height - padBottom;
     const area = `${line} L ${xAt(data.length - 1).toFixed(1)} ${baseY} L ${xAt(0).toFixed(1)} ${baseY} Z`;
     const lastIndex = data.length - 1;
-    return { xAt, yAt, line, area, baseY, lastIndex };
-  }, [width, data]);
+    const forecastBoundary = projected.length ? (xAt(lastIndex) + xAt(lastIndex + 1)) / 2 : 0;
+    return { xAt, yAt, line, forecastLine, area, baseY, lastIndex, chartMin, chartMax, forecastBoundary };
+  }, [width, data, projected]);
 
   return (
     <View style={{ height }} onLayout={onLayout}>
@@ -592,16 +601,32 @@ function TrendLineChart({ points }: { points: SeriesPoint[] }) {
               <Stop offset="1" stopColor={colors.ink} stopOpacity={0} />
             </SvgLinearGradient>
           </Defs>
-          <SvgLine x1={padX} y1={geometry.baseY} x2={width - padX} y2={geometry.baseY} stroke={colors.border} strokeWidth={1} />
+          {projected.length ? <Rect x={geometry.forecastBoundary} y={padTop} width={Math.max(0, width - padRight - geometry.forecastBoundary)} height={geometry.baseY - padTop} fill={colors.accentLight} rx={6} /> : null}
+          {[0, 0.5, 1].map((ratio) => {
+            const y = padTop + ratio * (geometry.baseY - padTop);
+            const value = geometry.chartMax - ratio * (geometry.chartMax - geometry.chartMin);
+            return (
+              <Fragment key={ratio}>
+                <SvgLine x1={padLeft} y1={y} x2={width - padRight} y2={y} stroke={colors.border} strokeWidth={1} strokeDasharray={ratio === 1 ? undefined : '3 5'} />
+                <SvgText x={0} y={y + 4} fontSize={9} fill={colors.inkSubtle}>{trimNumber(value)}</SvgText>
+              </Fragment>
+            );
+          })}
+          {projected.length ? <SvgLine x1={geometry.forecastBoundary} y1={padTop} x2={geometry.forecastBoundary} y2={geometry.baseY} stroke={colors.goldMuted} strokeWidth={1} strokeDasharray="3 5" /> : null}
+          {projected.length ? <SvgText x={geometry.forecastBoundary + 6} y={16} fontSize={9} fontWeight="700" fill={colors.gold}>FORECAST</SvgText> : null}
           <Path d={geometry.area} fill="url(#trendArea)" />
-          <Path d={geometry.line} stroke={colors.ink} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          <Path d={geometry.line} stroke={colors.ink} strokeWidth={2.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          {geometry.forecastLine ? <Path d={geometry.forecastLine} stroke={GOLD} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6 6" /> : null}
+          {data.map((point, index) => <Circle key={`actual-${point.date}-${index}`} cx={geometry.xAt(index)} cy={geometry.yAt(point.value)} r={3} fill={colors.panel} stroke={colors.ink} strokeWidth={2} />)}
+          {projected.map((point, index) => <Circle key={`forecast-${point.date}-${index}`} cx={geometry.xAt(data.length + index)} cy={geometry.yAt(point.value)} r={3} fill={colors.panel} stroke={GOLD} strokeWidth={2} />)}
           <Circle cx={geometry.xAt(geometry.lastIndex)} cy={geometry.yAt(data[geometry.lastIndex].value)} r={6} fill={colors.white} />
           <Circle cx={geometry.xAt(geometry.lastIndex)} cy={geometry.yAt(data[geometry.lastIndex].value)} r={4} fill={GOLD} />
-          <SvgText x={padX} y={height - 8} fontSize={11} fill={colors.inkSubtle} textAnchor="start">
+          <SvgText x={padLeft} y={height - 8} fontSize={10} fill={colors.inkSubtle} textAnchor="start">
             {formatShortDate(data[0].date)}
           </SvgText>
-          <SvgText x={width - padX} y={height - 8} fontSize={11} fill={colors.inkSubtle} textAnchor="end">
-            {formatShortDate(data[geometry.lastIndex].date)}
+          {projected.length ? <SvgText x={geometry.xAt(geometry.lastIndex)} y={height - 8} fontSize={10} fill={colors.inkMuted} textAnchor="middle">Now</SvgText> : null}
+          <SvgText x={width - padRight} y={height - 8} fontSize={10} fill={projected.length ? GOLD : colors.inkSubtle} textAnchor="end">
+            {formatShortDate(projected[projected.length - 1]?.date || data[geometry.lastIndex].date)}
           </SvgText>
         </Svg>
       ) : null}
@@ -611,20 +636,12 @@ function TrendLineChart({ points }: { points: SeriesPoint[] }) {
 
 const styles = StyleSheet.create({
   scroll: {},
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
+  headerCopy: { flex: 1 },
+  reportCountdown: { alignItems: 'flex-end', justifyContent: 'center', paddingVertical: spacing.xs },
+  reportCountdownValue: { fontSize: 15, lineHeight: 19, color: colors.ink, fontWeight: '900' },
+  reportCountdownLabel: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
   eyebrow: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 2 },
-  reviewCountdown: {
-    minHeight: 46,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    borderLeftWidth: 1,
-    borderLeftColor: colors.borderStrong,
-    paddingLeft: spacing.md,
-    marginBottom: spacing.xs,
-  },
-  reviewCountdownValue: { fontSize: 18, lineHeight: 20, fontWeight: '900', color: colors.ink },
-  reviewCountdownLabel: { fontSize: 10, lineHeight: 12, color: colors.inkMuted, fontWeight: '700' },
   logHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
   backButton: {
     width: 46,
@@ -651,42 +668,66 @@ const styles = StyleSheet.create({
   formIntroText: { flex: 1 },
   inputGrid: { gap: spacing.xs },
 
-  reviewHero: { backgroundColor: colors.panelWarm, borderColor: colors.accentSurface, gap: spacing.md },
+  trophyCard: { backgroundColor: colors.panel, borderColor: colors.borderStrong, marginBottom: spacing.sm, padding: 20 },
+  trophyMain: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
+  trophyRing: { alignItems: 'center', justifyContent: 'center' },
+  trophyRingCenter: { position: 'absolute', width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelMuted, borderWidth: 1, borderColor: colors.border },
+  trophyCopy: { flex: 1, minWidth: 0 },
+  trophyLabel: { ...typography.overline, color: colors.inkMuted, textTransform: 'uppercase', letterSpacing: 1 },
+  trophyValueRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  trophyValue: { fontSize: 48, lineHeight: 53, fontWeight: '900', letterSpacing: -1.3, color: colors.ink },
+  trophyChange: { ...typography.caption, color: colors.success, fontWeight: '900', backgroundColor: colors.successLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill },
+  trophyChangeDown: { color: colors.error, backgroundColor: colors.errorLight },
+  trophyRemaining: { ...typography.caption, color: colors.inkMuted, lineHeight: 17, marginTop: 2 },
+  trophyFooter: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md },
+  trophyStat: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  trophyStatCopy: { minWidth: 0 },
+  trophyStatDivider: { borderLeftWidth: 1, borderLeftColor: colors.border },
+  trophyStatValue: { fontSize: 18, lineHeight: 20, fontWeight: '900', color: colors.ink },
+  trophyStatLabel: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700' },
+
+  reportCard: { borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panel, padding: 20, marginTop: spacing.lg },
+  reportTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  reportIcon: { width: 36, height: 36, borderRadius: radius.sm, backgroundColor: colors.accentLight, alignItems: 'center', justifyContent: 'center' },
+  reportLabel: { ...typography.bodyBold, color: colors.ink, flex: 1 },
+  reportReady: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, backgroundColor: colors.successLight, paddingHorizontal: 8, paddingVertical: 5 },
+  reportReadyDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success },
+  reportReadyText: { fontSize: 10, lineHeight: 12, color: colors.success, fontWeight: '800' },
+  reportTitle: { fontSize: 25, lineHeight: 31, fontWeight: '900', color: colors.ink, letterSpacing: -0.3, marginTop: spacing.lg },
+  reportTrack: { height: 6, borderRadius: radius.pill, backgroundColor: colors.panelRaised, overflow: 'hidden', marginTop: spacing.md },
+  reportTrackFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
+  reportFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.sm },
+  reportFootText: { ...typography.caption, color: colors.inkMuted },
+
+  overviewCard: { gap: 0, backgroundColor: colors.panel, borderColor: colors.border, marginTop: spacing.sm },
+  overviewHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.lg },
+  overviewKicker: { ...typography.overline, color: colors.inkMuted, textTransform: 'uppercase' },
+  overviewTitle: { ...typography.subtitle, color: colors.ink, marginTop: 3 },
+  overviewValue: { fontSize: 30, lineHeight: 34, fontWeight: '900', letterSpacing: -0.5, color: colors.ink },
+  overviewBar: { marginTop: spacing.md },
+  overviewMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, marginTop: spacing.md },
+  overviewMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  overviewMetaText: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
+
+  reviewHero: { backgroundColor: colors.panel, borderColor: colors.border, gap: spacing.md },
   reviewHeroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  aiMark: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.accentSurface, alignItems: 'center', justifyContent: 'center' },
+  aiMark: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.accentFill, borderWidth: 1, borderColor: colors.accentSurface, alignItems: 'center', justifyContent: 'center' },
+  aiMarkText: { fontSize: 16, lineHeight: 20, fontWeight: '900', color: colors.gold },
   reviewHeroLabelCopy: { flex: 1, minWidth: 0 },
-  reviewHeroKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
+  reviewHeroKicker: { ...typography.bodyBold, color: colors.ink },
   reviewHeroMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   reviewStatus: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted },
   reviewStatusReady: { borderColor: colors.accentSurface, backgroundColor: colors.accentLight },
   reviewStatusDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.inkSubtle },
   reviewStatusDotReady: { backgroundColor: colors.gold },
   reviewStatusText: { fontSize: 11, lineHeight: 14, fontWeight: '800', color: colors.inkMuted },
-  reviewHeadline: { fontSize: 28, lineHeight: 34, fontWeight: '900', letterSpacing: -0.4, color: colors.ink },
+  reviewHeadline: { fontSize: 21, lineHeight: 27, fontWeight: '800', letterSpacing: -0.2, color: colors.ink },
   reviewSummary: { ...typography.body, color: colors.inkMuted, lineHeight: 23 },
   winList: { gap: spacing.xs },
   winRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  winCheck: { width: 24, height: 24, borderRadius: radius.pill, backgroundColor: colors.goldMuted, alignItems: 'center', justifyContent: 'center' },
   winText: { ...typography.bodyBold, color: colors.ink, flex: 1 },
-  reviewEvidence: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs, borderTopWidth: 1, borderTopColor: colors.accentSurface, paddingTop: spacing.sm },
+  reviewEvidence: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
   reviewEvidenceText: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, flex: 1 },
-
-  weeklyStatGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  weeklyStat: { width: '47.5%', flexGrow: 1, minHeight: 112, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.md },
-  weeklyStatIcon: { width: 30, height: 30, borderRadius: radius.sm, backgroundColor: colors.accentLight, alignItems: 'center', justifyContent: 'center' },
-  weeklyStatValue: { fontSize: 27, lineHeight: 32, fontWeight: '900', color: colors.ink, marginTop: spacing.sm },
-  weeklyStatLabel: { ...typography.caption, color: colors.inkMuted },
-
-  consistencyCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg, marginTop: spacing.sm },
-  consistencyInfo: { flex: 1 },
-  consistencyEyebrow: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
-  consistencyTitle: { ...typography.subtitle, color: colors.ink, marginTop: 3 },
-  consistencyBar: { marginTop: spacing.sm },
-  consistencyFact: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.sm, lineHeight: 17 },
-  ringWrap: { alignItems: 'center', justifyContent: 'center' },
-  ringCenter: { position: 'absolute', alignItems: 'center' },
-  ringPct: { ...typography.title, color: colors.ink, fontWeight: '900' },
-  ringLabel: { ...typography.caption, color: colors.inkMuted, marginTop: -2 },
 
   insightStack: { gap: spacing.sm },
   insightCard: { gap: spacing.sm, backgroundColor: colors.panel, borderColor: colors.borderStrong },
@@ -721,39 +762,21 @@ const styles = StyleSheet.create({
   signalValue: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
   signalValueComplete: { color: colors.gold },
 
-  sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sectionRowTitle: { flex: 1 },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.xl, marginBottom: spacing.sm },
+  sectionRowTitle: { flex: 1, marginTop: 0, marginBottom: 0 },
   logChip: {
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
-    borderRadius: radius.sm,
+    justifyContent: 'center',
+    gap: 7,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
     backgroundColor: colors.primaryAction,
   },
-  logChipText: { ...typography.caption, color: colors.onPrimary, fontWeight: '800' },
+  logChipText: { ...typography.bodyBold, color: colors.onPrimary, fontWeight: '900' },
 
-  measureCard: { gap: spacing.sm, padding: 0, backgroundColor: 'transparent', borderWidth: 0, shadowOpacity: 0, elevation: 0 },
-  measureMeta: { ...typography.caption, color: colors.inkSubtle },
-  measureGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  measureTile: {
-    width: '47.6%',
-    flexGrow: 1,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panelMuted,
-    padding: spacing.md,
-  },
-  measureTileTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  measureDelta: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  measureDeltaText: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
-  measureValue: { ...typography.title, color: colors.ink, marginTop: spacing.sm },
-  measureUnit: { ...typography.caption, color: colors.inkMuted },
-  measureLabel: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-
-  trendCard: { gap: spacing.md },
+  trendCard: { gap: spacing.md, backgroundColor: colors.panel, borderColor: colors.border },
   metricChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   metricChip: {
     paddingHorizontal: spacing.md,
@@ -766,22 +789,24 @@ const styles = StyleSheet.create({
   metricChipOn: { backgroundColor: colors.accentFill, borderColor: colors.accent },
   metricChipText: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
   metricChipTextOn: { color: colors.white },
-  trendHead: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.sm },
-  trendMetricLabel: { ...typography.caption, color: colors.inkMuted },
-  trendMetricValue: { ...typography.title, color: colors.ink, marginTop: 2 },
-  trendMetricUnit: { ...typography.caption, color: colors.inkMuted },
-  trendDeltaChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.panelMuted,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  trendDeltaText: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
+  trendSummary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  trendValue: { fontSize: 32, lineHeight: 37, fontWeight: '900', color: colors.ink, letterSpacing: -0.5 },
+  trendUnit: { ...typography.body, color: colors.inkMuted },
+  trendDate: { ...typography.caption, color: colors.inkSubtle, marginTop: 2 },
+  trendDelta: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: radius.pill, backgroundColor: colors.panelMuted, paddingHorizontal: 10, paddingVertical: 6 },
+  trendDeltaText: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
+  trendLegend: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: -spacing.xs },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendActual: { width: 18, height: 2, borderRadius: 1, backgroundColor: colors.ink },
+  legendForecast: { width: 18, height: 0, borderTopWidth: 2, borderStyle: 'dashed', borderColor: colors.gold },
+  legendText: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
+  forecastNote: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
+  forecastNoteCopy: { flex: 1 },
+  forecastNoteTitle: { ...typography.caption, color: colors.gold, fontWeight: '800' },
+  forecastNoteText: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: 2 },
+  forecastEmpty: { ...typography.caption, color: colors.inkSubtle, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, lineHeight: 18 },
+  trendFirstLog: { minHeight: 112, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
+  trendFirstLogText: { ...typography.caption, color: colors.inkMuted, textAlign: 'center' },
 
   emptyMeasure: { alignItems: 'center', paddingVertical: spacing.lg, gap: spacing.xs },
   emptyIcon: {

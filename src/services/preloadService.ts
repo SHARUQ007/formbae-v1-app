@@ -11,7 +11,7 @@ export const CACHE_KEYS = {
   workoutPlan: 'workoutPlan',
   // Bump when the progress response contract changes so an older persisted
   // bundle cannot hide a newly generated weekly review after an app update.
-  progressBundle: 'progressBundle:v3',
+  progressBundle: 'progressBundle:v5',
   dietDiary: 'dietDiary',
   profileSettings: 'profileSettings',
   coachBundle: 'coachBundle',

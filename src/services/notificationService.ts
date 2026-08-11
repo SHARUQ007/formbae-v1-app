@@ -16,6 +16,7 @@ const IDS = {
   workout: 'reminder-workout',
   checkIn: 'reminder-checkin',
   trainer: 'reminder-trainer',
+  accountability: 'reminder-accountability',
 };
 
 export type NotificationPrefs = {
@@ -227,6 +228,29 @@ export async function displayLocalNotification(title: string, body: string): Pro
     body,
     android: { channelId: CHANNEL_ID, pressAction: { id: 'default' } },
   });
+}
+
+export async function scheduleAccountabilityReminder(commitmentTitle: string): Promise<void> {
+  const granted = await ensureNotificationSetup();
+  if (!granted) return;
+  const now = Date.now();
+  const ist = getIstWallDate(now);
+  let timestamp = istWallTimeToUtcTimestamp(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate(), 19, 0);
+  if (timestamp <= now + 15 * 60 * 1000) timestamp = now + 60 * 60 * 1000;
+  await notifee.cancelTriggerNotification(IDS.accountability);
+  await notifee.createTriggerNotification(
+    {
+      id: IDS.accountability,
+      title: 'A promise to yourself',
+      body: `${commitmentTitle} is still waiting. A small follow-through counts.`,
+      android: { channelId: CHANNEL_ID, pressAction: { id: 'default' } },
+    },
+    { type: TriggerType.TIMESTAMP, timestamp, alarmManager: { allowWhileIdle: true } },
+  );
+}
+
+export function cancelAccountabilityReminder(): Promise<void> {
+  return notifee.cancelTriggerNotification(IDS.accountability);
 }
 
 function renderTemplate(value: string, variables: Record<string, string> = {}) {

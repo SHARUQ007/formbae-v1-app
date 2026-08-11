@@ -140,13 +140,56 @@ function uniqueMemoryEntries(entries: DietDiaryEntry[]) {
   const seen = new Set<string>();
   return entries.filter((entry) => {
     if (!isMemoryEntry(entry)) return false;
-    // Entries are unique records even when the same food is logged more than
-    // once for one meal. Only collapse the same local/remote record after sync.
     const key = entry.remoteId || entry.id;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+function FoodPointsBadge({ points }: { points: number }) {
+  const star = useRef(new Animated.Value(0)).current;
+  const number = useRef(new Animated.Value(1)).current;
+  const previousPoints = useRef(points);
+
+  useEffect(() => {
+    const gainedPoints = points > previousPoints.current;
+    previousPoints.current = points;
+    star.setValue(0);
+    number.setValue(1);
+
+    const animation = Animated.parallel([
+      Animated.sequence([
+        Animated.timing(star, { toValue: 1, duration: 260, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+        Animated.spring(star, { toValue: 0, friction: 5, tension: 90, useNativeDriver: true }),
+      ]),
+      gainedPoints
+        ? Animated.sequence([
+            Animated.spring(number, { toValue: 1.2, friction: 4, tension: 150, useNativeDriver: true }),
+            Animated.spring(number, { toValue: 1, friction: 5, tension: 130, useNativeDriver: true }),
+          ])
+        : Animated.delay(0),
+    ]);
+    animation.start();
+    return () => animation.stop();
+  }, [number, points, star]);
+
+  const starScale = star.interpolate({ inputRange: [0, 1], outputRange: [1, 1.28] });
+  const starRotate = star.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '16deg'] });
+  const glowOpacity = star.interpolate({ inputRange: [0, 0.55, 1], outputRange: [0, 0.3, 0] });
+  const glowScale = star.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1.5] });
+
+  return (
+    <View style={styles.pointsBadge} accessibilityLabel={`${points} food memory points`}>
+      <View style={styles.pointsStarWrap}>
+        <Animated.View style={[styles.pointsStarGlow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]} />
+        <Animated.View style={{ transform: [{ scale: starScale }, { rotate: starRotate }] }}>
+          <Feather name="star" size={22} color={colors.gold} />
+        </Animated.View>
+      </View>
+      <Animated.Text style={[styles.pointsValue, { transform: [{ scale: number }] }]}>{points}</Animated.Text>
+    </View>
+  );
 }
 
 function imageSource(entry: DietDiaryEntry) {
@@ -655,15 +698,7 @@ function DietScreenContent({ route, navigation }: Props) {
       >
         <View style={styles.dietHeaderRow}>
           <Text style={styles.dietScreenTitle}>Diet</Text>
-          <View style={styles.weeklyPointsBadge} accessibilityLabel={`${weeklyMemoryPoints} food memory points this week`}>
-            <View style={styles.weeklyPointsIcon}>
-              <Feather name="star" size={17} color={colors.gold} />
-            </View>
-            <View style={styles.weeklyPointsCopy}>
-              <Text style={styles.weeklyPointsValue}>{weeklyMemoryPoints}</Text>
-              <Text style={styles.weeklyPointsLabel}>WEEKLY POINTS</Text>
-            </View>
-          </View>
+          <FoodPointsBadge points={weeklyMemoryPoints} />
         </View>
 
         <View style={styles.dietTabs}>
@@ -1005,32 +1040,21 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   dietScreenTitle: { ...typography.display, color: colors.ink, flexShrink: 1 },
-  weeklyPointsBadge: {
-    height: 46,
-    minWidth: 132,
+  pointsBadge: {
+    minWidth: 82,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    gap: spacing.sm,
-    paddingHorizontal: 10,
-    borderRadius: radius.pill,
-    backgroundColor: colors.panel,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-  },
-  weeklyPointsIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: radius.pill,
-    backgroundColor: colors.panelWarm,
-    borderWidth: 1,
-    borderColor: colors.accentSurface,
-    alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
+    borderLeftWidth: 1,
+    borderLeftColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: spacing.xs,
   },
-  weeklyPointsCopy: { flex: 1, minWidth: 0, justifyContent: 'center', alignItems: 'flex-start' },
-  weeklyPointsValue: { fontSize: 18, lineHeight: 19, fontWeight: '900', color: colors.ink },
-  weeklyPointsLabel: { fontSize: 8, lineHeight: 10, letterSpacing: 0.7, fontWeight: '800', color: colors.inkMuted },
+  pointsStarWrap: { width: 28, height: 32, alignItems: 'center', justifyContent: 'center' },
+  pointsStarGlow: { position: 'absolute', width: 24, height: 24, borderRadius: 12, backgroundColor: colors.gold },
+  pointsValue: { minWidth: 22, textAlign: 'center', fontSize: 24, lineHeight: 28, fontWeight: '900', color: colors.ink },
   dietTabs: {
     flexDirection: 'row',
     gap: spacing.xs,

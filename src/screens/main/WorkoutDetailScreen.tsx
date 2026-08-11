@@ -673,9 +673,9 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       const tabNavigation = navigation.getParent<BottomTabNavigationProp<MainTabParamList>>();
       navigation.popToTop();
       if (destination === 'progress') {
-        tabNavigation?.navigate('Progress', { action: 'overview', requestId: Date.now() });
+        tabNavigation?.navigate('Progress', { screen: 'ProgressMain', params: { action: 'overview', requestId: Date.now() } });
       } else if (destination === 'body') {
-        tabNavigation?.navigate('Progress', { action: 'logBody', requestId: Date.now() });
+        tabNavigation?.navigate('Progress', { screen: 'ProgressMain', params: { action: 'logBody', requestId: Date.now() } });
       }
     } finally {
       setFinishing(false);

@@ -33,8 +33,14 @@ export type MainTabParamList = {
   Workouts: NavigatorScreenParams<WorkoutStackParamList> | undefined;
   Diet: { action?: 'camera'; requestId?: number; mealType?: 'Breakfast' | 'Lunch' | 'Evening' | 'Dinner' } | undefined;
   Action: undefined;
-  Progress: { action?: 'overview' | 'logBody'; requestId?: number } | undefined;
+  Progress: NavigatorScreenParams<ProgressStackParamList> | undefined;
   Profile: NavigatorScreenParams<ProfileStackParamList> | undefined;
+};
+
+export type ProgressStackParamList = {
+  ProgressMain: { action?: 'overview' | 'logBody'; requestId?: number } | undefined;
+  ProgressReport: undefined;
+  TrophyDetails: undefined;
 };
 
 export type WorkoutStackParamList = {

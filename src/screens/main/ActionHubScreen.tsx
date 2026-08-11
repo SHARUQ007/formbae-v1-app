@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useFocusEffect } from '@react-navigation/native';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer } from '../../components/Card';
 import { LoadingState } from '../../components/States';
+import { fetchAccountability, updateAccountability } from '../../services/accountabilityService';
+import { cancelAccountabilityReminder, scheduleAccountabilityReminder } from '../../services/notificationService';
+import type { AccountabilitySummary } from '../../types/api';
 import {
   currentMealType,
   isToday,
@@ -25,15 +29,37 @@ type Props = BottomTabScreenProps<MainTabParamList, 'Action'>;
 export function ActionHubScreen({ navigation }: Props) {
   const tabBarHeight = useBottomTabBarHeight();
   const [snapshot, setSnapshot] = useState<ContextualSnapshot | null>(null);
+  const [accountability, setAccountability] = useState<AccountabilitySummary | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [savingCommitment, setSavingCommitment] = useState(false);
+  const autoCompletedDate = useRef('');
 
   const load = useCallback(async () => {
-    setSnapshot(await resolveContextualSnapshot());
+    const [nextSnapshot, nextAccountability] = await Promise.all([
+      resolveContextualSnapshot(),
+      fetchAccountability().catch(() => null),
+    ]);
+    setSnapshot(nextSnapshot);
+    setAccountability(nextAccountability);
   }, []);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     load();
-  }, [load]);
+  }, [load]));
+
+  useEffect(() => {
+    const commitment = accountability?.today;
+    if (!snapshot || !commitment || commitment.status !== 'active' || savingCommitment || autoCompletedDate.current === commitment.date || !commitmentMet(commitment.targetKind, commitment.targetId, snapshot)) return;
+    autoCompletedDate.current = commitment.date;
+    setSavingCommitment(true);
+    updateAccountability({ action: 'complete' })
+      .then((next) => {
+        setAccountability(next);
+        cancelAccountabilityReminder().catch(() => undefined);
+      })
+      .catch(() => undefined)
+      .finally(() => setSavingCommitment(false));
+  }, [accountability?.today, savingCommitment, snapshot]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -84,6 +110,55 @@ export function ActionHubScreen({ navigation }: Props) {
     navigation.navigate('Diet', { mealType: currentMealType() });
   };
 
+  const openCommitment = () => {
+    const commitment = accountability?.today;
+    if (!commitment || !snapshot) return openTarget();
+    if (commitment.targetKind === 'diet') {
+      navigation.navigate('Diet', { mealType: commitment.targetId as ReturnType<typeof currentMealType> });
+      return;
+    }
+    if (commitment.targetKind === 'workout') {
+      const plan = snapshot.workoutData?.plan || snapshot.workoutData?.today?.plan;
+      const day = plan?.days?.find((item) => item.planDayId === commitment.targetId);
+      if (day) {
+        navigation.navigate('Workouts', { screen: 'WorkoutSummary', params: { planDayId: day.planDayId, title: workoutTitle(day), mode: 'standard' } });
+        return;
+      }
+    }
+    openTarget();
+  };
+
+  const commitForToday = async () => {
+    if (!snapshot || savingCommitment) return;
+    setSavingCommitment(true);
+    try {
+      const target = snapshot.target;
+      const targetId = target.kind === 'workout' ? target.day?.planDayId || '' : target.kind === 'diet' ? target.mealType : target.kind;
+      const title = targetTitle(snapshot);
+      const next = await updateAccountability({ action: 'commit', targetKind: target.kind, targetId, title });
+      setAccountability(next);
+      scheduleAccountabilityReminder(title).catch(() => undefined);
+    } catch (error) {
+      Alert.alert('Could not save commitment', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setSavingCommitment(false);
+    }
+  };
+
+  const completeCommitment = async () => {
+    if (savingCommitment) return;
+    setSavingCommitment(true);
+    try {
+      const next = await updateAccountability({ action: 'complete' });
+      setAccountability(next);
+      cancelAccountabilityReminder().catch(() => undefined);
+    } catch (error) {
+      Alert.alert('Could not update commitment', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setSavingCommitment(false);
+    }
+  };
+
   if (!snapshot) {
     return (
       <ScreenContainer>
@@ -95,7 +170,6 @@ export function ActionHubScreen({ navigation }: Props) {
   const plan = snapshot.workoutData?.plan || snapshot.workoutData?.today?.plan;
   const planDays = plan?.days || [];
   const completedDays = planDays.filter((day) => day.completed).length;
-  const foodLogsToday = snapshot.dietEntries.filter((entry) => isToday(entry.createdAt)).length;
   const dateLabel = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
   const quickActions = [
     {
@@ -120,6 +194,8 @@ export function ActionHubScreen({ navigation }: Props) {
       onPress: () => navigation.navigate('Progress'),
     },
   ].filter((action) => action.kind !== snapshot.target.kind);
+  const commitment = accountability?.today;
+  const commitmentComplete = commitment?.status === 'completed';
 
   return (
     <ScreenContainer>
@@ -130,49 +206,54 @@ export function ActionHubScreen({ navigation }: Props) {
       >
         <View style={styles.header}>
           <Text style={styles.kicker}>{dateLabel}</Text>
-          <Text style={styles.title}>Today</Text>
-          <Text style={styles.subtitle}>Your plan, food log, and next action.</Text>
+          <Text style={styles.title}>Accountability</Text>
+          <Text style={styles.subtitle}>One clear promise. Follow through today.</Text>
         </View>
 
-        <TouchableOpacity
-          activeOpacity={0.88}
-          onPress={openTarget}
-          style={styles.hero}
-          accessibilityRole="button"
-          accessibilityLabel={`${targetCta(snapshot)}. ${targetMeta(snapshot)}`}
-        >
+        <View style={[styles.hero, commitmentComplete && styles.heroComplete]}>
           <View style={styles.heroTop}>
             <View style={styles.heroIcon}>
-              <Feather name={snapshot.target.icon} size={22} color={colors.inkStrong} />
+              <Feather name={commitmentComplete ? 'check' : commitment ? 'shield' : snapshot.target.icon} size={22} color={commitmentComplete ? colors.onPrimary : colors.inkStrong} />
             </View>
             <View style={styles.recommendedPill}>
-              <View style={styles.recommendedDot} />
-              <Text style={styles.recommendedText}>Up next</Text>
+              <View style={[styles.recommendedDot, commitmentComplete && styles.recommendedDotComplete]} />
+              <Text style={styles.recommendedText}>{commitmentComplete ? 'Promise kept' : commitment ? 'Committed' : 'Recommended'}</Text>
             </View>
           </View>
-          <Text style={styles.heroLabel}>{snapshot.target.detail}</Text>
-          <Text style={styles.heroTitle}>{targetTitle(snapshot)}</Text>
-          <Text style={styles.heroMeta}>{targetMeta(snapshot)}</Text>
-          <View style={styles.heroCta}>
-            <Text style={styles.heroCtaText}>{targetCta(snapshot)}</Text>
-            <Feather name="arrow-right" size={19} color={colors.onPrimary} />
-          </View>
-        </TouchableOpacity>
+          <Text style={styles.heroLabel}>Today's commitment</Text>
+          <Text style={styles.heroTitle}>{commitment?.title || targetTitle(snapshot)}</Text>
+          <Text style={styles.heroMeta}>{commitmentComplete ? 'You followed through. That is how consistency gets built.' : commitment ? 'Your reminder is set. Do it now or mark it complete when you finish.' : targetMeta(snapshot)}</Text>
+          {commitmentComplete ? (
+            <View style={styles.keptRow}><Feather name="zap" size={18} color={colors.gold} /><Text style={styles.keptText}>{accountability?.streak || 1} day accountability streak</Text></View>
+          ) : commitment ? (
+            <View style={styles.commitmentActions}>
+              <TouchableOpacity onPress={openCommitment} style={styles.heroCta} accessibilityRole="button"><Text style={styles.heroCtaText}>Do it now</Text><Feather name="arrow-right" size={19} color={colors.onPrimary} /></TouchableOpacity>
+              <TouchableOpacity onPress={completeCommitment} style={styles.markDoneButton} accessibilityRole="button" disabled={savingCommitment}>
+                {savingCommitment ? <ActivityIndicator size="small" color={colors.gold} /> : <><Feather name="check" size={17} color={colors.gold} /><Text style={styles.markDoneText}>Mark as done</Text></>}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity onPress={commitForToday} style={styles.heroCta} accessibilityRole="button" disabled={savingCommitment}>
+              {savingCommitment ? <ActivityIndicator color={colors.onPrimary} /> : <><Text style={styles.heroCtaText}>Commit for today</Text><Feather name="shield" size={19} color={colors.onPrimary} /></>}
+            </TouchableOpacity>
+          )}
+        </View>
 
         <View style={styles.reasonCard}>
           <View style={styles.reasonIcon}>
             <Feather name="zap" size={17} color={colors.goldMuted} />
           </View>
           <View style={styles.reasonCopy}>
-            <Text style={styles.reasonTitle}>Why this is next</Text>
-            <Text style={styles.reasonText}>{targetReason(snapshot)}</Text>
+            <Text style={styles.reasonTitle}>{commitment ? 'Your accountability rule' : 'Why this commitment'}</Text>
+            <Text style={styles.reasonText}>{commitment ? 'Keep the promise small and specific. Completing it today extends your accountability streak.' : targetReason(snapshot)}</Text>
           </View>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Overview</Text>
           <View style={styles.snapshotGrid}>
-            <SnapshotStat icon="edit-3" label="Food logs" value={`${foodLogsToday} today`} />
+            <SnapshotStat icon="shield" label="Promises kept" value={`${accountability?.keptCount || 0} total`} />
+            <SnapshotStat icon="zap" label="Accountability" value={`${accountability?.streak || 0} day streak`} />
             <SnapshotStat
               icon="check-circle"
               label="Plan progress"
@@ -192,6 +273,17 @@ export function ActionHubScreen({ navigation }: Props) {
       </ScrollView>
     </ScreenContainer>
   );
+}
+
+function commitmentMet(kind: string, targetId: string, snapshot: ContextualSnapshot) {
+  if (kind === 'diet') {
+    return snapshot.dietEntries.some((entry) => isToday(entry.createdAt) && entry.mealType === targetId);
+  }
+  if (kind === 'workout') {
+    const plan = snapshot.workoutData?.plan || snapshot.workoutData?.today?.plan;
+    return Boolean(plan?.days?.find((day) => day.planDayId === targetId)?.completed);
+  }
+  return false;
 }
 
 function SnapshotStat({ icon, label, value }: { icon: string; label: string; value: string }) {
@@ -249,14 +341,6 @@ function targetReason(snapshot: ContextualSnapshot) {
   return 'Nothing is overdue. Review your current training trend.';
 }
 
-function targetCta(snapshot: ContextualSnapshot) {
-  const target = snapshot.target;
-  if (target.kind === 'workout') return 'Open workout';
-  if (target.kind === 'diet') return `Log ${target.mealType.toLowerCase()}`;
-  if (target.kind === 'refresh') return 'Answer check-in';
-  return 'Open progress';
-}
-
 const styles = StyleSheet.create({
   scroll: {},
   header: { marginTop: spacing.sm },
@@ -272,6 +356,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
     ...shadows.sm,
   },
+  heroComplete: { borderColor: colors.accentSurface, backgroundColor: colors.panelWarm },
   heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   heroIcon: {
     width: 40,
@@ -292,6 +377,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: colors.gold,
   },
+  recommendedDotComplete: { backgroundColor: colors.success },
   recommendedText: { ...typography.caption, color: colors.gold, fontWeight: '700' },
   heroLabel: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase', marginTop: spacing.lg },
   heroTitle: { ...typography.hero, color: colors.inkStrong, marginTop: spacing.xs },
@@ -309,6 +395,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   heroCtaText: { ...typography.button, color: colors.onPrimary },
+  commitmentActions: { gap: spacing.sm },
+  markDoneButton: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
+  markDoneText: { ...typography.bodyBold, color: colors.gold },
+  keptRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.accentSurface, marginTop: spacing.lg },
+  keptText: { ...typography.bodyBold, color: colors.ink },
   reasonCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',

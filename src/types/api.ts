@@ -217,6 +217,61 @@ export type ProgressSummary = {
   }>;
   bodyTrend?: Array<{ date: string; weight: number; chest?: number; waist?: number; biceps?: number }>;
   weeklyReview?: WeeklyProgressReview;
+  trophies?: TrophySummary;
+  bodyForecast?: BodyForecast;
+};
+
+export type BodyForecast = {
+  status: 'insufficient' | 'ready';
+  generatedAt: string;
+  nextInDays: number;
+  summary: string;
+  confidence: 'low' | 'medium';
+  source: 'ai' | 'trend' | 'none';
+  metrics: Partial<Record<'weight' | 'waist' | 'chest' | 'biceps', Array<{ date: string; value: number }>>>;
+};
+
+export type TrophySummary = {
+  score: number;
+  change: number;
+  safeZone: number;
+  nextMilestone: number;
+  pointsToNext: number;
+  workoutCount: number;
+  starCount: number;
+  currentStreak: number;
+  breakdown: {
+    workouts: number;
+    stars: number;
+    streakAchievement: number;
+    streakMomentum: number;
+    weeklyPace: number;
+  };
+};
+
+export type TrophyLeaderboard = {
+  leaders: Array<{ rank: number; displayName: string; score: number; isCurrentUser: boolean }>;
+  currentUser?: { rank: number; displayName: string; score: number; isCurrentUser: boolean } | null;
+  participantCount: number;
+};
+
+export type TrophyInvite = { code: string; shareUrl: string };
+
+export type AccountabilityCommitment = {
+  date: string;
+  status: 'active' | 'completed' | 'skipped';
+  targetKind: 'workout' | 'diet' | 'refresh' | 'progress' | string;
+  targetId: string;
+  title: string;
+  committedAt: string;
+  completedAt: string;
+};
+
+export type AccountabilitySummary = {
+  today?: AccountabilityCommitment | null;
+  streak: number;
+  keptCount: number;
+  commitmentCount: number;
 };
 
 export type WeeklyProgressReview = {

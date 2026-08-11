@@ -31,7 +31,6 @@ const TODAY_WORKOUT_KEY_PREFIX = 'formbae_today_workout:';
 const LAST_SEEN_STREAK_KEY = 'formbae_last_seen_workout_streak';
 const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebration';
 const GOLD = '#f5b301';
-const GOLD_DARK = '#9a5b00';
 const FLAME_CORE = '#ffe08a';
 const STREAK_EMBERS = [
   { left: 9, delay: 0, size: 4, drift: -6 },
@@ -183,7 +182,7 @@ function GoldenStreakBadge({ streak, celebrationNonce }: { streak: number; celeb
   const flareGlowScale = flare.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1.7] });
 
   return (
-    <View style={[styles.streakBadge, burning && styles.streakBadgeBurning]} accessibilityLabel={`${streak} consecutive workout days this week`}>
+    <View style={styles.streakBadge} accessibilityLabel={`${streak} consecutive workout days this week`}>
       <View style={styles.streakIconWrap}>
         <Animated.View style={[styles.streakLayer, { opacity: flareGlowOpacity }]} pointerEvents="none">
           <Animated.View style={[styles.flareCircle, { transform: [{ scale: flareGlowScale }] }]} />
@@ -191,19 +190,19 @@ function GoldenStreakBadge({ streak, celebrationNonce }: { streak: number; celeb
         <Animated.View
           style={[styles.streakLayer, { transform: [{ translateY: flameLift }, { translateY: flareLift }, { rotate: flameRotate }, { scale: flameScale }, { scale: flareScale }] }]}
         >
-          <MaterialCommunityIcon name="fire" size={26} color={colors.ink} />
+          <MaterialCommunityIcon name="fire" size={30} color={colors.ink} />
         </Animated.View>
         <Animated.View
           pointerEvents="none"
           style={[styles.streakLayer, { opacity: goldOpacity, transform: [{ translateY: flameLift }, { translateY: flareLift }, { rotate: flameRotate }, { scale: flameScale }, { scale: flareScale }] }]}
         >
-          <MaterialCommunityIcon name="fire" size={26} color={GOLD} />
+          <MaterialCommunityIcon name="fire" size={30} color={GOLD} />
         </Animated.View>
         <Animated.View
           pointerEvents="none"
           style={[styles.streakLayer, { opacity: coreOpacity, transform: [{ translateY: flameLift }, { translateY: flareLift }, { scale: coreScale }, { scale: flareScale }] }]}
         >
-          <MaterialCommunityIcon name="fire" size={15} color={FLAME_CORE} />
+          <MaterialCommunityIcon name="fire" size={18} color={FLAME_CORE} />
         </Animated.View>
         {STREAK_EMBERS.map((piece, index) => {
           const opacity = ember.interpolate({ inputRange: [piece.delay, piece.delay + 0.1, 0.75, 1], outputRange: [0, 1, 1, 0], extrapolate: 'clamp' });
@@ -219,10 +218,7 @@ function GoldenStreakBadge({ streak, celebrationNonce }: { streak: number; celeb
           );
         })}
       </View>
-      <View style={styles.streakCopy}>
-        <Animated.Text style={[styles.streakValue, burning && styles.streakValueBurning, { transform: [{ scale: pop }] }]}>{streak}</Animated.Text>
-        <Text style={styles.streakPeriod}>week streak</Text>
-      </View>
+      <Animated.Text style={[styles.streakValue, burning && styles.streakValueBurning, { transform: [{ scale: pop }] }]}>{streak}</Animated.Text>
     </View>
   );
 }
@@ -854,23 +850,19 @@ const styles = StyleSheet.create({
   summary: { ...typography.caption, color: colors.inkMuted, marginTop: -spacing.xs },
   streakBadge: {
     minWidth: 72,
-    minHeight: 46,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 1,
     borderLeftWidth: 1,
     borderLeftColor: colors.border,
     paddingHorizontal: 10,
     paddingVertical: spacing.xs,
   },
-  streakBadgeBurning: {
-    borderColor: GOLD,
-    backgroundColor: colors.panelWarm,
-  },
   streakIconWrap: {
-    width: 30,
-    height: 40,
+    width: 34,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -884,9 +876,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   flareCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: '#ffcf4d',
   },
   ember: {
@@ -896,16 +888,14 @@ const styles = StyleSheet.create({
     backgroundColor: GOLD,
   },
   streakValue: {
-    minWidth: 28,
+    minWidth: 24,
     textAlign: 'center',
-    fontSize: 22,
-    lineHeight: 26,
+    fontSize: 27,
+    lineHeight: 31,
     fontWeight: '900',
     color: colors.ink,
   },
-  streakCopy: { alignItems: 'center', justifyContent: 'center' },
-  streakPeriod: { fontSize: 9, lineHeight: 11, fontWeight: '800', color: colors.inkMuted },
-  streakValueBurning: { color: GOLD_DARK },
+  streakValueBurning: { color: GOLD },
   todayHero: { backgroundColor: colors.panel, borderColor: colors.borderStrong, overflow: 'hidden', padding: 20 },
   todayTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   todayTopRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },

@@ -1,47 +1,22 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import type { BottomTabBarButtonProps } from '@react-navigation/bottom-tabs';
 import { getFocusedRouteNameFromRoute } from '@react-navigation/native';
-import { useCallback, useEffect, useState } from 'react';
-import { AppState, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { WorkoutsNavigator } from './WorkoutsNavigator';
 import { DietScreen } from '../screens/main/DietScreen';
 import { ActionHubScreen } from '../screens/main/ActionHubScreen';
-import { ProgressScreen } from '../screens/main/ProgressScreen';
+import { ProgressNavigator } from './ProgressNavigator';
 import { ProfileNavigator } from './ProfileNavigator';
 import type { MainTabParamList } from './types';
 import { appTabBarStyle, hiddenTabBarStyle } from './tabBarStyle';
-import { resolveContextualSnapshot, type ContextualTarget } from '../utils/contextualAction';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/radius';
 import { shadows } from '../theme/shadows';
 import { typography } from '../theme/typography';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
-
-type IdleCallbackHandle = ReturnType<typeof setTimeout> | number;
-type IdleGlobal = typeof globalThis & {
-  requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
-  cancelIdleCallback?: (handle: number) => void;
-};
-
-function scheduleIdleTask(callback: () => void, timeout = 800): IdleCallbackHandle {
-  const requestIdle = (globalThis as IdleGlobal).requestIdleCallback;
-  if (typeof requestIdle === 'function') {
-    return requestIdle(callback, { timeout });
-  }
-  return setTimeout(callback, timeout);
-}
-
-function cancelIdleTask(handle: IdleCallbackHandle) {
-  const cancelIdle = (globalThis as IdleGlobal).cancelIdleCallback;
-  if (typeof cancelIdle === 'function' && typeof handle === 'number') {
-    cancelIdle(handle);
-    return;
-  }
-  clearTimeout(handle as ReturnType<typeof setTimeout>);
-}
 
 type TabIconProps = { color: string; focused: boolean };
 
@@ -53,38 +28,13 @@ const progressIcon = ({ color, focused }: TabIconProps) => <Icon name="bar-chart
 const profileIcon = ({ color, focused }: TabIconProps) => <Icon name="user" size={focused ? 24 : 22} color={color} />;
 
 function ContextualActionButton({ accessibilityState, onPress }: BottomTabBarButtonProps) {
-  const [target, setTarget] = useState<ContextualTarget>({
-    kind: 'workout',
-    label: 'Today',
-    detail: 'Workout',
-    icon: 'home',
-  });
-
-  const refreshTarget = useCallback(async () => {
-    const snapshot = await resolveContextualSnapshot();
-    setTarget(snapshot.target);
-  }, []);
-
-  useEffect(() => {
-    const idleTask = scheduleIdleTask(refreshTarget, 800);
-    const timer = setInterval(refreshTarget, 60_000);
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') refreshTarget();
-    });
-    return () => {
-      cancelIdleTask(idleTask);
-      clearInterval(timer);
-      sub.remove();
-    };
-  }, [refreshTarget]);
-
   const focused = Boolean(accessibilityState?.selected);
   return (
-    <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.actionShell} accessibilityRole="button" accessibilityLabel={`Today hub: ${target.detail}`}>
+    <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.actionShell} accessibilityRole="button" accessibilityLabel="Accountability">
       <View style={[styles.actionButton, focused && styles.actionButtonFocused]}>
-        <Icon name={target.icon} size={22} color={colors.onPrimary} />
+        <Icon name="check-circle" size={22} color={colors.onPrimary} />
       </View>
-      <Text style={styles.actionLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{target.label}</Text>
+      <Text style={styles.actionLabel} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Accountability</Text>
     </TouchableOpacity>
   );
 }
@@ -128,7 +78,14 @@ export function MainTabNavigator() {
           tabBarButton: renderContextualActionButton,
         }}
       />
-      <Tab.Screen name="Progress" component={ProgressScreen} options={{ tabBarIcon: progressIcon }} />
+      <Tab.Screen
+        name="Progress"
+        component={ProgressNavigator}
+        options={({ route }) => ({
+          tabBarIcon: progressIcon,
+          tabBarStyle: ['ProgressReport', 'TrophyDetails'].includes(getFocusedRouteNameFromRoute(route) || '') ? hiddenTabBarStyle : appTabBarStyle,
+        })}
+      />
       <Tab.Screen name="Profile" component={ProfileNavigator} options={{ tabBarIcon: profileIcon }} />
     </Tab.Navigator>
   );
