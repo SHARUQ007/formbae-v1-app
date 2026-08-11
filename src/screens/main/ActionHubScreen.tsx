@@ -322,10 +322,7 @@ export function ActionHubScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.personalSectionHead}>
-          <View>
-            <Text style={styles.sectionEyebrow}>YOUR FOCUS</Text>
-            <Text style={styles.personalSectionTitle}>Today’s promise</Text>
-          </View>
+          <Text style={styles.personalSectionTitle}>Today’s promise</Text>
           <View style={[styles.personalStatus, !commitment && styles.personalStatusIdle, commitmentComplete && styles.personalStatusDone]}>
             <View style={[styles.personalStatusDot, !commitment && styles.personalStatusDotIdle, commitmentComplete && styles.personalStatusDotDone]} />
             <Text style={[styles.personalStatusText, commitmentComplete && styles.personalStatusTextDone]}>{commitmentComplete ? 'Complete' : commitment ? 'In progress' : 'Not started'}</Text>
@@ -342,7 +339,6 @@ export function ActionHubScreen({ navigation }: Props) {
               <Text style={[styles.recommendedText, commitmentComplete && styles.recommendedTextDone]}>{commitmentComplete ? 'Promise kept' : commitment ? 'Committed' : 'Recommended'}</Text>
             </View>
           </View>
-          <Text style={styles.heroLabel}>ONE CLEAR ACTION</Text>
           <Text style={styles.heroTitle}>{commitment?.title || targetTitle(snapshot)}</Text>
           <Text style={styles.heroMeta}>{commitmentComplete ? 'You followed through. That is how consistency gets built.' : commitment ? 'Your reminder is set. Do it now or mark it complete when you finish.' : targetMeta(snapshot)}</Text>
           {commitmentComplete ? (
@@ -361,21 +357,8 @@ export function ActionHubScreen({ navigation }: Props) {
           )}
         </View>
 
-        <View style={styles.reasonCard}>
-          <View style={styles.reasonIcon}>
-            <Feather name="zap" size={17} color={colors.goldMuted} />
-          </View>
-          <View style={styles.reasonCopy}>
-            <Text style={styles.reasonTitle}>{commitment ? 'Your accountability rule' : 'Why this commitment'}</Text>
-            <Text style={styles.reasonText}>{commitment ? 'Keep the promise small and specific. Completing it today extends your accountability streak.' : targetReason(snapshot)}</Text>
-          </View>
-        </View>
-
         <View style={styles.partnerSectionHead}>
-          <View style={styles.partnerSectionCopy}>
-            <Text style={styles.sectionEyebrow}>WITH A PARTNER</Text>
-            <Text style={styles.personalSectionTitle}>Show up together</Text>
-          </View>
+          <Text style={styles.personalSectionTitle}>Show up together</Text>
           <View style={styles.partnerSectionIcon}><MaterialCommunityIcon name="heart-outline" size={20} color={colors.gold} /></View>
         </View>
 
@@ -439,7 +422,6 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
       <View style={styles.baeBrandIcon}><MaterialCommunityIcon name="account-heart-outline" size={23} color={colors.gold} /></View>
       <View style={styles.baeHeaderCopy}>
         <Text style={styles.baeEyebrow}>ACCOUNTABILITY BAE</Text>
-        <Text style={styles.baeTitle}>Daily partner challenge</Text>
       </View>
       {data.status === 'matched' ? <View style={styles.baeLivePill}><View style={styles.baeLiveDot} /><Text style={styles.baeLiveText}>Active</Text></View> : null}
     </View>
@@ -485,7 +467,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
           <View style={styles.baeWaitingIcon}>{busy ? <ActivityIndicator color={colors.gold} /> : <MaterialCommunityIcon name={friendMode ? 'account-multiple-plus-outline' : 'radar'} size={28} color={colors.gold} />}</View>
           <Text style={styles.baeWaitingKicker}>{friendMode ? 'INVITE READY' : 'MATCHING IN PROGRESS'}</Text>
           <Text style={styles.baeWaitingTitle}>{friendMode ? 'Bring your partner in' : 'Finding the right partner'}</Text>
-          <Text style={styles.baeMuted}>{friendMode ? 'Share your private code. You’ll connect as soon as your friend enters it.' : `We’re looking for a compatible ${data.preference} partner. You can leave this screen—we’ll keep looking.`}</Text>
+          <Text style={styles.baeMuted}>{friendMode ? 'Share your code. You’ll connect when your friend enters it.' : `We’re finding a compatible ${data.preference} partner. You can leave this screen.`}</Text>
         </View>
         {friendMode ? (
           <>
@@ -519,10 +501,10 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
   const partnerName = data.partner?.displayName || 'Your partner';
   const proofCount = Number(Boolean(data.youSubmitted)) + Number(Boolean(data.partnerSubmitted));
   const proofGuidance = data.youSubmitted
-    ? `${partnerName} is next. Your check-in is safely locked until you both submit.`
+    ? `Waiting for ${partnerName}.`
     : data.partnerSubmitted
-      ? `${partnerName} checked in. Add yours to unlock both photos.`
-      : 'Be the first to check in. Your photo stays private until you both submit.';
+      ? `${partnerName} checked in. Add yours to unlock both.`
+      : 'Check in to start today’s challenge.';
   return (
     <View style={styles.baeCard}>
       {header}
@@ -538,7 +520,6 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
             <View style={styles.baeDuePill}><Feather name="clock" size={12} color={colors.gold} /><Text style={styles.baeDue}>{challenge.dueLabel}</Text></View>
           </View>
           <View style={styles.baeChallengeCopy}>
-            <Text style={styles.baeChallengeKicker}>TODAY’S CHALLENGE</Text>
             <Text style={styles.baeChallengeTitle}>{challenge.title}</Text>
             <Text style={styles.baeChallengePrompt}>{challenge.prompt}</Text>
           </View>
@@ -557,7 +538,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
         <ProofTile label={partnerName} submitted={Boolean(data.partnerSubmitted)} imageUrl={data.partnerProofUrl} locked={Boolean(data.partnerSubmitted && !data.bothSubmitted)} />
       </View>
       {data.bothSubmitted ? (
-        <View style={styles.baeCompleteBanner}><View style={styles.baeCompleteIcon}><Feather name="check" size={18} color={colors.onPrimary} /></View><View style={styles.baeCompleteCopy}><Text style={styles.baeCompleteTitle}>You both showed up</Text><Text style={styles.baeCompleteText}>Today’s challenge is complete. Come back tomorrow to keep the rhythm.</Text></View></View>
+        <View style={styles.baeCompleteBanner}><View style={styles.baeCompleteIcon}><Feather name="check" size={18} color={colors.onPrimary} /></View><View style={styles.baeCompleteCopy}><Text style={styles.baeCompleteTitle}>You both showed up</Text><Text style={styles.baeCompleteText}>Done for today. Come back tomorrow.</Text></View></View>
       ) : (
         <>
           <Text style={styles.proofGuidance}>{proofGuidance}</Text>
@@ -663,14 +644,6 @@ function targetMeta(snapshot: ContextualSnapshot) {
   return 'See your consistency, streaks, and body trends in one place.';
 }
 
-function targetReason(snapshot: ContextualSnapshot) {
-  const target = snapshot.target;
-  if (target.kind === 'workout') return 'This is the next incomplete session in your plan.';
-  if (target.kind === 'diet') return `${target.mealType} is the current meal and has not been logged.`;
-  if (target.kind === 'refresh') return 'Your current training block is ready for its next check-in.';
-  return 'Nothing is overdue. Review your current training trend.';
-}
-
 const styles = StyleSheet.create({
   scroll: {},
   header: { marginTop: spacing.sm, paddingBottom: spacing.xs },
@@ -682,9 +655,7 @@ const styles = StyleSheet.create({
   subtitle: { ...typography.body, color: colors.inkMuted, marginTop: 2, maxWidth: 340 },
   personalSectionHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.lg, marginBottom: spacing.sm },
   partnerSectionHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.xl, marginBottom: spacing.sm },
-  partnerSectionCopy: { flex: 1 },
   partnerSectionIcon: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
-  sectionEyebrow: { ...typography.overline, color: colors.inkSubtle },
   personalSectionTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
   personalStatus: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.accentLight },
   personalStatusIdle: { borderColor: colors.border, backgroundColor: colors.panelMuted },
@@ -700,7 +671,6 @@ const styles = StyleSheet.create({
   baeBrandIcon: { width: 46, height: 46, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
   baeHeaderCopy: { flex: 1, minWidth: 0 },
   baeEyebrow: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
-  baeTitle: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
   baeLivePill: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, backgroundColor: colors.successLight, paddingHorizontal: 8, paddingVertical: 6 },
   baeLiveDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.success },
   baeLiveText: { fontSize: 10, lineHeight: 12, color: colors.success, fontWeight: '900' },
@@ -752,8 +722,7 @@ const styles = StyleSheet.create({
   baeChallengeIcon: { width: 42, height: 42, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight },
   baeDuePill: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.sm, borderRadius: radius.pill, backgroundColor: colors.accentLight },
   baeChallengeCopy: {},
-  baeChallengeKicker: { ...typography.overline, color: colors.gold },
-  baeChallengeTitle: { fontSize: 20, lineHeight: 25, color: colors.ink, fontWeight: '900', marginTop: 2 },
+  baeChallengeTitle: { fontSize: 20, lineHeight: 25, color: colors.ink, fontWeight: '900' },
   baeChallengePrompt: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: 3 },
   baeDue: { fontSize: 10, lineHeight: 13, color: colors.gold, fontWeight: '800' },
   proofSectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: spacing.lg },
@@ -821,8 +790,7 @@ const styles = StyleSheet.create({
   recommendedDotComplete: { backgroundColor: colors.success },
   recommendedText: { ...typography.caption, color: colors.gold, fontWeight: '700' },
   recommendedTextDone: { color: colors.success },
-  heroLabel: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase', marginTop: spacing.lg },
-  heroTitle: { ...typography.hero, color: colors.inkStrong, marginTop: spacing.xs },
+  heroTitle: { ...typography.hero, color: colors.inkStrong, marginTop: spacing.lg },
   heroMeta: { ...typography.body, color: colors.inkMuted, marginTop: spacing.sm, lineHeight: 22 },
   heroCta: {
     minHeight: 56,
@@ -842,25 +810,6 @@ const styles = StyleSheet.create({
   markDoneText: { ...typography.bodyBold, color: colors.gold },
   keptRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.accentSurface, marginTop: spacing.lg },
   keptText: { ...typography.bodyBold, color: colors.ink },
-  reasonCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-    borderLeftWidth: 2,
-    borderLeftColor: colors.goldMuted,
-    paddingLeft: spacing.md,
-    paddingVertical: spacing.sm,
-    marginTop: spacing.md,
-  },
-  reasonIcon: {
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reasonCopy: { flex: 1 },
-  reasonTitle: { ...typography.bodyBold, color: colors.ink },
-  reasonText: { ...typography.caption, color: colors.inkMuted, marginTop: 3, lineHeight: 18 },
   section: { marginTop: spacing.xl },
   sectionTitle: { ...typography.bodyBold, color: colors.ink, marginBottom: spacing.sm },
   snapshotGrid: { flexDirection: 'row', gap: spacing.sm },
