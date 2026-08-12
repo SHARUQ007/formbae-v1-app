@@ -6,7 +6,10 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { ScreenContainer } from '../../components/Card';
+import { Card, ScreenContainer, ScreenSubtitle, ScreenTitle, SectionTitle } from '../../components/Card';
+import { Badge } from '../../components/Badge';
+import { PrimaryButton } from '../../components/PrimaryButton';
+import { StatTile } from '../../components/StatTile';
 import { LoadingState } from '../../components/States';
 import {
   accountabilityBaeProofSource,
@@ -30,7 +33,6 @@ import {
 } from '../../utils/contextualAction';
 import type { MainTabParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
-import { shadows } from '../../theme/shadows';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
@@ -302,7 +304,6 @@ export function ActionHubScreen({ navigation }: Props) {
   ].filter((action) => action.kind !== snapshot.target.kind);
   const commitment = accountability?.today;
   const commitmentComplete = commitment?.status === 'completed';
-  const commitmentActive = Boolean(commitment && !commitmentComplete);
 
   return (
     <ScreenContainer>
@@ -312,32 +313,21 @@ export function ActionHubScreen({ navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
         contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
       >
-        <View style={styles.header}>
-          <View style={styles.headerMeta}>
-            <Text style={styles.kicker}>{dateLabel}</Text>
-            <View style={styles.headerStreak}><Feather name="zap" size={13} color={colors.gold} /><Text style={styles.headerStreakText}>{accountability?.streak || 0} day streak</Text></View>
-          </View>
-          <Text style={styles.title}>Accountability</Text>
-          <Text style={styles.subtitle}>Show up for yourself—and someone else.</Text>
+        <View style={styles.headerMeta}>
+          <Text style={styles.kicker}>{dateLabel}</Text>
+          <Badge label={`${accountability?.streak || 0} day streak`} tone="gold" icon="zap" />
         </View>
+        <ScreenTitle>Accountability</ScreenTitle>
+        <ScreenSubtitle>Show up for yourself—and someone else.</ScreenSubtitle>
 
         <View style={styles.personalSectionHead}>
-          <Text style={styles.personalSectionTitle}>Today’s promise</Text>
-          <View style={[styles.personalStatus, !commitment && styles.personalStatusIdle, commitmentComplete && styles.personalStatusDone]}>
-            <View style={[styles.personalStatusDot, !commitment && styles.personalStatusDotIdle, commitmentComplete && styles.personalStatusDotDone]} />
-            <Text style={[styles.personalStatusText, commitmentComplete && styles.personalStatusTextDone]}>{commitmentComplete ? 'Complete' : commitment ? 'In progress' : 'Not started'}</Text>
-          </View>
+          <SectionTitle style={styles.inlineSectionTitle}>Today’s promise</SectionTitle>
+          <Badge label={commitmentComplete ? 'Complete' : commitment ? 'In progress' : 'Not started'} tone={commitmentComplete ? 'success' : commitment ? 'gold' : 'neutral'} icon={commitmentComplete ? 'check' : commitment ? 'clock' : 'circle'} />
         </View>
 
-        <View style={[styles.hero, commitmentActive && styles.heroCommitted, commitmentComplete && styles.heroComplete]}>
-          <View style={styles.heroTop}>
-            <View style={[styles.heroIcon, commitmentComplete && styles.heroIconComplete]}>
-              <Feather name={commitmentComplete ? 'check' : commitment ? 'shield' : snapshot.target.icon} size={22} color={commitmentComplete ? colors.onPrimary : colors.inkStrong} />
-            </View>
-            <View style={[styles.recommendedPill, commitmentComplete && styles.recommendedPillDone]}>
-              <View style={[styles.recommendedDot, commitmentComplete && styles.recommendedDotComplete]} />
-              <Text style={[styles.recommendedText, commitmentComplete && styles.recommendedTextDone]}>{commitmentComplete ? 'Promise kept' : commitment ? 'Committed' : 'Recommended'}</Text>
-            </View>
+        <Card variant={commitmentComplete ? 'accent' : 'elevated'}>
+          <View style={[styles.heroIcon, commitmentComplete && styles.heroIconComplete]}>
+            <Feather name={commitmentComplete ? 'check' : commitment ? 'shield' : snapshot.target.icon} size={22} color={commitmentComplete ? colors.onPrimary : colors.inkStrong} />
           </View>
           <Text style={styles.heroTitle}>{commitment?.title || targetTitle(snapshot)}</Text>
           <Text style={styles.heroMeta}>{commitmentComplete ? 'You followed through. That is how consistency gets built.' : commitment ? 'Your reminder is set. Do it now or mark it complete when you finish.' : targetMeta(snapshot)}</Text>
@@ -345,22 +335,15 @@ export function ActionHubScreen({ navigation }: Props) {
             <View style={styles.keptRow}><Feather name="zap" size={18} color={colors.gold} /><Text style={styles.keptText}>{accountability?.streak || 1} day accountability streak</Text></View>
           ) : commitment ? (
             <View style={styles.commitmentActions}>
-              <TouchableOpacity onPress={openCommitment} style={styles.heroCta} accessibilityRole="button"><Text style={styles.heroCtaText}>Do it now</Text><Feather name="arrow-right" size={19} color={colors.onPrimary} /></TouchableOpacity>
-              <TouchableOpacity onPress={completeCommitment} style={styles.markDoneButton} accessibilityRole="button" disabled={savingCommitment}>
-                {savingCommitment ? <ActivityIndicator size="small" color={colors.gold} /> : <><Feather name="check" size={17} color={colors.gold} /><Text style={styles.markDoneText}>Mark as done</Text></>}
-              </TouchableOpacity>
+              <PrimaryButton title="Do it now" icon="arrow-right" onPress={openCommitment} style={styles.heroCta} />
+              <PrimaryButton title="Mark as done" icon="check" variant="secondary" onPress={completeCommitment} loading={savingCommitment} />
             </View>
           ) : (
-            <TouchableOpacity onPress={commitForToday} style={styles.heroCta} accessibilityRole="button" disabled={savingCommitment}>
-              {savingCommitment ? <ActivityIndicator color={colors.onPrimary} /> : <><Text style={styles.heroCtaText}>Commit for today</Text><Feather name="shield" size={19} color={colors.onPrimary} /></>}
-            </TouchableOpacity>
+            <PrimaryButton title="Commit for today" icon="shield" onPress={commitForToday} loading={savingCommitment} style={styles.heroCta} />
           )}
-        </View>
+        </Card>
 
-        <View style={styles.partnerSectionHead}>
-          <Text style={styles.personalSectionTitle}>Show up together</Text>
-          <View style={styles.partnerSectionIcon}><MaterialCommunityIcon name="heart-outline" size={20} color={colors.gold} /></View>
-        </View>
+        <SectionTitle>Show up together</SectionTitle>
 
         <AccountabilityBaeCard
           data={accountabilityBae}
@@ -374,27 +357,23 @@ export function ActionHubScreen({ navigation }: Props) {
           onLeave={leaveBae}
         />
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Your consistency</Text>
-          <View style={styles.snapshotGrid}>
-            <SnapshotStat icon="shield" label="Promises kept" value={`${accountability?.keptCount || 0} total`} />
-            <SnapshotStat icon="zap" label="Accountability" value={`${accountability?.streak || 0} day streak`} />
-            <SnapshotStat
-              icon="check-circle"
-              label="Plan progress"
-              value={planDays.length ? `${completedDays} of ${planDays.length} days` : 'Plan loading'}
-            />
-          </View>
+        <SectionTitle>Your consistency</SectionTitle>
+        <View style={styles.snapshotGrid}>
+          <StatTile icon="shield" label="Promises kept" value={`${accountability?.keptCount || 0}`} />
+          <StatTile icon="zap" label="Day streak" value={`${accountability?.streak || 0}`} />
+          <StatTile
+            icon="check-circle"
+            label="Plan progress"
+            value={planDays.length ? `${completedDays}/${planDays.length}` : '—'}
+          />
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Keep moving</Text>
-          <View style={styles.quickList}>
-            {quickActions.map((action) => (
-              <QuickAction key={action.kind} icon={action.icon} title={action.title} body={action.body} onPress={action.onPress} />
-            ))}
-          </View>
-        </View>
+        <SectionTitle>Keep moving</SectionTitle>
+        <Card variant="flat" style={styles.quickList}>
+          {quickActions.map((action) => (
+            <QuickAction key={action.kind} icon={action.icon} title={action.title} body={action.body} onPress={action.onPress} />
+          ))}
+        </Card>
       </ScrollView>
     </ScreenContainer>
   );
@@ -414,7 +393,7 @@ type AccountabilityBaeCardProps = {
 
 function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onStart, onJoinFriend, onShareFriendCode, onSubmitProof, onLeave }: AccountabilityBaeCardProps) {
   if (!data) {
-    return <View style={styles.baeCard}><View style={styles.baeLoading}><Feather name="wifi-off" size={22} color={colors.inkMuted} /><Text style={styles.baeMuted}>Accountability Bae is unavailable. Pull down to retry.</Text></View></View>;
+    return <Card><View style={styles.baeLoading}><Feather name="wifi-off" size={22} color={colors.inkMuted} /><Text style={styles.baeMuted}>Accountability Bae is unavailable. Pull down to retry.</Text></View></Card>;
   }
 
   const header = (
@@ -423,13 +402,13 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
       <View style={styles.baeHeaderCopy}>
         <Text style={styles.baeEyebrow}>ACCOUNTABILITY BAE</Text>
       </View>
-      {data.status === 'matched' ? <View style={styles.baeLivePill}><View style={styles.baeLiveDot} /><Text style={styles.baeLiveText}>Active</Text></View> : null}
+      {data.status === 'matched' ? <Badge label="Active" tone="success" icon="check" /> : null}
     </View>
   );
 
   if (data.status === 'inactive') {
     return (
-      <View style={styles.baeCard}>
+      <Card>
         {header}
         <View style={styles.baeIntroHero}>
           <View style={styles.baeDuoVisual}>
@@ -454,14 +433,14 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
         </View>
         {busy ? <ActivityIndicator color={colors.gold} /> : null}
         <View style={styles.baeSafety}><Feather name="lock" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>First names only. No face photo required.</Text></View>
-      </View>
+      </Card>
     );
   }
 
   if (data.status === 'waiting') {
     const friendMode = data.preference === 'friend';
     return (
-      <View style={styles.baeCard}>
+      <Card>
         {header}
         <View style={styles.baeWaitingHero}>
           <View style={styles.baeWaitingIcon}>{busy ? <ActivityIndicator color={colors.gold} /> : <MaterialCommunityIcon name={friendMode ? 'account-multiple-plus-outline' : 'radar'} size={28} color={colors.gold} />}</View>
@@ -473,7 +452,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
           <>
             <View style={styles.friendInviteBox}>
               <View><Text style={styles.friendCodeLabel}>PARTNER CODE</Text><Text style={styles.friendCodeValue}>{data.inviteCode}</Text></View>
-              <TouchableOpacity style={styles.friendShareButton} onPress={onShareFriendCode} accessibilityRole="button"><Feather name="share-2" size={17} color={colors.onPrimary} /><Text style={styles.friendShareText}>Invite</Text></TouchableOpacity>
+              <PrimaryButton title="Invite" icon="share-2" size="sm" onPress={onShareFriendCode} style={styles.friendShareButton} />
             </View>
             <Text style={styles.friendJoinLabel}>Already have their code?</Text>
             <View style={styles.friendJoinRow}>
@@ -488,12 +467,12 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
                 style={styles.friendCodeInput}
                 accessibilityLabel="Friend code"
               />
-              <TouchableOpacity style={[styles.friendJoinButton, (!friendCode.trim() || busy) && styles.baeDisabled]} onPress={onJoinFriend} disabled={!friendCode.trim() || busy} accessibilityRole="button"><Text style={styles.friendJoinText}>Connect</Text></TouchableOpacity>
+              <PrimaryButton title="Connect" size="sm" onPress={onJoinFriend} disabled={!friendCode.trim() || busy} style={styles.friendJoinButton} />
             </View>
           </>
         ) : null}
-        <TouchableOpacity onPress={onLeave} style={styles.baeTextButton} accessibilityRole="button" disabled={busy}><Text style={styles.baeTextButtonLabel}>Cancel matching</Text></TouchableOpacity>
-      </View>
+        <PrimaryButton title="Cancel matching" variant="ghost" size="sm" onPress={onLeave} disabled={busy} style={styles.baeTextButton} />
+      </Card>
     );
   }
 
@@ -506,7 +485,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
       ? `${partnerName} checked in. Add yours to unlock both.`
       : 'Check in to start today’s challenge.';
   return (
-    <View style={styles.baeCard}>
+    <Card>
       {header}
       <View style={styles.baePartnerRow}>
         <View style={styles.baePartnerAvatar}><Text style={styles.baePartnerInitial}>{partnerName.charAt(0).toUpperCase()}</Text></View>
@@ -514,7 +493,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
         <TouchableOpacity onPress={onLeave} style={styles.baeMoreButton} accessibilityRole="button" accessibilityLabel="Leave Accountability Bae match"><Feather name="more-horizontal" size={20} color={colors.inkMuted} /></TouchableOpacity>
       </View>
       {challenge ? (
-        <View style={styles.baeChallenge}>
+        <Card variant="accent" style={styles.baeChallenge}>
           <View style={styles.baeChallengeTop}>
             <View style={styles.baeChallengeIcon}><MaterialCommunityIcon name={challenge.icon} size={24} color={colors.gold} /></View>
             <View style={styles.baeDuePill}><Feather name="clock" size={12} color={colors.gold} /><Text style={styles.baeDue}>{challenge.dueLabel}</Text></View>
@@ -523,7 +502,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
             <Text style={styles.baeChallengeTitle}>{challenge.title}</Text>
             <Text style={styles.baeChallengePrompt}>{challenge.prompt}</Text>
           </View>
-        </View>
+        </Card>
       ) : null}
       <View style={styles.proofSectionHead}>
         <Text style={styles.proofSectionTitle}>Today’s proof</Text>
@@ -542,13 +521,11 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
       ) : (
         <>
           <Text style={styles.proofGuidance}>{proofGuidance}</Text>
-          <TouchableOpacity style={[styles.baeProofButton, busy && styles.baeDisabled]} onPress={onSubmitProof} disabled={busy} accessibilityRole="button">
-            {busy ? <ActivityIndicator color={colors.onPrimary} /> : <><Feather name="camera" size={19} color={colors.onPrimary} /><Text style={styles.baeProofButtonText}>{data.youSubmitted ? 'Update my check-in' : 'Check in with a photo'}</Text></>}
-          </TouchableOpacity>
+          <PrimaryButton title={data.youSubmitted ? 'Update my check-in' : 'Check in with a photo'} icon="camera" onPress={onSubmitProof} loading={busy} style={styles.baeProofButton} />
         </>
       )}
       <View style={styles.baeSafety}><Feather name="eye-off" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>Photos unlock together—never one-sided.</Text></View>
-    </View>
+    </Card>
   );
 }
 
@@ -597,16 +574,6 @@ function commitmentMet(kind: string, targetId: string, snapshot: ContextualSnaps
   return false;
 }
 
-function SnapshotStat({ icon, label, value }: { icon: string; label: string; value: string }) {
-  return (
-    <View style={styles.snapshotCard}>
-      <View style={styles.snapshotIcon}><Feather name={icon} size={17} color={colors.gold} /></View>
-      <Text style={styles.snapshotLabel}>{label}</Text>
-      <Text style={styles.snapshotValue}>{value}</Text>
-    </View>
-  );
-}
-
 function QuickAction({ icon, title, body, onPress }: { icon: string; title: string; body: string; onPress: () => void }) {
   return (
     <TouchableOpacity
@@ -646,34 +613,15 @@ function targetMeta(snapshot: ContextualSnapshot) {
 
 const styles = StyleSheet.create({
   scroll: {},
-  header: { marginTop: spacing.sm, paddingBottom: spacing.xs },
-  headerMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  headerMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.sm },
   kicker: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
-  headerStreak: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, backgroundColor: colors.accentLight, paddingHorizontal: spacing.sm },
-  headerStreakText: { ...typography.caption, color: colors.gold, fontWeight: '800' },
-  title: { ...typography.display, color: colors.ink, marginTop: spacing.sm },
-  subtitle: { ...typography.body, color: colors.inkMuted, marginTop: 2, maxWidth: 340 },
-  personalSectionHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.lg, marginBottom: spacing.sm },
-  partnerSectionHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.xl, marginBottom: spacing.sm },
-  partnerSectionIcon: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
-  personalSectionTitle: { ...typography.title, color: colors.ink, marginTop: 2 },
-  personalStatus: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.accentLight },
-  personalStatusIdle: { borderColor: colors.border, backgroundColor: colors.panelMuted },
-  personalStatusDone: { borderColor: 'rgba(131,214,164,0.28)', backgroundColor: colors.successLight },
-  personalStatusDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.gold },
-  personalStatusDotIdle: { backgroundColor: colors.inkSubtle },
-  personalStatusDotDone: { backgroundColor: colors.success },
-  personalStatusText: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '800' },
-  personalStatusTextDone: { color: colors.success },
-  baeCard: { borderRadius: radius.xl, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, overflow: 'hidden', ...shadows.card },
+  personalSectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.sm },
+  inlineSectionTitle: { marginTop: 0, marginBottom: 0 },
   baeLoading: { minHeight: 110, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   baeHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   baeBrandIcon: { width: 46, height: 46, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
   baeHeaderCopy: { flex: 1, minWidth: 0 },
   baeEyebrow: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
-  baeLivePill: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, backgroundColor: colors.successLight, paddingHorizontal: 8, paddingVertical: 6 },
-  baeLiveDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.success },
-  baeLiveText: { fontSize: 10, lineHeight: 12, color: colors.success, fontWeight: '900' },
   baeIntroHero: { alignItems: 'center', paddingHorizontal: spacing.sm, paddingTop: spacing.lg },
   baeDuoVisual: { width: 88, height: 62, position: 'relative' },
   baeDuoAvatar: { position: 'absolute', width: 54, height: 54, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: colors.panel },
@@ -700,15 +648,12 @@ const styles = StyleSheet.create({
   friendInviteBox: { minHeight: 74, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panelWarm, paddingHorizontal: spacing.md, marginTop: spacing.lg },
   friendCodeLabel: { ...typography.overline, color: colors.inkMuted },
   friendCodeValue: { fontSize: 22, lineHeight: 27, color: colors.ink, fontWeight: '900', letterSpacing: 2, marginTop: 2 },
-  friendShareButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: radius.md, backgroundColor: colors.primaryAction, paddingHorizontal: 13 },
-  friendShareText: { ...typography.caption, color: colors.onPrimary, fontWeight: '900' },
+  friendShareButton: { minWidth: 92 },
   friendJoinLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '700', marginTop: spacing.md },
   friendJoinRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   friendCodeInput: { flex: 1, height: 48, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panelMuted, color: colors.ink, fontSize: 14, fontWeight: '900', letterSpacing: 1.5, textAlign: 'center', paddingHorizontal: spacing.sm },
-  friendJoinButton: { minWidth: 76, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, backgroundColor: colors.primaryAction },
-  friendJoinText: { ...typography.bodyBold, color: colors.onPrimary },
-  baeTextButton: { alignSelf: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginTop: spacing.sm },
-  baeTextButtonLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
+  friendJoinButton: { minWidth: 92, minHeight: 48 },
+  baeTextButton: { alignSelf: 'center', marginTop: spacing.sm },
   baeDisabled: { opacity: 0.45 },
   baePartnerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md },
   baePartnerAvatar: { width: 46, height: 46, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentFill, borderWidth: 1, borderColor: colors.accentSurface },
@@ -717,7 +662,7 @@ const styles = StyleSheet.create({
   baePartnerLabel: { ...typography.overline, color: colors.inkMuted },
   baePartnerName: { ...typography.bodyBold, color: colors.ink, marginTop: 1 },
   baeMoreButton: { width: 40, height: 40, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
-  baeChallenge: { borderRadius: radius.xl, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panelWarm, padding: spacing.md, marginTop: spacing.md },
+  baeChallenge: { padding: spacing.md, marginTop: spacing.md },
   baeChallengeTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
   baeChallengeIcon: { width: 42, height: 42, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight },
   baeDuePill: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.sm, borderRadius: radius.pill, backgroundColor: colors.accentLight },
@@ -743,25 +688,12 @@ const styles = StyleSheet.create({
   proofStatus: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', marginTop: 1 },
   proofStatusDone: { color: colors.success },
   proofGuidance: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: spacing.md },
-  baeProofButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderRadius: radius.md, backgroundColor: colors.primaryAction, marginTop: spacing.md },
-  baeProofButtonText: { ...typography.button, color: colors.onPrimary },
+  baeProofButton: { marginTop: spacing.md },
   baeCompleteBanner: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, backgroundColor: colors.successLight, paddingHorizontal: spacing.md, marginTop: spacing.md },
   baeCompleteIcon: { width: 34, height: 34, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.success },
   baeCompleteCopy: { flex: 1 },
   baeCompleteTitle: { ...typography.bodyBold, color: colors.ink },
   baeCompleteText: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
-  hero: {
-    borderRadius: radius.xl,
-    backgroundColor: colors.panel,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    marginTop: 0,
-    ...shadows.sm,
-  },
-  heroCommitted: { borderColor: colors.accentSurface },
-  heroComplete: { borderColor: colors.accentSurface, backgroundColor: colors.panelWarm },
-  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   heroIcon: {
     width: 40,
     height: 40,
@@ -771,68 +703,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   heroIconComplete: { backgroundColor: colors.success },
-  recommendedPill: {
-    minHeight: 28,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentLight,
-  },
-  recommendedPillDone: { backgroundColor: colors.successLight },
-  recommendedDot: {
-    width: 6,
-    height: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.gold,
-  },
-  recommendedDotComplete: { backgroundColor: colors.success },
-  recommendedText: { ...typography.caption, color: colors.gold, fontWeight: '700' },
-  recommendedTextDone: { color: colors.success },
   heroTitle: { ...typography.hero, color: colors.inkStrong, marginTop: spacing.lg },
   heroMeta: { ...typography.body, color: colors.inkMuted, marginTop: spacing.sm, lineHeight: 22 },
-  heroCta: {
-    minHeight: 56,
-    borderRadius: radius.md,
-    backgroundColor: colors.primaryAction,
-    borderWidth: 1,
-    borderColor: colors.primaryAction,
-    paddingHorizontal: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: spacing.lg,
-  },
-  heroCtaText: { ...typography.button, color: colors.onPrimary },
+  heroCta: { marginTop: spacing.lg },
   commitmentActions: { gap: spacing.sm },
-  markDoneButton: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
-  markDoneText: { ...typography.bodyBold, color: colors.gold },
   keptRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.accentSurface, marginTop: spacing.lg },
   keptText: { ...typography.bodyBold, color: colors.ink },
-  section: { marginTop: spacing.xl },
-  sectionTitle: { ...typography.bodyBold, color: colors.ink, marginBottom: spacing.sm },
   snapshotGrid: { flexDirection: 'row', gap: spacing.sm },
-  snapshotCard: {
-    flex: 1,
-    minHeight: 124,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panel,
-    padding: spacing.sm,
-  },
-  snapshotIcon: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, backgroundColor: colors.accentLight },
-  snapshotLabel: { fontSize: 10, lineHeight: 14, color: colors.inkSubtle, fontWeight: '700', marginTop: spacing.sm },
-  snapshotValue: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
-  quickList: { gap: spacing.sm },
+  quickList: { paddingHorizontal: spacing.md, paddingVertical: 0 },
   quickAction: {
     minHeight: 72,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    backgroundColor: colors.panel,
-    paddingHorizontal: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
     paddingVertical: 11,
     flexDirection: 'row',
     alignItems: 'center',
