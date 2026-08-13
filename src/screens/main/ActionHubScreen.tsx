@@ -4,12 +4,12 @@ import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
+import LinearGradient from 'react-native-linear-gradient';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { Card, ScreenContainer, ScreenSubtitle, ScreenTitle, SectionTitle } from '../../components/Card';
+import { Card, ScreenContainer, SectionTitle } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { PrimaryButton } from '../../components/PrimaryButton';
-import { StatTile } from '../../components/StatTile';
 import { LoadingState } from '../../components/States';
 import {
   accountabilityBaeProofSource,
@@ -35,6 +35,7 @@ import type { MainTabParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
+import { shadows } from '../../theme/shadows';
 import { typography } from '../../theme/typography';
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Action'>;
@@ -317,17 +318,29 @@ export function ActionHubScreen({ navigation }: Props) {
           <Text style={styles.kicker}>{dateLabel}</Text>
           <Badge label={`${accountability?.streak || 0} day streak`} tone="gold" icon="zap" />
         </View>
-        <ScreenTitle>Accountability</ScreenTitle>
-        <ScreenSubtitle>Show up for yourself—and someone else.</ScreenSubtitle>
+        <Text style={styles.pageTitle}>Accountability</Text>
+        <Text style={styles.pageSubtitle}>A clear promise for today. A stronger pattern for tomorrow.</Text>
 
         <View style={styles.personalSectionHead}>
           <SectionTitle style={styles.inlineSectionTitle}>Today’s promise</SectionTitle>
           <Badge label={commitmentComplete ? 'Complete' : commitment ? 'In progress' : 'Not started'} tone={commitmentComplete ? 'success' : commitment ? 'gold' : 'neutral'} icon={commitmentComplete ? 'check' : commitment ? 'clock' : 'circle'} />
         </View>
 
-        <Card variant={commitmentComplete ? 'accent' : 'elevated'}>
-          <View style={[styles.heroIcon, commitmentComplete && styles.heroIconComplete]}>
-            <Feather name={commitmentComplete ? 'check' : commitment ? 'shield' : snapshot.target.icon} size={22} color={commitmentComplete ? colors.onPrimary : colors.inkStrong} />
+        <View style={[styles.promiseCard, commitmentComplete && styles.promiseCardComplete]}>
+          <LinearGradient
+            colors={commitmentComplete ? ['rgba(131,214,164,0.16)', 'rgba(17,18,23,0)'] : ['rgba(240,206,120,0.15)', 'rgba(17,18,23,0)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.promiseTopRow}>
+            <View style={[styles.heroIcon, commitmentComplete && styles.heroIconComplete]}>
+              <Feather name={commitmentComplete ? 'check' : commitment ? 'shield' : snapshot.target.icon} size={21} color={commitmentComplete ? colors.onPrimary : colors.gold} />
+            </View>
+            <View style={styles.promiseLabelWrap}>
+              <Text style={styles.promiseEyebrow}>{commitmentComplete ? 'PROMISE KEPT' : commitment ? 'COMMITTED FOR TODAY' : 'YOUR NEXT MOVE'}</Text>
+              <Text style={styles.promiseTiming}>{commitmentComplete ? 'Momentum secured' : 'One meaningful action'}</Text>
+            </View>
           </View>
           <Text style={styles.heroTitle}>{commitment?.title || targetTitle(snapshot)}</Text>
           <Text style={styles.heroMeta}>{commitmentComplete ? 'You followed through. That is how consistency gets built.' : commitment ? 'Your reminder is set. Do it now or mark it complete when you finish.' : targetMeta(snapshot)}</Text>
@@ -335,13 +348,13 @@ export function ActionHubScreen({ navigation }: Props) {
             <View style={styles.keptRow}><Feather name="zap" size={18} color={colors.gold} /><Text style={styles.keptText}>{accountability?.streak || 1} day accountability streak</Text></View>
           ) : commitment ? (
             <View style={styles.commitmentActions}>
-              <PrimaryButton title="Do it now" icon="arrow-right" onPress={openCommitment} style={styles.heroCta} />
+              <PrimaryButton title="Do it now" icon="arrow-right" onPress={openCommitment} />
               <PrimaryButton title="Mark as done" icon="check" variant="secondary" onPress={completeCommitment} loading={savingCommitment} />
             </View>
           ) : (
             <PrimaryButton title="Commit for today" icon="shield" onPress={commitForToday} loading={savingCommitment} style={styles.heroCta} />
           )}
-        </Card>
+        </View>
 
         <SectionTitle>Show up together</SectionTitle>
 
@@ -358,15 +371,13 @@ export function ActionHubScreen({ navigation }: Props) {
         />
 
         <SectionTitle>Your consistency</SectionTitle>
-        <View style={styles.snapshotGrid}>
-          <StatTile icon="shield" label="Promises kept" value={`${accountability?.keptCount || 0}`} />
-          <StatTile icon="zap" label="Day streak" value={`${accountability?.streak || 0}`} />
-          <StatTile
-            icon="check-circle"
-            label="Plan progress"
-            value={planDays.length ? `${completedDays}/${planDays.length}` : '—'}
-          />
-        </View>
+        <Card variant="flat" style={styles.consistencyCard}>
+          <ConsistencyMetric icon="zap" label="Day streak" value={`${accountability?.streak || 0}`} />
+          <View style={styles.metricDivider} />
+          <ConsistencyMetric icon="shield" label="Promises kept" value={`${accountability?.keptCount || 0}`} />
+          <View style={styles.metricDivider} />
+          <ConsistencyMetric icon="check-circle" label="Plan complete" value={planDays.length ? `${completedDays}/${planDays.length}` : '—'} />
+        </Card>
 
         <SectionTitle>Keep moving</SectionTitle>
         <Card variant="flat" style={styles.quickList}>
@@ -393,7 +404,7 @@ type AccountabilityBaeCardProps = {
 
 function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onStart, onJoinFriend, onShareFriendCode, onSubmitProof, onLeave }: AccountabilityBaeCardProps) {
   if (!data) {
-    return <Card><View style={styles.baeLoading}><Feather name="wifi-off" size={22} color={colors.inkMuted} /><Text style={styles.baeMuted}>Accountability Bae is unavailable. Pull down to retry.</Text></View></Card>;
+    return <Card style={styles.partnerCard}><View style={styles.baeLoading}><Feather name="wifi-off" size={22} color={colors.inkMuted} /><Text style={styles.baeMuted}>Accountability Bae is unavailable. Pull down to retry.</Text></View></Card>;
   }
 
   const header = (
@@ -401,6 +412,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
       <View style={styles.baeBrandIcon}><MaterialCommunityIcon name="account-heart-outline" size={23} color={colors.gold} /></View>
       <View style={styles.baeHeaderCopy}>
         <Text style={styles.baeEyebrow}>ACCOUNTABILITY BAE</Text>
+        <Text style={styles.baeHeaderCaption}>A private daily check-in with a partner</Text>
       </View>
       {data.status === 'matched' ? <Badge label="Active" tone="success" icon="check" /> : null}
     </View>
@@ -408,7 +420,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
 
   if (data.status === 'inactive') {
     return (
-      <Card>
+      <Card style={styles.partnerCard}>
         {header}
         <View style={styles.baeIntroHero}>
           <View style={styles.baeDuoVisual}>
@@ -440,7 +452,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
   if (data.status === 'waiting') {
     const friendMode = data.preference === 'friend';
     return (
-      <Card>
+      <Card style={styles.partnerCard}>
         {header}
         <View style={styles.baeWaitingHero}>
           <View style={styles.baeWaitingIcon}>{busy ? <ActivityIndicator color={colors.gold} /> : <MaterialCommunityIcon name={friendMode ? 'account-multiple-plus-outline' : 'radar'} size={28} color={colors.gold} />}</View>
@@ -485,7 +497,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
       ? `${partnerName} checked in. Add yours to unlock both.`
       : 'Check in to start today’s challenge.';
   return (
-    <Card>
+    <Card style={styles.partnerCard}>
       {header}
       <View style={styles.baePartnerRow}>
         <View style={styles.baePartnerAvatar}><Text style={styles.baePartnerInitial}>{partnerName.charAt(0).toUpperCase()}</Text></View>
@@ -526,6 +538,16 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
       )}
       <View style={styles.baeSafety}><Feather name="eye-off" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>Photos unlock together—never one-sided.</Text></View>
     </Card>
+  );
+}
+
+function ConsistencyMetric({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return (
+    <View style={styles.metric}>
+      <View style={styles.metricIcon}><Feather name={icon} size={15} color={colors.gold} /></View>
+      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={styles.metricLabel} numberOfLines={2}>{label}</Text>
+    </View>
   );
 }
 
@@ -613,15 +635,25 @@ function targetMeta(snapshot: ContextualSnapshot) {
 
 const styles = StyleSheet.create({
   scroll: {},
-  headerMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.sm },
+  headerMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
   kicker: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
-  personalSectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.sm },
+  pageTitle: { ...typography.display, color: colors.inkStrong },
+  pageSubtitle: { ...typography.body, color: colors.inkMuted, maxWidth: 330, marginTop: spacing.xs, marginBottom: spacing.sm },
+  personalSectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.xl, marginBottom: spacing.sm },
   inlineSectionTitle: { marginTop: 0, marginBottom: 0 },
+  promiseCard: { position: 'relative', overflow: 'hidden', borderRadius: radius.xl, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panel, padding: spacing.lg, ...shadows.card },
+  promiseCardComplete: { borderColor: 'rgba(131,214,164,0.35)' },
+  promiseTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  promiseLabelWrap: { flex: 1 },
+  promiseEyebrow: { ...typography.overline, color: colors.gold },
+  promiseTiming: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  partnerCard: { borderRadius: radius.xl, padding: spacing.lg, backgroundColor: colors.panel },
   baeLoading: { minHeight: 110, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   baeHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   baeBrandIcon: { width: 46, height: 46, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
   baeHeaderCopy: { flex: 1, minWidth: 0 },
   baeEyebrow: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
+  baeHeaderCaption: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   baeIntroHero: { alignItems: 'center', paddingHorizontal: spacing.sm, paddingTop: spacing.lg },
   baeDuoVisual: { width: 88, height: 62, position: 'relative' },
   baeDuoAvatar: { position: 'absolute', width: 54, height: 54, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: colors.panel },
@@ -695,21 +727,28 @@ const styles = StyleSheet.create({
   baeCompleteTitle: { ...typography.bodyBold, color: colors.ink },
   baeCompleteText: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
   heroIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.md,
-    backgroundColor: colors.panelRaised,
+    width: 44,
+    height: 44,
+    borderRadius: radius.lg,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroIconComplete: { backgroundColor: colors.success },
-  heroTitle: { ...typography.hero, color: colors.inkStrong, marginTop: spacing.lg },
+  heroIconComplete: { backgroundColor: colors.success, borderColor: colors.success },
+  heroTitle: { ...typography.hero, color: colors.inkStrong, marginTop: spacing.lg, maxWidth: 310 },
   heroMeta: { ...typography.body, color: colors.inkMuted, marginTop: spacing.sm, lineHeight: 22 },
   heroCta: { marginTop: spacing.lg },
-  commitmentActions: { gap: spacing.sm },
-  keptRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.accentSurface, marginTop: spacing.lg },
+  commitmentActions: { gap: spacing.sm, marginTop: spacing.lg },
+  keptRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.accentSurface, marginTop: spacing.lg, paddingTop: spacing.sm },
   keptText: { ...typography.bodyBold, color: colors.ink },
-  snapshotGrid: { flexDirection: 'row', gap: spacing.sm },
+  consistencyCard: { minHeight: 126, flexDirection: 'row', alignItems: 'stretch', paddingHorizontal: spacing.sm, paddingVertical: spacing.md },
+  metric: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xs },
+  metricIcon: { width: 28, height: 28, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, marginBottom: 7 },
+  metricValue: { ...typography.title, color: colors.inkStrong, textAlign: 'center' },
+  metricLabel: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', textAlign: 'center', marginTop: 3 },
+  metricDivider: { width: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: spacing.sm },
   quickList: { paddingHorizontal: spacing.md, paddingVertical: 0 },
   quickAction: {
     minHeight: 72,
