@@ -22,6 +22,7 @@ export const colors = {
   accentSurface: 'rgba(240,206,120,0.28)',
   gold: '#f0ce78',
   goldMuted: '#bda45f',
+  goldRich: '#d8ad45',
   primaryAction: '#f7f7f5',
   onPrimary: '#08090c',
 

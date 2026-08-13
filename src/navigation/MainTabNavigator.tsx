@@ -14,7 +14,6 @@ import { appTabBarStyle, hiddenTabBarStyle } from './tabBarStyle';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/radius';
 import { shadows } from '../theme/shadows';
-import { typography } from '../theme/typography';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -27,18 +26,31 @@ const dietIcon = ({ color, focused }: TabIconProps) => (
 const progressIcon = ({ color, focused }: TabIconProps) => <Icon name="bar-chart-2" size={focused ? 24 : 22} color={color} />;
 const profileIcon = ({ color, focused }: TabIconProps) => <Icon name="user" size={focused ? 24 : 22} color={color} />;
 
-function ContextualActionButton({ accessibilityState, onPress }: BottomTabBarButtonProps) {
-  const focused = Boolean(accessibilityState?.selected);
+function ContextualActionButton(props: BottomTabBarButtonProps) {
+  // React Navigation v7 exposes the selected state to custom tab buttons via
+  // aria-selected (not accessibilityState.selected).
+  const focused = Boolean(props['aria-selected']);
   return (
-    <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={styles.actionShell} accessibilityRole="button" accessibilityLabel="Accountability">
-      <View style={[styles.actionButton, focused && styles.actionButtonFocused]}>
-        <MaterialCommunityIcon
-          name={focused ? 'heart' : 'heart-outline'}
-          size={28}
-          color={focused ? colors.gold : colors.onPrimary}
-        />
+    <TouchableOpacity
+      activeOpacity={0.88}
+      onPress={props.onPress}
+      onLongPress={props.onLongPress || undefined}
+      style={[props.style, styles.actionShell]}
+      accessibilityRole="button"
+      accessibilityLabel="Accountability"
+      accessibilityState={{ selected: focused }}
+    >
+      <View style={styles.actionButtonWrap}>
+        <View style={styles.actionButton}>
+          <MaterialCommunityIcon
+            name="heart-outline"
+            size={27}
+            color={colors.onPrimary}
+          />
+        </View>
       </View>
-      <Text style={[styles.actionLabel, focused && styles.actionLabelFocused]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Accountability</Text>
+      <Text style={styles.actionLabel} numberOfLines={1} allowFontScaling={false}>Accountability</Text>
+      <View style={[styles.actionIndicator, focused && styles.actionIndicatorFocused]} />
     </TouchableOpacity>
   );
 }
@@ -80,6 +92,7 @@ export function MainTabNavigator() {
         options={{
           title: '',
           tabBarButton: renderContextualActionButton,
+          tabBarItemStyle: styles.actionTabItem,
         }}
       />
       <Tab.Screen
@@ -96,11 +109,25 @@ export function MainTabNavigator() {
 }
 
 const styles = StyleSheet.create({
+  actionTabItem: {
+    flex: 1.55,
+    minHeight: 52,
+    borderRadius: radius.md,
+    overflow: 'visible',
+  },
   actionShell: {
-    width: 70,
+    width: '100%',
+    minWidth: 92,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -18,
+    marginTop: -20,
+  },
+  actionButtonWrap: {
+    width: 58,
+    height: 58,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionButton: {
     width: 52,
@@ -113,17 +140,23 @@ const styles = StyleSheet.create({
     borderColor: colors.panel,
     ...shadows.md,
   },
-  actionButtonFocused: {
-    backgroundColor: colors.accentFill,
-    borderColor: colors.gold,
-  },
   actionLabel: {
-    ...typography.caption,
-    maxWidth: 68,
-    marginTop: 3,
-    color: colors.ink,
+    width: 92,
+    marginTop: 1,
+    fontSize: 9,
+    lineHeight: 12,
+    color: colors.inkMuted,
     fontWeight: '700',
+    letterSpacing: 0,
     textAlign: 'center',
+    includeFontPadding: false,
   },
-  actionLabelFocused: { color: colors.gold },
+  actionIndicator: {
+    width: 14,
+    height: 2,
+    marginTop: 3,
+    borderRadius: radius.pill,
+    backgroundColor: 'transparent',
+  },
+  actionIndicatorFocused: { backgroundColor: colors.goldRich },
 });

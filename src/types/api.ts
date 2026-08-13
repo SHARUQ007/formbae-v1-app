@@ -162,6 +162,15 @@ export type AiPlanRefresh = {
     remaining: number;
     allowed: boolean;
   };
+  build?: {
+    status?: 'requested' | 'building' | 'completed' | 'failed';
+    planId?: string;
+    newPlanId?: string;
+    requestedAt?: string;
+    completedAt?: string;
+    failedAt?: string;
+    error?: string;
+  };
 };
 
 export type PlanDay = {
@@ -224,7 +233,7 @@ export type ProgressSummary = {
     planDayId: string;
     workoutMode: 'standard' | 'quick' | string;
   }>;
-  bodyTrend?: Array<{ date: string; weight: number; chest?: number; waist?: number; biceps?: number }>;
+  bodyTrend?: Array<{ entryId?: string; date: string; weight: number; chest?: number; waist?: number; biceps?: number }>;
   weeklyReview?: WeeklyProgressReview;
   trophies?: TrophySummary;
   bodyForecast?: BodyForecast;
@@ -309,6 +318,7 @@ export type WeeklyProgressReview = {
   weekStartDate: string;
   generatedAt: string;
   nextInDays: number;
+  requirements?: { workouts: number; meals: number };
   stats: {
     workoutsCompleted: number;
     workoutsPlanned: number;

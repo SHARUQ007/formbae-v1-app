@@ -11,6 +11,7 @@ import { ErrorState, EmptyState, LoadingState } from '../../components/States';
 import { SkeletonBlock } from '../../components/Skeleton';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
+import { MotionAnimation } from '../../components/MotionAnimation';
 import { WeeklyBodyMap } from '../../components/WeeklyBodyMap';
 import { loadProfileSettingsCached, loadWorkoutDayCached, loadWorkoutPlanCached } from '../../services/preloadService';
 import { fetchUserPlans, selectWorkoutPlan } from '../../services/workoutService';
@@ -30,6 +31,7 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutList'>;
 const TODAY_WORKOUT_KEY_PREFIX = 'formbae_today_workout:';
 const LAST_SEEN_STREAK_KEY = 'formbae_last_seen_workout_streak';
 const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebration';
+const SEEN_READY_PLAN_KEY = 'formbae_seen_ready_plan';
 const GOLD = '#f5b301';
 const FLAME_CORE = '#ffe08a';
 const STREAK_EMBERS = [
@@ -244,7 +246,9 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [plansOpen, setPlansOpen] = useState(false);
   const [plans, setPlans] = useState<UserPlanSummary[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
+  const [plansError, setPlansError] = useState<string | null>(null);
   const [switchingPlanId, setSwitchingPlanId] = useState('');
+  const [seenReadyPlanId, setSeenReadyPlanId] = useState('');
   const [bodyGender, setBodyGender] = useState<ReturnType<typeof resolveBodyGender>>('neutral');
 
   const load = useCallback(async (options?: { force?: boolean }) => {
@@ -270,6 +274,8 @@ function WorkoutDashboardScreen({ navigation }: Props) {
       setProgress(data.today?.progress || null);
       setTrainer(data.today?.assignedTrainer || null);
       setAiPlanRefresh(data.aiPlanRefresh || null);
+      const seenReady = await AsyncStorage.getItem(SEEN_READY_PLAN_KEY).catch(() => '');
+      setSeenReadyPlanId(seenReady || '');
       setBodyGender(resolveBodyGender(settings?.profile?.gender));
       setTrainerPhotoFailed(false);
       if (warmDay?.planDayId) {
@@ -282,6 +288,21 @@ function WorkoutDashboardScreen({ navigation }: Props) {
       setLoading(false);
     }
   }, []);
+
+  const planBuildStatus = aiPlanRefresh?.build?.status;
+  const builtPlanId = aiPlanRefresh?.build?.newPlanId || '';
+  const planBuilding = planBuildStatus === 'building';
+  const planReadyToReveal = planBuildStatus === 'completed' && Boolean(builtPlanId) && builtPlanId === planId && seenReadyPlanId !== builtPlanId;
+
+  useEffect(() => {
+    if (!planBuilding) return undefined;
+    const interval = setInterval(() => load({ force: true }).catch(() => undefined), 5000);
+    return () => clearInterval(interval);
+  }, [load, planBuilding]);
+
+  useEffect(() => {
+    navigation.getParent()?.setOptions({ tabBarStyle: planBuilding || planReadyToReveal ? hiddenTabBarStyle : appTabBarStyle });
+  }, [navigation, planBuilding, planReadyToReveal]);
 
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
@@ -332,17 +353,22 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     await AsyncStorage.setItem(`${TODAY_WORKOUT_KEY_PREFIX}${planId || title || 'default'}`, day.planDayId).catch(() => undefined);
   };
 
-  const openPlanSwitcher = async () => {
-    setPlansOpen(true);
+  const loadAvailablePlans = async () => {
     setPlansLoading(true);
+    setPlansError(null);
     try {
       const data = await fetchUserPlans();
       setPlans(data.plans || []);
     } catch (e) {
-      Alert.alert('Could not load plans', e instanceof Error ? e.message : 'Please try again.');
+      setPlansError(e instanceof Error ? e.message : 'Please check your connection and try again.');
     } finally {
       setPlansLoading(false);
     }
+  };
+
+  const openPlanSwitcher = () => {
+    setPlansOpen(true);
+    loadAvailablePlans().catch(() => undefined);
   };
 
   const onSelectPlan = async (plan: UserPlanSummary) => {
@@ -399,6 +425,24 @@ function WorkoutDashboardScreen({ navigation }: Props) {
           <SkeletonBlock style={styles.skeletonFocusedWorkout} />
         </View>
       </ScreenContainer>
+    );
+  }
+
+  if (planBuilding) {
+    return <AvaPlanTakeover mode="building" trainerName={aiPlanRefresh?.trainerName || 'Ava'} />;
+  }
+
+  if (planReadyToReveal) {
+    return (
+      <AvaPlanTakeover
+        mode="ready"
+        trainerName={aiPlanRefresh?.trainerName || 'Ava'}
+        onContinue={() => {
+          setSeenReadyPlanId(builtPlanId);
+          AsyncStorage.setItem(SEEN_READY_PLAN_KEY, builtPlanId).catch(() => undefined);
+          navigation.getParent()?.setOptions({ tabBarStyle: appTabBarStyle });
+        }}
+      />
     );
   }
 
@@ -475,18 +519,21 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                     <Feather name="refresh-cw" size={20} color={colors.accentDark} />
                   </View>
                   <View style={styles.aiRefreshCopy}>
-                    <Text style={styles.aiRefreshKicker}>Plan check-in</Text>
-                    <Text style={styles.aiRefreshTitle}>Update your next training block</Text>
+                    <Text style={styles.aiRefreshKicker}>{aiPlanRefresh.build?.status === 'failed' ? 'Plan build paused' : 'Plan check-in'}</Text>
+                    <Text style={styles.aiRefreshTitle}>{aiPlanRefresh.build?.status === 'failed' ? 'Let Ava try your plan again' : 'Update your next training block'}</Text>
                     <Text style={styles.aiRefreshText}>
-                      Tell {aiPlanRefresh.trainerName || 'your coach'} what worked and what needs to change.
+                      {aiPlanRefresh.build?.status === 'failed'
+                        ? 'Your answers are saved. Reopen the check-in to finish building your new plan.'
+                        : `Tell ${aiPlanRefresh.trainerName || 'your coach'} what worked and what needs to change.`}
                     </Text>
                   </View>
                 </View>
                 <View style={styles.aiRefreshMetaRow}>
+                  <Badge label="About 2 min" tone="accent" icon="clock" />
                   <Badge label={`${aiPlanRefresh.planAgeDays}d old`} tone="accent" icon="calendar" />
                 </View>
                 <PrimaryButton
-                  title="Start check-in"
+                  title={aiPlanRefresh.build?.status === 'failed' ? 'Resume check-in' : 'Start check-in'}
                   icon="edit-3"
                   onPress={() => navigation.navigate('PlanRefresh')}
                   style={styles.aiRefreshButton}
@@ -673,8 +720,10 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         visible={plansOpen}
         plans={plans}
         loading={plansLoading}
+        error={plansError}
         switchingPlanId={switchingPlanId}
         onSelect={onSelectPlan}
+        onRetry={() => loadAvailablePlans()}
         onClose={() => setPlansOpen(false)}
       />
       {summaryOpening ? (
@@ -692,6 +741,96 @@ function WorkoutDashboardScreen({ navigation }: Props) {
 }
 
 export const WorkoutsScreen = WorkoutDashboardScreen;
+
+const AVA_BUILD_MESSAGES = [
+  'Reading your latest check-in',
+  'Balancing training and recovery',
+  'Programming your seven-day split',
+  'Choosing exercises and alternatives',
+  'Adding targets, rest and coaching notes',
+] as const;
+
+function AvaPlanTakeover({
+  mode,
+  trainerName,
+  onContinue,
+}: {
+  mode: 'building' | 'ready';
+  trainerName: string;
+  onContinue?: () => void;
+}) {
+  const [messageIndex, setMessageIndex] = useState(0);
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (mode !== 'building') return undefined;
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 1100, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 1100, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
+      ]),
+    );
+    pulseLoop.start();
+    const interval = setInterval(() => setMessageIndex((current) => (current + 1) % AVA_BUILD_MESSAGES.length), 2200);
+    return () => {
+      pulseLoop.stop();
+      clearInterval(interval);
+    };
+  }, [mode, pulse]);
+
+  if (mode === 'ready') {
+    return (
+      <ScreenContainer withBottomInset style={styles.avaTakeover}>
+        <View style={styles.avaReadyBody}>
+          <MotionAnimation kind="success" size={116} />
+          <Text style={styles.avaKicker}>Your next training block</Text>
+          <Text style={styles.avaTitle}>Your new plan is ready</Text>
+          <Text style={styles.avaDetail}>{trainerName} rebuilt your week around what worked, what changed and how you want to train next.</Text>
+          <View style={styles.avaReadyCard}>
+            <View style={styles.avaReadyRow}><Feather name="calendar" size={20} color={colors.accent} /><Text style={styles.avaReadyText}>A fresh seven-day workout split</Text></View>
+            <View style={styles.avaReadyRow}><Feather name="sliders" size={20} color={colors.accent} /><Text style={styles.avaReadyText}>Updated intensity, recovery and exercise choices</Text></View>
+            <View style={styles.avaReadyRow}><Feather name="refresh-cw" size={20} color={colors.accent} /><Text style={styles.avaReadyText}>Built from your latest check-in</Text></View>
+          </View>
+        </View>
+        <PrimaryButton title="See my new workout" icon="arrow-right" size="lg" onPress={() => onContinue?.()} style={styles.avaReadyButton} />
+      </ScreenContainer>
+    );
+  }
+
+  const pulseScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1.08] });
+  const pulseOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.6] });
+  return (
+    <ScreenContainer withBottomInset style={styles.avaTakeover}>
+      <View style={styles.avaBuildBody} accessibilityRole="progressbar" accessibilityLiveRegion="polite">
+        <View style={styles.avaOrbWrap}>
+          <Animated.View style={[styles.avaPulse, { opacity: pulseOpacity, transform: [{ scale: pulseScale }] }]} />
+          <View style={styles.avaOrb}><Text style={styles.avaInitial}>{trainerName.slice(0, 1).toUpperCase()}</Text></View>
+        </View>
+        <Text style={styles.avaKicker}>Ava plan tunnel</Text>
+        <Text style={styles.avaTitle}>{trainerName} is building your plan</Text>
+        <Text style={styles.avaDetail}>Stay here or come back later. Your check-in is safely saved while Ava creates every workout.</Text>
+
+        <View style={styles.avaTunnelCard}>
+          <View style={styles.avaTunnelTop}>
+            <Text style={styles.avaTunnelLabel}>Building now</Text>
+            <ActivityIndicator size="small" color={colors.accent} />
+          </View>
+          <View style={styles.avaActiveMessage}>
+            <Feather name="star" size={18} color={colors.accent} />
+            <Text key={messageIndex} style={styles.avaActiveMessageText}>{AVA_BUILD_MESSAGES[messageIndex]}</Text>
+          </View>
+          <View style={styles.avaDayTrack}>
+            {[0, 1, 2, 3, 4, 5, 6].map((day) => (
+              <Animated.View key={day} style={[styles.avaDayDot, day === messageIndex % 7 && styles.avaDayDotActive]} />
+            ))}
+          </View>
+          <Text style={styles.avaTunnelHint}>This usually takes a minute or two. The new plan will appear here automatically.</Text>
+        </View>
+      </View>
+      <View style={styles.avaSafeRow}><Feather name="shield" size={15} color={colors.inkSubtle} /><Text style={styles.avaSafeText}>You can close the app—Ava will keep working.</Text></View>
+    </ScreenContainer>
+  );
+}
 
 function WorkoutSwitchModal({
   visible,
@@ -751,15 +890,19 @@ function PlanSwitcherModal({
   visible,
   plans,
   loading,
+  error,
   switchingPlanId,
   onSelect,
+  onRetry,
   onClose,
 }: {
   visible: boolean;
   plans: UserPlanSummary[];
   loading: boolean;
+  error: string | null;
   switchingPlanId: string;
   onSelect: (plan: UserPlanSummary) => void;
+  onRetry: () => void;
   onClose: () => void;
 }) {
   return (
@@ -778,7 +921,24 @@ function PlanSwitcherModal({
             </TouchableOpacity>
           </View>
           {loading ? (
-            <LoadingState message="Loading your plans..." />
+            <View style={styles.planSheetLoading}>
+              {[0, 1, 2].map((item) => (
+                <View key={item} style={styles.planSkeletonRow}>
+                  <SkeletonBlock style={styles.planSkeletonBadge} />
+                  <View style={styles.planSkeletonText}>
+                    <SkeletonBlock style={styles.planSkeletonTitle} />
+                    <SkeletonBlock style={styles.planSkeletonMeta} />
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : error ? (
+            <View style={styles.planSheetError}>
+              <View style={styles.planSheetErrorIcon}><Feather name="wifi-off" size={22} color={colors.error} /></View>
+              <Text style={styles.planSheetErrorTitle}>Couldn’t load your plans</Text>
+              <Text style={styles.planSheetErrorDetail}>{error}</Text>
+              <PrimaryButton title="Try again" icon="refresh-cw" onPress={onRetry} variant="secondary" style={styles.planSheetRetry} />
+            </View>
           ) : plans.length === 0 ? (
             <EmptyState icon="layers" title="No other plans" message="Plans your coach or AI creates will appear here so you can switch between them." />
           ) : (
@@ -830,6 +990,31 @@ function PlanSwitcherModal({
 }
 
 const styles = StyleSheet.create({
+  avaTakeover: { backgroundColor: colors.bg, paddingHorizontal: spacing.lg },
+  avaBuildBody: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: spacing.lg },
+  avaReadyBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  avaOrbWrap: { width: 112, height: 112, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg },
+  avaPulse: { position: 'absolute', width: 104, height: 104, borderRadius: radius.pill, backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
+  avaOrb: { width: 76, height: 76, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelWarm, borderWidth: 1, borderColor: colors.accentSurface },
+  avaInitial: { fontSize: 34, lineHeight: 40, fontWeight: '800', color: colors.accent },
+  avaKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', textAlign: 'center', marginTop: spacing.lg },
+  avaTitle: { ...typography.display, color: colors.ink, textAlign: 'center', marginTop: spacing.sm },
+  avaDetail: { ...typography.body, color: colors.inkMuted, lineHeight: 24, textAlign: 'center', marginTop: spacing.sm, maxWidth: 430 },
+  avaTunnelCard: { alignSelf: 'stretch', marginTop: spacing.xl, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panelRaised, padding: spacing.lg },
+  avaTunnelTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  avaTunnelLabel: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
+  avaActiveMessage: { minHeight: 58, marginTop: spacing.md, paddingHorizontal: spacing.md, borderRadius: radius.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
+  avaActiveMessageText: { ...typography.bodyBold, color: colors.ink, flex: 1 },
+  avaDayTrack: { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.lg },
+  avaDayDot: { height: 7, flex: 1, borderRadius: radius.pill, backgroundColor: colors.borderStrong },
+  avaDayDotActive: { backgroundColor: colors.accent },
+  avaTunnelHint: { ...typography.caption, color: colors.inkMuted, lineHeight: 19, textAlign: 'center', marginTop: spacing.md },
+  avaSafeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingBottom: spacing.sm },
+  avaSafeText: { ...typography.caption, color: colors.inkSubtle },
+  avaReadyCard: { alignSelf: 'stretch', marginTop: spacing.xl, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelRaised, padding: spacing.lg, gap: spacing.md },
+  avaReadyRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  avaReadyText: { ...typography.body, color: colors.ink, flex: 1 },
+  avaReadyButton: { alignSelf: 'stretch', marginBottom: spacing.sm },
   summaryLoadingOverlay: {
     position: 'absolute',
     top: 0,
@@ -1117,6 +1302,17 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   planActivePillText: { ...typography.caption, color: colors.white, fontWeight: '800' },
+  planSheetLoading: { gap: spacing.sm, paddingTop: spacing.sm, paddingBottom: spacing.md },
+  planSkeletonRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 78, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.md },
+  planSkeletonBadge: { width: 44, height: 44, borderRadius: radius.md },
+  planSkeletonText: { flex: 1, gap: spacing.sm },
+  planSkeletonTitle: { width: '62%', height: 14 },
+  planSkeletonMeta: { width: '82%', height: 10 },
+  planSheetError: { alignItems: 'center', paddingVertical: spacing.xl, paddingHorizontal: spacing.md },
+  planSheetErrorIcon: { width: 52, height: 52, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.errorLight, marginBottom: spacing.md },
+  planSheetErrorTitle: { ...typography.subtitle, color: colors.ink, textAlign: 'center' },
+  planSheetErrorDetail: { ...typography.body, color: colors.inkMuted, textAlign: 'center', lineHeight: 22, marginTop: spacing.sm },
+  planSheetRetry: { alignSelf: 'stretch', marginTop: spacing.lg },
   skeletonTitle: { width: '62%', height: 30, marginBottom: spacing.sm },
   skeletonSummary: { width: '74%', height: 14, marginBottom: spacing.md },
   skeletonHero: { height: 238, borderRadius: radius.xl, marginBottom: spacing.md },

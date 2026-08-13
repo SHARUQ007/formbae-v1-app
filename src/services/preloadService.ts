@@ -1,8 +1,9 @@
 import { getCachedResource } from './appCache';
 import { fetchCheckIns } from './checkInService';
+import { fetchAccountability, fetchAccountabilityBae } from './accountabilityService';
 import { fetchDietDiary } from './dietDiaryService';
 import { fetchMessages } from './messageService';
-import { fetchProgress } from './progressService';
+import { fetchProgress, flushPendingProgressLogs } from './progressService';
 import { fetchSettings } from './settingsService';
 import { fetchCoachHub } from './trainerService';
 import { fetchUserPlans, fetchWorkoutDay, fetchWorkoutPlan } from './workoutService';
@@ -11,7 +12,7 @@ export const CACHE_KEYS = {
   workoutPlan: 'workoutPlan',
   // Bump when the progress response contract changes so an older persisted
   // bundle cannot hide a newly generated weekly review after an app update.
-  progressBundle: 'progressBundle:v9',
+  progressBundle: 'progressBundle:v10',
   dietDiary: 'dietDiary',
   profileSettings: 'profileSettings',
   coachBundle: 'coachBundle',
@@ -34,19 +35,29 @@ export function loadProgressBundleCached(options?: { force?: boolean }) {
   return getCachedResource(
     CACHE_KEYS.progressBundle,
     async () => {
-      const [progress, checkIns, userPlans, settings] = await Promise.all([
+      // Persisted offline body logs are flushed before reading progress so the
+      // response reflects everything the user has already saved on-device.
+      await flushPendingProgressLogs();
+      const [progressResult, checkInsResult, userPlansResult, settingsResult] = await Promise.allSettled([
         fetchProgress(),
         fetchCheckIns(),
         fetchUserPlans(),
         loadProfileSettingsCached(options),
-      ]);
+      ] as const);
+      // Progress is the primary payload. Optional supporting requests should
+      // never hide measurements that were successfully read from the database.
+      if (progressResult.status === 'rejected') throw progressResult.reason;
+      const progress = progressResult.value;
+      const checkIns = checkInsResult.status === 'fulfilled' ? checkInsResult.value : null;
+      const userPlans = userPlansResult.status === 'fulfilled' ? userPlansResult.value : null;
+      const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : null;
       return {
         progress,
-        checkIns: checkIns.checkIns,
-        dueThisWeek: checkIns.dueThisWeek,
-        planDays: userPlans.plans.flatMap((plan) => plan.days ?? []),
-        gender: settings.profile?.gender || '',
-        userName: settings.user?.name || settings.profile?.name || '',
+        checkIns: checkIns?.checkIns ?? [],
+        dueThisWeek: checkIns?.dueThisWeek ?? [],
+        planDays: userPlans?.plans.flatMap((plan) => plan.days ?? []) ?? [],
+        gender: settings?.profile?.gender || '',
+        userName: settings?.user?.name || settings?.profile?.name || '',
       };
     },
     { force: options?.force },
@@ -91,6 +102,8 @@ export function preloadMainAppData() {
     loadProgressBundleCached(),
     loadProfileSettingsCached(),
     loadCoachBundleCached(),
+    fetchAccountability(),
+    fetchAccountabilityBae(),
   ]).finally(() => {
     preloadPromise = null;
   });

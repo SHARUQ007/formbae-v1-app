@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useContext, useEffect, useMemo, useState } from 'react';
 import { Alert, LayoutChangeEvent, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -45,7 +45,9 @@ type Props =
   | NativeStackScreenProps<ProgressStackParamList, 'ProgressReport'>;
 
 export function ProgressScreen({ route, navigation }: Props) {
-  const tabBarHeight = useBottomTabBarHeight();
+  // The progress navigator is also rendered standalone while previewing this
+  // flow, where no bottom-tab height provider exists.
+  const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 0;
   const { data, loading, error, reload, refresh, refreshing } = useAsync<Loaded>((mode) =>
     loadProgressBundleCached({ force: mode === 'refresh' }),
   );
@@ -85,14 +87,22 @@ export function ProgressScreen({ route, navigation }: Props) {
     }
     setSavingBody(true);
     try {
-      await logProgress({ weight, chest, waist, biceps });
+      const result = await logProgress({ weight, chest, waist, biceps });
       setWeight('');
       setChest('');
       setWaist('');
       setBiceps('');
-      await loadProgressBundleCached({ force: true });
-      await reload();
       setLogMode(null);
+      if (result.synced) {
+        try {
+          await loadProgressBundleCached({ force: true });
+          await reload();
+        } catch {
+          Alert.alert('Measurement saved', 'Your measurement is in the database. Pull to refresh when you are back online.');
+        }
+      } else {
+        Alert.alert('Saved on this device', 'Your measurement is safe and will sync to the database automatically when the connection returns.');
+      }
     } catch (e) {
       Alert.alert('Could not save', e instanceof Error ? e.message : 'Please try again.');
     } finally {
@@ -155,6 +165,16 @@ export function ProgressScreen({ route, navigation }: Props) {
   const trophyBandProgress = Math.max(0, Math.min(1, (trophies.score - trophies.safeZone) / trophyBandSize));
   const nextReviewDays = review?.nextInDays ?? 7;
   const reportCycleProgress = Math.max(0, Math.min(1, (7 - nextReviewDays) / 7));
+  const workoutTarget = review?.requirements?.workouts ?? 3;
+  const mealTarget = review?.requirements?.meals ?? 12;
+  const workoutProgress = Math.min(reviewStats.workoutsCompleted, workoutTarget);
+  const mealProgress = Math.min(reviewStats.mealsLogged, mealTarget);
+  const workoutGoalMet = workoutProgress >= workoutTarget;
+  const mealGoalMet = mealProgress >= mealTarget;
+  const activationGoalsComplete = Number(workoutGoalMet) + Number(mealGoalMet);
+  const activationProgress = (workoutProgress + mealProgress) / (workoutTarget + mealTarget);
+  const showReportCountdown = reviewReady || activationGoalsComplete === 2;
+  const nextReviewDayLabel = `${nextReviewDays} day${nextReviewDays === 1 ? '' : 's'}`;
   const nextFocusDomain = review?.nextFocusDomain ?? 'workout';
   const nextFocusCta = nextFocusDomain === 'diet'
     ? 'Log your next meal'
@@ -182,69 +202,112 @@ export function ProgressScreen({ route, navigation }: Props) {
     navigation.getParent()?.navigate('Workouts', { screen: 'WorkoutList' });
   };
 
+  const openWorkoutTask = () => {
+    navigation.getParent()?.navigate('Workouts', { screen: 'WorkoutList' });
+  };
+  const openMealTask = () => {
+    navigation.getParent()?.navigate('Diet');
+  };
+
   if (route.name === 'ProgressReport') {
     return (
       <ScreenContainer withBottomInset>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[styles.scroll, { paddingBottom: spacing.xl }]}>
-          <View style={styles.logHeader}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Back to progress">
-              <Feather name="chevron-left" size={24} color={colors.ink} />
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.reportScroll}>
+          <View style={styles.reportHeader}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.reportBackButton} accessibilityRole="button" accessibilityLabel="Back to progress">
+              <Feather name="chevron-left" size={22} color={colors.ink} />
             </TouchableOpacity>
-            <View style={styles.logHeaderText}>
-              <Text style={styles.eyebrow}>Weekly coaching</Text>
-              <Text style={styles.logTitle}>Progress report</Text>
+            <View style={styles.reportHeaderText}>
+              <Text style={styles.reportHeaderEyebrow}>Progress</Text>
+              <Text style={styles.reportHeaderTitle}>Progress report</Text>
             </View>
           </View>
 
-          <Card style={styles.reviewHero}>
-            <View style={styles.reviewHeroTop}>
-              <View style={styles.aiMark}><Text style={styles.aiMarkText}>A</Text></View>
-              <View style={styles.reviewHeroLabelCopy}>
-                <Text style={styles.reviewHeroKicker}>Ava's weekly note</Text>
-                <Text style={styles.reviewHeroMeta}>{reviewReady && review?.generatedAt ? formatShortDate(review.generatedAt) : 'Still collecting activity'}</Text>
-              </View>
-              <View style={[styles.reviewStatus, reviewReady && styles.reviewStatusReady]}>
-                <View style={[styles.reviewStatusDot, reviewReady && styles.reviewStatusDotReady]} />
-                <Text style={styles.reviewStatusText}>{reviewReady ? 'Ready' : `${nextReviewDays}d`}</Text>
+          <View style={styles.reportLead}>
+            <View style={styles.reportLeadMeta}>
+              <Text style={styles.reportLeadKicker}>Weekly report</Text>
+              <View style={styles.reportLeadStatus}>
+                <View style={styles.reportLeadStatusDot} />
+                <Text style={styles.reportLeadStatusText}>{reviewReady ? 'Latest report' : showReportCountdown ? 'Inputs complete' : 'Collecting activity'}</Text>
               </View>
             </View>
-            <Text style={styles.reviewHeadline}>{reviewReady ? review?.headline : 'Keep building the week.'}</Text>
-            <Text style={styles.reviewSummary}>{reviewReady ? review?.summary : 'Your first report becomes available after a full week of workouts and food logs.'}</Text>
-            {reviewReady && review?.wins?.length ? (
-              <View style={styles.winList}>
-                {review.wins.slice(0, 3).map((win) => (
-                  <View key={win} style={styles.winRow}><Feather name="check" size={15} color={colors.gold} /><Text style={styles.winText}>{win}</Text></View>
-                ))}
-              </View>
-            ) : null}
-            <View style={styles.reviewEvidence}><Text style={styles.reviewEvidenceText}>Based on {reviewStats.workoutsCompleted} workouts and {reviewStats.mealsLogged} food logs.</Text></View>
-          </Card>
+            <Text style={styles.reportLeadTitle}>
+              {reviewReady ? review?.headline : showReportCountdown ? 'Your weekly inputs are complete.' : 'Build a useful weekly baseline.'}
+            </Text>
+            <Text style={styles.reportLeadSummary}>
+              {reviewReady
+                ? review?.summary
+                : showReportCountdown
+                  ? `Everything required for this cycle is logged. Your next report publishes in ${nextReviewDayLabel}.`
+                  : `Log ${workoutTarget} workouts and ${mealTarget} meals. Saved activity counts automatically toward this report.`}
+            </Text>
+          </View>
+
+          <View style={styles.reportDataRow}>
+            <ReportDatum label="Workouts" value={`${workoutProgress}/${workoutTarget}`} />
+            <View style={styles.reportDataDivider} />
+            <ReportDatum label="Meals" value={`${mealProgress}/${mealTarget}`} />
+            <View style={styles.reportDataDivider} />
+            <ReportDatum label="Next report" value={nextReviewDayLabel} />
+          </View>
 
           {reviewReady ? (
             <>
-              <SectionTitle>Patterns</SectionTitle>
+              {review?.wins?.length ? (
+                <View style={styles.reportHighlights}>
+                  <Text style={styles.reportSectionKicker}>Highlights</Text>
+                  {review.wins.slice(0, 3).map((win) => (
+                    <View key={win} style={styles.winRow}><Feather name="check" size={15} color={colors.gold} /><Text style={styles.winText}>{win}</Text></View>
+                  ))}
+                </View>
+              ) : null}
+              <View style={styles.reportSectionHead}>
+                <Text style={styles.reportSectionKicker}>Coaching notes</Text>
+                <Text style={styles.reportSectionTitle}>What the week shows</Text>
+              </View>
               <View style={styles.insightStack}>
-                <InsightPanel icon="activity" eyebrow="Workout feedback" title="Training pattern" insight={review?.workoutInsight || ''} recommendation={review?.workoutRecommendation || ''} />
-                <InsightPanel icon="coffee" eyebrow="Diet feedback" title="Nutrition pattern" insight={review?.nutritionInsight || ''} recommendation={review?.nutritionRecommendation || ''} />
+                <InsightPanel icon="activity" eyebrow="Training" title="Workout pattern" insight={review?.workoutInsight || ''} recommendation={review?.workoutRecommendation || ''} />
+                <InsightPanel icon="coffee" eyebrow="Nutrition" title="Meal pattern" insight={review?.nutritionInsight || ''} recommendation={review?.nutritionRecommendation || ''} />
               </View>
               <Card style={styles.nextFocusCard}>
                 <View style={styles.nextFocusTop}>
                   <View style={styles.nextFocusIcon}><Feather name="arrow-up-right" size={20} color={colors.onPrimary} /></View>
-                  <View style={styles.nextFocusCopy}><Text style={styles.nextFocusEyebrow}>Your next best move</Text><Text style={styles.nextFocusTitle}>{review?.nextFocusTitle}</Text></View>
+                  <View style={styles.nextFocusCopy}><Text style={styles.nextFocusEyebrow}>Recommended next step</Text><Text style={styles.nextFocusTitle}>{review?.nextFocusTitle}</Text></View>
                 </View>
                 <Text style={styles.nextFocusReason}>{review?.nextFocusReason}</Text>
                 <PrimaryButton title={nextFocusCta} icon="arrow-right" onPress={openNextFocus} variant="inverted" style={styles.nextFocusButton} />
               </Card>
             </>
           ) : (
-            <Card style={styles.unlockCard}>
-              <Text style={styles.unlockEyebrow}>Building your first report</Text>
-              <Text style={styles.unlockTitle}>A useful report needs real activity</Text>
-              <View style={styles.unlockSignals}>
-                <SignalRow icon="activity" label="Complete a workout" value={reviewStats.workoutsCompleted > 0 ? 'Added' : 'Waiting'} complete={reviewStats.workoutsCompleted > 0} />
-                <SignalRow icon="book-open" label="Log your food" value={`${reviewStats.mealsLogged} added`} complete={reviewStats.mealsLogged > 0} />
-                <SignalRow icon="message-circle" label="Share workout feedback" value={reviewStats.workoutFeedbackCount > 0 ? 'Added' : 'Optional'} complete={reviewStats.workoutFeedbackCount > 0} />
+            <Card style={styles.activationStatusCard}>
+              <View style={styles.activationHeading}>
+                <View style={styles.activationHeadingCopy}>
+                  <Text style={styles.activationStatusEyebrow}>Report requirements</Text>
+                  <Text style={styles.activationStatusTitle}>{showReportCountdown ? 'Everything is logged' : 'Complete both inputs'}</Text>
+                  <Text style={styles.activationStatusLabel}>{activationGoalsComplete} of 2 complete</Text>
+                </View>
+                <View style={styles.activationCount}>
+                  <Text style={styles.activationCountText}>{activationGoalsComplete}/2</Text>
+                </View>
               </View>
+              <View style={styles.activationGoals}>
+                <ActivationGoalRow icon="activity" label="Workout goal" noun="workout" current={workoutProgress} target={workoutTarget} complete={workoutGoalMet} onPress={openWorkoutTask} />
+                <View style={styles.activationGoalDivider} />
+                <ActivationGoalRow icon="coffee" label="Nutrition goal" noun="meal" current={mealProgress} target={mealTarget} complete={mealGoalMet} onPress={openMealTask} />
+              </View>
+              {showReportCountdown ? (
+                <View style={styles.reportPending}>
+                  <Feather name="clock" size={17} color={colors.gold} />
+                  <Text style={styles.reportPendingText}>No action needed. The report refreshes automatically in {nextReviewDayLabel}.</Text>
+                </View>
+              ) : (
+                <PrimaryButton
+                  title={workoutGoalMet ? 'Log your next meal' : 'Continue workout plan'}
+                  icon="arrow-right"
+                  onPress={workoutGoalMet ? openMealTask : openWorkoutTask}
+                  style={styles.activationButton}
+                />
+              )}
             </Card>
           )}
         </ScrollView>
@@ -304,16 +367,18 @@ export function ProgressScreen({ route, navigation }: Props) {
           <View style={styles.headerCopy}>
             <ScreenTitle>Progress</ScreenTitle>
           </View>
-          <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.75} accessibilityRole="button" accessibilityLabel={`Next report in ${nextReviewDays} days`}>
+          <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.75} accessibilityRole="button" accessibilityLabel={`${nextReviewDayLabel} until next report. ${activationGoalsComplete} of 2 goals complete`}>
             <View style={styles.reportCountdown}>
-              <Text style={styles.reportCountdownValue}>{nextReviewDays} day{nextReviewDays === 1 ? '' : 's'}</Text>
-              <Text style={styles.reportCountdownLabel}>Next report</Text>
+              <View style={styles.reportCountdownCopy}>
+                <Text style={styles.reportCountdownValue}>{nextReviewDayLabel}</Text>
+                <Text style={styles.reportCountdownLabel}>Next report</Text>
+              </View>
+              <Feather name="chevron-right" size={17} color={colors.gold} />
             </View>
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity onPress={() => navigation.navigate('TrophyDetails')} activeOpacity={0.9} accessibilityRole="button" accessibilityLabel="Open trophy details and leaderboard">
-        <Card style={styles.trophyCard}>
+        <View style={styles.trophySection}>
           <View style={styles.trophyMain}>
             <TrophyRing value={trophyBandProgress} />
             <View style={styles.trophyCopy}>
@@ -323,29 +388,6 @@ export function ProgressScreen({ route, navigation }: Props) {
                 {trophies.change !== 0 ? <Text style={[styles.trophyChange, trophies.change < 0 && styles.trophyChangeDown]}>{trophies.change > 0 ? '+' : ''}{trophies.change}</Text> : null}
               </View>
               <Text style={styles.trophyRemaining} numberOfLines={1} adjustsFontSizeToFit>{trophies.pointsToNext} trophies to safe zone</Text>
-            </View>
-          </View>
-          <View style={styles.trophyFooter}>
-            <View style={styles.trophyStat}>
-              <MaterialCommunityIcon name="fire" size={20} color={colors.gold} />
-              <View style={styles.trophyStatCopy}>
-                <Text style={styles.trophyStatValue}>{trophies.currentStreak}</Text>
-                <Text style={styles.trophyStatLabel}>Streak</Text>
-              </View>
-            </View>
-            <View style={[styles.trophyStat, styles.trophyStatDivider]}>
-              <Feather name="star" size={19} color={colors.gold} />
-              <View style={styles.trophyStatCopy}>
-                <Text style={styles.trophyStatValue}>{trophies.starCount}</Text>
-                <Text style={styles.trophyStatLabel}>Star points</Text>
-              </View>
-            </View>
-            <View style={[styles.trophyStat, styles.trophyStatDivider]}>
-              <MaterialCommunityIcon name="shield-check" size={19} color={colors.success} />
-              <View style={styles.trophyStatCopy}>
-                <Text style={styles.trophyStatValue}>{trophies.nextMilestone}</Text>
-                <Text style={styles.trophyStatLabel}>Next safe zone</Text>
-              </View>
             </View>
           </View>
           <View style={styles.weeklyOverview}>
@@ -358,18 +400,24 @@ export function ProgressScreen({ route, navigation }: Props) {
             </View>
             <View style={styles.overviewBar}><ProgressBar value={completionRate} /></View>
           </View>
-          <View style={styles.rankingsCta}>
+
+          <View style={styles.trophyMetricGrid}>
+            <TrophyMetric icon="fire" value={`${trophies.currentStreak}`} label="Streak" material />
+            <TrophyMetric icon="star" value={`${trophies.starCount}`} label="Star points" />
+            <TrophyMetric icon="shield-check" value={`${trophies.nextMilestone}`} label="Safe zone" material />
+          </View>
+
+          <TouchableOpacity style={styles.rankingsCta} onPress={() => navigation.navigate('TrophyDetails')} activeOpacity={0.75} accessibilityRole="button" accessibilityLabel="Open friends leaderboard">
             <View style={styles.rankingsIcon}><MaterialCommunityIcon name="podium-gold" size={20} color={colors.gold} /></View>
             <View style={styles.rankingsCopy}>
               <Text style={styles.rankingsTitle}>View rankings</Text>
               <Text style={styles.rankingsSubtitle}>Open friends leaderboard</Text>
             </View>
-            <Feather name="arrow-right" size={20} color={colors.gold} />
-          </View>
-        </Card>
-        </TouchableOpacity>
+            <Feather name="arrow-right" size={20} color={colors.onPrimary} />
+          </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.88} accessibilityRole="button" accessibilityLabel={`Open progress report. Next report in ${nextReviewDays} days`}>
+        <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.88} accessibilityRole="button" accessibilityLabel={`Open progress report. ${nextReviewDayLabel} until next report. ${activationGoalsComplete} of 2 goals complete`}>
           <View style={styles.reportCard}>
             <View style={styles.reportTop}>
               <View style={styles.reportIcon}><Feather name="file-text" size={20} color={colors.gold} /></View>
@@ -377,9 +425,12 @@ export function ProgressScreen({ route, navigation }: Props) {
               {reviewReady ? <View style={styles.reportReady}><View style={styles.reportReadyDot} /><Text style={styles.reportReadyText}>Latest ready</Text></View> : null}
               <Feather name="chevron-right" size={21} color={colors.inkSubtle} />
             </View>
-            <Text style={styles.reportTitle}>Next report in {nextReviewDays} day{nextReviewDays === 1 ? '' : 's'}</Text>
-            <View style={styles.reportTrack}><View style={[styles.reportTrackFill, { width: `${reportCycleProgress * 100}%` }]} /></View>
-            <View style={styles.reportFoot}><Text style={styles.reportFootText}>{reviewReady ? 'Open your latest insights' : 'Building from this week’s activity'}</Text></View>
+            <Text style={styles.reportTitle}>{nextReviewDayLabel} until next report</Text>
+            <View style={styles.reportTrack}><View style={[styles.reportTrackFill, { width: `${(showReportCountdown ? reportCycleProgress : activationProgress) * 100}%` }]} /></View>
+            <View style={styles.reportFoot}>
+              <Text style={styles.reportFootText}>{reviewReady ? 'Your latest insights are ready' : `${activationGoalsComplete}/2 goals · ${workoutProgress}/${workoutTarget} workouts · ${mealProgress}/${mealTarget} meals`}</Text>
+              <View style={styles.reportAction}><Text style={styles.reportActionText}>Open report</Text><Feather name="arrow-right" size={15} color={colors.gold} /></View>
+            </View>
           </View>
         </TouchableOpacity>
 
@@ -417,14 +468,14 @@ export function ProgressScreen({ route, navigation }: Props) {
                 <>
                   <View style={styles.trendLegend}>
                     <View style={styles.legendItem}><View style={styles.legendActual} /><Text style={styles.legendText}>Logged</Text></View>
-                    {activeForecast.length ? <View style={styles.legendItem}><View style={styles.legendForecast} /><Text style={styles.legendText}>{progress.bodyForecast?.source === 'ai' ? 'AI forecast' : 'Trend forecast'}</Text></View> : null}
+                    {activeForecast.length ? <View style={styles.legendItem}><View style={styles.legendForecast} /><Text style={styles.legendText}>Projection</Text></View> : null}
                   </View>
                   <TrendLineChart points={activeSeries} forecast={activeForecast} minimumValue={activeMetric.key === 'weight' ? 20 : undefined} />
                   {activeForecast.length ? (
                     <View style={styles.forecastNote}>
                       <Feather name="zap" size={14} color={colors.gold} />
                       <View style={styles.forecastNoteCopy}>
-                        <Text style={styles.forecastNoteTitle}>Forecast refreshes in {nextReviewDays} day{nextReviewDays === 1 ? '' : 's'}</Text>
+                        <Text style={styles.forecastNoteTitle}>Projection updates with your next weekly report</Text>
                       </View>
                     </View>
                   ) : (
@@ -480,6 +531,15 @@ function deltaIcon(dir: Delta['dir']) {
   return 'minus';
 }
 
+function ReportDatum({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.reportDatum}>
+      <Text style={styles.reportDatumValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+      <Text style={styles.reportDatumLabel}>{label}</Text>
+    </View>
+  );
+}
+
 function InsightPanel({
   icon,
   eyebrow,
@@ -494,7 +554,7 @@ function InsightPanel({
   recommendation: string;
 }) {
   return (
-    <Card style={styles.insightCard}>
+    <View style={styles.insightCard}>
       <View style={styles.insightHead}>
         <View style={styles.insightIcon}><Feather name={icon} size={19} color={colors.gold} /></View>
         <View style={styles.insightHeadCopy}>
@@ -504,21 +564,48 @@ function InsightPanel({
       </View>
       <Text style={styles.insightText}>{insight}</Text>
       <View style={styles.recommendationRow}>
-        <Feather name="arrow-right" size={16} color={colors.gold} />
+        <Text style={styles.recommendationLabel}>NEXT</Text>
         <Text style={styles.recommendationText}>{recommendation}</Text>
       </View>
-    </Card>
+    </View>
   );
 }
 
-function SignalRow({ icon, label, value, complete }: { icon: string; label: string; value: string; complete: boolean }) {
+function ActivationGoalRow({ icon, label, noun, current, target, complete, onPress }: { icon: string; label: string; noun: string; current: number; target: number; complete: boolean; onPress: () => void }) {
+  const remaining = Math.max(0, target - current);
+  const progress = Math.min(100, Math.round((current / Math.max(1, target)) * 100));
+  const detail = complete ? 'Goal complete' : `${remaining} more ${noun}${remaining === 1 ? '' : 's'} to go`;
+
   return (
-    <View style={styles.signalRow}>
-      <View style={[styles.signalIcon, complete && styles.signalIconComplete]}>
-        <Feather name={complete ? 'check' : icon} size={15} color={complete ? colors.onPrimary : colors.inkMuted} />
+    <TouchableOpacity onPress={onPress} disabled={complete} activeOpacity={0.72} style={styles.activationGoal} accessibilityRole={complete ? undefined : 'button'} accessibilityLabel={`${label}. ${current} of ${target}. ${detail}`}>
+      <View style={[styles.activationGoalIcon, complete && styles.activationGoalIconComplete]}>
+        <Feather name={complete ? 'check' : icon} size={18} color={colors.gold} />
       </View>
-      <Text style={styles.signalLabel}>{label}</Text>
-      <Text style={[styles.signalValue, complete && styles.signalValueComplete]}>{value}</Text>
+      <View style={styles.activationGoalCopy}>
+        <View style={styles.activationGoalTitleRow}>
+          <Text style={styles.activationGoalLabel}>{label}</Text>
+          <Text style={[styles.activationGoalValue, complete && styles.activationGoalValueComplete]}>{current}/{target}</Text>
+        </View>
+        <Text style={[styles.activationGoalDetail, complete && styles.activationGoalDetailComplete]}>{detail}</Text>
+        <View style={styles.activationGoalTrack}><View style={[styles.activationGoalFill, complete && styles.activationGoalFillComplete, { width: `${progress}%` }]} /></View>
+      </View>
+      {!complete ? <Feather name="chevron-right" size={19} color={colors.inkSubtle} /> : null}
+    </TouchableOpacity>
+  );
+}
+
+function TrophyMetric({ icon, value, label, material = false }: { icon: string; value: string; label: string; material?: boolean }) {
+  return (
+    <View style={styles.trophyMetricCard}>
+      <View style={styles.trophyMetricValueRow}>
+        <View style={styles.trophyMetricIcon}>
+          {material
+            ? <MaterialCommunityIcon name={icon} size={19} color={colors.gold} />
+            : <Feather name={icon} size={19} color={colors.gold} />}
+        </View>
+        <Text style={styles.trophyMetricValue}>{value}</Text>
+      </View>
+      <Text style={styles.trophyMetricLabel} numberOfLines={1} adjustsFontSizeToFit>{label}</Text>
     </View>
   );
 }
@@ -637,9 +724,16 @@ function TrendLineChart({ points, forecast = [], minimumValue }: { points: Serie
 
 const styles = StyleSheet.create({
   scroll: {},
+  reportScroll: { paddingBottom: spacing.xl },
+  reportHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: 20 },
+  reportBackButton: { width: 42, height: 42, borderRadius: radius.pill, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  reportHeaderText: { flex: 1, minWidth: 0 },
+  reportHeaderEyebrow: { ...typography.overline, color: colors.gold, textTransform: 'uppercase', marginBottom: 1 },
+  reportHeaderTitle: { fontSize: 24, lineHeight: 29, fontWeight: '800', letterSpacing: -0.35, color: colors.ink },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
   headerCopy: { flex: 1 },
-  reportCountdown: { alignItems: 'flex-end', justifyContent: 'center', paddingVertical: spacing.xs },
+  reportCountdown: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, paddingLeft: spacing.md, paddingRight: spacing.sm, paddingVertical: spacing.xs },
+  reportCountdownCopy: { alignItems: 'flex-end', justifyContent: 'center' },
   reportCountdownValue: { fontSize: 15, lineHeight: 19, color: colors.ink, fontWeight: '900' },
   reportCountdownLabel: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6 },
   eyebrow: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 2 },
@@ -669,42 +763,44 @@ const styles = StyleSheet.create({
   formIntroText: { flex: 1 },
   inputGrid: { gap: spacing.xs },
 
-  trophyCard: { backgroundColor: colors.panel, borderColor: colors.borderStrong, marginBottom: spacing.sm, padding: 20 },
-  trophyMain: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
+  trophySection: { paddingTop: spacing.sm, paddingBottom: spacing.xl, marginBottom: spacing.sm },
+  trophyMain: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   trophyRing: { alignItems: 'center', justifyContent: 'center' },
-  trophyRingCenter: { position: 'absolute', width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelMuted, borderWidth: 1, borderColor: colors.border },
+  trophyRingCenter: { position: 'absolute', width: 72, height: 72, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border },
   trophyCopy: { flex: 1, minWidth: 0 },
   trophyLabel: { ...typography.overline, color: colors.inkMuted, textTransform: 'uppercase', letterSpacing: 1 },
   trophyValueRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  trophyValue: { fontSize: 48, lineHeight: 53, fontWeight: '900', letterSpacing: -1.3, color: colors.ink },
-  trophyChange: { ...typography.caption, color: colors.success, fontWeight: '900', backgroundColor: colors.successLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill },
+  trophyValue: { fontSize: 44, lineHeight: 49, fontWeight: '900', letterSpacing: -1.1, color: colors.ink },
+  trophyChange: { ...typography.caption, color: colors.gold, fontWeight: '900', backgroundColor: colors.panelWarm, paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.pill },
   trophyChangeDown: { color: colors.error, backgroundColor: colors.errorLight },
   trophyRemaining: { fontSize: 14, lineHeight: 19, fontWeight: '700', color: colors.inkMuted, marginTop: 2 },
-  trophyFooter: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md },
-  trophyStat: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
-  trophyStatCopy: { minWidth: 0, alignItems: 'center' },
-  trophyStatDivider: { borderLeftWidth: 1, borderLeftColor: colors.border },
-  trophyStatValue: { fontSize: 18, lineHeight: 20, fontWeight: '900', color: colors.ink, textAlign: 'center' },
-  trophyStatLabel: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', textAlign: 'center' },
-  weeklyOverview: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md },
-  rankingsCta: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.accentLight, paddingHorizontal: spacing.md, marginTop: spacing.md },
-  rankingsIcon: { width: 38, height: 38, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentFill },
+  weeklyOverview: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.lg, marginTop: spacing.lg },
+  trophyMetricGrid: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
+  trophyMetricCard: { flex: 1, minWidth: 0, minHeight: 88, justifyContent: 'center', borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.md },
+  trophyMetricValueRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  trophyMetricIcon: { width: 22, alignItems: 'flex-start', justifyContent: 'center' },
+  trophyMetricValue: { fontSize: 22, lineHeight: 26, fontWeight: '900', color: colors.ink, letterSpacing: -0.25 },
+  trophyMetricLabel: { fontSize: 11, lineHeight: 15, color: colors.inkMuted, fontWeight: '700', marginTop: 2 },
+  rankingsCta: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, backgroundColor: colors.gold, paddingHorizontal: spacing.md, paddingVertical: spacing.md, marginTop: spacing.lg },
+  rankingsIcon: { width: 40, height: 40, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentDarker },
   rankingsCopy: { flex: 1, minWidth: 0 },
-  rankingsTitle: { ...typography.bodyBold, color: colors.ink },
-  rankingsSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  rankingsTitle: { ...typography.bodyBold, color: colors.onPrimary },
+  rankingsSubtitle: { ...typography.caption, color: colors.accentDarker, marginTop: 1 },
 
-  reportCard: { borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panel, padding: 20, marginTop: spacing.lg },
+  reportCard: { borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panel, padding: spacing.lg, marginBottom: spacing.xl },
   reportTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  reportIcon: { width: 36, height: 36, borderRadius: radius.sm, backgroundColor: colors.accentLight, alignItems: 'center', justifyContent: 'center' },
+  reportIcon: { width: 36, height: 36, borderRadius: radius.sm, backgroundColor: colors.panel, alignItems: 'center', justifyContent: 'center' },
   reportLabel: { ...typography.bodyBold, color: colors.ink, flex: 1 },
-  reportReady: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, backgroundColor: colors.successLight, paddingHorizontal: 8, paddingVertical: 5 },
-  reportReadyDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success },
-  reportReadyText: { fontSize: 10, lineHeight: 12, color: colors.success, fontWeight: '800' },
-  reportTitle: { fontSize: 25, lineHeight: 31, fontWeight: '900', color: colors.ink, letterSpacing: -0.3, marginTop: spacing.lg },
+  reportReady: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, backgroundColor: colors.panelWarm, paddingHorizontal: 8, paddingVertical: 5 },
+  reportReadyDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.gold },
+  reportReadyText: { fontSize: 10, lineHeight: 12, color: colors.gold, fontWeight: '800' },
+  reportTitle: { fontSize: 23, lineHeight: 29, fontWeight: '900', color: colors.ink, letterSpacing: -0.25, marginTop: spacing.lg },
   reportTrack: { height: 6, borderRadius: radius.pill, backgroundColor: colors.panelRaised, overflow: 'hidden', marginTop: spacing.md },
   reportTrackFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
   reportFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.sm },
-  reportFootText: { ...typography.caption, color: colors.inkMuted },
+  reportFootText: { ...typography.caption, color: colors.inkMuted, flex: 1 },
+  reportAction: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  reportActionText: { ...typography.caption, color: colors.gold, fontWeight: '800' },
 
   overviewHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.lg },
   overviewKicker: { ...typography.overline, color: colors.inkMuted, textTransform: 'uppercase' },
@@ -712,35 +808,63 @@ const styles = StyleSheet.create({
   overviewValue: { fontSize: 30, lineHeight: 34, fontWeight: '900', letterSpacing: -0.5, color: colors.ink },
   overviewBar: { marginTop: spacing.md },
 
-  reviewHero: { backgroundColor: colors.panel, borderColor: colors.border, gap: spacing.md },
+  reportLead: { paddingTop: spacing.sm, paddingBottom: spacing.xl },
+  reportLeadMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  reportLeadKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
+  reportLeadStatus: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  reportLeadStatusDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.gold },
+  reportLeadStatusText: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
+  reportLeadTitle: { fontSize: 32, lineHeight: 38, fontWeight: '800', letterSpacing: -0.7, color: colors.ink, marginTop: spacing.lg },
+  reportLeadSummary: { ...typography.body, color: colors.inkMuted, lineHeight: 24, marginTop: spacing.sm, maxWidth: 520 },
+  reportDataRow: { minHeight: 88, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border, marginBottom: spacing.xl },
+  reportDatum: { flex: 1, minWidth: 0, alignItems: 'center', paddingHorizontal: spacing.xs },
+  reportDatumValue: { fontSize: 20, lineHeight: 25, fontWeight: '800', color: colors.ink, textAlign: 'center' },
+  reportDatumLabel: { ...typography.caption, color: colors.inkSubtle, marginTop: 3, textAlign: 'center' },
+  reportDataDivider: { width: StyleSheet.hairlineWidth, height: 36, backgroundColor: colors.borderStrong },
+  reportHighlights: { borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: spacing.lg, marginBottom: spacing.xl, gap: spacing.sm },
+  reportSectionHead: { marginBottom: spacing.md },
+  reportSectionKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
+  reportSectionTitle: { ...typography.title, color: colors.ink, marginTop: spacing.xs },
+  reviewHero: { padding: 20, marginBottom: spacing.md, backgroundColor: colors.panelWarm, borderColor: colors.accentSurface },
   reviewHeroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  aiMark: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.accentFill, borderWidth: 1, borderColor: colors.accentSurface, alignItems: 'center', justifyContent: 'center' },
-  aiMarkText: { fontSize: 16, lineHeight: 20, fontWeight: '900', color: colors.gold },
+  aiMark: { width: 42, height: 42, borderRadius: radius.pill, backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface, alignItems: 'center', justifyContent: 'center' },
+  aiMarkText: { fontSize: 17, lineHeight: 21, fontWeight: '900', color: colors.gold },
   reviewHeroLabelCopy: { flex: 1, minWidth: 0 },
   reviewHeroKicker: { ...typography.bodyBold, color: colors.ink },
-  reviewHeroMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  reviewStatus: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted },
-  reviewStatusReady: { borderColor: colors.accentSurface, backgroundColor: colors.accentLight },
+  reviewHeroMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  reviewStatus: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 9, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.panelRaised },
+  reviewStatusReady: { backgroundColor: colors.accentLight },
   reviewStatusDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.inkSubtle },
   reviewStatusDotReady: { backgroundColor: colors.gold },
   reviewStatusText: { fontSize: 11, lineHeight: 14, fontWeight: '800', color: colors.inkMuted },
-  reviewHeadline: { fontSize: 21, lineHeight: 27, fontWeight: '800', letterSpacing: -0.2, color: colors.ink },
-  reviewSummary: { ...typography.body, color: colors.inkMuted, lineHeight: 23 },
-  winList: { gap: spacing.xs },
+  reviewStatusTextReady: { color: colors.gold },
+  reviewHeadline: { fontSize: 26, lineHeight: 32, fontWeight: '800', letterSpacing: -0.45, color: colors.ink, marginTop: spacing.lg },
+  reviewSummary: { ...typography.body, color: colors.inkMuted, lineHeight: 23, marginTop: spacing.sm },
+  winList: { gap: spacing.xs, marginTop: spacing.md },
   winRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   winText: { ...typography.bodyBold, color: colors.ink, flex: 1 },
-  reviewEvidence: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
+  reviewEvidence: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.lg },
   reviewEvidenceText: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, flex: 1 },
+  heroProgress: { borderTopWidth: 1, borderTopColor: colors.accentSurface, paddingTop: spacing.md, marginTop: spacing.lg },
+  heroProgressTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  heroProgressLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
+  heroProgressValue: { ...typography.caption, color: colors.ink, fontWeight: '800' },
+  heroProgressTrack: { height: 6, borderRadius: radius.pill, backgroundColor: colors.panelRaised, overflow: 'hidden' },
+  heroProgressFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
+  heroMetrics: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg, marginTop: spacing.md },
+  heroMetric: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  heroMetricText: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
 
-  insightStack: { gap: spacing.sm },
-  insightCard: { gap: spacing.sm, backgroundColor: colors.panel, borderColor: colors.borderStrong },
+  insightStack: { borderTopWidth: 1, borderTopColor: colors.border },
+  insightCard: { gap: spacing.sm, paddingVertical: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },
   insightHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  insightIcon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.accentLight, alignItems: 'center', justifyContent: 'center' },
+  insightIcon: { width: 38, height: 38, borderRadius: radius.pill, backgroundColor: colors.panelRaised, alignItems: 'center', justifyContent: 'center' },
   insightHeadCopy: { flex: 1, minWidth: 0 },
   insightEyebrow: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
   insightTitle: { ...typography.subtitle, color: colors.ink, marginTop: 2 },
   insightText: { ...typography.body, color: colors.inkMuted, lineHeight: 23 },
-  recommendationRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
+  recommendationRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.xs },
+  recommendationLabel: { ...typography.overline, color: colors.gold, paddingTop: 2 },
   recommendationText: { ...typography.bodyBold, color: colors.ink, lineHeight: 21, flex: 1 },
 
   nextFocusCard: { marginTop: spacing.lg, backgroundColor: colors.panelWarm, borderColor: colors.accentSurface, gap: spacing.sm },
@@ -754,18 +878,36 @@ const styles = StyleSheet.create({
   bodyInvestment: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
   bodyInvestmentText: { ...typography.caption, color: colors.ink, fontWeight: '800', textAlign: 'center' },
 
-  unlockCard: { gap: spacing.sm, backgroundColor: colors.panel, borderColor: colors.borderStrong },
-  unlockEyebrow: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
-  unlockTitle: { ...typography.title, color: colors.ink },
-  unlockSignals: { borderTopWidth: 1, borderTopColor: colors.border, marginTop: spacing.xs },
-  signalRow: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
-  signalIcon: { width: 30, height: 30, borderRadius: radius.pill, backgroundColor: colors.panelMuted, alignItems: 'center', justifyContent: 'center' },
-  signalIconComplete: { backgroundColor: colors.goldMuted },
-  signalLabel: { ...typography.bodyBold, color: colors.ink, flex: 1 },
-  signalValue: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
-  signalValueComplete: { color: colors.gold },
+  activationStatusCard: { padding: 0, overflow: 'hidden', backgroundColor: colors.panel, borderColor: colors.borderStrong },
+  activationHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: 20 },
+  activationHeadingCopy: { flex: 1, minWidth: 0 },
+  activationStatusEyebrow: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
+  activationStatusTitle: { fontSize: 21, lineHeight: 27, fontWeight: '800', color: colors.ink, letterSpacing: -0.2, marginTop: 2 },
+  activationStatusLabel: { ...typography.caption, color: colors.inkMuted, marginTop: 3 },
+  activationCount: { minWidth: 46, height: 32, paddingHorizontal: spacing.sm, borderRadius: radius.pill, backgroundColor: colors.panelRaised, alignItems: 'center', justifyContent: 'center' },
+  activationCountComplete: { backgroundColor: colors.accentLight },
+  activationCountText: { ...typography.label, color: colors.inkMuted, fontWeight: '800' },
+  activationCountTextComplete: { color: colors.gold },
+  activationGoals: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
+  activationGoal: { minHeight: 92, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: 20, paddingVertical: spacing.md },
+  activationGoalDivider: { height: 1, backgroundColor: colors.border, marginLeft: 76 },
+  activationGoalIcon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.panelRaised, alignItems: 'center', justifyContent: 'center' },
+  activationGoalIconComplete: { backgroundColor: colors.panelWarm },
+  activationGoalCopy: { flex: 1, minWidth: 0 },
+  activationGoalTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  activationGoalLabel: { ...typography.bodyBold, color: colors.ink },
+  activationGoalValue: { ...typography.caption, color: colors.ink, fontWeight: '800' },
+  activationGoalValueComplete: { color: colors.gold },
+  activationGoalDetail: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  activationGoalDetailComplete: { color: colors.gold },
+  activationGoalTrack: { height: 4, borderRadius: radius.pill, backgroundColor: colors.panelRaised, overflow: 'hidden', marginTop: spacing.sm },
+  activationGoalFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
+  activationGoalFillComplete: { backgroundColor: colors.gold },
+  activationButton: { margin: 20 },
+  reportPending: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, margin: 20, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelRaised },
+  reportPendingText: { ...typography.caption, color: colors.ink, lineHeight: 18, flex: 1 },
 
-  trendCard: { gap: spacing.md, backgroundColor: colors.panel, borderColor: colors.border },
+  trendCard: { gap: spacing.md, padding: 0, backgroundColor: 'transparent', borderWidth: 0 },
   metricChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   metricChip: {
     paddingHorizontal: spacing.md,
@@ -802,7 +944,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: radius.pill,
-    backgroundColor: colors.accentLight,
+    backgroundColor: colors.panelRaised,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.xs,

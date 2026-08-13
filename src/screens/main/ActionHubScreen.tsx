@@ -4,7 +4,6 @@ import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
-import LinearGradient from 'react-native-linear-gradient';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Card, ScreenContainer, SectionTitle } from '../../components/Card';
@@ -35,7 +34,6 @@ import type { MainTabParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
-import { shadows } from '../../theme/shadows';
 import { typography } from '../../theme/typography';
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Action'>;
@@ -47,28 +45,41 @@ export function ActionHubScreen({ navigation }: Props) {
   const [accountabilityBae, setAccountabilityBae] = useState<AccountabilityBaeSummary | null>(null);
   const [baeBusy, setBaeBusy] = useState(false);
   const [friendCode, setFriendCode] = useState('');
+  const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [savingCommitment, setSavingCommitment] = useState(false);
+  const [accountabilityUnavailable, setAccountabilityUnavailable] = useState(false);
+  const [baeUnavailable, setBaeUnavailable] = useState(false);
   const autoCompletedDate = useRef('');
 
-  const load = useCallback(async () => {
-    const [nextSnapshot, nextAccountability, nextBae] = await Promise.all([
+  const applyBaeSummary = useCallback((next: AccountabilityBaeSummary) => {
+    setAccountabilityBae(next);
+    setBaeUnavailable(false);
+  }, []);
+  const partnerStatus = accountabilityBae?.status;
+
+  const load = useCallback(async (force = false) => {
+    const [nextSnapshot, nextAccountability, nextBae] = await Promise.allSettled([
       resolveContextualSnapshot(),
-      fetchAccountability().catch(() => null),
-      fetchAccountabilityBae().catch(() => null),
+      fetchAccountability({ force }),
+      fetchAccountabilityBae({ force }),
     ]);
-    setSnapshot(nextSnapshot);
-    setAccountability(nextAccountability);
-    setAccountabilityBae(nextBae);
+    if (nextSnapshot.status === 'fulfilled') setSnapshot(nextSnapshot.value);
+    if (nextAccountability.status === 'fulfilled') setAccountability(nextAccountability.value);
+    if (nextBae.status === 'fulfilled') setAccountabilityBae(nextBae.value);
+    setAccountabilityUnavailable(nextAccountability.status === 'rejected');
+    setBaeUnavailable(nextBae.status === 'rejected');
+    setInitialLoading(false);
   }, []);
 
   useFocusEffect(useCallback(() => {
-    load();
+    load().catch(() => undefined);
+    if (!partnerStatus || partnerStatus === 'inactive') return undefined;
     const partnerRefresh = setInterval(() => {
-      fetchAccountabilityBae().then(setAccountabilityBae).catch(() => undefined);
+      fetchAccountabilityBae({ force: true }).then(applyBaeSummary).catch(() => setBaeUnavailable(true));
     }, 30_000);
     return () => clearInterval(partnerRefresh);
-  }, [load]));
+  }, [applyBaeSummary, load, partnerStatus]));
 
   useEffect(() => {
     const commitment = accountability?.today;
@@ -78,16 +89,20 @@ export function ActionHubScreen({ navigation }: Props) {
     updateAccountability({ action: 'complete' })
       .then((next) => {
         setAccountability(next);
+        setAccountabilityUnavailable(false);
         cancelAccountabilityReminder().catch(() => undefined);
       })
-      .catch(() => undefined)
+      .catch(() => setAccountabilityUnavailable(true))
       .finally(() => setSavingCommitment(false));
   }, [accountability?.today, savingCommitment, snapshot]);
 
   const refresh = async () => {
     setRefreshing(true);
-    await load();
-    setRefreshing(false);
+    try {
+      await load(true);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const openTarget = () => {
@@ -160,6 +175,7 @@ export function ActionHubScreen({ navigation }: Props) {
       const title = targetTitle(snapshot);
       const next = await updateAccountability({ action: 'commit', targetKind: target.kind, targetId, title });
       setAccountability(next);
+      setAccountabilityUnavailable(false);
       scheduleAccountabilityReminder(title).catch(() => undefined);
     } catch (error) {
       Alert.alert('Could not save commitment', error instanceof Error ? error.message : 'Please try again.');
@@ -174,6 +190,7 @@ export function ActionHubScreen({ navigation }: Props) {
     try {
       const next = await updateAccountability({ action: 'complete' });
       setAccountability(next);
+      setAccountabilityUnavailable(false);
       cancelAccountabilityReminder().catch(() => undefined);
     } catch (error) {
       Alert.alert('Could not update commitment', error instanceof Error ? error.message : 'Please try again.');
@@ -186,9 +203,17 @@ export function ActionHubScreen({ navigation }: Props) {
     if (baeBusy) return;
     setBaeBusy(true);
     try {
-      setAccountabilityBae(await startAccountabilityBaeMatch(preference));
+      applyBaeSummary(await startAccountabilityBaeMatch(preference));
     } catch (error) {
-      Alert.alert('Could not start matching', error instanceof Error ? error.message : 'Please try again.');
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      if (message.includes('gender in Profile')) {
+        Alert.alert('Complete your profile first', 'Add your gender before using automatic partner matching.', [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Open profile', onPress: () => navigation.navigate('Profile') },
+        ]);
+      } else {
+        Alert.alert('Could not start matching', message);
+      }
     } finally {
       setBaeBusy(false);
     }
@@ -199,7 +224,7 @@ export function ActionHubScreen({ navigation }: Props) {
     if (!code || baeBusy) return;
     setBaeBusy(true);
     try {
-      setAccountabilityBae(await joinAccountabilityBaeFriend(code));
+      applyBaeSummary(await joinAccountabilityBaeFriend(code));
       setFriendCode('');
     } catch (error) {
       Alert.alert('Could not join your friend', error instanceof Error ? error.message : 'Check the code and try again.');
@@ -218,10 +243,14 @@ export function ActionHubScreen({ navigation }: Props) {
   };
 
   const uploadProof = async (asset?: Asset) => {
-    if (!asset?.base64 || baeBusy) return;
+    if (baeBusy) return;
+    if (!asset?.base64) {
+      Alert.alert('Photo could not be read', 'Choose another photo and try again.');
+      return;
+    }
     setBaeBusy(true);
     try {
-      setAccountabilityBae(await uploadAccountabilityBaeProof(asset));
+      applyBaeSummary(await uploadAccountabilityBaeProof(asset));
     } catch (error) {
       Alert.alert('Could not submit proof', error instanceof Error ? error.message : 'Please try another photo.');
     } finally {
@@ -244,7 +273,8 @@ export function ActionHubScreen({ navigation }: Props) {
   };
 
   const openProofPicker = () => {
-    Alert.alert('Submit today’s proof', 'Choose a clear photo. Your face does not need to be visible.', [
+    const replacing = Boolean(accountabilityBae?.youSubmitted);
+    Alert.alert(replacing ? 'Replace today’s proof?' : 'Submit today’s proof', 'Your photo stays private to this match. Your partner can view it only after both of you submit. Your face does not need to be visible.', [
       { text: 'Take photo', onPress: () => { takeProofPhoto().catch(() => undefined); } },
       { text: 'Choose from library', onPress: () => { chooseProofPhoto().catch(() => undefined); } },
       { text: 'Cancel', style: 'cancel' },
@@ -252,7 +282,7 @@ export function ActionHubScreen({ navigation }: Props) {
   };
 
   const leaveBae = () => {
-    Alert.alert('Leave this match?', 'Both people will be disconnected from this Accountability Bae match.', [
+    Alert.alert('Leave this match?', 'Both people will be disconnected and the shared proof photos stored for this match will be deleted. This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Leave match',
@@ -260,7 +290,7 @@ export function ActionHubScreen({ navigation }: Props) {
         onPress: () => {
           setBaeBusy(true);
           leaveAccountabilityBae()
-            .then(setAccountabilityBae)
+            .then(applyBaeSummary)
             .catch((error) => Alert.alert('Could not leave match', error instanceof Error ? error.message : 'Please try again.'))
             .finally(() => setBaeBusy(false));
         },
@@ -268,10 +298,25 @@ export function ActionHubScreen({ navigation }: Props) {
     ]);
   };
 
+  if (!snapshot && initialLoading) {
+    return (
+      <ScreenContainer>
+        <LoadingState message="Loading accountability..." />
+      </ScreenContainer>
+    );
+  }
+
   if (!snapshot) {
     return (
       <ScreenContainer>
-        <LoadingState message="Preparing today..." />
+        <InlineNotice
+          icon="wifi-off"
+          title="Accountability is unavailable"
+          body="Check your connection and try again."
+          action="Try again"
+          onPress={() => load(true)}
+          standalone
+        />
       </ScreenContainer>
     );
   }
@@ -314,12 +359,24 @@ export function ActionHubScreen({ navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
         contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
       >
-        <View style={styles.headerMeta}>
-          <Text style={styles.kicker}>{dateLabel}</Text>
+        <View style={styles.pageHeader}>
+          <View style={styles.pageHeaderCopy}>
+            <Text style={styles.kicker}>{dateLabel}</Text>
+            <Text style={styles.pageTitle}>Accountability</Text>
+          </View>
           <Badge label={`${accountability?.streak || 0} day streak`} tone="gold" icon="zap" />
         </View>
-        <Text style={styles.pageTitle}>Accountability</Text>
         <Text style={styles.pageSubtitle}>A clear promise for today. A stronger pattern for tomorrow.</Text>
+
+        {accountabilityUnavailable ? (
+          <InlineNotice
+            icon="wifi-off"
+            title={accountability ? 'Showing saved accountability' : 'Accountability is offline'}
+            body={accountability ? 'Your latest saved status is visible. Refresh when your connection returns.' : 'Reconnect before creating or completing a promise.'}
+            action="Retry"
+            onPress={() => load(true)}
+          />
+        ) : null}
 
         <View style={styles.personalSectionHead}>
           <SectionTitle style={styles.inlineSectionTitle}>Today’s promise</SectionTitle>
@@ -327,12 +384,6 @@ export function ActionHubScreen({ navigation }: Props) {
         </View>
 
         <View style={[styles.promiseCard, commitmentComplete && styles.promiseCardComplete]}>
-          <LinearGradient
-            colors={['rgba(240,206,120,0.15)', 'rgba(17,18,23,0)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
           <View style={styles.promiseTopRow}>
             <View style={[styles.heroIcon, commitmentComplete && styles.heroIconComplete]}>
               <Feather name={commitmentComplete ? 'check' : commitment ? 'shield' : snapshot.target.icon} size={21} color={commitmentComplete ? colors.onPrimary : colors.gold} />
@@ -349,14 +400,25 @@ export function ActionHubScreen({ navigation }: Props) {
           ) : commitment ? (
             <View style={styles.commitmentActions}>
               <PrimaryButton title="Do it now" icon="arrow-right" onPress={openCommitment} />
-              <PrimaryButton title="Mark as done" icon="check" variant="secondary" onPress={completeCommitment} loading={savingCommitment} />
+              <PrimaryButton title="Mark as done" icon="check" variant="secondary" onPress={completeCommitment} loading={savingCommitment} disabled={accountabilityUnavailable} />
             </View>
           ) : (
-            <PrimaryButton title="Commit for today" icon="shield" onPress={commitForToday} loading={savingCommitment} style={styles.heroCta} />
+            <PrimaryButton title="Commit for today" icon="shield" onPress={commitForToday} loading={savingCommitment} disabled={accountabilityUnavailable} style={styles.heroCta} />
           )}
         </View>
 
+        <SectionTitle>Your consistency</SectionTitle>
+        <View style={styles.consistencyCard}>
+          <ConsistencyMetric icon="zap" label="Day streak" value={`${accountability?.streak || 0}`} />
+          <ConsistencyMetric icon="shield" label="Promises kept" value={`${accountability?.keptCount || 0}`} />
+          <ConsistencyMetric icon="check-circle" label="Plan complete" value={planDays.length ? `${completedDays}/${planDays.length}` : '—'} />
+        </View>
+
         <SectionTitle>Show up together</SectionTitle>
+
+        {baeUnavailable && accountabilityBae ? (
+          <InlineNotice icon="refresh-cw" title="Partner status may be out of date" body="Your saved match is still available." action="Refresh" onPress={() => load(true)} />
+        ) : null}
 
         <AccountabilityBaeCard
           data={accountabilityBae}
@@ -368,23 +430,15 @@ export function ActionHubScreen({ navigation }: Props) {
           onShareFriendCode={shareFriendCode}
           onSubmitProof={openProofPicker}
           onLeave={leaveBae}
+          onRetry={() => load(true)}
         />
 
-        <SectionTitle>Your consistency</SectionTitle>
-        <Card variant="flat" style={styles.consistencyCard}>
-          <ConsistencyMetric icon="zap" label="Day streak" value={`${accountability?.streak || 0}`} />
-          <View style={styles.metricDivider} />
-          <ConsistencyMetric icon="shield" label="Promises kept" value={`${accountability?.keptCount || 0}`} />
-          <View style={styles.metricDivider} />
-          <ConsistencyMetric icon="check-circle" label="Plan complete" value={planDays.length ? `${completedDays}/${planDays.length}` : '—'} />
-        </Card>
-
         <SectionTitle>Keep moving</SectionTitle>
-        <Card variant="flat" style={styles.quickList}>
+        <View style={styles.quickList}>
           {quickActions.map((action) => (
             <QuickAction key={action.kind} icon={action.icon} title={action.title} body={action.body} onPress={action.onPress} />
           ))}
-        </Card>
+        </View>
       </ScrollView>
     </ScreenContainer>
   );
@@ -400,11 +454,12 @@ type AccountabilityBaeCardProps = {
   onShareFriendCode: () => void;
   onSubmitProof: () => void;
   onLeave: () => void;
+  onRetry: () => void;
 };
 
-function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onStart, onJoinFriend, onShareFriendCode, onSubmitProof, onLeave }: AccountabilityBaeCardProps) {
+function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onStart, onJoinFriend, onShareFriendCode, onSubmitProof, onLeave, onRetry }: AccountabilityBaeCardProps) {
   if (!data) {
-    return <Card style={styles.partnerCard}><View style={styles.baeLoading}><Feather name="wifi-off" size={22} color={colors.inkMuted} /><Text style={styles.baeMuted}>Accountability Bae is unavailable. Pull down to retry.</Text></View></Card>;
+    return <InlineNotice icon="wifi-off" title="Partner accountability is unavailable" body="Your match has not been changed. Check your connection and try again." action="Try again" onPress={onRetry} />;
   }
 
   const header = (
@@ -423,21 +478,10 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
       <Card style={styles.partnerCard}>
         {header}
         <View style={styles.baeIntroHero}>
-          <View style={styles.baeDuoVisual}>
-            <View style={[styles.baeDuoAvatar, styles.baeDuoAvatarBack]}><MaterialCommunityIcon name="account-outline" size={25} color={colors.inkMuted} /></View>
-            <View style={[styles.baeDuoAvatar, styles.baeDuoAvatarFront]}><MaterialCommunityIcon name="account" size={25} color={colors.gold} /></View>
-          </View>
-          <Text style={styles.baeIntroTitle}>Better together</Text>
-          <Text style={styles.baeIntro}>One daily challenge. Two photo check-ins. Done by midnight.</Text>
+          <Text style={styles.baeIntroEyebrow}>PRIVATE ACCOUNTABILITY</Text>
+          <Text style={styles.baeIntroTitle}>Choose your partner</Text>
+          <Text style={styles.baeIntro}>Complete one shared daily challenge. Proof stays private and unlocks only after both people check in.</Text>
         </View>
-        <View style={styles.baeSteps}>
-          <BaeStep icon="user-plus" label="Match" />
-          <View style={styles.baeStepLine} />
-          <BaeStep icon="target" label="Challenge" />
-          <View style={styles.baeStepLine} />
-          <BaeStep icon="camera" label="Proof" />
-        </View>
-        <Text style={styles.baePrompt}>Who should we match you with?</Text>
         <View style={styles.baePreferenceRow}>
           <BaePreference icon="gender-male" label="Male" onPress={() => onStart('male')} disabled={busy} />
           <BaePreference icon="gender-female" label="Female" onPress={() => onStart('female')} disabled={busy} />
@@ -456,9 +500,11 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
         {header}
         <View style={styles.baeWaitingHero}>
           <View style={styles.baeWaitingIcon}>{busy ? <ActivityIndicator color={colors.gold} /> : <MaterialCommunityIcon name={friendMode ? 'account-multiple-plus-outline' : 'radar'} size={28} color={colors.gold} />}</View>
-          <Text style={styles.baeWaitingKicker}>{friendMode ? 'INVITE READY' : 'MATCHING IN PROGRESS'}</Text>
-          <Text style={styles.baeWaitingTitle}>{friendMode ? 'Bring your partner in' : 'Finding the right partner'}</Text>
-          <Text style={styles.baeMuted}>{friendMode ? 'Share your code. You’ll connect when your friend enters it.' : `We’re finding a compatible ${data.preference} partner. You can leave this screen.`}</Text>
+          <View style={styles.baeWaitingCopy}>
+            <Text style={styles.baeWaitingKicker}>{friendMode ? 'INVITE READY' : 'MATCHING IN PROGRESS'}</Text>
+            <Text style={styles.baeWaitingTitle}>{friendMode ? 'Bring your partner in' : 'Finding the right partner'}</Text>
+            <Text style={styles.baeWaitingDescription}>{friendMode ? 'Share your code. You’ll connect when your friend enters it.' : `We’re finding a compatible ${data.preference} partner. You can leave this screen.`}</Text>
+          </View>
         </View>
         {friendMode ? (
           <>
@@ -505,7 +551,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
         <TouchableOpacity onPress={onLeave} style={styles.baeMoreButton} accessibilityRole="button" accessibilityLabel="Leave Accountability Bae match"><Feather name="more-horizontal" size={20} color={colors.inkMuted} /></TouchableOpacity>
       </View>
       {challenge ? (
-        <Card variant="accent" style={styles.baeChallenge}>
+        <View style={styles.baeChallenge}>
           <View style={styles.baeChallengeTop}>
             <View style={styles.baeChallengeIcon}><MaterialCommunityIcon name={challenge.icon} size={24} color={colors.gold} /></View>
             <View style={styles.baeDuePill}><Feather name="clock" size={12} color={colors.gold} /><Text style={styles.baeDue}>{challenge.dueLabel}</Text></View>
@@ -514,7 +560,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
             <Text style={styles.baeChallengeTitle}>{challenge.title}</Text>
             <Text style={styles.baeChallengePrompt}>{challenge.prompt}</Text>
           </View>
-        </Card>
+        </View>
       ) : null}
       <View style={styles.proofSectionHead}>
         <Text style={styles.proofSectionTitle}>Today’s proof</Text>
@@ -541,31 +587,44 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
   );
 }
 
+function InlineNotice({ icon, title, body, action, onPress, standalone = false }: { icon: string; title: string; body: string; action: string; onPress: () => void; standalone?: boolean }) {
+  return (
+    <View style={[styles.inlineNotice, standalone && styles.inlineNoticeStandalone]} accessibilityLiveRegion="polite">
+      <View style={styles.inlineNoticeIcon}><Feather name={icon} size={18} color={colors.gold} /></View>
+      <View style={styles.inlineNoticeCopy}>
+        <Text style={styles.inlineNoticeTitle}>{title}</Text>
+        <Text style={styles.inlineNoticeBody}>{body}</Text>
+      </View>
+      <TouchableOpacity onPress={onPress} activeOpacity={0.75} style={styles.inlineNoticeAction} accessibilityRole="button" accessibilityLabel={action}>
+        <Text style={styles.inlineNoticeActionText}>{action}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 function ConsistencyMetric({ icon, label, value }: { icon: string; label: string; value: string }) {
   return (
     <View style={styles.metric}>
-      <View style={styles.metricIcon}><Feather name={icon} size={15} color={colors.gold} /></View>
-      <Text style={styles.metricValue}>{value}</Text>
+      <View style={styles.metricValueRow}>
+        <View style={styles.metricIcon}><Feather name={icon} size={16} color={colors.gold} /></View>
+        <Text style={styles.metricValue}>{value}</Text>
+      </View>
       <Text style={styles.metricLabel} numberOfLines={2}>{label}</Text>
     </View>
   );
 }
 
 function BaePreference({ icon, label, onPress, disabled }: { icon: string; label: string; onPress: () => void; disabled: boolean }) {
+  const detail = label === 'Friend' ? 'Invite someone with a private code' : `Find a ${label.toLowerCase()} accountability partner`;
   return (
     <TouchableOpacity activeOpacity={0.78} style={[styles.baePreference, disabled && styles.baeDisabled]} onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityLabel={`Match with a ${label.toLowerCase()} accountability partner`}>
-      <MaterialCommunityIcon name={icon} size={24} color={colors.gold} />
-      <Text style={styles.baePreferenceText}>{label}</Text>
+      <View style={styles.baePreferenceIcon}><MaterialCommunityIcon name={icon} size={22} color={colors.gold} /></View>
+      <View style={styles.baePreferenceCopy}>
+        <Text style={styles.baePreferenceText}>{label}</Text>
+        <Text style={styles.baePreferenceDetail}>{detail}</Text>
+      </View>
+      <Feather name="chevron-right" size={19} color={colors.gold} />
     </TouchableOpacity>
-  );
-}
-
-function BaeStep({ icon, label }: { icon: string; label: string }) {
-  return (
-    <View style={styles.baeStep}>
-      <View style={styles.baeStepIcon}><Feather name={icon} size={15} color={colors.gold} /></View>
-      <Text style={styles.baeStepLabel}>{label}</Text>
-    </View>
   );
 }
 
@@ -612,7 +671,7 @@ function QuickAction({ icon, title, body, onPress }: { icon: string; title: stri
         <Text style={styles.quickTitle}>{title}</Text>
         <Text style={styles.quickBody}>{body}</Text>
       </View>
-      <Feather name="chevron-right" size={20} color={colors.inkSubtle} />
+      <View style={styles.quickAffordance}><Text style={styles.quickAffordanceText}>Open</Text><Feather name="chevron-right" size={18} color={colors.gold} /></View>
     </TouchableOpacity>
   );
 }
@@ -635,48 +694,53 @@ function targetMeta(snapshot: ContextualSnapshot) {
 
 const styles = StyleSheet.create({
   scroll: {},
-  headerMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
+  pageHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  pageHeaderCopy: { flex: 1, minWidth: 0 },
   kicker: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
-  pageTitle: { ...typography.display, color: colors.inkStrong },
-  pageSubtitle: { ...typography.body, color: colors.inkMuted, maxWidth: 330, marginTop: spacing.xs, marginBottom: spacing.sm },
+  pageTitle: { ...typography.display, color: colors.inkStrong, marginTop: 2 },
+  pageSubtitle: { ...typography.body, color: colors.inkMuted, maxWidth: 330, marginTop: spacing.sm, marginBottom: spacing.sm },
+  inlineNotice: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.sm, marginTop: spacing.md },
+  inlineNoticeStandalone: { marginTop: spacing.xl },
+  inlineNoticeIcon: { width: 36, height: 36, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
+  inlineNoticeCopy: { flex: 1, minWidth: 0 },
+  inlineNoticeTitle: { ...typography.label, color: colors.ink, fontWeight: '800' },
+  inlineNoticeBody: { ...typography.caption, color: colors.inkMuted, lineHeight: 17, marginTop: 1 },
+  inlineNoticeAction: { minHeight: 36, justifyContent: 'center', paddingHorizontal: spacing.sm },
+  inlineNoticeActionText: { ...typography.caption, color: colors.gold, fontWeight: '900' },
   personalSectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.xl, marginBottom: spacing.sm },
   inlineSectionTitle: { marginTop: 0, marginBottom: 0 },
-  promiseCard: { position: 'relative', overflow: 'hidden', borderRadius: radius.xl, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panel, padding: spacing.lg, ...shadows.card },
-  promiseCardComplete: { borderColor: colors.accentSurface },
+  promiseCard: { borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panel, padding: spacing.lg },
+  promiseCardComplete: { borderColor: colors.goldMuted },
   promiseTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   promiseLabelWrap: { flex: 1 },
   promiseEyebrow: { ...typography.overline, color: colors.gold },
   promiseTiming: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
-  partnerCard: { borderRadius: radius.xl, padding: spacing.lg, backgroundColor: colors.panel },
+  partnerCard: { borderRadius: radius.lg, borderColor: colors.border, padding: spacing.lg, backgroundColor: colors.panel },
   baeLoading: { minHeight: 110, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   baeHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  baeBrandIcon: { width: 46, height: 46, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
+  baeBrandIcon: { width: 46, height: 46, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
   baeHeaderCopy: { flex: 1, minWidth: 0 },
   baeEyebrow: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
   baeHeaderCaption: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  baeIntroHero: { alignItems: 'center', paddingHorizontal: spacing.sm, paddingTop: spacing.lg },
-  baeDuoVisual: { width: 88, height: 62, position: 'relative' },
-  baeDuoAvatar: { position: 'absolute', width: 54, height: 54, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: colors.panel },
-  baeDuoAvatarBack: { left: 0, top: 8, backgroundColor: colors.panelRaised },
-  baeDuoAvatarFront: { right: 0, top: 0, backgroundColor: colors.accentFill, borderColor: colors.panel },
-  baeIntroTitle: { fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: '900', letterSpacing: -0.3, marginTop: spacing.sm, textAlign: 'center' },
-  baeIntro: { ...typography.caption, color: colors.inkMuted, lineHeight: 19, marginTop: spacing.xs, textAlign: 'center', maxWidth: 300 },
-  baeSteps: { minHeight: 68, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: spacing.lg, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
-  baeStep: { alignItems: 'center', gap: 4, minWidth: 58 },
-  baeStepIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.accentLight },
-  baeStepLabel: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '800' },
-  baeStepLine: { width: 30, height: 1, backgroundColor: colors.borderStrong, marginHorizontal: spacing.xs, marginBottom: 17 },
-  baePrompt: { ...typography.bodyBold, color: colors.ink, marginTop: spacing.lg },
-  baePreferenceRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-  baePreference: { flex: 1, minHeight: 84, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panelMuted },
-  baePreferenceText: { ...typography.caption, color: colors.ink, fontWeight: '900' },
-  baeSafety: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: spacing.md },
+  baeIntroHero: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.lg, marginTop: spacing.md },
+  baeIntroEyebrow: { ...typography.overline, color: colors.gold },
+  baeIntroTitle: { fontSize: 24, lineHeight: 30, color: colors.ink, fontWeight: '900', letterSpacing: -0.35, marginTop: spacing.xs },
+  baeIntro: { ...typography.body, color: colors.inkMuted, lineHeight: 22, marginTop: spacing.sm, maxWidth: 330 },
+  baePreferenceRow: { gap: spacing.sm, marginTop: spacing.lg },
+  baePreference: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panelRaised, paddingHorizontal: spacing.md },
+  baePreferenceIcon: { width: 38, height: 38, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentDarker },
+  baePreferenceCopy: { flex: 1, minWidth: 0 },
+  baePreferenceText: { ...typography.bodyBold, color: colors.ink },
+  baePreferenceDetail: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  baeSafety: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md },
   baeSafetyText: { ...typography.caption, color: colors.inkMuted, flexShrink: 1 },
   baeMuted: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, textAlign: 'center' },
-  baeWaitingHero: { alignItems: 'center', marginTop: spacing.xl, paddingHorizontal: spacing.md },
-  baeWaitingIcon: { width: 68, height: 68, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
-  baeWaitingKicker: { ...typography.overline, color: colors.gold, textAlign: 'center', marginTop: spacing.md },
-  baeWaitingTitle: { ...typography.title, color: colors.ink, textAlign: 'center', marginTop: spacing.xs },
+  baeWaitingHero: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.lg, marginTop: spacing.md },
+  baeWaitingIcon: { width: 58, height: 58, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.borderStrong },
+  baeWaitingCopy: { flex: 1, minWidth: 0 },
+  baeWaitingKicker: { ...typography.overline, color: colors.gold },
+  baeWaitingTitle: { ...typography.title, color: colors.ink, marginTop: spacing.xs },
+  baeWaitingDescription: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: spacing.xs },
   friendInviteBox: { minHeight: 74, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panelWarm, paddingHorizontal: spacing.md, marginTop: spacing.lg },
   friendCodeLabel: { ...typography.overline, color: colors.inkMuted },
   friendCodeValue: { fontSize: 22, lineHeight: 27, color: colors.ink, fontWeight: '900', letterSpacing: 2, marginTop: 2 },
@@ -693,10 +757,10 @@ const styles = StyleSheet.create({
   baePartnerCopy: { flex: 1, minWidth: 0 },
   baePartnerLabel: { ...typography.overline, color: colors.inkMuted },
   baePartnerName: { ...typography.bodyBold, color: colors.ink, marginTop: 1 },
-  baeMoreButton: { width: 40, height: 40, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
-  baeChallenge: { padding: spacing.md, marginTop: spacing.md },
+  baeMoreButton: { width: 40, height: 40, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
+  baeChallenge: { padding: spacing.md, marginTop: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panelWarm },
   baeChallengeTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
-  baeChallengeIcon: { width: 42, height: 42, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight },
+  baeChallengeIcon: { width: 42, height: 42, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
   baeDuePill: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.sm, borderRadius: radius.pill, backgroundColor: colors.accentLight },
   baeChallengeCopy: {},
   baeChallengeTitle: { fontSize: 20, lineHeight: 25, color: colors.ink, fontWeight: '900' },
@@ -721,7 +785,7 @@ const styles = StyleSheet.create({
   proofStatusDone: { color: colors.gold },
   proofGuidance: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: spacing.md },
   baeProofButton: { marginTop: spacing.md },
-  baeCompleteBanner: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface, paddingHorizontal: spacing.md, marginTop: spacing.md },
+  baeCompleteBanner: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, backgroundColor: colors.panelWarm, borderWidth: 1, borderColor: colors.goldMuted, paddingHorizontal: spacing.md, marginTop: spacing.md },
   baeCompleteIcon: { width: 34, height: 34, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.gold },
   baeCompleteCopy: { flex: 1 },
   baeCompleteTitle: { ...typography.bodyBold, color: colors.ink },
@@ -730,7 +794,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: radius.lg,
-    backgroundColor: colors.accentLight,
+    backgroundColor: colors.panelRaised,
     borderWidth: 1,
     borderColor: colors.accentSurface,
     alignItems: 'center',
@@ -743,18 +807,21 @@ const styles = StyleSheet.create({
   commitmentActions: { gap: spacing.sm, marginTop: spacing.lg },
   keptRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.accentSurface, marginTop: spacing.lg, paddingTop: spacing.sm },
   keptText: { ...typography.bodyBold, color: colors.ink },
-  consistencyCard: { minHeight: 126, flexDirection: 'row', alignItems: 'stretch', paddingHorizontal: spacing.sm, paddingVertical: spacing.md },
-  metric: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.xs },
-  metricIcon: { width: 28, height: 28, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, marginBottom: 7 },
-  metricValue: { ...typography.title, color: colors.inkStrong, textAlign: 'center' },
-  metricLabel: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', textAlign: 'center', marginTop: 3 },
-  metricDivider: { width: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: spacing.sm },
-  quickList: { paddingHorizontal: spacing.md, paddingVertical: 0 },
+  consistencyCard: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm },
+  metric: { flex: 1, minWidth: 0, minHeight: 92, justifyContent: 'center', borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, paddingHorizontal: spacing.sm, paddingVertical: spacing.md },
+  metricValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  metricIcon: { width: 20, alignItems: 'flex-start', justifyContent: 'center' },
+  metricValue: { fontSize: 21, lineHeight: 26, fontWeight: '900', color: colors.inkStrong },
+  metricLabel: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', marginTop: 4 },
+  quickList: { gap: spacing.sm },
   quickAction: {
-    minHeight: 72,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    paddingVertical: 11,
+    minHeight: 76,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.panel,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
@@ -763,11 +830,13 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: radius.md,
-    backgroundColor: colors.accentLight,
+    backgroundColor: colors.panelRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
   quickCopy: { flex: 1 },
   quickTitle: { ...typography.bodyBold, color: colors.ink },
   quickBody: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  quickAffordance: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  quickAffordanceText: { ...typography.caption, color: colors.gold, fontWeight: '800' },
 });

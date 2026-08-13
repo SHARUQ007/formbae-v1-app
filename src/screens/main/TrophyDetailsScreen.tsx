@@ -18,9 +18,19 @@ import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<ProgressStackParamList, 'TrophyDetails'>;
 
+function leaderboardDisplayName(value?: string | null) {
+  const name = String(value || '').trim().replace(/\s+/g, ' ');
+  const digits = name.replace(/\D/g, '');
+  const phoneCharactersOnly = /^[\s+().\-*xX•\d]+$/.test(name);
+  const maskedPhone = digits.length > 0 && /[*xX•]{2,}/.test(name);
+  if (!name || name.includes('@') || (digits.length >= 4 && phoneCharactersOnly) || maskedPhone) return 'Member';
+  return name;
+}
+
 export function TrophyDetailsScreen({ navigation }: Props) {
   const { user, status } = useAuthStore();
-  const currentUserName = (user?.name || status?.name || '').trim();
+  const currentUserName = leaderboardDisplayName(user?.name || status?.name);
+  const accountLabel = currentUserName === 'Member' ? 'Current account' : currentUserName;
   const [infoOpen, setInfoOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
@@ -29,37 +39,37 @@ export function TrophyDetailsScreen({ navigation }: Props) {
   const { data, loading, error, reload, refresh, refreshing } = useAsync(async () => {
     // Always recalculate trophies before reading the leaderboard so both totals match.
     const bundle = await loadProgressBundleCached({ force: true });
-    const preferredName = currentUserName || bundle.userName.trim();
+    const preferredName = leaderboardDisplayName(currentUserName !== 'Member' ? currentUserName : bundle.userName);
     try {
       const leaderboard = await fetchTrophyLeaderboard();
       const namedLeaderboard = {
         ...leaderboard,
-        leaders: leaderboard.leaders.map((row) => row.isCurrentUser && preferredName ? { ...row, displayName: preferredName } : row),
-        currentUser: leaderboard.currentUser?.isCurrentUser && preferredName
-          ? { ...leaderboard.currentUser, displayName: preferredName }
+        leaders: leaderboard.leaders.map((row) => ({
+          ...row,
+          displayName: row.isCurrentUser && preferredName !== 'Member' ? preferredName : leaderboardDisplayName(row.displayName),
+        })),
+        currentUser: leaderboard.currentUser
+          ? { ...leaderboard.currentUser, displayName: leaderboard.currentUser.isCurrentUser && preferredName !== 'Member' ? preferredName : leaderboardDisplayName(leaderboard.currentUser.displayName) }
           : leaderboard.currentUser,
       };
-      return { progress: bundle.progress, leaderboard: namedLeaderboard, leaderboardAvailable: true };
-    } catch {
+      return { progress: bundle.progress, leaderboard: namedLeaderboard, leaderboardAvailable: true, leaderboardError: '' };
+    } catch (leaderboardError) {
       const score = bundle.progress.trophies?.score ?? 0;
       return {
         progress: bundle.progress,
         leaderboard: {
-          leaders: [{ rank: 1, displayName: preferredName || 'Member', score, isCurrentUser: true }],
-          currentUser: { rank: 1, displayName: preferredName || 'Member', score, isCurrentUser: true },
+          leaders: [{ rank: 1, displayName: preferredName, score, isCurrentUser: true }],
+          currentUser: { rank: 1, displayName: preferredName, score, isCurrentUser: true },
           participantCount: 1,
         },
         leaderboardAvailable: false,
+        leaderboardError: leaderboardError instanceof Error ? leaderboardError.message : 'Could not load community leaderboard.',
       };
     }
   });
 
   const shareInvite = async () => {
     if (sharing) return;
-    if (!data?.leaderboardAvailable) {
-      Alert.alert('Invites are temporarily unavailable', 'The leaderboard service is being updated. Please try again shortly.');
-      return;
-    }
     setSharing(true);
     try {
       const invite = await fetchTrophyInvite();
@@ -77,18 +87,13 @@ export function TrophyDetailsScreen({ navigation }: Props) {
   const joinLeaderboard = async () => {
     const code = inviteCode.trim();
     if (!code || joining) return;
-    if (!data?.leaderboardAvailable) {
-      setJoinOpen(false);
-      Alert.alert('Joining is temporarily unavailable', 'The leaderboard service is being updated. Please try again shortly.');
-      return;
-    }
     setJoining(true);
     try {
       await acceptTrophyInvite(code);
       setJoinOpen(false);
       setInviteCode('');
       await refresh();
-      Alert.alert('You’re connected', 'Their scores now appear in your friends leaderboard.');
+      Alert.alert('You’re connected', 'Your friend connection has been saved.');
     } catch (joinError) {
       Alert.alert('Could not join', joinError instanceof Error ? joinError.message : 'Check the code and try again.');
     } finally {
@@ -97,10 +102,10 @@ export function TrophyDetailsScreen({ navigation }: Props) {
   };
 
   if (loading) {
-    return <ScreenContainer withBottomInset><TrophyHeader onBack={() => navigation.goBack()} /><LoadingState message="Loading trophies..." /></ScreenContainer>;
+    return <ScreenContainer withBottomInset><TrophyHeader onBack={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('ProgressMain')} /><LoadingState message="Loading trophies..." /></ScreenContainer>;
   }
   if (error || !data?.progress.trophies) {
-    return <ScreenContainer withBottomInset><TrophyHeader onBack={() => navigation.goBack()} /><ErrorState message={error || 'Trophy details are unavailable.'} onRetry={reload} /></ScreenContainer>;
+    return <ScreenContainer withBottomInset><TrophyHeader onBack={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('ProgressMain')} /><ErrorState message={error || 'Trophy details are unavailable.'} onRetry={reload} /></ScreenContainer>;
   }
 
   const trophy = data.progress.trophies;
@@ -118,19 +123,25 @@ export function TrophyDetailsScreen({ navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.gold} />}
         contentContainerStyle={styles.scroll}
       >
-        <TrophyHeader onBack={() => navigation.goBack()} onInfo={() => setInfoOpen(true)} score={trophy.score} />
+        <TrophyHeader onBack={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('ProgressMain')} onInfo={() => setInfoOpen(true)} score={trophy.score} />
 
         <View style={styles.leaderboardHead}>
           <View>
-            <SectionTitle style={styles.leaderboardTitle}>Friends leaderboard</SectionTitle>
+            <SectionTitle style={styles.leaderboardTitle}>Community leaderboard</SectionTitle>
             <Text style={styles.participants}>{participantCount} {participantCount === 1 ? 'member' : 'members'}</Text>
+            <Text style={styles.accountLabel}>Showing {accountLabel}</Text>
           </View>
         </View>
         <Card style={styles.leaderboardCard}>
           {leaders.length ? leaders.map((row) => <LeaderboardRow key={`${row.rank}-${row.displayName}`} {...row} />) : <Text style={styles.emptyText}>Invite friends to start your leaderboard.</Text>}
           {currentOutsideTop ? <><View style={styles.ellipsis}><Text style={styles.ellipsisText}>•••</Text></View><LeaderboardRow {...currentOutsideTop} /></> : null}
         </Card>
-        {!data.leaderboardAvailable ? <View style={styles.serviceNotice}><Feather name="info" size={14} color={colors.inkMuted} /><Text style={styles.serviceNoticeText}>Friends leaderboard is being updated. Your trophy details are still available.</Text></View> : null}
+        {!data.leaderboardAvailable ? (
+          <TouchableOpacity style={styles.serviceNotice} onPress={refresh} accessibilityRole="button" accessibilityLabel="Retry community leaderboard">
+            <Feather name="refresh-cw" size={14} color={colors.gold} />
+            <Text style={styles.serviceNoticeText}>{data.leaderboardError || 'Could not load community leaderboard.'} Tap to retry.</Text>
+          </TouchableOpacity>
+        ) : null}
       </ScrollView>
       <View style={styles.bottomDock}>
         <TouchableOpacity style={styles.joinCodeButton} onPress={() => setJoinOpen(true)} accessibilityRole="button" accessibilityLabel="Join leaderboard with a code">
@@ -251,12 +262,13 @@ function TrophyRule({ icon, title, value, wide = false }: { icon: string; title:
 }
 
 function LeaderboardRow({ rank, displayName, score, isCurrentUser }: { rank: number; displayName: string; score: number; isCurrentUser: boolean }) {
+  const name = leaderboardDisplayName(displayName);
   const medalColor = rank === 1 ? colors.gold : rank === 2 ? '#b9bec8' : '#bf865b';
   return (
     <View style={[styles.leaderRow, isCurrentUser && styles.leaderRowCurrent]}>
       <View style={styles.rankSlot}>{rank <= 3 ? <MaterialCommunityIcon name="medal" size={21} color={medalColor} /> : <Text style={styles.rankText}>{rank}</Text>}</View>
-      <View style={styles.avatar}><Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text></View>
-      <Text style={[styles.leaderName, isCurrentUser && styles.leaderNameCurrent]}>{displayName}</Text>
+      <View style={styles.avatar}><Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text></View>
+      <Text style={[styles.leaderName, isCurrentUser && styles.leaderNameCurrent]} numberOfLines={1}>{name}{isCurrentUser ? ' (You)' : ''}</Text>
       <MaterialCommunityIcon name="trophy" size={16} color={colors.gold} />
       <Text style={styles.leaderScore}>{score}</Text>
     </View>
@@ -278,6 +290,7 @@ const styles = StyleSheet.create({
   leaderboardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
   leaderboardTitle: { marginTop: 0, marginBottom: 0 },
   participants: { ...typography.caption, color: colors.inkSubtle, marginTop: 2 },
+  accountLabel: { ...typography.caption, color: colors.gold, marginTop: 2, fontWeight: '700' },
   inviteButton: { flex: 1, minHeight: 48, paddingHorizontal: 14, borderRadius: radius.md, backgroundColor: colors.primaryAction, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   inviteButtonText: { ...typography.caption, color: colors.onPrimary, fontWeight: '900' },
   leaderboardCard: { padding: 0, overflow: 'hidden', backgroundColor: colors.panel, borderColor: colors.border },
@@ -293,7 +306,7 @@ const styles = StyleSheet.create({
   ellipsis: { height: 28, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: colors.border },
   ellipsisText: { color: colors.inkSubtle, letterSpacing: 3 },
   emptyText: { ...typography.body, color: colors.inkMuted, padding: spacing.lg, textAlign: 'center' },
-  serviceNotice: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: spacing.xs, marginTop: spacing.sm, paddingHorizontal: spacing.sm },
+  serviceNotice: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: spacing.xs, marginTop: spacing.sm, padding: spacing.sm, borderRadius: radius.md, backgroundColor: colors.accentLight },
   serviceNoticeText: { ...typography.caption, color: colors.inkMuted, flexShrink: 1 },
   bottomDock: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.lg, backgroundColor: colors.panel, padding: spacing.sm, marginTop: spacing.sm, marginBottom: spacing.xs },
   joinCodeButton: { flex: 1, minHeight: 48, paddingHorizontal: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panelMuted, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },

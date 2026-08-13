@@ -119,10 +119,11 @@ export async function requestAiPlanRefresh(params: {
   planId: string;
   aiTrainerAnswers: Record<string, string>;
 }) {
-  const response = await apiRequest<{ ok: boolean; allowance?: AiPlanRefresh['allowance']; error?: string }>('/workouts/redesign', {
+  const response = await apiRequest<{ ok: boolean; newPlanId?: string; status?: string; error?: string }>('/workouts/redesign', {
     method: 'POST',
     body: params,
-    timeoutMs: 120000,
+    timeoutMs: 300000,
+    retries: 0,
   });
   invalidateCachedResource('workoutPlan');
   invalidateCachedResource('workoutDay');
