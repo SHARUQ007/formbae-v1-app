@@ -323,12 +323,12 @@ export function ActionHubScreen({ navigation }: Props) {
 
         <View style={styles.personalSectionHead}>
           <SectionTitle style={styles.inlineSectionTitle}>Today’s promise</SectionTitle>
-          <Badge label={commitmentComplete ? 'Complete' : commitment ? 'In progress' : 'Not started'} tone={commitmentComplete ? 'success' : commitment ? 'gold' : 'neutral'} icon={commitmentComplete ? 'check' : commitment ? 'clock' : 'circle'} />
+          <Badge label={commitmentComplete ? 'Complete' : commitment ? 'In progress' : 'Not started'} tone={commitmentComplete ? 'goldSolid' : commitment ? 'gold' : 'neutral'} icon={commitmentComplete ? 'check' : commitment ? 'clock' : 'circle'} />
         </View>
 
         <View style={[styles.promiseCard, commitmentComplete && styles.promiseCardComplete]}>
           <LinearGradient
-            colors={commitmentComplete ? ['rgba(131,214,164,0.16)', 'rgba(17,18,23,0)'] : ['rgba(240,206,120,0.15)', 'rgba(17,18,23,0)']}
+            colors={['rgba(240,206,120,0.15)', 'rgba(17,18,23,0)']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={StyleSheet.absoluteFill}
@@ -414,7 +414,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
         <Text style={styles.baeEyebrow}>ACCOUNTABILITY BAE</Text>
         <Text style={styles.baeHeaderCaption}>A private daily check-in with a partner</Text>
       </View>
-      {data.status === 'matched' ? <Badge label="Active" tone="success" icon="check" /> : null}
+      {data.status === 'matched' ? <Badge label="Active" tone="gold" icon="check" /> : null}
     </View>
   );
 
@@ -574,7 +574,7 @@ function ProofTile({ label, submitted, imageUrl, locked }: { label: string; subm
   return (
     <View style={styles.proofTile}>
       <View style={styles.proofImageWrap}>
-        {source && !locked ? <Image source={source} style={styles.proofImage} resizeMode="cover" /> : <View style={styles.proofPlaceholder}><Feather name={locked ? 'lock' : submitted ? 'check' : 'camera'} size={23} color={submitted ? colors.success : colors.inkSubtle} /></View>}
+        {source && !locked ? <Image source={source} style={styles.proofImage} resizeMode="cover" /> : <View style={styles.proofPlaceholder}><Feather name={locked ? 'lock' : submitted ? 'check' : 'camera'} size={23} color={submitted ? colors.gold : colors.inkSubtle} /></View>}
         <View style={[styles.proofStatusDot, submitted && styles.proofStatusDotDone]} />
         <View style={styles.proofMeta}>
           <Text style={styles.proofLabel} numberOfLines={1}>{label}</Text>
@@ -642,7 +642,7 @@ const styles = StyleSheet.create({
   personalSectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.xl, marginBottom: spacing.sm },
   inlineSectionTitle: { marginTop: 0, marginBottom: 0 },
   promiseCard: { position: 'relative', overflow: 'hidden', borderRadius: radius.xl, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panel, padding: spacing.lg, ...shadows.card },
-  promiseCardComplete: { borderColor: 'rgba(131,214,164,0.35)' },
+  promiseCardComplete: { borderColor: colors.accentSurface },
   promiseTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   promiseLabelWrap: { flex: 1 },
   promiseEyebrow: { ...typography.overline, color: colors.gold },
@@ -707,22 +707,22 @@ const styles = StyleSheet.create({
   proofSectionCount: { ...typography.caption, color: colors.inkMuted },
   proofProgress: { height: 4, flexDirection: 'row', gap: 4, marginTop: spacing.sm },
   proofProgressStep: { flex: 1, borderRadius: radius.pill, backgroundColor: colors.panelRaised },
-  proofProgressStepDone: { backgroundColor: colors.success },
+  proofProgressStepDone: { backgroundColor: colors.gold },
   proofGrid: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   proofTile: { flex: 1, minWidth: 0 },
   proofImageWrap: { width: '100%', aspectRatio: 1.05, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: colors.panelMuted, borderWidth: 1, borderColor: colors.border },
   proofImage: { width: '100%', height: '100%' },
   proofPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 38 },
   proofStatusDot: { position: 'absolute', right: 8, top: 8, width: 9, height: 9, borderRadius: radius.pill, backgroundColor: colors.inkSubtle, borderWidth: 2, borderColor: colors.panel },
-  proofStatusDotDone: { backgroundColor: colors.success },
+  proofStatusDotDone: { backgroundColor: colors.gold },
   proofMeta: { position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 47, justifyContent: 'center', backgroundColor: 'rgba(10,10,13,0.88)', paddingHorizontal: spacing.sm },
   proofLabel: { ...typography.caption, color: colors.ink, fontWeight: '900' },
   proofStatus: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', marginTop: 1 },
-  proofStatusDone: { color: colors.success },
+  proofStatusDone: { color: colors.gold },
   proofGuidance: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: spacing.md },
   baeProofButton: { marginTop: spacing.md },
-  baeCompleteBanner: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, backgroundColor: colors.successLight, paddingHorizontal: spacing.md, marginTop: spacing.md },
-  baeCompleteIcon: { width: 34, height: 34, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.success },
+  baeCompleteBanner: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface, paddingHorizontal: spacing.md, marginTop: spacing.md },
+  baeCompleteIcon: { width: 34, height: 34, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.gold },
   baeCompleteCopy: { flex: 1 },
   baeCompleteTitle: { ...typography.bodyBold, color: colors.ink },
   baeCompleteText: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
@@ -736,7 +736,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroIconComplete: { backgroundColor: colors.success, borderColor: colors.success },
+  heroIconComplete: { backgroundColor: colors.gold, borderColor: colors.gold },
   heroTitle: { ...typography.hero, color: colors.inkStrong, marginTop: spacing.lg, maxWidth: 310 },
   heroMeta: { ...typography.body, color: colors.inkMuted, marginTop: spacing.sm, lineHeight: 22 },
   heroCta: { marginTop: spacing.lg },
