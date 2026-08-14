@@ -18,15 +18,13 @@ import {
 } from 'react-native';
 import {
   launchCamera,
-  launchImageLibrary,
   type Asset,
 } from 'react-native-image-picker';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
-import Svg, { Circle } from 'react-native-svg';
-import { ScreenContainer } from '../../components/Card';
+import { ScreenContainer, ScreenTitle } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { EmptyState } from '../../components/States';
 import {
@@ -58,7 +56,6 @@ import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
 import { isDateInCurrentWeek } from '../../utils/weeklyMuscles';
 import {
-  isFutureLocalDay as isFutureDay,
   isMealSlotInFuture,
   isSameLocalDay as isSameDay,
   mealForCurrentTime,
@@ -246,7 +243,7 @@ function FoodPointsBadge({ points }: { points: number }) {
         <Animated.View
           style={{ transform: [{ scale: starScale }, { rotate: starRotate }] }}
         >
-          <Feather name="star" size={17} color={colors.gold} />
+          <Feather name="star" size={30} color={colors.gold} />
         </Animated.View>
       </View>
       <Animated.Text
@@ -254,57 +251,6 @@ function FoodPointsBadge({ points }: { points: number }) {
       >
         {points}
       </Animated.Text>
-    </View>
-  );
-}
-
-function ReportRing({
-  days,
-  progress,
-  size = 58,
-}: {
-  days: number;
-  progress: number;
-  size?: number;
-}) {
-  const stroke = size >= 80 ? 6 : 5;
-  const center = size / 2;
-  const ringRadius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * ringRadius;
-  const clamped = Math.max(0, Math.min(1, progress));
-  const dash = Math.max(clamped * circumference, clamped > 0 ? 3 : 0);
-
-  return (
-    <View style={[styles.reportRing, { width: size, height: size }]}>
-      <Svg width={size} height={size}>
-        <Circle
-          cx={center}
-          cy={center}
-          r={ringRadius}
-          stroke={colors.border}
-          strokeWidth={stroke}
-          fill="none"
-        />
-        <Circle
-          cx={center}
-          cy={center}
-          r={ringRadius}
-          stroke={colors.accent}
-          strokeWidth={stroke}
-          fill="none"
-          strokeLinecap="round"
-          strokeDasharray={`${dash} ${Math.max(0, circumference - dash)}`}
-          transform={`rotate(-90 ${center} ${center})`}
-        />
-      </Svg>
-      <View style={styles.reportRingCenter}>
-        <Text
-          style={[styles.reportRingValue, size >= 80 && styles.reportRingValueLarge]}
-        >
-          {days}
-        </Text>
-        <Text style={styles.reportRingUnit}>{days === 1 ? 'DAY' : 'DAYS'}</Text>
-      </View>
     </View>
   );
 }
@@ -355,6 +301,7 @@ function DietScreenContent({ route, navigation }: Props) {
   } | null>(null);
   const [memorySessionPoints, setMemorySessionPoints] = useState(0);
   const [activeTab, setActiveTab] = useState<'log' | 'diary' | 'report'>('log');
+  const [reportReturnTab, setReportReturnTab] = useState<'log' | 'diary'>('log');
   const saveToastOpacity = useRef(new Animated.Value(0)).current;
   const saveToastScale = useRef(new Animated.Value(0.86)).current;
   const handledCameraRequestRef = useRef<number | null>(null);
@@ -488,6 +435,7 @@ function DietScreenContent({ route, navigation }: Props) {
       key: string;
       title: string;
       entries: DietDiaryEntry[];
+      mealCount: number;
     }> = [];
     const byDate = new Map<string, DietDiaryEntry[]>();
     entries
@@ -514,6 +462,7 @@ function DietScreenContent({ route, navigation }: Props) {
             ? 'Unknown date'
             : formatDiaryDate(new Date(dateEntries[0].createdAt)),
         entries: sortedDateEntries,
+        mealCount: new Set(dateEntries.map(entry => entry.mealType)).size,
       });
     });
     return sections;
@@ -525,6 +474,37 @@ function DietScreenContent({ route, navigation }: Props) {
       ).length,
     [entries],
   );
+  const diaryEntryCount = useMemo(
+    () => entries.filter(entry => !isSkippedEntry(entry)).length,
+    [entries],
+  );
+  const todayMealMoments = useMemo(
+    () =>
+      new Set(
+        entries
+          .filter(
+            entry =>
+              !isSkippedEntry(entry) &&
+              isSameDay(entry.createdAt, new Date()),
+          )
+          .map(entry => entry.mealType),
+      ).size,
+    [entries],
+  );
+  const usefulDayProgress = Math.min(todayMealMoments / 2, 1);
+  const suggestedMemorySlot = useMemo(() => {
+    const now = new Date();
+    const currentMeal = mealForCurrentTime(now);
+    const slotIsCovered = (slot: { date: Date; mealType: MealType }) =>
+      entries.some(
+        entry =>
+          entry.mealType === slot.mealType &&
+          isSameDay(entry.createdAt, slot.date),
+      );
+    return slotIsCovered({ date: now, mealType: currentMeal })
+      ? previousUnloggedMealSlot(now, currentMeal, slotIsCovered)
+      : { date: now, mealType: currentMeal };
+  }, [entries]);
   const selectedDateEntries = useMemo(
     () =>
       entries
@@ -552,9 +532,6 @@ function DietScreenContent({ route, navigation }: Props) {
   const reportProgress = reportCycleProgress(dietFeedback);
   const reportCountdown = reportCountdownText(dietFeedback);
   const reportStats = dietFeedback?.stats;
-  const canGoForward =
-    !isSameDay(selectedDate, new Date()) &&
-    !isFutureDay(shiftDate(selectedDate, 1));
   const canMoveMemoryForward = useMemo(
     () => Boolean(nextMemorySlot(selectedDate, selectedMeal)),
     [selectedDate, selectedMeal],
@@ -565,14 +542,6 @@ function DietScreenContent({ route, navigation }: Props) {
   const selectedMealSkip = selectedMealEntryCount
     ? undefined
     : selectedDateSkips.find(entry => entry.mealType === selectedMeal);
-  const selectedLoggedMealTypes = new Set(
-    selectedDateEntries.map(entry => entry.mealType),
-  );
-  const selectedSkippedMealTypes = new Set(
-    selectedDateSkips
-      .filter(entry => !selectedLoggedMealTypes.has(entry.mealType))
-      .map(entry => entry.mealType),
-  );
 
   const moveMemorySlot = useCallback(
     (direction: -1 | 1) => {
@@ -585,30 +554,6 @@ function DietScreenContent({ route, navigation }: Props) {
       setSelectedMeal(next.mealType);
     },
     [selectedDate, selectedMeal],
-  );
-
-  const changeSelectedDate = useCallback(
-    (direction: -1 | 1) => {
-      setSelectedDate(value => {
-        const next = shiftDate(value, direction);
-        if (
-          isSameDay(next, new Date()) &&
-          isMealSlotInFuture(next, selectedMeal)
-        ) {
-          setSelectedMeal(mealForCurrentTime());
-        }
-        return next;
-      });
-    },
-    [selectedMeal],
-  );
-
-  const selectMeal = useCallback(
-    (mealType: MealType) => {
-      if (isMealSlotInFuture(selectedDate, mealType)) return;
-      setSelectedMeal(mealType);
-    },
-    [selectedDate],
   );
 
   const saveAsset = useCallback(
@@ -691,23 +636,6 @@ function DietScreenContent({ route, navigation }: Props) {
     },
     [saveAsset, selectedDate, selectedMeal],
   );
-
-  const addFromLibrary = async () => {
-    const result = await launchImageLibrary({
-      mediaType: 'photo',
-      selectionLimit: 1,
-      quality: 0.7,
-      maxWidth: 1280,
-      maxHeight: 1280,
-      includeBase64: true,
-    });
-    if (result.didCancel) return;
-    if (result.errorMessage) {
-      Alert.alert('Photo library unavailable', result.errorMessage);
-      return;
-    }
-    await saveAsset(result.assets?.[0]);
-  };
 
   const showSavedMealAnimation = useCallback(
     (mealType: MealType, note: string) => {
@@ -856,6 +784,8 @@ function DietScreenContent({ route, navigation }: Props) {
   };
 
   const openMemoryGame = () => {
+    setSelectedDate(suggestedMemorySlot.date);
+    setSelectedMeal(suggestedMemorySlot.mealType);
     setMemorySessionPoints(0);
     setTextEntry('');
     setTextModalOpen(true);
@@ -1060,7 +990,7 @@ function DietScreenContent({ route, navigation }: Props) {
           )}
         </View>
         <View style={styles.entryBody}>
-          <Text style={styles.entryName} numberOfLines={1}>
+          <Text style={styles.entryName} numberOfLines={2}>
             {isTextEntry ? entry.note : 'Food photo'}
           </Text>
           <Text style={styles.entryMeta} numberOfLines={1}>
@@ -1079,57 +1009,36 @@ function DietScreenContent({ route, navigation }: Props) {
     <TouchableOpacity
       activeOpacity={0.86}
       style={[styles.reportCard, reportReady && styles.reportCardReady]}
-      onPress={() => setActiveTab('report')}
+      onPress={() => {
+        setReportReturnTab('log');
+        setActiveTab('report');
+      }}
       accessibilityRole="button"
       accessibilityLabel={`Open diet report. ${reportCountdown}`}
     >
-      <ReportRing days={reportDays} progress={reportProgress} />
-      <View style={styles.reportCardCopy}>
-        <View style={styles.reportCardEyebrowRow}>
-          {reportReady ? <View style={styles.reportReadyDot} /> : null}
-          <Text
-            style={[
-              styles.reportCardEyebrow,
-              reportReady && styles.reportCardEyebrowReady,
-            ]}
-          >
-            {reportReady ? 'REPORT READY' : 'DIET REPORT'}
-          </Text>
-        </View>
-        <Text style={styles.reportCardTitle} numberOfLines={2}>
+      <View style={styles.secondaryCardIcon}>
+        <Feather name="file-text" size={20} color={colors.gold} />
+      </View>
+      <View style={styles.secondaryCardCopy}>
+        <Text style={styles.secondaryCardTitle}>Weekly report</Text>
+        <Text style={styles.secondaryCardMeta} numberOfLines={1}>
           {reportReady
-            ? dietFeedback?.title || 'Your diet review is ready'
-            : reportCountdown}
-        </Text>
-        <Text style={styles.reportCardMeta} numberOfLines={1}>
-          {reportReady
-            ? reportCountdown
-            : `${reportStats?.daysLogged ?? 0} of ${REPORT_CYCLE_DAYS} days logged this week`}
+            ? 'Ready to read'
+            : `In ${reportDays} day${reportDays === 1 ? '' : 's'}`}
         </Text>
       </View>
-      <Feather name="chevron-right" size={20} color={colors.inkSubtle} />
+      <Feather
+        name="chevron-right"
+        size={18}
+        color={colors.inkSubtle}
+        style={styles.secondaryCardChevron}
+      />
     </TouchableOpacity>
   );
 
   const renderLog = () => {
-    const dateLabel = formatDiaryDate(selectedDate);
-    // "Today"/"Yesterday" read as mid-sentence words; an explicit date does not.
-    const dayPhrase = /^(Today|Yesterday)$/.test(dateLabel)
-      ? dateLabel.toLowerCase()
-      : dateLabel;
-    const ctaTitle = selectedMealEntryCount
-      ? `Add to ${mealLabel(selectedMeal)}`
-      : `Log ${mealLabel(selectedMeal)}`;
-    const ctaMeta = selectedMealEntryCount
-      ? `${selectedMealEntryCount} item${
-          selectedMealEntryCount === 1 ? '' : 's'
-        } saved · ${dateLabel}`
-      : `${dateLabel} · recall it in under a minute`;
-
     return (
       <>
-        {renderReportCard()}
-
         {unsyncedCount ? (
           <TouchableOpacity
             style={styles.syncNotice}
@@ -1147,261 +1056,101 @@ function DietScreenContent({ route, navigation }: Props) {
           </TouchableOpacity>
         ) : null}
 
-        <View style={styles.logCard}>
-          <View style={styles.dayRow}>
-            <TouchableOpacity
-              onPress={() => changeSelectedDate(-1)}
-              style={styles.dayArrow}
-              accessibilityRole="button"
-              accessibilityLabel="Previous day"
-            >
-              <Feather name="chevron-left" size={20} color={colors.ink} />
-            </TouchableOpacity>
-            <View style={styles.dayCenter}>
-              <Text style={styles.dayValue}>{dateLabel}</Text>
-              <Text style={styles.dayMeta}>
-                {selectedLoggedMealTypes.size} of {meals.length} meals logged
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => changeSelectedDate(1)}
-              disabled={!canGoForward}
-              style={[styles.dayArrow, !canGoForward && styles.dayArrowDisabled]}
-              accessibilityRole="button"
-              accessibilityLabel="Next day"
-              accessibilityState={{ disabled: !canGoForward }}
-            >
-              <Feather
-                name="chevron-right"
-                size={20}
-                color={canGoForward ? colors.ink : colors.inkSubtle}
-              />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.mealRow}>
-            {meals.map(meal => {
-              const selected = selectedMeal === meal.type;
-              const disabled = isMealSlotInFuture(selectedDate, meal.type);
-              const loggedCount = selectedDateEntries.filter(
-                entry => entry.mealType === meal.type,
-              ).length;
-              const skipped = selectedSkippedMealTypes.has(meal.type);
-              return (
-                <TouchableOpacity
-                  key={meal.type}
-                  activeOpacity={0.85}
-                  onPress={() => selectMeal(meal.type)}
-                  disabled={disabled}
-                  style={[
-                    styles.mealCell,
-                    selected && styles.mealCellSelected,
-                    disabled && styles.mealCellDisabled,
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected, disabled }}
-                  accessibilityLabel={`${meal.label}, ${meal.hint}${
-                    loggedCount
-                      ? `, ${loggedCount} logged`
-                      : skipped
-                      ? ', skipped'
-                      : ', not logged'
-                  }`}
-                >
-                  <Feather
-                    name={meal.icon}
-                    size={17}
-                    color={
-                      selected
-                        ? colors.accentDarker
-                        : disabled
-                        ? colors.inkSubtle
-                        : colors.inkMuted
-                    }
-                  />
-                  <Text
-                    numberOfLines={1}
-                    style={[
-                      styles.mealCellLabel,
-                      selected && styles.mealCellLabelSelected,
-                      disabled && styles.mealCellLabelDisabled,
-                    ]}
-                  >
-                    {meal.label}
-                  </Text>
-                  <View style={styles.mealCellStatus}>
-                    {loggedCount ? (
-                      <>
-                        <Feather
-                          name="check"
-                          size={11}
-                          color={
-                            selected ? colors.accentDarker : colors.success
-                          }
-                        />
-                        {loggedCount > 1 ? (
-                          <Text
-                            style={[
-                              styles.mealCellCount,
-                              selected && styles.mealCellCountSelected,
-                            ]}
-                          >
-                            {loggedCount}
-                          </Text>
-                        ) : null}
-                      </>
-                    ) : skipped ? (
-                      <Feather
-                        name="minus"
-                        size={11}
-                        color={selected ? colors.accentDarker : colors.inkSubtle}
-                      />
-                    ) : null}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {selectedMealSkip ? (
-            <View style={styles.skippedPanel}>
-              <Feather name="minus-circle" size={18} color={colors.gold} />
-              <View style={styles.skippedCopy}>
-                <Text style={styles.skippedTitle}>
-                  {mealLabel(selectedMeal)} marked as skipped
-                </Text>
-                <Text style={styles.skippedMeta}>
-                  Left out of your points and diet report.
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={undoMealSkipped}
-                disabled={saving}
-                style={styles.undoSkipButton}
-                activeOpacity={0.8}
-                accessibilityRole="button"
-                accessibilityLabel={`Undo skipped ${selectedMeal}`}
-              >
-                <Text style={styles.undoSkipText}>
-                  {saving ? 'Saving…' : 'Undo'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <>
-              <TouchableOpacity
-                activeOpacity={0.88}
-                style={styles.primaryCta}
-                onPress={openMemoryGame}
-                disabled={saving}
-                accessibilityRole="button"
-                accessibilityLabel={`${ctaTitle}. ${ctaMeta}`}
-              >
-                <View style={styles.primaryCtaCopy}>
-                  <Text style={styles.primaryCtaTitle} numberOfLines={1}>
-                    {ctaTitle}
-                  </Text>
-                  <Text style={styles.primaryCtaMeta} numberOfLines={1}>
-                    {ctaMeta}
-                  </Text>
-                </View>
-                <View style={styles.primaryCtaIcon}>
-                  <Feather
-                    name="arrow-right"
-                    size={19}
-                    color={colors.primaryAction}
-                  />
-                </View>
-              </TouchableOpacity>
-
-              <View style={styles.quickActions}>
-                <TouchableOpacity
-                  activeOpacity={0.82}
-                  style={styles.quickAction}
-                  onPress={() => addFromCamera()}
-                  disabled={saving}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Take a photo for ${selectedMeal}`}
-                >
-                  <Feather name="camera" size={16} color={colors.inkMuted} />
-                  <Text style={styles.quickActionText}>Photo</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  activeOpacity={0.82}
-                  style={styles.quickAction}
-                  onPress={addFromLibrary}
-                  disabled={saving}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Choose a photo for ${selectedMeal}`}
-                >
-                  <Feather name="image" size={16} color={colors.inkMuted} />
-                  <Text style={styles.quickActionText}>Gallery</Text>
-                </TouchableOpacity>
-                {!selectedMealEntryCount ? (
-                  <TouchableOpacity
-                    activeOpacity={0.82}
-                    style={styles.quickAction}
-                    onPress={markMealSkipped}
-                    disabled={saving}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Mark ${selectedMeal} as skipped`}
-                  >
-                    <Feather
-                      name="minus-circle"
-                      size={16}
-                      color={colors.inkMuted}
-                    />
-                    <Text style={styles.quickActionText}>Skip</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            </>
-          )}
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Meals logged</Text>
-            {entries.length ? (
-              <TouchableOpacity
-                onPress={() => setActiveTab('diary')}
-                accessibilityRole="button"
-                accessibilityLabel="Open full food diary"
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={styles.sectionLink}>Full diary</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-          {selectedDateEntries.length ? (
-            <View style={styles.entryList}>
-              {selectedDateEntries.slice(0, 4).map(renderEntryRow)}
-              {selectedDateEntries.length > 4 ? (
-                <TouchableOpacity
-                  style={styles.entryMoreRow}
-                  onPress={() => setActiveTab('diary')}
-                  activeOpacity={0.8}
-                  accessibilityRole="button"
-                  accessibilityLabel="See all entries in the food diary"
-                >
-                  <Text style={styles.entryMoreText}>
-                    +{selectedDateEntries.length - 4} more in the diary
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-          ) : (
-            <View style={styles.emptyDayRow}>
+        <View style={styles.memoryHero}>
+          <View style={styles.memoryHeroTop}>
+            <View style={styles.memoryHeroIcon}>
               <MaterialCommunityIcon
                 name="silverware-fork-knife"
-                size={17}
-                color={colors.inkSubtle}
+                size={24}
+                color={colors.onPrimary}
               />
-              <Text style={styles.emptyDayText}>
-                No meals logged for {dayPhrase} yet.
+            </View>
+            <View style={styles.memoryHeroBadge}>
+              <Feather name="star" size={13} color={colors.gold} />
+              <Text style={styles.memoryHeroBadgeText}>Food memory</Text>
+            </View>
+          </View>
+          <Text style={styles.memoryHeroTitle}>
+            {todayMealMoments >= 2
+              ? 'Your food memory is taking shape.'
+              : `Remember your ${mealLabel(suggestedMemorySlot.mealType).toLowerCase()}?`}
+          </Text>
+          <Text style={styles.memoryHeroText}>
+            {todayMealMoments >= 2
+              ? 'Add another meal whenever it comes back to you.'
+              : 'Recall it one item at a time. It usually takes less than a minute.'}
+          </Text>
+          <View style={styles.todayCoverage}>
+            <View style={styles.todayCoverageCopy}>
+              <Text style={styles.todayCoverageLabel}>Today</Text>
+              <Text style={styles.todayCoverageValue}>
+                {todayMealMoments >= 2
+                  ? `${todayMealMoments} meal moments recalled`
+                  : `${todayMealMoments} of 2 meal moments`}
               </Text>
             </View>
-          )}
+            <Feather
+              name={todayMealMoments >= 2 ? 'check-circle' : 'circle'}
+              size={18}
+              color={todayMealMoments >= 2 ? colors.success : colors.inkSubtle}
+            />
+          </View>
+          <View style={styles.todayCoverageTrack}>
+            <View
+              style={[
+                styles.todayCoverageFill,
+                { width: `${usefulDayProgress * 100}%` },
+              ]}
+            />
+          </View>
+          <TouchableOpacity
+            activeOpacity={0.88}
+            style={styles.primaryCta}
+            onPress={openMemoryGame}
+            disabled={saving}
+            accessibilityRole="button"
+            accessibilityLabel="Play food memory game"
+          >
+            <View style={styles.primaryCtaCopy}>
+              <Text style={styles.primaryCtaTitle}>Play memory game</Text>
+              <Text style={styles.primaryCtaMeta}>
+                {mealLabel(suggestedMemorySlot.mealType)} ·{' '}
+                {formatDiaryDate(suggestedMemorySlot.date)}
+              </Text>
+            </View>
+            <View style={styles.primaryCtaIcon}>
+              <Feather name="arrow-right" size={19} color={colors.primaryAction} />
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.secondaryGrid}>
+          {renderReportCard()}
+          <TouchableOpacity
+            activeOpacity={0.86}
+            style={styles.secondaryCard}
+            onPress={() => setActiveTab('diary')}
+            accessibilityRole="button"
+            accessibilityLabel={`Open food diary with ${diaryEntryCount} entries`}
+          >
+            <View style={styles.secondaryCardIcon}>
+              <Feather name="book-open" size={20} color={colors.gold} />
+            </View>
+            <View style={styles.secondaryCardCopy}>
+              <Text style={styles.secondaryCardTitle}>Food diary</Text>
+              <Text style={styles.secondaryCardMeta} numberOfLines={1}>
+                {diaryEntryCount
+                  ? `${diaryEntryCount} entries`
+                  : 'Start your diary'}
+              </Text>
+            </View>
+            <Feather
+              name="chevron-right"
+              size={18}
+              color={colors.inkSubtle}
+              style={styles.secondaryCardChevron}
+            />
+          </TouchableOpacity>
         </View>
       </>
     );
@@ -1409,12 +1158,48 @@ function DietScreenContent({ route, navigation }: Props) {
 
   const renderDiaryFeed = () => (
     <View style={styles.subpage}>
-      {entries.length === 0 ? (
+      <TouchableOpacity
+        activeOpacity={0.8}
+        style={styles.diaryReportNotice}
+        onPress={() => {
+          setReportReturnTab('diary');
+          setActiveTab('report');
+        }}
+        accessibilityRole="button"
+        accessibilityLabel={`Open diet report. ${reportCountdown}`}
+      >
+        <Feather name="clock" size={14} color={colors.gold} />
+        <Text style={styles.diaryReportNoticeText} numberOfLines={1}>
+          {reportReady
+            ? 'Your weekly report is ready'
+            : `Next report in ${reportDays} day${reportDays === 1 ? '' : 's'}`}
+        </Text>
+        <Feather name="chevron-right" size={15} color={colors.inkSubtle} />
+      </TouchableOpacity>
+      {diaryEntryCount ? (
+        <TouchableOpacity
+          activeOpacity={0.86}
+          style={styles.diaryMemoryCta}
+          onPress={openMemoryGame}
+          accessibilityRole="button"
+          accessibilityLabel="Recall another meal with Food Memory"
+        >
+          <View style={styles.diaryMemoryIcon}>
+            <Feather name="plus" size={18} color={colors.onPrimary} />
+          </View>
+          <View style={styles.diaryMemoryCopy}>
+            <Text style={styles.diaryMemoryTitle}>Recall another meal</Text>
+            <Text style={styles.diaryMemoryMeta}>Food Memory · about one minute</Text>
+          </View>
+          <Feather name="arrow-right" size={18} color={colors.ink} />
+        </TouchableOpacity>
+      ) : null}
+      {diaryEntryCount === 0 ? (
         <EmptyState
           icon="edit-3"
           title="No food logged yet"
-          message="Add a meal note or photo. It is saved on this device first, then synced when a connection is available."
-          actionLabel="Log your first meal"
+          message="Recall one food item at a time. It is saved on this device first, then synced when a connection is available."
+          actionLabel="Play memory game"
           onAction={() => {
             setActiveTab('log');
             openMemoryGame();
@@ -1426,7 +1211,8 @@ function DietScreenContent({ route, navigation }: Props) {
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>{section.title}</Text>
               <Text style={styles.sectionMeta}>
-                {section.entries.length} logged
+                {section.mealCount} meal{section.mealCount === 1 ? '' : 's'} ·{' '}
+                {section.entries.length} item{section.entries.length === 1 ? '' : 's'}
               </Text>
             </View>
             <View style={styles.entryList}>
@@ -1441,17 +1227,29 @@ function DietScreenContent({ route, navigation }: Props) {
   const renderReport = () => (
     <View style={styles.subpage}>
       <View style={styles.reportHero}>
-        <ReportRing days={reportDays} progress={reportProgress} size={84} />
-        <View style={styles.reportHeroCopy}>
+        <View style={styles.reportHeroMetaRow}>
           <Text style={styles.reportHeroEyebrow}>
-            {reportReady ? 'LATEST REVIEW' : 'BUILDING YOUR FIRST REPORT'}
+            {reportReady ? 'Latest review' : 'Weekly report'}
           </Text>
-          <Text style={styles.reportHeroTitle}>
-            {reportReady
-              ? dietFeedback?.title || "Ava's diet review"
-              : 'Ava is still reading your diary'}
-          </Text>
-          <Text style={styles.reportHeroMeta}>{reportCountdown}</Text>
+          <View style={styles.reportHeroStatus}>
+            <View style={styles.reportReadyDot} />
+            <Text style={styles.reportHeroStatusText}>
+              {reportReady ? 'Latest report' : 'Collecting meals'}
+            </Text>
+          </View>
+        </View>
+        <Text style={styles.reportHeroTitle}>
+          {reportReady
+            ? dietFeedback?.title || "Ava's diet review"
+            : 'Build a useful nutrition baseline.'}
+        </Text>
+        <Text style={styles.reportHeroMeta}>
+          {reportReady
+            ? dietFeedback?.summary || reportCountdown
+            : `Keep logging meals through the week. ${reportCountdown}.`}
+        </Text>
+        <View style={styles.reportTrack}>
+          <View style={[styles.reportTrackFill, { width: `${reportProgress * 100}%` }]} />
         </View>
       </View>
 
@@ -1534,9 +1332,12 @@ function DietScreenContent({ route, navigation }: Props) {
       )}
 
       <PrimaryButton
-        title="Log a meal"
-        icon="plus"
-        onPress={() => setActiveTab('log')}
+        title="Play memory game"
+        icon="arrow-right"
+        onPress={() => {
+          setActiveTab('log');
+          openMemoryGame();
+        }}
       />
     </View>
   );
@@ -1559,23 +1360,20 @@ function DietScreenContent({ route, navigation }: Props) {
       >
         {activeTab === 'log' ? (
           <View style={styles.screenHeader}>
-            <Text style={styles.screenTitle}>Diet</Text>
+            <View style={styles.screenTitleWrap}>
+              <ScreenTitle>Diet</ScreenTitle>
+            </View>
             <FoodPointsBadge points={weeklyMemoryPoints} />
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={styles.headerIconButton}
-              onPress={() => setActiveTab('diary')}
-              accessibilityRole="button"
-              accessibilityLabel="Open food diary"
-            >
-              <Feather name="book-open" size={17} color={colors.ink} />
-            </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.screenHeader}>
             <TouchableOpacity
               activeOpacity={0.8}
-              onPress={() => setActiveTab('log')}
+              onPress={() =>
+                setActiveTab(
+                  activeTab === 'report' ? reportReturnTab : 'log',
+                )
+              }
               style={styles.headerIconButton}
               accessibilityRole="button"
               accessibilityLabel="Back to diet"
@@ -1587,7 +1385,9 @@ function DietScreenContent({ route, navigation }: Props) {
             </Text>
             {activeTab === 'diary' ? (
               <View style={styles.diaryCountChip}>
-                <Text style={styles.diaryCountText}>{entries.length}</Text>
+                <Text style={styles.diaryCountText}>
+                  {diaryEntryCount}
+                </Text>
               </View>
             ) : null}
           </View>
@@ -1764,20 +1564,87 @@ function DietScreenContent({ route, navigation }: Props) {
                   />
                 </TouchableOpacity>
               </View>
-              <TextInput
-                value={textEntry}
-                onChangeText={setTextEntry}
-                placeholder="One item, e.g. a banana"
-                placeholderTextColor={colors.inkSubtle}
-                multiline
-                textAlignVertical="top"
-                style={styles.textInput}
-                maxLength={280}
-                autoFocus
-              />
-              <Text style={styles.characterCount}>
-                {textEntry.trim().length}/280
-              </Text>
+              {memorySessionPoints ? (
+                <View style={styles.forgottenFoodPrompt}>
+                  <Feather name="coffee" size={16} color={colors.gold} />
+                  <Text style={styles.forgottenFoodPromptText}>
+                    Anything easy to miss? Drinks, sides, fruit and snacks count too.
+                  </Text>
+                </View>
+              ) : null}
+              {selectedMealSkip ? (
+                <>
+                  <View style={styles.skippedPanel}>
+                    <Feather name="minus-circle" size={18} color={colors.gold} />
+                    <View style={styles.skippedCopy}>
+                      <Text style={styles.skippedTitle}>
+                        {mealLabel(selectedMeal)} marked as skipped
+                      </Text>
+                      <Text style={styles.skippedMeta}>
+                        Nothing else is needed for this meal.
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={undoMealSkipped}
+                      disabled={saving}
+                      style={styles.undoSkipButton}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Undo skipped ${selectedMeal}`}
+                    >
+                      <Text style={styles.undoSkipText}>
+                        {saving ? 'Saving…' : 'Undo'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => moveMemorySlot(-1)}
+                    style={styles.skipContinueAction}
+                    accessibilityRole="button"
+                    accessibilityLabel="Recall an earlier meal"
+                  >
+                    <Text style={styles.skipContinueText}>Recall an earlier meal</Text>
+                    <Feather name="arrow-right" size={17} color={colors.gold} />
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <TextInput
+                    value={textEntry}
+                    onChangeText={setTextEntry}
+                    placeholder={
+                      memorySessionPoints
+                        ? 'Anything else? e.g. tea or a side'
+                        : 'One item, e.g. a banana'
+                    }
+                    placeholderTextColor={colors.inkSubtle}
+                    multiline
+                    textAlignVertical="top"
+                    style={styles.textInput}
+                    maxLength={280}
+                    autoFocus
+                  />
+                  <Text style={styles.characterCount}>
+                    {textEntry.trim().length}/280
+                  </Text>
+                  {!selectedMealEntryCount && !textEntry.trim() ? (
+                    <TouchableOpacity
+                      activeOpacity={0.82}
+                      style={styles.skipMealAction}
+                      onPress={markMealSkipped}
+                      disabled={saving}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Mark ${selectedMeal} as skipped`}
+                    >
+                      <Feather name="minus-circle" size={17} color={colors.inkSubtle} />
+                      <View style={styles.skipMealCopy}>
+                        <Text style={styles.skipMealTitle}>I skipped this meal</Text>
+                        <Text style={styles.skipMealMeta}>Nothing to recall for this time slot</Text>
+                      </View>
+                      <Feather name="chevron-right" size={17} color={colors.inkSubtle} />
+                    </TouchableOpacity>
+                  ) : null}
+                </>
+              )}
               <View style={styles.textModalActions}>
                 <PrimaryButton
                   title={textEntry.trim() ? 'Save & finish' : 'Finish'}
@@ -1791,13 +1658,14 @@ function DietScreenContent({ route, navigation }: Props) {
                   icon="arrow-right"
                   onPress={() => saveTextEntry({ moveToPreviousMissed: true })}
                   loading={saving}
-                  disabled={!textEntry.trim()}
+                  disabled={!textEntry.trim() || Boolean(selectedMealSkip)}
                   style={styles.modalActionButton}
                 />
               </View>
               <Text style={styles.editorFootnote}>
-                Save &amp; next stores this item, then jumps to the nearest
-                earlier meal you have not logged.
+                {selectedMealSkip
+                  ? 'Skipped meals stay visible to your coach but do not earn a memory point.'
+                  : 'Save & next stores this item, then opens the nearest earlier meal you have not recalled.'}
               </Text>
             </ScrollView>
           </KeyboardAvoidingView>
@@ -1819,7 +1687,7 @@ function DietScreenContent({ route, navigation }: Props) {
             <Feather name="check" size={18} color={colors.onPrimary} />
           </View>
           <View style={styles.saveToastCopy}>
-            <Text style={styles.saveToastTitle}>Meal saved</Text>
+            <Text style={styles.saveToastTitle}>+1 memory point</Text>
             <Text style={styles.saveToastNote} numberOfLines={1}>
               {mealLabel(savedMeal.mealType)} · {savedMeal.note}
             </Text>
@@ -1835,17 +1703,17 @@ const styles = StyleSheet.create({
 
   // Header
   screenHeader: {
-    minHeight: 44,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
     marginBottom: spacing.md,
   },
-  screenTitle: { ...typography.hero, color: colors.ink, flex: 1, minWidth: 0 },
+  screenTitleWrap: { flex: 1, minWidth: 0 },
   subpageTitle: { ...typography.title, color: colors.ink, flex: 1, minWidth: 0 },
   headerIconButton: {
-    width: 38,
-    height: 38,
+    width: 48,
+    height: 48,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1870,36 +1738,35 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   pointsBadge: {
-    minWidth: 56,
-    height: 34,
+    minWidth: 72,
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentLight,
-    borderWidth: 1,
-    borderColor: colors.accentSurface,
-    paddingHorizontal: 8,
+    gap: 1,
+    borderLeftWidth: 1,
+    borderLeftColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: spacing.xs,
   },
   pointsStarWrap: {
-    width: 20,
-    height: 22,
+    width: 34,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   pointsStarGlow: {
     position: 'absolute',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: colors.gold,
   },
   pointsValue: {
-    minWidth: 14,
+    minWidth: 24,
     textAlign: 'center',
-    fontSize: 15,
-    lineHeight: 19,
+    fontSize: 27,
+    lineHeight: 31,
     fontWeight: '900',
     color: colors.ink,
   },
@@ -1923,42 +1790,18 @@ const styles = StyleSheet.create({
   },
 
   // Diet report countdown
-  reportRing: { alignItems: 'center', justifyContent: 'center' },
-  reportRingCenter: { position: 'absolute', alignItems: 'center' },
-  reportRingValue: {
-    fontSize: 20,
-    lineHeight: 23,
-    fontWeight: '900',
-    color: colors.ink,
-  },
-  reportRingValueLarge: { fontSize: 30, lineHeight: 34 },
-  reportRingUnit: {
-    fontSize: 9,
-    lineHeight: 12,
-    letterSpacing: 0.9,
-    fontWeight: '800',
-    color: colors.inkSubtle,
-  },
   reportCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 132,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.panel,
     padding: spacing.md,
-    marginBottom: spacing.md,
   },
   reportCardReady: {
     borderColor: colors.accentSurface,
-    backgroundColor: colors.panelWarm,
-  },
-  reportCardCopy: { flex: 1, minWidth: 0 },
-  reportCardEyebrowRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
   },
   reportReadyDot: {
     width: 6,
@@ -1966,22 +1809,17 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: colors.accent,
   },
-  reportCardEyebrow: {
-    ...typography.overline,
-    fontSize: 10,
-    letterSpacing: 1.2,
-    color: colors.inkSubtle,
+  reportTrack: {
+    height: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelRaised,
+    overflow: 'hidden',
+    marginTop: spacing.md,
   },
-  reportCardEyebrowReady: { color: colors.accent },
-  reportCardTitle: {
-    ...typography.bodyBold,
-    color: colors.ink,
-    marginTop: 3,
-  },
-  reportCardMeta: {
-    ...typography.caption,
-    color: colors.inkMuted,
-    marginTop: 3,
+  reportTrackFill: {
+    height: '100%',
+    borderRadius: radius.pill,
+    backgroundColor: colors.gold,
   },
 
   // Offline strip
@@ -2006,78 +1844,85 @@ const styles = StyleSheet.create({
   },
 
   // Log card
-  logCard: {
+  memoryHero: {
     borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
     backgroundColor: colors.panel,
-    padding: spacing.md,
+    padding: spacing.lg,
     marginBottom: spacing.lg,
   },
-  dayRow: {
+  memoryHeroTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  memoryHeroIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    backgroundColor: colors.primaryAction,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  memoryHeroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelWarm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  memoryHeroBadgeText: {
+    ...typography.caption,
+    color: colors.gold,
+    fontWeight: '800',
+  },
+  memoryHeroTitle: {
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '900',
+    letterSpacing: -0.45,
+    color: colors.ink,
+    marginTop: spacing.lg,
+  },
+  memoryHeroText: {
+    ...typography.body,
+    color: colors.inkMuted,
+    marginTop: spacing.xs,
+  },
+  todayCoverage: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    marginTop: spacing.lg,
   },
-  dayArrow: {
-    width: 40,
-    height: 40,
+  todayCoverageCopy: { flex: 1, minWidth: 0 },
+  todayCoverageLabel: {
+    ...typography.overline,
+    color: colors.inkSubtle,
+    textTransform: 'uppercase',
+  },
+  todayCoverageValue: {
+    ...typography.caption,
+    color: colors.inkMuted,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  todayCoverageTrack: {
+    height: 5,
     borderRadius: radius.pill,
     backgroundColor: colors.panelRaised,
-    alignItems: 'center',
-    justifyContent: 'center',
+    overflow: 'hidden',
+    marginTop: spacing.sm,
   },
-  dayArrowDisabled: { opacity: 0.38 },
-  dayCenter: { flex: 1, minWidth: 0, alignItems: 'center' },
-  dayValue: { ...typography.subtitle, color: colors.ink },
-  dayMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
-
-  // Meal selector
-  mealRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: spacing.md,
+  todayCoverageFill: {
+    height: '100%',
+    borderRadius: radius.pill,
+    backgroundColor: colors.gold,
   },
-  mealCell: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 64,
-    borderRadius: radius.md,
-    backgroundColor: colors.panelMuted,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-    paddingHorizontal: 3,
-  },
-  mealCellSelected: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
-  },
-  mealCellDisabled: { opacity: 0.38 },
-  mealCellLabel: {
-    fontSize: 11,
-    lineHeight: 14,
-    fontWeight: '700',
-    color: colors.inkMuted,
-  },
-  mealCellLabelSelected: { color: colors.accentDarker },
-  mealCellLabelDisabled: { color: colors.inkSubtle },
-  mealCellStatus: {
-    height: 13,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  mealCellCount: {
-    fontSize: 10,
-    lineHeight: 13,
-    fontWeight: '900',
-    color: colors.success,
-  },
-  mealCellCountSelected: { color: colors.accentDarker },
-
   // Primary action
   primaryCta: {
     minHeight: 60,
@@ -2088,7 +1933,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryAction,
     paddingLeft: spacing.md,
     paddingRight: 10,
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
   },
   primaryCtaCopy: { flex: 1, minWidth: 0 },
   primaryCtaTitle: { ...typography.button, color: colors.onPrimary },
@@ -2106,29 +1951,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  quickActions: {
+  secondaryGrid: {
     flexDirection: 'row',
-    gap: 6,
-    marginTop: spacing.sm,
+    gap: spacing.sm,
   },
-  quickAction: {
+  secondaryCard: {
     flex: 1,
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    borderRadius: radius.md,
-    backgroundColor: colors.panelMuted,
+    minWidth: 0,
+    minHeight: 132,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    paddingHorizontal: spacing.xs,
+    backgroundColor: colors.panel,
+    padding: spacing.md,
   },
-  quickActionText: {
+  secondaryCardIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.sm,
+    backgroundColor: colors.panelRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryCardCopy: { flex: 1, minWidth: 0, justifyContent: 'flex-end' },
+  secondaryCardTitle: { ...typography.bodyBold, color: colors.ink },
+  secondaryCardMeta: {
     ...typography.caption,
     color: colors.inkMuted,
-    fontWeight: '700',
+    marginTop: 2,
   },
+  secondaryCardChevron: { position: 'absolute', top: spacing.md, right: spacing.md },
 
   // Skipped meal
   skippedPanel: {
@@ -2163,6 +2015,45 @@ const styles = StyleSheet.create({
 
   // Sections and entry rows
   subpage: {},
+  diaryReportNotice: {
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingBottom: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  diaryReportNoticeText: {
+    ...typography.caption,
+    color: colors.inkMuted,
+    flex: 1,
+    fontWeight: '700',
+  },
+  diaryMemoryCta: {
+    minHeight: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.panel,
+    padding: spacing.sm,
+    marginBottom: spacing.xl,
+  },
+  diaryMemoryIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.sm,
+    backgroundColor: colors.primaryAction,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  diaryMemoryCopy: { flex: 1, minWidth: 0 },
+  diaryMemoryTitle: { ...typography.bodyBold, color: colors.ink },
+  diaryMemoryMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   section: { marginBottom: spacing.lg },
   sectionHeader: {
     flexDirection: 'row',
@@ -2173,14 +2064,9 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { ...typography.bodyBold, color: colors.ink, flexShrink: 1 },
   sectionMeta: { ...typography.caption, color: colors.inkMuted },
-  sectionLink: {
-    ...typography.caption,
-    color: colors.gold,
-    fontWeight: '900',
-  },
   entryList: { gap: 6 },
   entryRow: {
-    minHeight: 64,
+    minHeight: 86,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
@@ -2188,11 +2074,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.panel,
-    padding: spacing.sm,
+    padding: 10,
   },
   entryThumb: {
-    width: 44,
-    height: 44,
+    width: 64,
+    height: 64,
     borderRadius: radius.sm,
     overflow: 'hidden',
     backgroundColor: colors.black,
@@ -2206,73 +2092,63 @@ const styles = StyleSheet.create({
   },
   entryThumbImage: { width: '100%', height: '100%' },
   entryBody: { flex: 1, minWidth: 0 },
-  entryName: { ...typography.bodyBold, color: colors.ink },
+  entryName: { ...typography.bodyBold, color: colors.ink, lineHeight: 21 },
   entryMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  entryMoreRow: {
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: colors.border,
+  // Report subpage
+  reportHero: {
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl,
   },
-  entryMoreText: {
+  reportHeroMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  reportHeroEyebrow: {
+    ...typography.overline,
+    color: colors.gold,
+    textTransform: 'uppercase',
+  },
+  reportHeroStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panel,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+  },
+  reportHeroStatusText: {
     ...typography.caption,
     color: colors.inkMuted,
     fontWeight: '700',
   },
-  emptyDayRow: {
-    minHeight: 62,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: colors.border,
-    paddingHorizontal: spacing.md,
+  reportHeroTitle: {
+    fontSize: 30,
+    lineHeight: 36,
+    fontWeight: '900',
+    letterSpacing: -0.55,
+    color: colors.ink,
+    marginTop: spacing.lg,
   },
-  emptyDayText: { ...typography.caption, color: colors.inkSubtle },
-
-  // Report subpage
-  reportHero: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panel,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  reportHeroCopy: { flex: 1, minWidth: 0 },
-  reportHeroEyebrow: {
-    ...typography.overline,
-    fontSize: 10,
-    letterSpacing: 1.2,
-    color: colors.accent,
-  },
-  reportHeroTitle: { ...typography.subtitle, color: colors.ink, marginTop: 3 },
   reportHeroMeta: {
-    ...typography.caption,
+    ...typography.body,
     color: colors.inkMuted,
-    marginTop: 3,
+    marginTop: spacing.sm,
   },
   reportStatsRow: {
     flexDirection: 'row',
-    gap: 6,
-    marginBottom: spacing.lg,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.xl,
   },
   reportStat: {
     flex: 1,
-    minHeight: 68,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panelMuted,
+    minHeight: 82,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 1,
@@ -2460,6 +2336,20 @@ const styles = StyleSheet.create({
   slotCenter: { flex: 1, minWidth: 0, alignItems: 'center' },
   slotValue: { ...typography.subtitle, color: colors.ink },
   slotMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  forgottenFoodPrompt: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.panelWarm,
+    padding: spacing.sm,
+  },
+  forgottenFoodPromptText: {
+    ...typography.caption,
+    color: colors.inkMuted,
+    flex: 1,
+    lineHeight: 18,
+  },
   textInput: {
     minHeight: 132,
     borderWidth: 1,
@@ -2482,6 +2372,30 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.inkSubtle,
     textAlign: 'center',
+  },
+  skipMealAction: {
+    minHeight: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+  },
+  skipMealCopy: { flex: 1, minWidth: 0 },
+  skipMealTitle: { ...typography.bodyBold, color: colors.inkMuted },
+  skipMealMeta: { ...typography.caption, color: colors.inkSubtle, marginTop: 1 },
+  skipContinueAction: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  skipContinueText: {
+    ...typography.caption,
+    color: colors.gold,
+    fontWeight: '800',
   },
 
   // Save toast

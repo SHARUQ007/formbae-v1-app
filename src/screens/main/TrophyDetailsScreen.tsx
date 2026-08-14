@@ -9,7 +9,6 @@ import { useAsync } from '../../hooks/useAsync';
 import type { ProgressStackParamList } from '../../navigation/types';
 import { loadProgressBundleCached } from '../../services/preloadService';
 import { acceptTrophyInvite, fetchTrophyInvite, fetchTrophyLeaderboard } from '../../services/progressService';
-import { useAuthStore } from '../../store/authStore';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
 import { shadows } from '../../theme/shadows';
@@ -28,9 +27,6 @@ function leaderboardDisplayName(value?: string | null) {
 }
 
 export function TrophyDetailsScreen({ navigation }: Props) {
-  const { user, status } = useAuthStore();
-  const currentUserName = leaderboardDisplayName(user?.name || status?.name);
-  const accountLabel = currentUserName === 'Member' ? 'Current account' : currentUserName;
   const [infoOpen, setInfoOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
@@ -39,17 +35,16 @@ export function TrophyDetailsScreen({ navigation }: Props) {
   const { data, loading, error, reload, refresh, refreshing } = useAsync(async () => {
     // Always recalculate trophies before reading the leaderboard so both totals match.
     const bundle = await loadProgressBundleCached({ force: true });
-    const preferredName = leaderboardDisplayName(currentUserName !== 'Member' ? currentUserName : bundle.userName);
     try {
       const leaderboard = await fetchTrophyLeaderboard();
       const namedLeaderboard = {
         ...leaderboard,
         leaders: leaderboard.leaders.map((row) => ({
           ...row,
-          displayName: row.isCurrentUser && preferredName !== 'Member' ? preferredName : leaderboardDisplayName(row.displayName),
+          displayName: row.isCurrentUser ? 'You' : leaderboardDisplayName(row.displayName),
         })),
         currentUser: leaderboard.currentUser
-          ? { ...leaderboard.currentUser, displayName: leaderboard.currentUser.isCurrentUser && preferredName !== 'Member' ? preferredName : leaderboardDisplayName(leaderboard.currentUser.displayName) }
+          ? { ...leaderboard.currentUser, displayName: leaderboard.currentUser.isCurrentUser ? 'You' : leaderboardDisplayName(leaderboard.currentUser.displayName) }
           : leaderboard.currentUser,
       };
       return { progress: bundle.progress, leaderboard: namedLeaderboard, leaderboardAvailable: true, leaderboardError: '' };
@@ -58,12 +53,12 @@ export function TrophyDetailsScreen({ navigation }: Props) {
       return {
         progress: bundle.progress,
         leaderboard: {
-          leaders: [{ rank: 1, displayName: preferredName, score, isCurrentUser: true }],
-          currentUser: { rank: 1, displayName: preferredName, score, isCurrentUser: true },
+          leaders: [{ rank: 1, displayName: 'You', score, isCurrentUser: true }],
+          currentUser: { rank: 1, displayName: 'You', score, isCurrentUser: true },
           participantCount: 1,
         },
         leaderboardAvailable: false,
-        leaderboardError: leaderboardError instanceof Error ? leaderboardError.message : 'Could not load community leaderboard.',
+        leaderboardError: leaderboardError instanceof Error ? leaderboardError.message : 'Could not load leaderboard.',
       };
     }
   });
@@ -74,8 +69,8 @@ export function TrophyDetailsScreen({ navigation }: Props) {
     try {
       const invite = await fetchTrophyInvite();
       await Share.share({
-        title: 'Join my FormBae Friends Leaderboard',
-        message: `I’m building my workout streak on FormBae — join my Friends Leaderboard and let’s keep each other consistent. 🏆\n\nTrack your workouts, earn trophies, and turn showing up into a friendly challenge.\n\nYour invite code: ${invite.code}\n${invite.shareUrl}`,
+        title: 'Join my FormBae Leaderboard',
+        message: `I’m building my workout streak on FormBae — join my Leaderboard and let’s keep each other consistent. 🏆\n\nTrack your workouts, earn trophies, and turn showing up into a friendly challenge.\n\nYour invite code: ${invite.code}\n${invite.shareUrl}`,
       });
     } catch (shareError) {
       Alert.alert('Could not share invite', shareError instanceof Error ? shareError.message : 'Please try again.');
@@ -127,9 +122,8 @@ export function TrophyDetailsScreen({ navigation }: Props) {
 
         <View style={styles.leaderboardHead}>
           <View>
-            <SectionTitle style={styles.leaderboardTitle}>Community leaderboard</SectionTitle>
+            <SectionTitle style={styles.leaderboardTitle}>Your friends</SectionTitle>
             <Text style={styles.participants}>{participantCount} {participantCount === 1 ? 'member' : 'members'}</Text>
-            <Text style={styles.accountLabel}>Showing {accountLabel}</Text>
           </View>
         </View>
         <Card style={styles.leaderboardCard}>
@@ -137,9 +131,9 @@ export function TrophyDetailsScreen({ navigation }: Props) {
           {currentOutsideTop ? <><View style={styles.ellipsis}><Text style={styles.ellipsisText}>•••</Text></View><LeaderboardRow {...currentOutsideTop} /></> : null}
         </Card>
         {!data.leaderboardAvailable ? (
-          <TouchableOpacity style={styles.serviceNotice} onPress={refresh} accessibilityRole="button" accessibilityLabel="Retry community leaderboard">
+          <TouchableOpacity style={styles.serviceNotice} onPress={refresh} accessibilityRole="button" accessibilityLabel="Retry leaderboard">
             <Feather name="refresh-cw" size={14} color={colors.gold} />
-            <Text style={styles.serviceNoticeText}>{data.leaderboardError || 'Could not load community leaderboard.'} Tap to retry.</Text>
+            <Text style={styles.serviceNoticeText}>{data.leaderboardError || 'Could not load leaderboard.'} Tap to retry.</Text>
           </TouchableOpacity>
         ) : null}
       </ScrollView>
@@ -211,7 +205,7 @@ export function TrophyDetailsScreen({ navigation }: Props) {
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalIcon}><Feather name="users" size={23} color={colors.gold} /></View>
-            <Text style={styles.modalTitle}>Join a friend’s leaderboard</Text>
+            <Text style={styles.modalTitle}>Join a leaderboard</Text>
             <Text style={styles.modalCopy}>Enter the invite code they shared with you.</Text>
             <TextInput
               value={inviteCode}
@@ -262,13 +256,13 @@ function TrophyRule({ icon, title, value, wide = false }: { icon: string; title:
 }
 
 function LeaderboardRow({ rank, displayName, score, isCurrentUser }: { rank: number; displayName: string; score: number; isCurrentUser: boolean }) {
-  const name = leaderboardDisplayName(displayName);
+  const name = isCurrentUser ? 'You' : leaderboardDisplayName(displayName);
   const medalColor = rank === 1 ? colors.gold : rank === 2 ? '#b9bec8' : '#bf865b';
   return (
     <View style={[styles.leaderRow, isCurrentUser && styles.leaderRowCurrent]}>
       <View style={styles.rankSlot}>{rank <= 3 ? <MaterialCommunityIcon name="medal" size={21} color={medalColor} /> : <Text style={styles.rankText}>{rank}</Text>}</View>
       <View style={styles.avatar}><Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text></View>
-      <Text style={[styles.leaderName, isCurrentUser && styles.leaderNameCurrent]} numberOfLines={1}>{name}{isCurrentUser ? ' (You)' : ''}</Text>
+      <Text style={[styles.leaderName, isCurrentUser && styles.leaderNameCurrent]} numberOfLines={1}>{name}</Text>
       <MaterialCommunityIcon name="trophy" size={16} color={colors.gold} />
       <Text style={styles.leaderScore}>{score}</Text>
     </View>
@@ -290,7 +284,6 @@ const styles = StyleSheet.create({
   leaderboardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
   leaderboardTitle: { marginTop: 0, marginBottom: 0 },
   participants: { ...typography.caption, color: colors.inkSubtle, marginTop: 2 },
-  accountLabel: { ...typography.caption, color: colors.gold, marginTop: 2, fontWeight: '700' },
   inviteButton: { flex: 1, minHeight: 48, paddingHorizontal: 14, borderRadius: radius.md, backgroundColor: colors.primaryAction, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
   inviteButtonText: { ...typography.caption, color: colors.onPrimary, fontWeight: '900' },
   leaderboardCard: { padding: 0, overflow: 'hidden', backgroundColor: colors.panel, borderColor: colors.border },

@@ -407,11 +407,11 @@ export function ProgressScreen({ route, navigation }: Props) {
             <TrophyMetric icon="shield-check" value={`${trophies.nextMilestone}`} label="Safe zone" material />
           </View>
 
-          <TouchableOpacity style={styles.rankingsCta} onPress={() => navigation.navigate('TrophyDetails')} activeOpacity={0.75} accessibilityRole="button" accessibilityLabel="Open friends leaderboard">
+          <TouchableOpacity style={styles.rankingsCta} onPress={() => navigation.navigate('TrophyDetails')} activeOpacity={0.75} accessibilityRole="button" accessibilityLabel="Open leaderboard">
             <View style={styles.rankingsIcon}><MaterialCommunityIcon name="podium-gold" size={20} color={colors.gold} /></View>
             <View style={styles.rankingsCopy}>
               <Text style={styles.rankingsTitle}>View rankings</Text>
-              <Text style={styles.rankingsSubtitle}>Open friends leaderboard</Text>
+              <Text style={styles.rankingsSubtitle}>Open leaderboard</Text>
             </View>
             <Feather name="arrow-right" size={20} color={colors.onPrimary} />
           </TouchableOpacity>
