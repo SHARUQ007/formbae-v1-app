@@ -302,6 +302,8 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
 
   const activeExercise = trackableExercises[Math.min(activeIndex, Math.max(0, trackableExercises.length - 1))] || null;
   const activeExerciseId = activeExercise?.exerciseId || '';
+  const originalActiveExercise = detail?.exercises.find((exercise) => exercise.exerciseId === activeExerciseId);
+  const preferredAlternateSelected = selectedAlternates[activeExerciseId] !== undefined;
   const activeExerciseReps = activeExercise?.reps || '';
   const activeExerciseIndex = activeExercise ? trackableExercises.findIndex((exercise) => exercise.exerciseId === activeExercise.exerciseId) : 0;
   const activeDone = activeExercise ? completed.has(activeExercise.exerciseId) : false;
@@ -462,6 +464,9 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         sentiment: feedbackSentiment,
         feedbackText: feedbackText.trim(),
         exerciseId: activeExercise.exerciseId,
+        exerciseName: activeExercise.exerciseName,
+        replacedExerciseName: preferredAlternateSelected ? originalActiveExercise?.exerciseName : undefined,
+        preferredExerciseName: preferredAlternateSelected ? activeExercise.exerciseName : undefined,
       });
       setFeedbackOpen(false);
       setFeedbackText('');

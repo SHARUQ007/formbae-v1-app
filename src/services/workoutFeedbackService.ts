@@ -9,6 +9,9 @@ export async function submitWorkoutFeedback(params: {
   sentiment: WorkoutFeedbackSentiment;
   feedbackText: string;
   exerciseId?: string;
+  exerciseName?: string;
+  replacedExerciseName?: string;
+  preferredExerciseName?: string;
 }) {
   return apiRequest<{ ok: boolean }>('/workouts/feedback', {
     method: 'POST',
