@@ -1,4 +1,5 @@
 import type { Asset } from 'react-native-image-picker';
+import RNFS from 'react-native-fs';
 import { apiRequest, getDirectApiUrl } from './apiClient';
 import { invalidateCachedResource } from './appCache';
 import type { MealType } from '../store/dietDiaryStore';
@@ -8,6 +9,7 @@ export type RemoteDietDiaryEntry = {
   clientId?: string;
   mealType: MealType | 'Snack';
   note: string;
+  status?: 'logged' | 'skipped';
   createdAt: string;
   loggedAt?: string;
   imageMime: string;
@@ -44,9 +46,12 @@ export async function uploadDietDiaryEntry(params: {
   createdAt: string;
   asset: Asset;
 }) {
-  if (!params.asset.base64) {
-    throw new Error('Photo data is unavailable for upload.');
+  let imageBase64 = params.asset.base64;
+  if (!imageBase64 && params.asset.uri) {
+    const path = params.asset.originalPath || params.asset.uri.replace(/^file:\/\//, '');
+    imageBase64 = await RNFS.readFile(path, 'base64').catch(() => undefined);
   }
+  if (!imageBase64) throw new Error('The saved photo could not be read for upload.');
 
   const response = await apiRequest<{ ok: boolean; entry: RemoteDietDiaryEntry }>('/diet/diary', {
     method: 'POST',
@@ -57,7 +62,7 @@ export async function uploadDietDiaryEntry(params: {
       note: params.note || '',
       createdAt: params.createdAt,
       imageMime: params.asset.type || 'image/jpeg',
-      imageBase64: params.asset.base64,
+      imageBase64,
     },
   });
   invalidateCachedResource('dietDiary');
@@ -82,6 +87,19 @@ export async function uploadTextDietDiaryEntry(params: {
   });
   invalidateCachedResource('dietDiary');
   invalidateCachedResource('progressBundle');
+  return response;
+}
+
+export async function uploadSkippedDietMeal(params: {
+  clientId: string;
+  mealType: MealType;
+  createdAt: string;
+}) {
+  const response = await apiRequest<{ ok: boolean; entry: RemoteDietDiaryEntry }>('/diet/diary', {
+    method: 'POST',
+    body: { ...params, status: 'skipped' },
+  });
+  invalidateCachedResource('dietDiary');
   return response;
 }
 

@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   addTextDietDiaryEntry,
+  addSkippedDietDiaryEntry,
   loadDietDiaryEntries,
   mergeRemoteDietDiaryEntries,
 } from './dietDiaryStore';
@@ -64,5 +65,14 @@ describe('diet diary persistence', () => {
     ]);
 
     expect(entries[0].mealType).toBe('Evening');
+  });
+
+  it('persists a skipped meal as a separate non-food status', async () => {
+    const skipped = await addSkippedDietDiaryEntry('Dinner', '2026-08-08T14:30:00.000Z');
+    const entries = await loadDietDiaryEntries();
+
+    expect(skipped.kind).toBe('skip');
+    expect(entries[0]).toMatchObject({ mealType: 'Dinner', status: 'skipped' });
+    expect(entries[0].note).toBeUndefined();
   });
 });

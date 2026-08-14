@@ -294,9 +294,16 @@ export type AccountabilitySummary = {
 };
 
 export type AccountabilityBaeSummary = {
-  status: 'inactive' | 'waiting' | 'matched';
+  status: 'locked' | 'inactive' | 'waiting' | 'matched';
   preference: 'male' | 'female' | 'friend' | '';
   inviteCode: string;
+  access?: {
+    unlocked: boolean;
+    override: 'default' | 'unlocked' | 'locked';
+    trophyScore: number;
+    trophyThreshold: number;
+    trophiesRemaining: number;
+  };
   partner?: { userId: string; displayName: string } | null;
   challenge?: {
     id: string;

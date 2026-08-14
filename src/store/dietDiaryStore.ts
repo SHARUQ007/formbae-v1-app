@@ -8,7 +8,8 @@ const DIR = `${RNFS.DocumentDirectoryPath}/diet-diary`;
 
 export type DietDiaryEntry = {
   id: string;
-  kind?: 'photo' | 'text';
+  kind?: 'photo' | 'text' | 'skip';
+  status?: 'logged' | 'skipped';
   uri?: string;
   /** When the food was eaten. Kept as createdAt for API compatibility. */
   createdAt: string;
@@ -149,6 +150,22 @@ export async function addTextDietDiaryEntry(mealType: MealType, note: string, cr
   return entry;
 }
 
+export async function addSkippedDietDiaryEntry(mealType: MealType, createdAt = new Date().toISOString()) {
+  const loggedAt = new Date().toISOString();
+  const entry: DietDiaryEntry = {
+    id: makeId(),
+    kind: 'skip',
+    status: 'skipped',
+    mealType,
+    createdAt: validTimestamp(createdAt) || loggedAt,
+    loggedAt,
+    storedLocally: false,
+  };
+  const entries = await readEntries();
+  await writeEntries([entry, ...entries]);
+  return entry;
+}
+
 export async function updateDietDiaryEntry(entryId: string, patch: Partial<DietDiaryEntry>) {
   const entries = await readEntries();
   const next = entries.map((entry) => (entry.id === entryId ? { ...entry, ...patch } : entry));
@@ -162,6 +179,7 @@ export async function mergeRemoteDietDiaryEntries(
     imageUrl: string;
     mealType: MealType | 'Snack';
     note?: string;
+    status?: 'logged' | 'skipped';
     createdAt: string;
     loggedAt?: string;
   }>,
@@ -175,7 +193,8 @@ export async function mergeRemoteDietDiaryEntries(
     const existing = byRemoteId.get(remote.entryId) || (remote.clientId ? byLocalId.get(remote.clientId) : undefined);
     if (existing) {
       Object.assign(existing, {
-        kind: remote.imageUrl ? 'photo' : existing.kind || 'text',
+        kind: remote.status === 'skipped' ? 'skip' : remote.imageUrl ? 'photo' : existing.kind || 'text',
+        status: remote.status || existing.status || 'logged',
         remoteId: remote.entryId,
         remoteImageUrl: remote.imageUrl,
         uri: remote.imageUrl || existing.uri,
@@ -189,7 +208,8 @@ export async function mergeRemoteDietDiaryEntries(
     } else {
       merged.push({
         id: remote.clientId || remote.entryId,
-        kind: remote.imageUrl ? 'photo' : 'text',
+        kind: remote.status === 'skipped' ? 'skip' : remote.imageUrl ? 'photo' : 'text',
+        status: remote.status || 'logged',
         uri: remote.imageUrl,
         remoteId: remote.entryId,
         remoteImageUrl: remote.imageUrl,
