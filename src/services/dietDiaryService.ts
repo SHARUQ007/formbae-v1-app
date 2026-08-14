@@ -103,6 +103,22 @@ export async function uploadSkippedDietMeal(params: {
   return response;
 }
 
+export async function updateRemoteDietDiaryEntry(
+  entryId: string,
+  params: { mealType: MealType; note: string },
+) {
+  const response = await apiRequest<{ ok: boolean; entry: RemoteDietDiaryEntry }>(
+    `/diet/diary/${encodeURIComponent(entryId)}`,
+    {
+      method: 'PATCH',
+      body: params,
+    },
+  );
+  invalidateCachedResource('dietDiary');
+  invalidateCachedResource('progressBundle');
+  return response;
+}
+
 export async function deleteRemoteDietDiaryEntry(entryId: string) {
   const response = await apiRequest<{ ok: boolean }>(`/diet/diary/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
   invalidateCachedResource('dietDiary');

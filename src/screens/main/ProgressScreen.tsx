@@ -439,31 +439,59 @@ export function ProgressScreen({ route, navigation }: Props) {
         {measuredMetrics.length ? (
           activeMetric ? (
             <Card style={styles.trendCard}>
-              <View style={styles.metricChips}>
-                {measuredMetrics.map((metric) => {
-                  const on = metric.key === activeMetric.key;
-                  return (
-                    <TouchableOpacity
-                      key={metric.key}
-                      onPress={() => setSelectedMetric(metric.key)}
-                      style={[styles.metricChip, on && styles.metricChipOn]}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: on }}
-                    >
-                      <Text style={[styles.metricChipText, on && styles.metricChipTextOn]}>{metric.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-              <View style={styles.trendSummary}>
-                <View>
-                  <Text style={styles.trendValue}>{trimNumber(activeSeries[activeSeries.length - 1].value)}<Text style={styles.trendUnit}> {activeMetric.unit}</Text></Text>
-                  {activeLastLogged ? <Text style={styles.trendDate}>Updated {formatDate(activeLastLogged)}</Text> : null}
+              {measuredMetrics.length > 1 ? (
+                <View style={styles.metricChips}>
+                  {measuredMetrics.map((metric) => {
+                    const on = metric.key === activeMetric.key;
+                    return (
+                      <TouchableOpacity
+                        key={metric.key}
+                        onPress={() => setSelectedMetric(metric.key)}
+                        style={[styles.metricChip, on && styles.metricChipOn]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: on }}
+                      >
+                        <Text style={[styles.metricChipText, on && styles.metricChipTextOn]}>{metric.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-                {activeDelta ? (
-                  <View style={styles.trendDelta}><Feather name={deltaIcon(activeDelta.dir)} size={13} color={colors.inkMuted} /><Text style={styles.trendDeltaText}>{activeDelta.text} {activeMetric.unit}</Text></View>
-                ) : null}
-              </View>
+              ) : (
+                <Text style={styles.singleMetricTitle}>{activeMetric.label}</Text>
+              )}
+              {measuredMetrics.length === 1 ? (
+                <View style={styles.singleMetricStats}>
+                  <View style={styles.singleMetricStat}>
+                    <Text style={styles.singleMetricStatLabel}>Current</Text>
+                    <Text style={styles.trendValue}>{trimNumber(activeSeries[activeSeries.length - 1].value)}<Text style={styles.trendUnit}> {activeMetric.unit}</Text></Text>
+                    {activeLastLogged ? <Text style={styles.trendDate}>Updated {formatDate(activeLastLogged)}</Text> : null}
+                  </View>
+                  <View style={[styles.singleMetricStat, styles.singleMetricStatRight]}>
+                    <Text style={styles.singleMetricStatLabel}>Change</Text>
+                    {activeDelta ? (
+                      <View style={styles.singleMetricChangeRow}>
+                        <Feather name={deltaIcon(activeDelta.dir)} size={16} color={colors.inkMuted} />
+                        <Text style={styles.singleMetricChange}>{activeDelta.text.replace(/^[+-]/, '')}<Text style={styles.singleMetricChangeUnit}> {activeMetric.unit}</Text></Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.singleMetricChange}>—</Text>
+                    )}
+                    <Text style={styles.trendDate}>
+                      {activeSeries[0]?.date ? `Since ${formatDate(activeSeries[0].date)}` : 'From first log'}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.trendSummary}>
+                  <View>
+                    <Text style={styles.trendValue}>{trimNumber(activeSeries[activeSeries.length - 1].value)}<Text style={styles.trendUnit}> {activeMetric.unit}</Text></Text>
+                    {activeLastLogged ? <Text style={styles.trendDate}>Updated {formatDate(activeLastLogged)}</Text> : null}
+                  </View>
+                  {activeDelta ? (
+                    <View style={styles.trendDelta}><Feather name={deltaIcon(activeDelta.dir)} size={13} color={colors.inkMuted} /><Text style={styles.trendDeltaText}>{activeDelta.text} {activeMetric.unit}</Text></View>
+                  ) : null}
+                </View>
+              )}
               {activeSeries.length > 1 ? (
                 <>
                   <View style={styles.trendLegend}>
@@ -473,7 +501,6 @@ export function ProgressScreen({ route, navigation }: Props) {
                   <TrendLineChart points={activeSeries} forecast={activeForecast} minimumValue={activeMetric.key === 'weight' ? 20 : undefined} />
                   {activeForecast.length ? (
                     <View style={styles.forecastNote}>
-                      <Feather name="zap" size={14} color={colors.gold} />
                       <View style={styles.forecastNoteCopy}>
                         <Text style={styles.forecastNoteTitle}>Projection updates with your next weekly report</Text>
                       </View>
@@ -526,8 +553,8 @@ function seriesDelta(points: SeriesPoint[]): Delta | null {
 }
 
 function deltaIcon(dir: Delta['dir']) {
-  if (dir === 'down') return 'arrow-down-right';
-  if (dir === 'up') return 'arrow-up-right';
+  if (dir === 'down') return 'arrow-down';
+  if (dir === 'up') return 'arrow-up';
   return 'minus';
 }
 
@@ -920,6 +947,28 @@ const styles = StyleSheet.create({
   metricChipOn: { backgroundColor: colors.accentFill, borderColor: colors.accent },
   metricChipText: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
   metricChipTextOn: { color: colors.white },
+  singleMetricTitle: { ...typography.subtitle, color: colors.ink },
+  singleMetricStats: {
+    minHeight: 112,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: spacing.xl,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 18,
+  },
+  singleMetricStat: { flex: 1, minWidth: 0, justifyContent: 'center' },
+  singleMetricStatRight: { alignItems: 'flex-end', paddingRight: spacing.xs },
+  singleMetricStatLabel: {
+    ...typography.overline,
+    color: colors.inkSubtle,
+    textTransform: 'uppercase',
+    marginBottom: spacing.xs,
+  },
+  singleMetricChangeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  singleMetricChange: { fontSize: 27, lineHeight: 33, fontWeight: '800', color: colors.ink, letterSpacing: -0.35 },
+  singleMetricChangeUnit: { ...typography.label, color: colors.inkMuted },
   trendSummary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   trendValue: { fontSize: 32, lineHeight: 37, fontWeight: '900', color: colors.ink, letterSpacing: -0.5 },
   trendUnit: { ...typography.body, color: colors.inkMuted },
@@ -931,9 +980,9 @@ const styles = StyleSheet.create({
   legendActual: { width: 18, height: 2, borderRadius: 1, backgroundColor: colors.ink },
   legendForecast: { width: 18, height: 0, borderTopWidth: 2, borderStyle: 'dashed', borderColor: colors.gold },
   legendText: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
-  forecastNote: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
+  forecastNote: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
   forecastNoteCopy: { flex: 1 },
-  forecastNoteTitle: { ...typography.caption, color: colors.gold, fontWeight: '800' },
+  forecastNoteTitle: { ...typography.caption, color: colors.inkSubtle, fontWeight: '600', textAlign: 'center' },
   forecastEmpty: { ...typography.caption, color: colors.inkSubtle, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, lineHeight: 18 },
   trendFirstLog: { minHeight: 112, alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
   trendFirstLogText: { ...typography.caption, color: colors.inkMuted, textAlign: 'center' },

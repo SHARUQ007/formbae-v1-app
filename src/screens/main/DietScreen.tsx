@@ -41,6 +41,7 @@ import {
 import {
   deleteRemoteDietDiaryEntry,
   resolveDietDiaryImageUrl,
+  updateRemoteDietDiaryEntry,
   uploadDietDiaryEntry,
   uploadSkippedDietMeal,
   uploadTextDietDiaryEntry,
@@ -83,6 +84,32 @@ const meals: Array<{
   { type: 'Evening', icon: 'sunset', label: 'Evening', hint: 'Evening meal' },
   { type: 'Dinner', icon: 'moon', label: 'Dinner', hint: 'Night meal' },
 ];
+
+const mealAppearance: Record<
+  MealType,
+  { icon: string; color: string; backgroundColor: string }
+> = {
+  Breakfast: {
+    icon: 'sunrise',
+    color: colors.info,
+    backgroundColor: colors.infoLight,
+  },
+  Lunch: {
+    icon: 'sun',
+    color: colors.gold,
+    backgroundColor: colors.warnLight,
+  },
+  Evening: {
+    icon: 'sunset',
+    color: '#ef9b88',
+    backgroundColor: 'rgba(239,155,136,0.12)',
+  },
+  Dinner: {
+    icon: 'moon',
+    color: '#b8a7ef',
+    backgroundColor: 'rgba(184,167,239,0.12)',
+  },
+};
 
 type Props = BottomTabScreenProps<MainTabParamList, 'Diet'>;
 
@@ -293,6 +320,10 @@ function DietScreenContent({ route, navigation }: Props) {
     null,
   );
   const [preview, setPreview] = useState<DietDiaryEntry | null>(null);
+  const [editingEntry, setEditingEntry] = useState<DietDiaryEntry | null>(null);
+  const [editNote, setEditNote] = useState('');
+  const [editMeal, setEditMeal] = useState<MealType>('Lunch');
+  const [savingEdit, setSavingEdit] = useState(false);
   const [textModalOpen, setTextModalOpen] = useState(false);
   const [textEntry, setTextEntry] = useState('');
   const [savedMeal, setSavedMeal] = useState<{
@@ -474,10 +505,63 @@ function DietScreenContent({ route, navigation }: Props) {
       ).length,
     [entries],
   );
+  const weeklyPattern = useMemo(() => {
+    const today = new Date();
+    const mondayOffset = (today.getDay() + 6) % 7;
+    const weekStart = shiftDate(today, -mondayOffset);
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = shiftDate(weekStart, index);
+      const dayEntries = entries.filter(
+        entry => !isSkippedEntry(entry) && isSameDay(entry.createdAt, date),
+      );
+      return {
+        key: date.toDateString(),
+        label: date.toLocaleDateString('en-IN', { weekday: 'narrow' }),
+        points: uniqueMemoryEntries(dayEntries).length,
+        mealMoments: new Set(dayEntries.map(entry => entry.mealType)).size,
+        isToday: isSameDay(date, today),
+        isFuture: date.getTime() > today.getTime(),
+      };
+    });
+  }, [entries]);
+  const weeklyMealMoments = weeklyPattern.reduce(
+    (total, day) => total + day.mealMoments,
+    0,
+  );
+  const weeklyDaysSeen = weeklyPattern.filter(day => day.mealMoments > 0).length;
+  const weeklyDiaryItems = useMemo(
+    () =>
+      entries.filter(
+        entry =>
+          !isSkippedEntry(entry) && isDateInCurrentWeek(entry.createdAt),
+      ).length,
+    [entries],
+  );
+  const weeklyPeak = Math.max(4, ...weeklyPattern.map(day => day.points));
+  const reportEnrichmentScore = Math.min(
+    100,
+    Math.round(
+      (weeklyDaysSeen / 7) * 35 +
+        (Math.min(weeklyMealMoments, 14) / 14) * 40 +
+        (Math.min(weeklyMemoryPoints, 21) / 21) * 25,
+    ),
+  );
   const diaryEntryCount = useMemo(
     () => entries.filter(entry => !isSkippedEntry(entry)).length,
     [entries],
   );
+  const previousWeekEntryCount = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const mondayOffset = (today.getDay() + 6) % 7;
+    const currentWeekStart = shiftDate(today, -mondayOffset);
+    const previousWeekStart = shiftDate(currentWeekStart, -7);
+    return entries.filter(entry => {
+      if (isSkippedEntry(entry)) return false;
+      const occurredAt = new Date(entry.createdAt);
+      return occurredAt >= previousWeekStart && occurredAt < currentWeekStart;
+    }).length;
+  }, [entries]);
   const todayMealMoments = useMemo(
     () =>
       new Set(
@@ -963,52 +1047,111 @@ function DietScreenContent({ route, navigation }: Props) {
     );
   };
 
+  const openEntryEditor = (entry: DietDiaryEntry) => {
+    setPreview(null);
+    setEditingEntry(entry);
+    setEditNote(entry.note || '');
+    setEditMeal(entry.mealType);
+  };
+
+  const saveEntryEdit = async () => {
+    if (!editingEntry || savingEdit) return;
+    const note = editNote.trim();
+    const isTextEntry = editingEntry.kind === 'text' || !editingEntry.uri;
+    if (isTextEntry && !note) {
+      Alert.alert('Add food', 'The food description cannot be empty.');
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      if (editingEntry.remoteId) {
+        await updateRemoteDietDiaryEntry(editingEntry.remoteId, {
+          mealType: editMeal,
+          note,
+        });
+      }
+      await updateDietDiaryEntry(editingEntry.id, {
+        mealType: editMeal,
+        note: note || undefined,
+        syncError: undefined,
+      });
+      setEntries(current =>
+        current.map(entry =>
+          entry.id === editingEntry.id
+            ? { ...entry, mealType: editMeal, note: note || undefined }
+            : entry,
+        ),
+      );
+      setEditingEntry(null);
+      if (editingEntry.remoteId) await load({ force: true });
+    } catch (error) {
+      Alert.alert(
+        'Could not update meal',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   const renderEntryRow = (entry: DietDiaryEntry) => {
     const isTextEntry = entry.kind === 'text' || !entry.uri;
+    const appearance = mealAppearance[entry.mealType];
     return (
-      <TouchableOpacity
+      <View
         key={entry.id}
-        activeOpacity={0.82}
         style={styles.entryRow}
-        onPress={() => setPreview(entry)}
-        accessibilityRole="button"
-        accessibilityLabel={`Open ${mealLabel(entry.mealType)} entry`}
       >
-        <View style={[styles.entryThumb, isTextEntry && styles.entryThumbNote]}>
-          {isTextEntry ? (
-            <MaterialCommunityIcon
-              name="silverware-fork-knife"
-              size={19}
-              color={colors.inkMuted}
-            />
-          ) : (
+        <TouchableOpacity
+          activeOpacity={0.82}
+          style={styles.entryOpenAction}
+          onPress={() => setPreview(entry)}
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${mealLabel(entry.mealType)} entry`}
+        >
+          <View
+            style={[
+              styles.entryMealIcon,
+              { backgroundColor: appearance.backgroundColor },
+            ]}
+          >
+            <Feather name={appearance.icon} size={19} color={appearance.color} />
+          </View>
+          <View style={styles.entryBody}>
+            <Text style={[styles.entryMealLabel, { color: appearance.color }]}>
+              {mealLabel(entry.mealType)} · {formatFoodTime(entry.createdAt)}
+            </Text>
+            <Text style={styles.entryName} numberOfLines={2}>
+              {isTextEntry ? entry.note : entry.note || 'Food photo'}
+            </Text>
+          </View>
+          {!isTextEntry ? (
             <Image
               source={imageSource(entry)}
-              style={styles.entryThumbImage}
+              style={styles.entryPhoto}
               resizeMode="cover"
             />
-          )}
-        </View>
-        <View style={styles.entryBody}>
-          <Text style={styles.entryName} numberOfLines={2}>
-            {isTextEntry ? entry.note : 'Food photo'}
-          </Text>
-          <Text style={styles.entryMeta} numberOfLines={1}>
-            {mealLabel(entry.mealType)} · {formatFoodTime(entry.createdAt)}
-          </Text>
-        </View>
+          ) : null}
+        </TouchableOpacity>
         {entry.syncError ? (
           <Feather name="cloud-off" size={15} color={colors.warn} />
         ) : null}
-        <Feather name="chevron-right" size={18} color={colors.inkSubtle} />
-      </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => openEntryEditor(entry)}
+          style={styles.entryEditButton}
+          accessibilityRole="button"
+          accessibilityLabel={`Edit ${mealLabel(entry.mealType)} entry`}
+        >
+          <Feather name="edit-2" size={16} color={colors.inkMuted} />
+        </TouchableOpacity>
+      </View>
     );
   };
 
   const renderReportCard = () => (
     <TouchableOpacity
       activeOpacity={0.86}
-      style={[styles.reportCard, reportReady && styles.reportCardReady]}
+      style={styles.reportCard}
       onPress={() => {
         setReportReturnTab('log');
         setActiveTab('report');
@@ -1020,7 +1163,7 @@ function DietScreenContent({ route, navigation }: Props) {
         <Feather name="file-text" size={20} color={colors.gold} />
       </View>
       <View style={styles.secondaryCardCopy}>
-        <Text style={styles.secondaryCardTitle}>Weekly report</Text>
+        <Text style={styles.secondaryCardTitle}>Weekly Diet Report</Text>
         <Text style={styles.secondaryCardMeta} numberOfLines={1}>
           {reportReady
             ? 'Ready to read'
@@ -1056,6 +1199,22 @@ function DietScreenContent({ route, navigation }: Props) {
           </TouchableOpacity>
         ) : null}
 
+        <TouchableOpacity
+          activeOpacity={0.76}
+          style={styles.homeReportCountdown}
+          onPress={() => {
+            setReportReturnTab('log');
+            setActiveTab('report');
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={`Open diet report. ${reportCountdown}`}
+        >
+          <Text style={styles.homeReportCountdownText}>
+            Next Diet Report in {reportDays} day{reportDays === 1 ? '' : 's'}
+          </Text>
+          <Feather name="arrow-right" size={15} color={colors.inkSubtle} />
+        </TouchableOpacity>
+
         <View style={styles.memoryHero}>
           <View style={styles.memoryHeroTop}>
             <View style={styles.memoryHeroIcon}>
@@ -1066,7 +1225,6 @@ function DietScreenContent({ route, navigation }: Props) {
               />
             </View>
             <View style={styles.memoryHeroBadge}>
-              <Feather name="star" size={13} color={colors.gold} />
               <Text style={styles.memoryHeroBadgeText}>Food memory</Text>
             </View>
           </View>
@@ -1131,7 +1289,7 @@ function DietScreenContent({ route, navigation }: Props) {
             style={styles.secondaryCard}
             onPress={() => setActiveTab('diary')}
             accessibilityRole="button"
-            accessibilityLabel={`Open food diary with ${diaryEntryCount} entries`}
+            accessibilityLabel={`Open food diary. ${previousWeekEntryCount} entries last week`}
           >
             <View style={styles.secondaryCardIcon}>
               <Feather name="book-open" size={20} color={colors.gold} />
@@ -1139,9 +1297,7 @@ function DietScreenContent({ route, navigation }: Props) {
             <View style={styles.secondaryCardCopy}>
               <Text style={styles.secondaryCardTitle}>Food diary</Text>
               <Text style={styles.secondaryCardMeta} numberOfLines={1}>
-                {diaryEntryCount
-                  ? `${diaryEntryCount} entries`
-                  : 'Start your diary'}
+                {previousWeekEntryCount} entr{previousWeekEntryCount === 1 ? 'y' : 'ies'} last week
               </Text>
             </View>
             <Feather
@@ -1151,6 +1307,70 @@ function DietScreenContent({ route, navigation }: Props) {
               style={styles.secondaryCardChevron}
             />
           </TouchableOpacity>
+        </View>
+
+        <View style={styles.weeklyPatternCard}>
+          <View style={styles.weeklyPatternHeader}>
+            <View style={styles.weeklyPatternCopy}>
+              <Text style={styles.weeklyPatternEyebrow}>THIS WEEK</Text>
+              <Text style={styles.weeklyPatternTitle}>Your food pattern</Text>
+            </View>
+          </View>
+          <View style={styles.weeklyPatternBars}>
+            {weeklyPattern.map(day => {
+              const fill = day.points
+                ? `${Math.max(16, Math.round((day.points / weeklyPeak) * 100))}%`
+                : '0%';
+              return (
+                <View key={day.key} style={styles.weeklyPatternDay}>
+                  <View
+                    style={[
+                      styles.weeklyPatternTrack,
+                      day.isToday && styles.weeklyPatternTrackToday,
+                      day.isFuture && styles.weeklyPatternTrackFuture,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.weeklyPatternFill,
+                        { height: fill as `${number}%` },
+                      ]}
+                    />
+                  </View>
+                  <Text
+                    style={[
+                      styles.weeklyPatternDayLabel,
+                      day.isToday && styles.weeklyPatternDayLabelToday,
+                    ]}
+                  >
+                    {day.label}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+          <View style={styles.weeklyPatternFoot}>
+            <Text style={styles.weeklyPatternFootText}>{weeklyDaysSeen} of 7 days</Text>
+            <View style={styles.weeklyPatternFootDot} />
+            <Text style={styles.weeklyPatternFootText}>{weeklyMealMoments} meal moments</Text>
+          </View>
+          <View style={styles.reportEnrichment}>
+            <View style={styles.reportEnrichmentHead}>
+              <Text style={styles.reportEnrichmentLabel}>Report enrichment</Text>
+              <Text style={styles.reportEnrichmentValue}>{reportEnrichmentScore}%</Text>
+            </View>
+            <View style={styles.reportEnrichmentTrack}>
+              <View
+                style={[
+                  styles.reportEnrichmentFill,
+                  { width: `${reportEnrichmentScore}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.reportEnrichmentHint}>
+              Recall more meals to enrich your next report.
+            </Text>
+          </View>
         </View>
       </>
     );
@@ -1176,6 +1396,33 @@ function DietScreenContent({ route, navigation }: Props) {
         </Text>
         <Feather name="chevron-right" size={15} color={colors.inkSubtle} />
       </TouchableOpacity>
+      {diaryEntryCount ? (
+        <View style={styles.diarySummary}>
+          <View style={styles.diarySummaryHeader}>
+            <View>
+              <Text style={styles.diarySummaryEyebrow}>THIS WEEK</Text>
+              <Text style={styles.diarySummaryTitle}>At a glance</Text>
+            </View>
+            <Feather name="bar-chart-2" size={20} color={colors.inkSubtle} />
+          </View>
+          <View style={styles.diarySummaryStats}>
+            <View style={styles.diarySummaryStat}>
+              <Text style={styles.diarySummaryValue}>{weeklyDiaryItems}</Text>
+              <Text style={styles.diarySummaryLabel}>items</Text>
+            </View>
+            <View style={styles.diarySummaryDivider} />
+            <View style={styles.diarySummaryStat}>
+              <Text style={styles.diarySummaryValue}>{weeklyMealMoments}</Text>
+              <Text style={styles.diarySummaryLabel}>meals</Text>
+            </View>
+            <View style={styles.diarySummaryDivider} />
+            <View style={styles.diarySummaryStat}>
+              <Text style={styles.diarySummaryValue}>{weeklyDaysSeen}</Text>
+              <Text style={styles.diarySummaryLabel}>days</Text>
+            </View>
+          </View>
+        </View>
+      ) : null}
       {diaryEntryCount ? (
         <TouchableOpacity
           activeOpacity={0.86}
@@ -1210,10 +1457,12 @@ function DietScreenContent({ route, navigation }: Props) {
           <View key={section.key} style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>{section.title}</Text>
-              <Text style={styles.sectionMeta}>
-                {section.mealCount} meal{section.mealCount === 1 ? '' : 's'} ·{' '}
-                {section.entries.length} item{section.entries.length === 1 ? '' : 's'}
-              </Text>
+              <View style={styles.sectionMetaPill}>
+                <Text style={styles.sectionMeta}>
+                  {section.mealCount} meal{section.mealCount === 1 ? '' : 's'} ·{' '}
+                  {section.entries.length} item{section.entries.length === 1 ? '' : 's'}
+                </Text>
+              </View>
             </View>
             <View style={styles.entryList}>
               {section.entries.map(renderEntryRow)}
@@ -1425,7 +1674,19 @@ function DietScreenContent({ route, navigation }: Props) {
               <Feather name="x" size={22} color={colors.ink} />
             </TouchableOpacity>
             <Text style={styles.modalScreenTitle}>Diary entry</Text>
-            <View style={styles.modalHeaderSpacer} />
+            {preview ? (
+              <TouchableOpacity
+                onPress={() => openEntryEditor(preview)}
+                style={styles.modalEditButton}
+                accessibilityRole="button"
+                accessibilityLabel="Edit diary entry"
+              >
+                <Feather name="edit-2" size={17} color={colors.ink} />
+                <Text style={styles.modalEditButtonText}>Edit</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.modalHeaderSpacer} />
+            )}
           </View>
           <ScrollView
             style={styles.modalScreenScroll}
@@ -1483,6 +1744,98 @@ function DietScreenContent({ route, navigation }: Props) {
       </Modal>
 
       <Modal
+        visible={!!editingEntry}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => !savingEdit && setEditingEntry(null)}
+      >
+        <ScreenContainer withBottomInset style={styles.editorScreen}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.editorKeyboardView}
+          >
+            <View style={styles.editorHeader}>
+              <View style={styles.editorHeaderCopy}>
+                <Text style={styles.editorEyebrow}>FOOD DIARY</Text>
+                <Text style={styles.editorTitle}>Edit meal</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setEditingEntry(null)}
+                disabled={savingEdit}
+                style={styles.editorClose}
+                accessibilityRole="button"
+                accessibilityLabel="Close meal editor"
+              >
+                <Feather name="x" size={20} color={colors.inkMuted} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              style={styles.modalScreenScroll}
+              contentContainerStyle={styles.editContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              <Text style={styles.editFieldLabel}>Meal</Text>
+              <View style={styles.editMealGrid}>
+                {meals.map(meal => {
+                  const selected = meal.type === editMeal;
+                  const appearance = mealAppearance[meal.type];
+                  return (
+                    <TouchableOpacity
+                      key={meal.type}
+                      activeOpacity={0.8}
+                      onPress={() => setEditMeal(meal.type)}
+                      style={[
+                        styles.editMealOption,
+                        selected && styles.editMealOptionSelected,
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                    >
+                      <View
+                        style={[
+                          styles.editMealOptionIcon,
+                          { backgroundColor: appearance.backgroundColor },
+                        ]}
+                      >
+                        <Feather name={appearance.icon} size={17} color={appearance.color} />
+                      </View>
+                      <Text style={[styles.editMealOptionText, selected && styles.editMealOptionTextSelected]}>
+                        {meal.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <Text style={styles.editFieldLabel}>What you had</Text>
+              <TextInput
+                value={editNote}
+                onChangeText={setEditNote}
+                placeholder={editingEntry?.uri ? 'Add a note about this meal' : 'What did you eat?'}
+                placeholderTextColor={colors.inkSubtle}
+                multiline
+                textAlignVertical="top"
+                maxLength={500}
+                style={styles.editNoteInput}
+              />
+              {editingEntry ? (
+                <Text style={styles.editEntryTime}>
+                  Logged {formatEntryTime(editingEntry.createdAt)}
+                </Text>
+              ) : null}
+              <PrimaryButton
+                title="Save changes"
+                icon="check"
+                onPress={saveEntryEdit}
+                loading={savingEdit}
+                style={styles.editSaveButton}
+              />
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </ScreenContainer>
+      </Modal>
+
+      <Modal
         visible={textModalOpen}
         animationType="slide"
         presentationStyle="fullScreen"
@@ -1507,9 +1860,8 @@ function DietScreenContent({ route, navigation }: Props) {
                   style={styles.editorScore}
                   accessibilityLabel={`${memorySessionPoints} items added this session`}
                 >
-                  <Feather name="star" size={13} color={colors.gold} />
                   <Text style={styles.editorScoreText}>
-                    {memorySessionPoints}
+                    {memorySessionPoints} added
                   </Text>
                 </View>
               ) : null}
@@ -1793,15 +2145,10 @@ const styles = StyleSheet.create({
   reportCard: {
     flex: 1,
     minWidth: 0,
-    minHeight: 132,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panel,
+    minHeight: 92,
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
     padding: spacing.md,
-  },
-  reportCardReady: {
-    borderColor: colors.accentSurface,
   },
   reportReadyDot: {
     width: 6,
@@ -1842,6 +2189,19 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  homeReportCountdown: {
+    minHeight: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  homeReportCountdownText: {
+    ...typography.caption,
+    color: colors.inkMuted,
+    fontWeight: '700',
+  },
 
   // Log card
   memoryHero: {
@@ -1849,8 +2209,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderStrong,
     backgroundColor: colors.panel,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
   },
   memoryHeroTop: {
     flexDirection: 'row',
@@ -1881,12 +2241,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   memoryHeroTitle: {
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 25,
+    lineHeight: 31,
     fontWeight: '900',
     letterSpacing: -0.45,
     color: colors.ink,
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
   },
   memoryHeroText: {
     ...typography.body,
@@ -1897,7 +2257,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
   },
   todayCoverageCopy: { flex: 1, minWidth: 0 },
   todayCoverageLabel: {
@@ -1933,7 +2293,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryAction,
     paddingLeft: spacing.md,
     paddingRight: 10,
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
   },
   primaryCtaCopy: { flex: 1, minWidth: 0 },
   primaryCtaTitle: { ...typography.button, color: colors.onPrimary },
@@ -1951,34 +2311,153 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  weeklyPatternCard: {
+    minHeight: 156,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.lg,
+    marginTop: spacing.lg,
+  },
+  weeklyPatternHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  weeklyPatternCopy: { flex: 1, minWidth: 0 },
+  weeklyPatternEyebrow: {
+    ...typography.overline,
+    color: colors.inkSubtle,
+  },
+  weeklyPatternTitle: {
+    ...typography.subtitle,
+    color: colors.ink,
+    marginTop: 2,
+  },
+  weeklyPatternBars: {
+    height: 66,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.xs,
+  },
+  weeklyPatternDay: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 6,
+  },
+  weeklyPatternTrack: {
+    width: 18,
+    height: 42,
+    justifyContent: 'flex-end',
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelRaised,
+    overflow: 'hidden',
+  },
+  weeklyPatternTrackToday: {
+    borderWidth: 1,
+    borderColor: colors.goldMuted,
+  },
+  weeklyPatternTrackFuture: { opacity: 0.42 },
+  weeklyPatternFill: {
+    width: '100%',
+    borderRadius: radius.pill,
+    backgroundColor: colors.gold,
+  },
+  weeklyPatternDayLabel: {
+    fontSize: 10,
+    lineHeight: 12,
+    color: colors.inkSubtle,
+    fontWeight: '700',
+  },
+  weeklyPatternDayLabelToday: { color: colors.gold },
+  weeklyPatternFoot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  weeklyPatternFootText: {
+    ...typography.caption,
+    color: colors.inkMuted,
+    fontWeight: '600',
+  },
+  weeklyPatternFootDot: {
+    width: 3,
+    height: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.inkSubtle,
+  },
+  reportEnrichment: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+    marginTop: spacing.md,
+  },
+  reportEnrichmentHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  reportEnrichmentLabel: {
+    ...typography.label,
+    color: colors.ink,
+    fontWeight: '700',
+  },
+  reportEnrichmentValue: {
+    ...typography.label,
+    color: colors.gold,
+    fontWeight: '900',
+  },
+  reportEnrichmentTrack: {
+    height: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelRaised,
+    overflow: 'hidden',
+    marginTop: spacing.sm,
+  },
+  reportEnrichmentFill: {
+    height: '100%',
+    borderRadius: radius.pill,
+    backgroundColor: colors.gold,
+  },
+  reportEnrichmentHint: {
+    ...typography.caption,
+    color: colors.inkMuted,
+    marginTop: spacing.sm,
+  },
   secondaryGrid: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
   },
   secondaryCard: {
     flex: 1,
     minWidth: 0,
-    minHeight: 132,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panel,
+    minHeight: 92,
     padding: spacing.md,
   },
   secondaryCardIcon: {
-    width: 38,
-    height: 38,
+    width: 34,
+    height: 34,
     borderRadius: radius.sm,
     backgroundColor: colors.panelRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  secondaryCardCopy: { flex: 1, minWidth: 0, justifyContent: 'flex-end' },
+  secondaryCardCopy: { flex: 1, minWidth: 0, justifyContent: 'flex-end', gap: 2 },
   secondaryCardTitle: { ...typography.bodyBold, color: colors.ink },
   secondaryCardMeta: {
     ...typography.caption,
     color: colors.inkMuted,
-    marginTop: 2,
   },
   secondaryCardChevron: { position: 'absolute', top: spacing.md, right: spacing.md },
 
@@ -2031,17 +2510,65 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: '700',
   },
+  diarySummary: {
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.md,
+  },
+  diarySummaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  diarySummaryEyebrow: {
+    ...typography.overline,
+    color: colors.inkSubtle,
+  },
+  diarySummaryTitle: {
+    ...typography.subtitle,
+    color: colors.ink,
+    marginTop: 2,
+  },
+  diarySummaryStats: {
+    minHeight: 60,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    marginTop: spacing.md,
+  },
+  diarySummaryStat: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  diarySummaryDivider: {
+    width: 1,
+    backgroundColor: colors.border,
+  },
+  diarySummaryValue: {
+    fontSize: 22,
+    lineHeight: 27,
+    color: colors.ink,
+    fontWeight: '900',
+  },
+  diarySummaryLabel: {
+    ...typography.caption,
+    color: colors.inkMuted,
+    marginTop: 1,
+  },
   diaryMemoryCta: {
-    minHeight: 72,
+    minHeight: 68,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.panel,
+    borderColor: colors.goldMuted,
+    backgroundColor: colors.panelWarm,
     padding: spacing.sm,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
   },
   diaryMemoryIcon: {
     width: 44,
@@ -2063,37 +2590,56 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   sectionTitle: { ...typography.bodyBold, color: colors.ink, flexShrink: 1 },
+  sectionMetaPill: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelMuted,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+  },
   sectionMeta: { ...typography.caption, color: colors.inkMuted },
-  entryList: { gap: 6 },
+  entryList: { borderTopWidth: 1, borderTopColor: colors.border },
   entryRow: {
-    minHeight: 86,
+    minHeight: 76,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panel,
-    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: 10,
   },
-  entryThumb: {
-    width: 64,
-    height: 64,
+  entryOpenAction: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  entryMealIcon: {
+    width: 42,
+    height: 42,
     borderRadius: radius.sm,
-    overflow: 'hidden',
-    backgroundColor: colors.black,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  entryThumbNote: {
-    backgroundColor: colors.panelMuted,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  entryThumbImage: { width: '100%', height: '100%' },
+  entryPhoto: { width: 44, height: 44, borderRadius: radius.sm },
   entryBody: { flex: 1, minWidth: 0 },
+  entryMealLabel: {
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.65,
+    marginBottom: 2,
+  },
   entryName: { ...typography.bodyBold, color: colors.ink, lineHeight: 21 },
-  entryMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  entryEditButton: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.panelRaised,
+  },
   // Report subpage
   reportHero: {
     paddingTop: spacing.sm,
@@ -2223,6 +2769,22 @@ const styles = StyleSheet.create({
   },
   modalScreenTitle: { ...typography.bodyBold, color: colors.ink },
   modalHeaderSpacer: { width: 42 },
+  modalEditButton: {
+    minWidth: 56,
+    height: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelRaised,
+    paddingHorizontal: spacing.sm,
+  },
+  modalEditButtonText: {
+    ...typography.caption,
+    color: colors.ink,
+    fontWeight: '800',
+  },
   modalScreenScroll: { flex: 1 },
   previewContent: { paddingBottom: spacing.xl },
   previewImage: { width: '100%', aspectRatio: 1 },
@@ -2265,6 +2827,67 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  editContent: {
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
+  editFieldLabel: {
+    ...typography.overline,
+    color: colors.inkMuted,
+    textTransform: 'uppercase',
+    marginBottom: spacing.sm,
+  },
+  editMealGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.xl,
+  },
+  editMealOption: {
+    width: '48%',
+    minHeight: 58,
+    flexGrow: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panel,
+    paddingHorizontal: spacing.sm,
+  },
+  editMealOptionSelected: {
+    borderColor: colors.goldMuted,
+    backgroundColor: colors.panelWarm,
+  },
+  editMealOptionIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editMealOptionText: {
+    ...typography.label,
+    color: colors.inkMuted,
+  },
+  editMealOptionTextSelected: { color: colors.ink, fontWeight: '800' },
+  editNoteInput: {
+    minHeight: 150,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.panel,
+    color: colors.ink,
+    ...typography.body,
+    padding: spacing.md,
+  },
+  editEntryTime: {
+    ...typography.caption,
+    color: colors.inkSubtle,
+    marginTop: spacing.sm,
+  },
+  editSaveButton: { marginTop: spacing.xl },
 
   // Food memory editor
   editorScreen: { paddingHorizontal: spacing.lg },

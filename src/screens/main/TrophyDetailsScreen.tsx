@@ -9,6 +9,7 @@ import { useAsync } from '../../hooks/useAsync';
 import type { ProgressStackParamList } from '../../navigation/types';
 import { loadProgressBundleCached } from '../../services/preloadService';
 import { acceptTrophyInvite, fetchTrophyInvite, fetchTrophyLeaderboard } from '../../services/progressService';
+import { useAuthStore } from '../../store/authStore';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
 import { shadows } from '../../theme/shadows';
@@ -27,6 +28,8 @@ function leaderboardDisplayName(value?: string | null) {
 }
 
 export function TrophyDetailsScreen({ navigation }: Props) {
+  const { user, status } = useAuthStore();
+  const currentUserName = leaderboardDisplayName(user?.name || status?.name);
   const [infoOpen, setInfoOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
@@ -35,16 +38,28 @@ export function TrophyDetailsScreen({ navigation }: Props) {
   const { data, loading, error, reload, refresh, refreshing } = useAsync(async () => {
     // Always recalculate trophies before reading the leaderboard so both totals match.
     const bundle = await loadProgressBundleCached({ force: true });
+    const preferredName = leaderboardDisplayName(
+      currentUserName !== 'Member' ? currentUserName : bundle.userName,
+    );
     try {
       const leaderboard = await fetchTrophyLeaderboard();
       const namedLeaderboard = {
         ...leaderboard,
         leaders: leaderboard.leaders.map((row) => ({
           ...row,
-          displayName: row.isCurrentUser ? 'You' : leaderboardDisplayName(row.displayName),
+          displayName:
+            row.isCurrentUser && preferredName !== 'Member'
+              ? preferredName
+              : leaderboardDisplayName(row.displayName),
         })),
         currentUser: leaderboard.currentUser
-          ? { ...leaderboard.currentUser, displayName: leaderboard.currentUser.isCurrentUser ? 'You' : leaderboardDisplayName(leaderboard.currentUser.displayName) }
+          ? {
+              ...leaderboard.currentUser,
+              displayName:
+                leaderboard.currentUser.isCurrentUser && preferredName !== 'Member'
+                  ? preferredName
+                  : leaderboardDisplayName(leaderboard.currentUser.displayName),
+            }
           : leaderboard.currentUser,
       };
       return { progress: bundle.progress, leaderboard: namedLeaderboard, leaderboardAvailable: true, leaderboardError: '' };
@@ -53,8 +68,8 @@ export function TrophyDetailsScreen({ navigation }: Props) {
       return {
         progress: bundle.progress,
         leaderboard: {
-          leaders: [{ rank: 1, displayName: 'You', score, isCurrentUser: true }],
-          currentUser: { rank: 1, displayName: 'You', score, isCurrentUser: true },
+          leaders: [{ rank: 1, displayName: preferredName, score, isCurrentUser: true }],
+          currentUser: { rank: 1, displayName: preferredName, score, isCurrentUser: true },
           participantCount: 1,
         },
         leaderboardAvailable: false,
@@ -256,7 +271,7 @@ function TrophyRule({ icon, title, value, wide = false }: { icon: string; title:
 }
 
 function LeaderboardRow({ rank, displayName, score, isCurrentUser }: { rank: number; displayName: string; score: number; isCurrentUser: boolean }) {
-  const name = isCurrentUser ? 'You' : leaderboardDisplayName(displayName);
+  const name = leaderboardDisplayName(displayName);
   const medalColor = rank === 1 ? colors.gold : rank === 2 ? '#b9bec8' : '#bf865b';
   return (
     <View style={[styles.leaderRow, isCurrentUser && styles.leaderRowCurrent]}>
