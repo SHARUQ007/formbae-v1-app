@@ -17,7 +17,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FormInput } from '../../components/FormInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { loadWorkoutPlanCached } from '../../services/preloadService';
-import { requestAiPlanRefresh } from '../../services/workoutService';
+import { PENDING_AI_PLAN_BUILD_KEY, requestAiPlanRefresh } from '../../services/workoutService';
+import { ApiError } from '../../services/apiClient';
 import type { AiPlanRefresh, PlanDay } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
 import { hiddenTabBarStyle } from '../../navigation/tabBarStyle';
@@ -26,6 +27,7 @@ import {
   buildAiPlanRefreshQuestions,
   emptyAiPlanRefreshAnswers,
   isAiPlanRefreshComplete,
+  sanitizeAiPlanRefreshAnswers,
   splitRefreshSelections,
   toggleRefreshSelection,
   type AiPlanRefreshAnswers,
@@ -40,12 +42,8 @@ import { typography } from '../../theme/typography';
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'PlanRefresh'>;
 
 const PLAN_REFRESH_DRAFT_PREFIX = 'plan-refresh-draft:';
-const BUILD_STAGES = [
-  { icon: 'bar-chart-2', title: 'Reviewing your last block', detail: 'Looking at completion, difficulty and recovery.' },
-  { icon: 'sliders', title: 'Balancing your schedule', detail: 'Adjusting training days, session length and intensity.' },
-  { icon: 'calendar', title: 'Building the next two weeks', detail: 'Selecting the right progression for every workout.' },
-] as const;
 const CHECK_IN_LOAD_TIMEOUT_MS = 18000;
+const SEEN_READY_PLAN_KEY = 'formbae_seen_ready_plan';
 
 function withCheckInTimeout<T>(promise: Promise<T>) {
   return new Promise<T>((resolve, reject) => {
@@ -80,16 +78,15 @@ export function PlanRefreshScreen({ navigation }: Props) {
   const [saving, setSaving] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const [phase, setPhase] = useState<'form' | 'building' | 'success'>('form');
-  const [buildStage, setBuildStage] = useState(0);
 
   useLayoutEffect(() => {
     navigation.getParent()?.setOptions({ tabBarStyle: hiddenTabBarStyle });
   }, [navigation]);
 
-  const load = useCallback(async (options?: { force?: boolean }) => {
-    setLoading(true);
+  const load = useCallback(async (options?: { force?: boolean; silent?: boolean }) => {
+    if (!options?.silent) setLoading(true);
     setLoadError(null);
-    setDraftReady(false);
+    if (!options?.silent) setDraftReady(false);
     try {
       // The workout screen already warms this cache. Use it immediately so
       // opening the check-in never waits on a duplicate network request.
@@ -98,13 +95,29 @@ export function PlanRefreshScreen({ navigation }: Props) {
       setDays(plan?.days || []);
       const refresh = data.aiPlanRefresh || null;
       setAiPlanRefresh(refresh);
-      if (refresh?.planId) {
+      const buildStatus = refresh?.build?.status;
+      if (buildStatus === 'building' || buildStatus === 'requested') {
+        setPhase('building');
+      } else if (buildStatus === 'completed' && refresh?.build?.newPlanId) {
+        await AsyncStorage.setItem(SEEN_READY_PLAN_KEY, refresh.build.newPlanId).catch(() => undefined);
+        allowExitRef.current = true;
+        setPhase('success');
+      } else {
+        setPhase('form');
+      }
+      if (!options?.silent) {
+        setAnswers({ ...emptyAiPlanRefreshAnswers });
+        setStep(0);
+      }
+      if (!options?.silent && refresh?.planId) {
         const stored = await AsyncStorage.getItem(`${PLAN_REFRESH_DRAFT_PREFIX}${refresh.planId}`).catch(() => null);
         if (stored) {
           try {
             const draft = JSON.parse(stored) as { answers?: AiPlanRefreshAnswers; step?: number };
-            if (draft.answers && typeof draft.answers === 'object') setAnswers({ ...emptyAiPlanRefreshAnswers, ...draft.answers });
-            if (typeof draft.step === 'number') setStep(Math.max(0, draft.step));
+            setAnswers(sanitizeAiPlanRefreshAnswers(draft.answers));
+            if (typeof draft.step === 'number' && Number.isFinite(draft.step)) {
+              setStep(Math.max(0, Math.floor(draft.step)));
+            }
           } catch {
             await AsyncStorage.removeItem(`${PLAN_REFRESH_DRAFT_PREFIX}${refresh.planId}`).catch(() => undefined);
           }
@@ -113,8 +126,10 @@ export function PlanRefreshScreen({ navigation }: Props) {
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'Please check your connection and try again.');
     } finally {
-      setDraftReady(true);
-      setLoading(false);
+      if (!options?.silent) {
+        setDraftReady(true);
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -154,20 +169,14 @@ export function PlanRefreshScreen({ navigation }: Props) {
   }, [aiPlanRefresh?.planId, answers, draftReady, phase, step]);
 
   useEffect(() => {
-    if (phase !== 'building') return undefined;
-    const interval = setInterval(() => {
-      setBuildStage((current) => Math.min(BUILD_STAGES.length - 1, current + 1));
-    }, 3500);
-    return () => clearInterval(interval);
-  }, [phase]);
+    if (phase !== 'building' && phase !== 'success') return;
+    allowExitRef.current = true;
+    navigation.popToTop();
+  }, [navigation, phase]);
 
   useEffect(() => navigation.addListener('beforeRemove', (event) => {
-    if (allowExitRef.current || phase === 'success' || (phase === 'form' && !hasAnswers)) return;
+    if (allowExitRef.current || phase === 'success' || phase === 'building' || (phase === 'form' && !hasAnswers)) return;
     event.preventDefault();
-    if (phase === 'building') {
-      Alert.alert('Your plan is still being built', 'Keep this screen open for a moment so the new plan can finish safely.');
-      return;
-    }
     Alert.alert('Leave this check-in?', 'Your answers are saved on this phone and will be here when you return.', [
       { text: 'Keep editing', style: 'cancel' },
       { text: 'Leave', onPress: () => {
@@ -186,31 +195,77 @@ export function PlanRefreshScreen({ navigation }: Props) {
     const compactAnswers = Object.fromEntries(
       Object.entries(answers).map(([key, value]) => [key, value.trim()]),
     ) as AiPlanRefreshAnswers;
-    if (!isAiPlanRefreshComplete(compactAnswers, questions)) {
-      Alert.alert('Complete the check-in', 'Complete each step so Ava can rebuild the next two-week plan properly.');
+    const firstIncompleteIndex = questions.findIndex(
+      question => !isAiPlanRefreshComplete(compactAnswers, [question]),
+    );
+    if (firstIncompleteIndex >= 0) {
+      moveToStep(firstIncompleteIndex);
+      Alert.alert('Complete the check-in', 'We moved you to the first answer that still needs attention.');
       return;
     }
     if (!aiPlanRefresh?.planId) {
       Alert.alert('Plan not ready', 'Refresh your workout screen and try again.');
       return;
     }
+    if (aiPlanRefresh.allowance?.allowed === false) {
+      Alert.alert('Check-in unavailable', 'Your current plan is still active. Please try again later.');
+      return;
+    }
 
     setSaving(true);
-    setBuildStage(0);
-    setPhase('building');
+    const pendingBuild = {
+      planId: aiPlanRefresh.planId,
+      trainerName: aiPlanRefresh.trainerName || 'Ava',
+      requestedAt: Date.now(),
+    };
+    const buildRequest = requestAiPlanRefresh({
+      planId: aiPlanRefresh.planId,
+      aiTrainerAnswers: buildAiPlanRefreshPayload(compactAnswers),
+    });
     try {
-      await requestAiPlanRefresh({
-        planId: aiPlanRefresh.planId,
-        aiTrainerAnswers: buildAiPlanRefreshPayload(compactAnswers),
-      });
-      await AsyncStorage.removeItem(`${PLAN_REFRESH_DRAFT_PREFIX}${aiPlanRefresh.planId}`).catch(() => undefined);
-      await loadWorkoutPlanCached({ force: true }).catch(() => undefined);
-      setPhase('success');
+      await AsyncStorage.setItem(PENDING_AI_PLAN_BUILD_KEY, JSON.stringify(pendingBuild)).catch(() => undefined);
       allowExitRef.current = true;
-      navigation.popToTop();
+      // Give immediate visual confirmation that the press was accepted. The phase effect
+      // returns to the workout tab, whose takeover screen follows the persisted build state.
+      setPhase('building');
+      const result = await buildRequest;
+      await AsyncStorage.removeItem(`${PLAN_REFRESH_DRAFT_PREFIX}${aiPlanRefresh.planId}`).catch(() => undefined);
+      if (result.status === 'completed' || result.newPlanId) {
+        await AsyncStorage.removeItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => undefined);
+      }
+      await loadWorkoutPlanCached({ force: true }).catch(() => undefined);
     } catch (error) {
+      await AsyncStorage.removeItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => undefined);
+      if (error instanceof ApiError && error.status === 409 && error.message === 'plan_build_in_progress') {
+        setPhase('building');
+        return;
+      }
+      if (error instanceof ApiError && error.status === 409) {
+        await AsyncStorage.removeItem(`${PLAN_REFRESH_DRAFT_PREFIX}${aiPlanRefresh.planId}`).catch(() => undefined);
+        allowExitRef.current = true;
+        setPhase('form');
+        Alert.alert('Your plan changed', 'A newer workout plan is already active. Open it before starting another check-in.', [
+          { text: 'View current plan', onPress: () => navigation.popToTop() },
+        ]);
+        return;
+      }
+      const latest = await loadWorkoutPlanCached({ force: true }).catch(() => null);
+      const latestRefresh = latest?.aiPlanRefresh || null;
+      setAiPlanRefresh(latestRefresh);
+      if (latestRefresh?.build?.status === 'building' || latestRefresh?.build?.status === 'requested') {
+        setPhase('building');
+        return;
+      }
+      if (latestRefresh?.build?.status === 'completed' && latestRefresh.build.newPlanId) {
+        await AsyncStorage.setItem(SEEN_READY_PLAN_KEY, latestRefresh.build.newPlanId).catch(() => undefined);
+        setPhase('success');
+        allowExitRef.current = true;
+        return;
+      }
       setPhase('form');
-      Alert.alert('Could not build plan', error instanceof Error ? error.message : 'Please try again.');
+      if (navigation.isFocused()) {
+        Alert.alert('Could not build plan', error instanceof Error ? error.message : 'Please try again.');
+      }
     } finally {
       setSaving(false);
     }
@@ -231,18 +286,12 @@ export function PlanRefreshScreen({ navigation }: Props) {
     );
   }
 
-  if (phase === 'building') {
-    return <BuildingPlanScreen topInset={insets.top} trainerName={aiPlanRefresh.trainerName || 'Ava'} stage={buildStage} />;
+  if (!aiPlanRefresh.due) {
+    return <CheckInUnavailable topInset={insets.top} onBack={() => navigation.goBack()} title="Your plan is up to date" detail="There’s no new check-in to complete right now. Keep training with your current plan." />;
   }
 
-  if (phase === 'success') {
-    return (
-      <PlanReadyScreen
-        topInset={insets.top}
-        trainerName={aiPlanRefresh.trainerName || 'Ava'}
-        onContinue={() => navigation.popToTop()}
-      />
-    );
+  if (aiPlanRefresh.allowance?.allowed === false) {
+    return <CheckInUnavailable topInset={insets.top} onBack={() => navigation.goBack()} title="Check-in unavailable" detail="Your current workout plan remains active. Try again later or continue with today’s workout." />;
   }
 
   const current = questions[step] || questions[0];
@@ -276,6 +325,16 @@ export function PlanRefreshScreen({ navigation }: Props) {
         </View>
       </View>
 
+      {aiPlanRefresh.build?.status === 'failed' ? (
+        <View style={styles.buildPausedNotice}>
+          <View style={styles.buildPausedIcon}><Feather name="refresh-cw" size={16} color={colors.gold} /></View>
+          <View style={styles.buildPausedCopy}>
+            <Text style={styles.buildPausedTitle}>Your previous build paused</Text>
+            <Text style={styles.buildPausedText}>{hasAnswers ? 'Your saved answers are ready to review and submit again.' : 'Complete the check-in to try your next plan again.'}</Text>
+          </View>
+        </View>
+      ) : null}
+
       <KeyboardAvoidingView style={styles.formArea} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={8}>
       <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.scroll}>
         <QuestionStep question={current} answers={answers} onChange={(key, value) => setAnswers((existing) => ({ ...existing, [key]: value }))} />
@@ -294,8 +353,15 @@ export function PlanRefreshScreen({ navigation }: Props) {
           <TouchableOpacity
             style={styles.primaryButton}
             onPress={() => {
-              if (!answers[current.key]?.trim()) {
-                Alert.alert('Pick an option', 'Choose the closest answer before moving ahead.');
+              if (!isAiPlanRefreshComplete(answers, [current])) {
+                const needsDetail = Boolean(
+                  current.notesKey &&
+                    splitRefreshSelections(answers[current.key]).some(option => /other/i.test(option)),
+                );
+                Alert.alert(
+                  needsDetail ? 'Add a little detail' : 'Pick an option',
+                  needsDetail ? 'Tell Ava what “Other” means before moving ahead.' : 'Choose the closest answer before moving ahead.',
+                );
                 return;
               }
               moveToStep(step + 1);
@@ -327,7 +393,8 @@ function QuestionStep({
 }) {
   const selected = splitRefreshSelections(answers[question.key]);
   const notesValue = question.notesKey ? answers[question.notesKey] : '';
-  const shouldShowNotes = Boolean(question.notesKey && (selected.some((option) => /other/i.test(option)) || notesValue.trim()));
+  const needsNotes = selected.some(option => /other/i.test(option));
+  const shouldShowNotes = Boolean(question.notesKey && (needsNotes || notesValue.trim()));
   return (
     <View style={styles.questionCard}>
       <View style={styles.questionMeta}>
@@ -357,7 +424,7 @@ function QuestionStep({
       </View>
       {question.notesKey && shouldShowNotes ? (
         <FormInput
-          label="Tell us more"
+          label={needsNotes ? 'Tell us more · required' : 'Tell us more'}
           value={answers[question.notesKey]}
           onChangeText={(value) => onChange(question.notesKey!, value)}
           placeholder={question.notesPlaceholder}
@@ -415,54 +482,15 @@ function CheckInError({ topInset, message, onBack, onRetry }: { topInset: number
   );
 }
 
-function BuildingPlanScreen({ topInset, trainerName, stage }: { topInset: number; trainerName: string; stage: number }) {
+function CheckInUnavailable({ topInset, title, detail, onBack }: { topInset: number; title: string; detail: string; onBack: () => void }) {
   return (
     <View style={styles.stateScreen}>
-      <ScreenHeader topInset={topInset} />
-      <View style={styles.buildBody}>
-        <View style={styles.buildHero}>
-          <View style={styles.loadingOrb}><ActivityIndicator size="small" color={colors.accent} /></View>
-          <Text style={styles.buildKicker}>Creating your next block</Text>
-          <Text style={styles.stateTitle}>{trainerName} is building your plan</Text>
-          <Text style={styles.stateDetail}>Keep this screen open. This can take a minute while every session is adjusted to your check-in.</Text>
-        </View>
-        <View style={styles.buildCard}>
-          {BUILD_STAGES.map((item, index) => {
-            const complete = index < stage;
-            const active = index === stage;
-            return (
-              <View key={item.title} style={styles.buildRow}>
-                <View style={[styles.buildIcon, (complete || active) && styles.buildIconActive]}>
-                  {complete ? <Feather name="check" size={16} color={colors.onPrimary} /> : active ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <Feather name={item.icon} size={16} color={colors.inkSubtle} />}
-                </View>
-                <View style={styles.buildText}>
-                  <Text style={[styles.buildTitle, (complete || active) && styles.buildTitleActive]}>{item.title}</Text>
-                  <Text style={styles.buildDetail}>{item.detail}</Text>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-        <Text style={styles.safeNote}><Feather name="shield" size={14} color={colors.inkSubtle} /> Your answers are saved until the new plan is ready.</Text>
-      </View>
-    </View>
-  );
-}
-
-function PlanReadyScreen({ topInset, trainerName, onContinue }: { topInset: number; trainerName: string; onContinue: () => void }) {
-  return (
-    <View style={styles.stateScreen}>
-      <ScreenHeader topInset={topInset} />
+      <ScreenHeader topInset={topInset} onBack={onBack} />
       <View style={styles.centeredStateBody}>
-        <View style={[styles.stateIcon, styles.successIcon]}><Feather name="check" size={34} color={colors.onPrimary} /></View>
-        <Text style={styles.successKicker}>Your next two weeks</Text>
-        <Text style={styles.stateTitle}>Your new plan is ready</Text>
-        <Text style={styles.stateDetail}>{trainerName} used your check-in to update the schedule, difficulty and recovery across your workouts.</Text>
-        <View style={styles.readyCard}>
-          <View style={styles.readyItem}><Feather name="calendar" size={18} color={colors.accent} /><Text style={styles.readyText}>A fresh two-week training block</Text></View>
-          <View style={styles.readyItem}><Feather name="sliders" size={18} color={colors.accent} /><Text style={styles.readyText}>Adjusted to your recent feedback</Text></View>
-        </View>
-        <PrimaryButton title="View my new plan" icon="arrow-right" onPress={onContinue} style={styles.stateButton} />
+        <View style={[styles.stateIcon, styles.currentIcon]}><Feather name="check" size={30} color={colors.onPrimary} /></View>
+        <Text style={styles.stateTitle}>{title}</Text>
+        <Text style={styles.stateDetail}>{detail}</Text>
+        <PrimaryButton title="Back to workouts" icon="arrow-left" variant="secondary" onPress={onBack} style={styles.stateButton} />
       </View>
     </View>
   );
@@ -486,11 +514,9 @@ const styles = StyleSheet.create({
   title: { ...typography.title, color: colors.ink, marginTop: 2 },
   formArea: { flex: 1 },
   progressCard: {
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.accentSurface,
-    backgroundColor: colors.accentLight,
-    padding: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: spacing.md,
     marginBottom: spacing.md,
   },
   progressTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -500,13 +526,30 @@ const styles = StyleSheet.create({
   progressTrack: { flexDirection: 'row', gap: 4, marginTop: spacing.sm },
   progressSegment: { flex: 1, height: 5, borderRadius: radius.pill, backgroundColor: colors.borderStrong },
   progressSegmentActive: { backgroundColor: colors.gold },
+  buildPausedNotice: {
+    minHeight: 68,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  buildPausedIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.panelWarm,
+  },
+  buildPausedCopy: { flex: 1, minWidth: 0 },
+  buildPausedTitle: { ...typography.label, color: colors.ink, fontWeight: '800' },
+  buildPausedText: { ...typography.caption, color: colors.inkMuted, marginTop: 2, lineHeight: 17 },
   scroll: { paddingBottom: spacing.lg },
   questionCard: {
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.accentSurface,
-    backgroundColor: colors.panelRaised,
-    padding: spacing.lg,
     gap: spacing.md,
   },
   questionMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
@@ -516,17 +559,17 @@ const styles = StyleSheet.create({
   options: { gap: spacing.sm },
   option: {
     minHeight: 54,
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.panelRaised,
+    backgroundColor: colors.panel,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     alignItems: 'center',
     flexDirection: 'row',
     gap: spacing.sm,
   },
-  optionSelected: { borderColor: colors.accent, backgroundColor: colors.accentLight },
+  optionSelected: { borderColor: colors.goldMuted, backgroundColor: colors.panelWarm },
   optionIndicator: { width: 22, height: 22, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center' },
   optionIndicatorSelected: { backgroundColor: colors.primaryAction, borderColor: colors.primaryAction },
   optionText: { ...typography.bodyBold, color: colors.inkMuted, flex: 1 },
@@ -534,24 +577,26 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     gap: spacing.sm,
-    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
     paddingBottom: spacing.lg,
     backgroundColor: colors.bg,
   },
   secondaryButton: {
     flex: 0.75,
     minHeight: 52,
-    borderRadius: radius.xl,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    backgroundColor: colors.accentLight,
+    backgroundColor: colors.panel,
   },
   primaryButton: {
     flex: 1.25,
     minHeight: 52,
-    borderRadius: radius.xl,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primaryAction,
@@ -569,7 +614,7 @@ const styles = StyleSheet.create({
   loadingOrb: { width: 56, height: 56, borderRadius: radius.pill, backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg },
   stateIcon: { width: 72, height: 72, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg },
   errorIcon: { backgroundColor: colors.errorLight, borderWidth: 1, borderColor: 'rgba(255,129,140,0.3)' },
-  successIcon: { backgroundColor: colors.primaryAction },
+  currentIcon: { backgroundColor: colors.primaryAction },
   stateTitle: { ...typography.title, color: colors.ink, textAlign: 'center' },
   stateDetail: { ...typography.body, color: colors.inkMuted, lineHeight: 24, textAlign: 'center', marginTop: spacing.sm, maxWidth: 430 },
   stateButton: { alignSelf: 'stretch', marginTop: spacing.xl },
@@ -578,20 +623,4 @@ const styles = StyleSheet.create({
   skeletonShort: { width: '38%' },
   skeletonLong: { width: '78%', height: 22 },
   skeletonOption: { height: 54, borderRadius: radius.lg, backgroundColor: colors.panelMuted },
-  buildBody: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xl },
-  buildHero: { alignItems: 'center' },
-  buildKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: spacing.xs },
-  buildCard: { marginTop: spacing.xl, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelRaised, padding: spacing.lg, gap: spacing.lg },
-  buildRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  buildIcon: { width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.panelMuted, alignItems: 'center', justifyContent: 'center' },
-  buildIconActive: { backgroundColor: colors.primaryAction },
-  buildText: { flex: 1 },
-  buildTitle: { ...typography.bodyBold, color: colors.inkSubtle },
-  buildTitleActive: { color: colors.ink },
-  buildDetail: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  safeNote: { ...typography.caption, color: colors.inkSubtle, textAlign: 'center', marginTop: spacing.lg },
-  successKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: spacing.xs },
-  readyCard: { alignSelf: 'stretch', marginTop: spacing.xl, padding: spacing.lg, gap: spacing.md, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelRaised },
-  readyItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  readyText: { ...typography.body, color: colors.ink, flex: 1 },
 });

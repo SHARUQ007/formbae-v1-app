@@ -62,6 +62,17 @@ export const emptyAiPlanRefreshAnswers: AiPlanRefreshAnswers = {
   improvementDetails: '',
 };
 
+export function sanitizeAiPlanRefreshAnswers(value: unknown): AiPlanRefreshAnswers {
+  if (!value || typeof value !== 'object') return { ...emptyAiPlanRefreshAnswers };
+  const source = value as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.keys(emptyAiPlanRefreshAnswers).map((key) => [
+      key,
+      typeof source[key] === 'string' ? source[key] : '',
+    ]),
+  ) as AiPlanRefreshAnswers;
+}
+
 const MISSED_REASON_OPTIONS = [
   'No time',
   'Too hard',
@@ -309,7 +320,15 @@ export function toggleRefreshSelection(currentValue: string, option: string, mul
 }
 
 export function isAiPlanRefreshComplete(answers: AiPlanRefreshAnswers, questions = AI_PLAN_REFRESH_QUESTIONS) {
-  return questions.every((question) => Boolean(answers[question.key]?.trim()));
+  return questions.every((question) => {
+    const answer = answers[question.key]?.trim();
+    if (!answer) return false;
+    const needsDetail = Boolean(
+      question.notesKey &&
+        splitRefreshSelections(answer).some(option => /other/i.test(option)),
+    );
+    return !needsDetail || Boolean(answers[question.notesKey!]?.trim());
+  });
 }
 
 export function buildAiPlanRefreshPayload(answers: AiPlanRefreshAnswers): Record<string, string> {

@@ -3,6 +3,8 @@ import { invalidateCachedResource } from './appCache';
 import type { AiPlanRefresh, TodayPayload, UserPlanSummary, WorkoutDayDetail } from '../types/api';
 import {ensureEquipmentFreeQuickWorkout} from '../utils/quickWorkout';
 
+export const PENDING_AI_PLAN_BUILD_KEY = 'formbae_pending_ai_plan_build';
+
 export async function fetchWorkoutPlan() {
   return apiRequest<{ today: TodayPayload; plan: TodayPayload['plan']; aiPlanRefresh?: AiPlanRefresh }>('/workouts/plan');
 }
@@ -122,7 +124,10 @@ export async function requestAiPlanRefresh(params: {
   const response = await apiRequest<{ ok: boolean; newPlanId?: string; status?: string; error?: string }>('/workouts/redesign', {
     method: 'POST',
     body: params,
-    timeoutMs: 300000,
+    // The backend owns the build request until the frontend has saved and activated the
+    // generated plan. Leave enough headroom around its 295-second upstream timeout for the
+    // final status write and response trip back to the device.
+    timeoutMs: 315000,
     retries: 0,
   });
   invalidateCachedResource('workoutPlan');

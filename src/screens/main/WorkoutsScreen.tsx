@@ -14,7 +14,7 @@ import { ProgressBar } from '../../components/ProgressBar';
 import { MotionAnimation } from '../../components/MotionAnimation';
 import { WeeklyBodyMap } from '../../components/WeeklyBodyMap';
 import { loadProfileSettingsCached, loadWorkoutDayCached, loadWorkoutPlanCached } from '../../services/preloadService';
-import { fetchUserPlans, selectWorkoutPlan } from '../../services/workoutService';
+import { fetchUserPlans, PENDING_AI_PLAN_BUILD_KEY, selectWorkoutPlan } from '../../services/workoutService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
 import { getSiteUrl } from '../../constants/config';
 import type { AiPlanRefresh, PlanDay, ProgressSummary, TrainerInfo, UserPlanSummary } from '../../types/api';
@@ -32,6 +32,7 @@ const TODAY_WORKOUT_KEY_PREFIX = 'formbae_today_workout:';
 const LAST_SEEN_STREAK_KEY = 'formbae_last_seen_workout_streak';
 const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebration';
 const SEEN_READY_PLAN_KEY = 'formbae_seen_ready_plan';
+const PENDING_PLAN_BUILD_MAX_AGE_MS = 10 * 60 * 1000;
 const GOLD = '#f5b301';
 const FLAME_CORE = '#ffe08a';
 const STREAK_EMBERS = [
@@ -249,15 +250,18 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [plansError, setPlansError] = useState<string | null>(null);
   const [switchingPlanId, setSwitchingPlanId] = useState('');
   const [seenReadyPlanId, setSeenReadyPlanId] = useState('');
+  const [pendingPlanBuild, setPendingPlanBuild] = useState<{ planId: string; trainerName: string; requestedAt: number } | null>(null);
+  const [planBuildSyncedAt, setPlanBuildSyncedAt] = useState<number | null>(null);
   const [bodyGender, setBodyGender] = useState<ReturnType<typeof resolveBodyGender>>('neutral');
 
   const load = useCallback(async (options?: { force?: boolean }) => {
     setError(null);
     try {
       await flushWorkoutQueue();
-      const [data, settings] = await Promise.all([
+      const [data, settings, pendingBuildRaw] = await Promise.all([
         loadWorkoutPlanCached({ force: options?.force }),
         loadProfileSettingsCached({ force: options?.force }).catch(() => null),
+        AsyncStorage.getItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => null),
       ]);
       const plan = (data.plan || data.today?.plan) as { planId?: string; days?: PlanDay[]; title?: string; selectedWorkoutMode?: string } | undefined;
       const loadedDays = plan?.days || [];
@@ -274,6 +278,27 @@ function WorkoutDashboardScreen({ navigation }: Props) {
       setProgress(data.today?.progress || null);
       setTrainer(data.today?.assignedTrainer || null);
       setAiPlanRefresh(data.aiPlanRefresh || null);
+      const buildStatus = data.aiPlanRefresh?.build?.status;
+      if (buildStatus === 'building' || buildStatus === 'requested') {
+        setPlanBuildSyncedAt(Date.now());
+      }
+      let localPendingBuild: { planId: string; trainerName: string; requestedAt: number } | null = null;
+      if (pendingBuildRaw && !['completed', 'failed'].includes(buildStatus || '')) {
+        try {
+          const parsed = JSON.parse(pendingBuildRaw) as { planId?: string; trainerName?: string; requestedAt?: number };
+          const requestedAt = Number(parsed.requestedAt || 0);
+          if (parsed.planId && requestedAt > 0 && Date.now() - requestedAt <= PENDING_PLAN_BUILD_MAX_AGE_MS) {
+            localPendingBuild = { planId: parsed.planId, trainerName: parsed.trainerName || 'Ava', requestedAt };
+          } else {
+            await AsyncStorage.removeItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => undefined);
+          }
+        } catch {
+          await AsyncStorage.removeItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => undefined);
+        }
+      } else if (pendingBuildRaw && ['completed', 'failed'].includes(buildStatus || '')) {
+        await AsyncStorage.removeItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => undefined);
+      }
+      setPendingPlanBuild(localPendingBuild);
       const seenReady = await AsyncStorage.getItem(SEEN_READY_PLAN_KEY).catch(() => '');
       setSeenReadyPlanId(seenReady || '');
       setBodyGender(resolveBodyGender(settings?.profile?.gender));
@@ -291,7 +316,9 @@ function WorkoutDashboardScreen({ navigation }: Props) {
 
   const planBuildStatus = aiPlanRefresh?.build?.status;
   const builtPlanId = aiPlanRefresh?.build?.newPlanId || '';
-  const planBuilding = planBuildStatus === 'building';
+  const planBuilding = planBuildStatus === 'building' || planBuildStatus === 'requested' || Boolean(pendingPlanBuild);
+  const backendBuildStartedAt = Date.parse(aiPlanRefresh?.build?.requestedAt || '');
+  const planBuildStartedAt = Number.isFinite(backendBuildStartedAt) ? backendBuildStartedAt : pendingPlanBuild?.requestedAt;
   const planReadyToReveal = planBuildStatus === 'completed' && Boolean(builtPlanId) && builtPlanId === planId && seenReadyPlanId !== builtPlanId;
 
   useEffect(() => {
@@ -299,10 +326,6 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     const interval = setInterval(() => load({ force: true }).catch(() => undefined), 5000);
     return () => clearInterval(interval);
   }, [load, planBuilding]);
-
-  useEffect(() => {
-    navigation.getParent()?.setOptions({ tabBarStyle: planBuilding || planReadyToReveal ? hiddenTabBarStyle : appTabBarStyle });
-  }, [navigation, planBuilding, planReadyToReveal]);
 
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
@@ -429,7 +452,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   }
 
   if (planBuilding) {
-    return <AvaPlanTakeover mode="building" trainerName={aiPlanRefresh?.trainerName || 'Ava'} />;
+    return <AvaPlanTakeover mode="building" trainerName={aiPlanRefresh?.trainerName || pendingPlanBuild?.trainerName || 'Ava'} requestedAt={planBuildStartedAt} lastSyncedAt={planBuildSyncedAt || undefined} />;
   }
 
   if (planReadyToReveal) {
@@ -513,32 +536,40 @@ function WorkoutDashboardScreen({ navigation }: Props) {
             </Card>
 
             {aiPlanRefresh?.due ? (
-              <Card variant="accent" style={styles.aiRefreshCard}>
+              <View style={[styles.aiRefreshCard, aiPlanRefresh.build?.status === 'failed' && styles.aiRefreshCardFailed]}>
                 <View style={styles.aiRefreshHead}>
                   <View style={styles.aiRefreshIcon}>
-                    <Feather name="refresh-cw" size={20} color={colors.accentDark} />
+                    <Feather name={aiPlanRefresh.build?.status === 'failed' ? 'refresh-cw' : 'sliders'} size={19} color={colors.gold} />
                   </View>
                   <View style={styles.aiRefreshCopy}>
-                    <Text style={styles.aiRefreshKicker}>{aiPlanRefresh.build?.status === 'failed' ? 'Plan build paused' : 'Plan check-in'}</Text>
-                    <Text style={styles.aiRefreshTitle}>{aiPlanRefresh.build?.status === 'failed' ? 'Let Ava try your plan again' : 'Update your next training block'}</Text>
+                    <Text style={styles.aiRefreshKicker}>{aiPlanRefresh.build?.status === 'failed' ? 'CHECK-IN NEEDS ATTENTION' : 'NEXT TRAINING BLOCK'}</Text>
+                    <Text style={styles.aiRefreshTitle}>{aiPlanRefresh.build?.status === 'failed' ? 'Finish your next plan' : 'Shape what comes next'}</Text>
                     <Text style={styles.aiRefreshText}>
                       {aiPlanRefresh.build?.status === 'failed'
-                        ? 'Your answers are saved. Reopen the check-in to finish building your new plan.'
-                        : `Tell ${aiPlanRefresh.trainerName || 'your coach'} what worked and what needs to change.`}
+                        ? 'The previous build paused. Reopen your check-in to review and try again.'
+                        : `Tell ${aiPlanRefresh.trainerName || 'Ava'} what worked, what changed and what should feel different.`}
                     </Text>
                   </View>
                 </View>
                 <View style={styles.aiRefreshMetaRow}>
-                  <Badge label="About 2 min" tone="accent" icon="clock" />
-                  <Badge label={`${aiPlanRefresh.planAgeDays}d old`} tone="accent" icon="calendar" />
+                  <View style={styles.aiRefreshMetaItem}><Feather name="clock" size={14} color={colors.inkSubtle} /><Text style={styles.aiRefreshMetaText}>About 2 min</Text></View>
+                  <View style={styles.aiRefreshMetaDot} />
+                  <View style={styles.aiRefreshMetaItem}><Feather name="calendar" size={14} color={colors.inkSubtle} /><Text style={styles.aiRefreshMetaText}>{aiPlanRefresh.planAgeDays} day{aiPlanRefresh.planAgeDays === 1 ? '' : 's'} on this plan</Text></View>
                 </View>
-                <PrimaryButton
-                  title={aiPlanRefresh.build?.status === 'failed' ? 'Resume check-in' : 'Start check-in'}
-                  icon="edit-3"
-                  onPress={() => navigation.navigate('PlanRefresh')}
-                  style={styles.aiRefreshButton}
-                />
-              </Card>
+                {aiPlanRefresh.allowance?.allowed === false ? (
+                  <View style={styles.aiRefreshUnavailable}>
+                    <Feather name="lock" size={15} color={colors.inkMuted} />
+                    <Text style={styles.aiRefreshUnavailableText}>Check-in is unavailable right now. Your current plan stays active.</Text>
+                  </View>
+                ) : (
+                  <PrimaryButton
+                    title={aiPlanRefresh.build?.status === 'failed' ? 'Review & try again' : 'Start check-in'}
+                    icon={aiPlanRefresh.build?.status === 'failed' ? 'refresh-cw' : 'arrow-right'}
+                    onPress={() => navigation.navigate('PlanRefresh')}
+                    style={styles.aiRefreshButton}
+                  />
+                )}
+              </View>
             ) : null}
 
             <SectionTitle>Your coach</SectionTitle>
@@ -742,24 +773,44 @@ function WorkoutDashboardScreen({ navigation }: Props) {
 
 export const WorkoutsScreen = WorkoutDashboardScreen;
 
-const AVA_BUILD_MESSAGES = [
-  'Reading your latest check-in',
-  'Balancing training and recovery',
-  'Programming your seven-day split',
-  'Choosing exercises and alternatives',
-  'Adding targets, rest and coaching notes',
+const AVA_PLAN_ESTIMATE_MS = 105_000;
+const AVA_BUILD_EVENTS = [
+  { at: 6, icon: 'edit-3', text: 'Reading your latest check-in' },
+  { at: 10, icon: 'bar-chart-2', text: 'Comparing your last block and recovery' },
+  { at: 14, icon: 'check-circle', text: 'Day 1 built · foundation and form', day: 1 },
+  { at: 18, icon: 'activity', text: 'Adding the Day 1 warm-up sequence' },
+  { at: 23, icon: 'check-circle', text: 'Day 2 built · strength progression', day: 2 },
+  { at: 28, icon: 'repeat', text: 'Pairing exercises that flow well' },
+  { at: 34, icon: 'check-circle', text: 'Day 3 built · recovery and mobility', day: 3 },
+  { at: 39, icon: 'clock', text: 'Timing reps, sets and rest periods' },
+  { at: 45, icon: 'check-circle', text: 'Day 4 built · balanced training load', day: 4 },
+  { at: 51, icon: 'target', text: 'Dialing in targets for every exercise' },
+  { at: 57, icon: 'check-circle', text: 'Day 5 built · progression mapped', day: 5 },
+  { at: 63, icon: 'shield', text: 'Checking fatigue and recovery spacing' },
+  { at: 70, icon: 'check-circle', text: 'Day 6 built · intensity balanced', day: 6 },
+  { at: 76, icon: 'zap', text: 'Building shorter workout alternatives' },
+  { at: 83, icon: 'check-circle', text: 'Day 7 built · your week is mapped', day: 7 },
+  { at: 88, icon: 'sliders', text: 'Adding coaching cues and substitutions' },
+  { at: 92, icon: 'search', text: 'Running the final plan quality check' },
 ] as const;
 
 function AvaPlanTakeover({
   mode,
   trainerName,
+  requestedAt,
+  lastSyncedAt,
   onContinue,
 }: {
   mode: 'building' | 'ready';
   trainerName: string;
+  requestedAt?: number;
+  lastSyncedAt?: number;
   onContinue?: () => void;
 }) {
-  const [messageIndex, setMessageIndex] = useState(0);
+  const fallbackStartedAt = useRef(Date.now());
+  const [buildProgress, setBuildProgress] = useState(6);
+  const [estimatedSecondsLeft, setEstimatedSecondsLeft] = useState(Math.ceil(AVA_PLAN_ESTIMATE_MS / 1000));
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -771,12 +822,21 @@ function AvaPlanTakeover({
       ]),
     );
     pulseLoop.start();
-    const interval = setInterval(() => setMessageIndex((current) => (current + 1) % AVA_BUILD_MESSAGES.length), 2200);
+    const startedAt = requestedAt && Number.isFinite(requestedAt) ? requestedAt : fallbackStartedAt.current;
+    const updateProgress = () => {
+      const elapsed = Math.max(0, Date.now() - startedAt);
+      const progress = Math.min(94, Math.floor(6 + (elapsed / AVA_PLAN_ESTIMATE_MS) * 88));
+      setBuildProgress(progress);
+      setEstimatedSecondsLeft(Math.max(0, Math.ceil((AVA_PLAN_ESTIMATE_MS - elapsed) / 1000)));
+      setElapsedSeconds(Math.floor(elapsed / 1000));
+    };
+    updateProgress();
+    const interval = setInterval(updateProgress, 1000);
     return () => {
       pulseLoop.stop();
       clearInterval(interval);
     };
-  }, [mode, pulse]);
+  }, [mode, pulse, requestedAt]);
 
   if (mode === 'ready') {
     return (
@@ -799,34 +859,103 @@ function AvaPlanTakeover({
 
   const pulseScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1.08] });
   const pulseOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.25, 0.6] });
+  const activityOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.78, 1] });
+  const visibleEvents = AVA_BUILD_EVENTS.filter((event) => event.at <= buildProgress).slice(-5).reverse();
+  const daysBuilt = AVA_BUILD_EVENTS.filter((event) => 'day' in event && event.at <= buildProgress).length;
+  const estimateLabel = estimatedSecondsLeft > 60
+    ? `About ${Math.ceil(estimatedSecondsLeft / 60)} min left`
+    : estimatedSecondsLeft > 0
+      ? 'About 1 min left'
+      : 'Finishing touches';
+  const elapsedLabel = `${Math.floor(elapsedSeconds / 60)}:${String(elapsedSeconds % 60).padStart(2, '0')}`;
+  const syncAgeSeconds = lastSyncedAt ? Math.max(0, Math.floor((Date.now() - lastSyncedAt) / 1000)) : null;
+  const backendActive = syncAgeSeconds !== null && syncAgeSeconds < 15;
+  const connectionLabel = backendActive ? 'Plan in motion' : syncAgeSeconds === null ? 'Warming up…' : 'Setting up the next move';
+  const updateLabel = syncAgeSeconds === null ? 'Loading the rack' : syncAgeSeconds < 5 ? 'New work added' : 'Next move incoming';
   return (
     <ScreenContainer withBottomInset style={styles.avaTakeover}>
-      <View style={styles.avaBuildBody} accessibilityRole="progressbar" accessibilityLiveRegion="polite">
-        <View style={styles.avaOrbWrap}>
-          <Animated.View style={[styles.avaPulse, { opacity: pulseOpacity, transform: [{ scale: pulseScale }] }]} />
-          <View style={styles.avaOrb}><Text style={styles.avaInitial}>{trainerName.slice(0, 1).toUpperCase()}</Text></View>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.avaBuildBody}
+        accessibilityRole="progressbar"
+        accessibilityValue={{ min: 0, max: 100, now: buildProgress, text: `${buildProgress}% complete, ${estimateLabel}` }}
+        accessibilityLiveRegion="polite"
+      >
+        <View style={styles.avaStatusHero}>
+          <View style={styles.avaCompactOrbWrap}>
+            <Animated.View style={[styles.avaCompactPulse, { opacity: pulseOpacity, transform: [{ scale: pulseScale }] }]} />
+            <View style={styles.avaCompactOrb}><Text style={styles.avaCompactInitial}>{trainerName.slice(0, 1).toUpperCase()}</Text></View>
+            <Animated.View style={[styles.avaOnlineDot, { opacity: activityOpacity, transform: [{ scale: pulseScale }] }]} />
+          </View>
+          <View style={styles.avaStatusCopy}>
+            <Text style={styles.avaStatusKicker}>Workout programming in progress</Text>
+            <Text style={styles.avaStatusTitle}>{trainerName} is training your week</Text>
+            <Text style={styles.avaStatusDetail}>Your answers are locked in. Ava is turning them into sessions, sets and recovery.</Text>
+          </View>
         </View>
-        <Text style={styles.avaKicker}>Ava plan tunnel</Text>
-        <Text style={styles.avaTitle}>{trainerName} is building your plan</Text>
-        <Text style={styles.avaDetail}>Stay here or come back later. Your check-in is safely saved while Ava creates every workout.</Text>
 
-        <View style={styles.avaTunnelCard}>
-          <View style={styles.avaTunnelTop}>
-            <Text style={styles.avaTunnelLabel}>Building now</Text>
-            <ActivityIndicator size="small" color={colors.accent} />
+        <View style={styles.avaHeartbeatBar}>
+          <View style={styles.avaHeartbeatStatus}>
+            <Animated.View style={[styles.avaHeartbeatDot, !backendActive && styles.avaHeartbeatDotWaiting, { opacity: activityOpacity, transform: [{ scale: pulseScale }] }]} />
+            <Text style={[styles.avaHeartbeatText, !backendActive && styles.avaHeartbeatTextWaiting]}>{connectionLabel}</Text>
           </View>
-          <View style={styles.avaActiveMessage}>
-            <Feather name="star" size={18} color={colors.accent} />
-            <Text key={messageIndex} style={styles.avaActiveMessageText}>{AVA_BUILD_MESSAGES[messageIndex]}</Text>
-          </View>
-          <View style={styles.avaDayTrack}>
-            {[0, 1, 2, 3, 4, 5, 6].map((day) => (
-              <Animated.View key={day} style={[styles.avaDayDot, day === messageIndex % 7 && styles.avaDayDotActive]} />
-            ))}
-          </View>
-          <Text style={styles.avaTunnelHint}>This usually takes a minute or two. The new plan will appear here automatically.</Text>
+          <Text style={styles.avaElapsedText}>{elapsedLabel} elapsed</Text>
+          <Text style={styles.avaUpdatedText}>{updateLabel}</Text>
         </View>
-      </View>
+
+        <View style={styles.avaBuildCard}>
+          <View style={styles.avaBuildTop}>
+            <View>
+              <Text style={styles.avaBuildLabel}>Programming your week</Text>
+              <Text style={styles.avaBuildEstimate}>{buildProgress >= 94 ? 'Final form check in progress' : estimateLabel}</Text>
+            </View>
+            <Text style={styles.avaBuildPercent}>{buildProgress}%</Text>
+          </View>
+          <View style={styles.avaProgressTrack}>
+            <View style={[styles.avaProgressFill, { width: `${buildProgress}%` as `${number}%` }]} />
+          </View>
+
+          <View style={styles.avaDaysHeader}>
+            <Text style={styles.avaDaysTitle}>Weekly split</Text>
+            <Text style={styles.avaDaysCount}>{daysBuilt} of 7 days built</Text>
+          </View>
+          <View style={styles.avaDaysGrid}>
+            {[1, 2, 3, 4, 5, 6, 7].map((day) => {
+              const built = day <= daysBuilt;
+              return (
+                <View key={day} style={[styles.avaDayCell, built && styles.avaDayCellBuilt]}>
+                  <Feather name={built ? 'check' : 'minus'} size={12} color={built ? colors.gold : colors.inkSubtle} />
+                  <Text style={[styles.avaDayCellText, built && styles.avaDayCellTextBuilt]}>D{day}</Text>
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={styles.avaFeedHeader}>
+            <Text style={styles.avaFeedLabel}>Inside Ava’s workout room</Text>
+            <View style={styles.avaLivePill}><View style={styles.avaLiveDot} /><Text style={styles.avaLiveText}>Live</Text></View>
+          </View>
+          <View style={styles.avaMessageFeed}>
+            {visibleEvents.map((item, feedIndex) => {
+              if (feedIndex === 0) {
+                return (
+                  <Animated.View key={`${item.at}-${item.text}`} style={[styles.avaFeedMessage, styles.avaFeedMessageActive, { opacity: activityOpacity }]}>
+                    <ActivityIndicator size="small" color={colors.gold} />
+                    <Text style={[styles.avaFeedMessageText, styles.avaFeedMessageTextActive]} numberOfLines={1}>{item.text}</Text>
+                  </Animated.View>
+                );
+              }
+              return (
+                <View key={`${item.at}-${item.text}`} style={[styles.avaFeedMessage, { opacity: Math.max(0.46, 1 - feedIndex * 0.14) }]}>
+                  <Feather name={item.icon} size={17} color={colors.inkSubtle} />
+                  <Text style={styles.avaFeedMessageText} numberOfLines={1}>{item.text}</Text>
+                </View>
+              );
+            })}
+          </View>
+          <View style={styles.avaBuildHintRow}><Feather name="check-circle" size={14} color={colors.gold} /><Text style={styles.avaBuildHint}>Your check-in is done. Ava keeps programming even if you leave this tab.</Text></View>
+        </View>
+      </ScrollView>
       <View style={styles.avaSafeRow}><Feather name="shield" size={15} color={colors.inkSubtle} /><Text style={styles.avaSafeText}>You can close the app—Ava will keep working.</Text></View>
     </ScreenContainer>
   );
@@ -991,24 +1120,56 @@ function PlanSwitcherModal({
 
 const styles = StyleSheet.create({
   avaTakeover: { backgroundColor: colors.bg, paddingHorizontal: spacing.lg },
-  avaBuildBody: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: spacing.lg },
+  avaBuildBody: { flexGrow: 1, paddingTop: spacing.md, paddingBottom: spacing.lg },
   avaReadyBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  avaOrbWrap: { width: 112, height: 112, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg },
-  avaPulse: { position: 'absolute', width: 104, height: 104, borderRadius: radius.pill, backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
-  avaOrb: { width: 76, height: 76, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelWarm, borderWidth: 1, borderColor: colors.accentSurface },
-  avaInitial: { fontSize: 34, lineHeight: 40, fontWeight: '800', color: colors.accent },
   avaKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', textAlign: 'center', marginTop: spacing.lg },
   avaTitle: { ...typography.display, color: colors.ink, textAlign: 'center', marginTop: spacing.sm },
   avaDetail: { ...typography.body, color: colors.inkMuted, lineHeight: 24, textAlign: 'center', marginTop: spacing.sm, maxWidth: 430 },
-  avaTunnelCard: { alignSelf: 'stretch', marginTop: spacing.xl, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panelRaised, padding: spacing.lg },
-  avaTunnelTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  avaTunnelLabel: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
-  avaActiveMessage: { minHeight: 58, marginTop: spacing.md, paddingHorizontal: spacing.md, borderRadius: radius.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
-  avaActiveMessageText: { ...typography.bodyBold, color: colors.ink, flex: 1 },
-  avaDayTrack: { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.lg },
-  avaDayDot: { height: 7, flex: 1, borderRadius: radius.pill, backgroundColor: colors.borderStrong },
-  avaDayDotActive: { backgroundColor: colors.accent },
-  avaTunnelHint: { ...typography.caption, color: colors.inkMuted, lineHeight: 19, textAlign: 'center', marginTop: spacing.md },
+  avaStatusHero: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md },
+  avaCompactOrbWrap: { width: 66, height: 66, alignItems: 'center', justifyContent: 'center' },
+  avaCompactPulse: { position: 'absolute', width: 64, height: 64, borderRadius: radius.pill, backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.borderStrong },
+  avaCompactOrb: { width: 50, height: 50, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.borderStrong },
+  avaCompactInitial: { fontSize: 22, lineHeight: 27, fontWeight: '900', color: colors.ink },
+  avaOnlineDot: { position: 'absolute', right: 3, bottom: 5, width: 13, height: 13, borderRadius: radius.pill, backgroundColor: colors.gold, borderWidth: 3, borderColor: colors.bg },
+  avaStatusCopy: { flex: 1, minWidth: 0 },
+  avaStatusKicker: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
+  avaStatusTitle: { ...typography.title, color: colors.ink, marginTop: 3 },
+  avaStatusDetail: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: 3 },
+  avaHeartbeatBar: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border, marginTop: spacing.sm, paddingVertical: spacing.sm },
+  avaHeartbeatStatus: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  avaHeartbeatDot: { width: 8, height: 8, borderRadius: radius.pill, backgroundColor: colors.gold },
+  avaHeartbeatDotWaiting: { backgroundColor: colors.inkSubtle },
+  avaHeartbeatText: { ...typography.caption, color: colors.ink, fontWeight: '900' },
+  avaHeartbeatTextWaiting: { color: colors.inkMuted },
+  avaElapsedText: { ...typography.caption, color: colors.ink, fontWeight: '700' },
+  avaUpdatedText: { ...typography.caption, color: colors.inkSubtle, marginLeft: 'auto' },
+  avaBuildCard: { alignSelf: 'stretch', marginTop: spacing.lg, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panel, padding: spacing.lg },
+  avaBuildTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  avaBuildLabel: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
+  avaBuildEstimate: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  avaBuildPercent: { fontSize: 24, lineHeight: 29, color: colors.ink, fontWeight: '900' },
+  avaProgressTrack: { height: 8, overflow: 'hidden', borderRadius: radius.pill, backgroundColor: colors.borderStrong, marginTop: spacing.md },
+  avaProgressFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.primaryAction },
+  avaDaysHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: spacing.lg },
+  avaDaysTitle: { ...typography.bodyBold, color: colors.ink },
+  avaDaysCount: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
+  avaDaysGrid: { flexDirection: 'row', gap: 5, marginTop: spacing.sm },
+  avaDayCell: { flex: 1, minWidth: 0, height: 44, alignItems: 'center', justifyContent: 'center', gap: 2, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  avaDayCellBuilt: { borderColor: colors.borderStrong, backgroundColor: colors.panelRaised },
+  avaDayCellText: { fontSize: 9, lineHeight: 11, color: colors.inkSubtle, fontWeight: '800' },
+  avaDayCellTextBuilt: { color: colors.ink },
+  avaFeedHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.lg },
+  avaFeedLabel: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
+  avaLivePill: { minHeight: 24, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, backgroundColor: colors.panelRaised, paddingHorizontal: spacing.sm },
+  avaLiveDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.gold },
+  avaLiveText: { fontSize: 9, lineHeight: 11, color: colors.ink, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.6 },
+  avaMessageFeed: { minHeight: 58, marginTop: spacing.sm, gap: spacing.xs },
+  avaFeedMessage: { minHeight: 42, paddingHorizontal: spacing.md, borderRadius: radius.lg, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  avaFeedMessageActive: { minHeight: 52, backgroundColor: colors.panelRaised, borderColor: colors.borderStrong },
+  avaFeedMessageText: { ...typography.caption, color: colors.inkMuted, flex: 1, fontWeight: '600' },
+  avaFeedMessageTextActive: { ...typography.bodyBold, color: colors.ink },
+  avaBuildHintRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, borderTopWidth: 1, borderTopColor: colors.border, marginTop: spacing.md, paddingTop: spacing.md },
+  avaBuildHint: { ...typography.caption, color: colors.inkMuted, lineHeight: 19, flexShrink: 1 },
   avaSafeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingBottom: spacing.sm },
   avaSafeText: { ...typography.caption, color: colors.inkSubtle },
   avaReadyCard: { alignSelf: 'stretch', marginTop: spacing.xl, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelRaised, padding: spacing.lg, gap: spacing.md },
@@ -1100,24 +1261,34 @@ const styles = StyleSheet.create({
   todayTitle: { ...typography.title, color: colors.ink, marginTop: spacing.lg },
   todayMeta: { ...typography.body, color: colors.inkMuted, marginTop: 4 },
   heroActions: { gap: spacing.sm, marginTop: spacing.lg },
-  aiRefreshCard: { marginTop: spacing.md },
-  aiRefreshHead: { flexDirection: 'row', gap: spacing.md },
+  aiRefreshCard: {
+    marginTop: spacing.lg,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.lg,
+  },
+  aiRefreshCardFailed: { borderColor: colors.goldMuted },
+  aiRefreshHead: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   aiRefreshIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: radius.lg,
+    width: 42,
+    height: 42,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.panelRaised,
-    borderWidth: 1,
-    borderColor: colors.accentSurface,
+    backgroundColor: colors.panelWarm,
   },
-  aiRefreshCopy: { flex: 1 },
-  aiRefreshKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
-  aiRefreshTitle: { ...typography.subtitle, color: colors.ink, marginTop: 2 },
-  aiRefreshText: { ...typography.caption, color: colors.inkMuted, marginTop: 4, lineHeight: 18 },
-  aiRefreshMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
-  aiRefreshButton: { marginTop: spacing.md },
+  aiRefreshCopy: { flex: 1, minWidth: 0 },
+  aiRefreshKicker: { ...typography.overline, color: colors.gold },
+  aiRefreshTitle: { ...typography.title, color: colors.ink, marginTop: 3 },
+  aiRefreshText: { ...typography.body, color: colors.inkMuted, marginTop: spacing.xs, lineHeight: 22 },
+  aiRefreshMetaRow: { minHeight: 36, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md },
+  aiRefreshMetaItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  aiRefreshMetaText: { ...typography.caption, color: colors.inkMuted, fontWeight: '600' },
+  aiRefreshMetaDot: { width: 3, height: 3, borderRadius: radius.pill, backgroundColor: colors.inkSubtle },
+  aiRefreshButton: { marginTop: spacing.sm },
+  aiRefreshUnavailable: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, marginTop: spacing.sm, paddingTop: spacing.sm },
+  aiRefreshUnavailableText: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 18 },
   trainerCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md, padding: spacing.md },
   trainerPhotoWrap: {
     width: 58,
