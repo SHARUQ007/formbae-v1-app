@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import LinearGradient from 'react-native-linear-gradient';
 import Feather from 'react-native-vector-icons/Feather';
@@ -10,9 +11,9 @@ import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { WorkoutPrimaryCTA } from '../../features/workout/components/WorkoutPrimaryCTA';
 import { WorkoutScreenHeader } from '../../features/workout/components/WorkoutScreenHeader';
 import { loadWorkoutDayCached } from '../../services/preloadService';
-import { loadWorkoutProgress, saveWorkoutProgress } from '../../store/workoutStore';
+import { loadWorkoutProgress } from '../../store/workoutStore';
 import type { WorkoutStackParamList } from '../../navigation/types';
-import type { WorkoutDayDetail, WorkoutExerciseAlternative, WorkoutExerciseDetail } from '../../types/api';
+import type { WorkoutDayDetail, WorkoutExerciseDetail } from '../../types/api';
 import { exerciseWithSelectedVariant } from '../../utils/workoutExerciseVariant';
 import { buildWorkoutSummary } from '../../utils/workoutSummary';
 import { colors } from '../../theme/colors';
@@ -70,11 +71,17 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
     load();
   }, [initialDetail?.planDayId, load, planDayId]);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
+    let active = true;
     loadWorkoutProgress(planDayId)
-      .then((progress) => setSelectedAlternates(progress.selectedAlternatesByExercise || {}))
+      .then((progress) => {
+        if (active) setSelectedAlternates(progress.selectedAlternatesByExercise || {});
+      })
       .catch(() => undefined);
-  }, [planDayId]);
+    return () => {
+      active = false;
+    };
+  }, [planDayId]));
 
   const exercises = useMemo(
     () => (detail?.exercises ?? []).filter((exercise) => !isSectionMarker(exercise.notes)),
@@ -97,23 +104,6 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
       title: detail.focus,
       mode,
       initialDetail: detail,
-    });
-  };
-
-  const selectAlternate = async (exercise: WorkoutExerciseDetail, index: number | null) => {
-    const next = { ...selectedAlternates };
-    if (index === null) {
-      delete next[exercise.exerciseId];
-    } else {
-      next[exercise.exerciseId] = index;
-    }
-    setSelectedAlternates(next);
-    const progress = await loadWorkoutProgress(planDayId);
-    await saveWorkoutProgress({
-      ...progress,
-      planDayId,
-      selectedAlternatesByExercise: next,
-      updatedAt: new Date().toISOString(),
     });
   };
 
@@ -213,11 +203,6 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
                     <View style={styles.exerciseCopy}>
                       <Text style={styles.exerciseName}>{activeChoice.exerciseName}</Text>
                       <Text style={styles.exerciseMeta}>{exerciseMeta(activeChoice)}</Text>
-                      <AlternateCarousel
-                        exercise={exercise}
-                        selectedIndex={selectedAlternates[exercise.exerciseId]}
-                        onSelect={(nextIndex) => selectAlternate(exercise, nextIndex)}
-                      />
                     </View>
                   </View>
                 );})}
@@ -264,45 +249,6 @@ function Metric({ icon, label, value }: { icon: string; label: string; value: st
         <Text style={styles.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{value}</Text>
       </View>
     </View>
-  );
-}
-
-function AlternateCarousel({
-  exercise,
-  selectedIndex,
-  onSelect,
-}: {
-  exercise: WorkoutExerciseDetail;
-  selectedIndex?: number;
-  onSelect: (index: number | null) => void;
-}) {
-  const alternatives = exercise.alternatives?.filter((alternate: WorkoutExerciseAlternative) => alternate.exerciseName?.trim()).slice(0, 3) || [];
-  if (!alternatives.length) return null;
-  const choices: Array<{ label: string; index: number | null }> = [
-    { label: 'Original', index: null },
-    ...alternatives.map((alternate, index) => ({ label: alternate.exerciseName, index })),
-  ];
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.alternateRail}
-    >
-      {choices.map((choice) => {
-        const active = choice.index === null ? selectedIndex === undefined : selectedIndex === choice.index;
-        return (
-          <TouchableOpacity
-            key={`${choice.index ?? 'original'}-${choice.label}`}
-            activeOpacity={0.86}
-            onPress={() => onSelect(choice.index)}
-            style={[styles.alternateChip, active && styles.alternateChipActive]}
-          >
-            <Feather name={active ? 'check' : 'repeat'} size={12} color={active ? colors.white : colors.inkMuted} />
-            <Text style={[styles.alternateChipText, active && styles.alternateChipTextActive]}>{choice.label}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
   );
 }
 
@@ -421,26 +367,6 @@ const styles = StyleSheet.create({
   exerciseCopy: { flex: 1 },
   exerciseName: { fontSize: 18, lineHeight: 25, fontWeight: '600', color: colors.ink },
   exerciseMeta: { fontSize: 15, lineHeight: 21, fontWeight: '500', color: colors.inkMuted, marginTop: 3 },
-  alternateRail: { gap: spacing.xs, paddingTop: spacing.sm, paddingRight: spacing.sm },
-  alternateChip: {
-    maxWidth: 280,
-    minHeight: 36,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panelRaised,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  alternateChipActive: {
-    backgroundColor: colors.accentFill,
-    borderColor: colors.goldMuted,
-  },
-  alternateChipText: { fontSize: 14, lineHeight: 20, color: colors.inkMuted, fontWeight: '700', maxWidth: 230, flexShrink: 1 },
-  alternateChipTextActive: { color: colors.white },
   fixedCtaLayer: {
     position: 'absolute',
     left: 0,
