@@ -308,12 +308,13 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   );
   const activeAlternativeChoices = useMemo(() => {
     const sourceMuscles = deriveExerciseMuscles(originalActiveExercise, dayMuscles);
-    return (originalActiveExercise?.alternatives || [])
-      .map((alternative, index) => ({ alternative, index }))
-      .filter(({ alternative }) => haveCompatibleMuscleTargets(
+    const choices = (originalActiveExercise?.alternatives || [])
+      .map((alternative, index) => ({ alternative, index }));
+    const compatibleChoices = choices.filter(({ alternative }) => haveCompatibleMuscleTargets(
         sourceMuscles,
         deriveExerciseMuscles(alternative),
       ));
+    return compatibleChoices.length ? compatibleChoices : choices;
   }, [dayMuscles, originalActiveExercise]);
   const activeCues = exerciseCues(activeNotes, activeExercise);
   const activeVideoKey = activeExercise ? videoResolveKey(activeExercise) : '';
@@ -1056,6 +1057,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         exerciseName={activeExercise.exerciseName}
         originalExercise={originalActiveExercise}
         alternativeChoices={activeAlternativeChoices}
+        currentAlternateIndex={selectedAlternates[activeExerciseId]}
         selectedAlternateIndex={feedbackAlternateIndex}
         sentiment={feedbackSentiment}
         feedbackText={feedbackText}
@@ -1064,7 +1066,10 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
           setFeedbackSentiment(value);
           if (value === 'up') setFeedbackAlternateIndex(selectedAlternates[activeExerciseId]);
         }}
-        onSelectAlternate={setFeedbackAlternateIndex}
+        onSelectAlternate={(index) => {
+          setFeedbackAlternateIndex(index);
+          if (index !== selectedAlternates[activeExerciseId]) setFeedbackSentiment('down');
+        }}
         onFeedbackText={setFeedbackText}
         onClose={closeActiveFeedback}
         onSubmit={submitActiveFeedback}
@@ -1181,6 +1186,7 @@ function ExerciseFeedbackSheet({
   exerciseName,
   originalExercise,
   alternativeChoices,
+  currentAlternateIndex,
   selectedAlternateIndex,
   sentiment,
   feedbackText,
@@ -1198,6 +1204,7 @@ function ExerciseFeedbackSheet({
     alternative: NonNullable<WorkoutExerciseDetail['alternatives']>[number];
     index: number;
   }>;
+  currentAlternateIndex?: number;
   selectedAlternateIndex?: number;
   sentiment: WorkoutFeedbackSentiment;
   feedbackText: string;
@@ -1208,6 +1215,7 @@ function ExerciseFeedbackSheet({
   onClose: () => void;
   onSubmit: () => void;
 }) {
+  const movementWillChange = currentAlternateIndex !== selectedAlternateIndex;
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalRoot}>
@@ -1245,10 +1253,18 @@ function ExerciseFeedbackSheet({
               );
             })}
           </View>
-          {sentiment === 'down' && originalExercise && alternativeChoices.length ? (
+          {originalExercise && alternativeChoices.length ? (
             <View style={styles.feedbackAlternateSection}>
-              <Text style={styles.feedbackAlternateKicker}>Movement preference</Text>
-              <Text style={styles.feedbackAlternateTitle}>Would another movement fit better?</Text>
+              <View style={styles.feedbackAlternateHeader}>
+                <View style={styles.feedbackAlternateIcon}>
+                  <Feather name="repeat" size={18} color={colors.gold} />
+                </View>
+                <View style={styles.feedbackAlternateCopy}>
+                  <Text style={styles.feedbackAlternateKicker}>Exercise options</Text>
+                  <Text style={styles.feedbackAlternateTitle}>Switch this exercise</Text>
+                  <Text style={styles.feedbackAlternateSubtitle}>Choose an alternate for today's workout.</Text>
+                </View>
+              </View>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -1281,7 +1297,7 @@ function ExerciseFeedbackSheet({
                   </TouchableOpacity>
                 ))}
               </ScrollView>
-              <Text style={styles.feedbackAlternateHint}>Optional. Your choice applies to today and helps personalize future plans.</Text>
+              <Text style={styles.feedbackAlternateHint}>Saving updates the movement, muscles and technique video. Your choice also helps personalize future plans.</Text>
             </View>
           ) : null}
           <TextInput
@@ -1301,7 +1317,9 @@ function ExerciseFeedbackSheet({
             accessibilityRole="button"
             accessibilityLabel="Save workout feedback"
           >
-            <Text style={styles.sheetSaveText}>{submitting ? 'Saving...' : 'Save feedback'}</Text>
+            <Text style={styles.sheetSaveText}>
+              {submitting ? (movementWillChange ? 'Switching...' : 'Saving...') : (movementWillChange ? 'Save & switch exercise' : 'Save feedback')}
+            </Text>
             <Feather name="arrow-right" size={18} color={colors.white} />
           </TouchableOpacity>
         </ScrollView>
@@ -3036,8 +3054,21 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
   },
+  feedbackAlternateHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  feedbackAlternateIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+  },
+  feedbackAlternateCopy: { flex: 1 },
   feedbackAlternateKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
   feedbackAlternateTitle: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
+  feedbackAlternateSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
   feedbackAlternateRow: { gap: spacing.sm, paddingTop: spacing.sm, paddingRight: spacing.md },
   feedbackAlternatePill: {
     maxWidth: 240,
