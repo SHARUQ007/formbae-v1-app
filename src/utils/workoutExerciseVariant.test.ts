@@ -30,6 +30,7 @@ describe('exerciseWithSelectedVariant', () => {
       alternatives: [{
         exerciseName: 'Leg Press',
         notes: 'Target Muscles: Quads, Glutes',
+        videoId: 'yt_leg-press',
         videoUrl: 'https://youtube.com/shorts/leg-press',
       }],
     }, 0);
@@ -48,6 +49,33 @@ describe('exerciseWithSelectedVariant', () => {
     }, 0);
 
     expect(selected.exerciseName).toBe('Leg Press');
+    expect(selected.videoUrl).toBe('');
+  });
+
+  it('rejects a legacy alternative URL that has not been verified for that movement', () => {
+    const selected = exerciseWithSelectedVariant({
+      ...plannedExercise,
+      alternatives: [{
+        exerciseName: 'Split Squat',
+        videoUrl: 'https://youtube.com/shorts/a-different-but-unverified-link',
+      }],
+    }, 0);
+
+    expect(selected.exerciseName).toBe('Split Squat');
+    expect(selected.videoUrl).toBe('');
+  });
+
+  it('rejects the original YouTube video even when its URL format differs', () => {
+    const selected = exerciseWithSelectedVariant({
+      ...plannedExercise,
+      videoUrl: 'https://www.youtube.com/watch?v=goblet123',
+      alternatives: [{
+        exerciseName: 'Leg Press',
+        videoId: 'yt_goblet123',
+        videoUrl: 'https://youtu.be/goblet123',
+      }],
+    }, 0);
+
     expect(selected.videoUrl).toBe('');
   });
 });

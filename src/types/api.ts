@@ -433,6 +433,7 @@ export type WorkoutExerciseAlternative = {
   reps?: string;
   restSec?: string;
   notes?: string;
+  videoId?: string;
   videoUrl?: string;
 };
 

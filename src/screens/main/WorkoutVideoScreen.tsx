@@ -40,6 +40,15 @@ export function WorkoutVideoScreen({ route, navigation }: Props) {
   const replacing = replacementStatus === 'finding';
 
   useEffect(() => {
+    // React Navigation can reuse this screen instance when another movement is
+    // opened. Keep the player state aligned with the latest route instead of
+    // leaving the previous movement's video mounted under a new title.
+    setCurrentVideoUrl(videoUrl);
+    setReloadKey((value) => value + 1);
+    setReplacementStatus('idle');
+  }, [exerciseName, videoUrl]);
+
+  useEffect(() => {
     if (replacementStatus !== 'changed' && replacementStatus !== 'unavailable') return undefined;
     const timeout = setTimeout(
       () => setReplacementStatus('idle'),
