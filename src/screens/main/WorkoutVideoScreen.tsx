@@ -40,6 +40,14 @@ export function WorkoutVideoScreen({ route, navigation }: Props) {
   const replacing = replacementStatus === 'finding';
 
   useEffect(() => {
+    // Native stack navigation may reuse this screen. Reset the player whenever
+    // a newly selected movement supplies a different route/video.
+    setCurrentVideoUrl(videoUrl);
+    setReloadKey((value) => value + 1);
+    setReplacementStatus('idle');
+  }, [exerciseName, videoUrl]);
+
+  useEffect(() => {
     if (replacementStatus !== 'changed' && replacementStatus !== 'unavailable') return undefined;
     const timeout = setTimeout(
       () => setReplacementStatus('idle'),

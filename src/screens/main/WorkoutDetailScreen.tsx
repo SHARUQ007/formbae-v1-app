@@ -45,6 +45,7 @@ import { typography } from '../../theme/typography';
 import { shadows } from '../../theme/shadows';
 import { isPlayableVideo } from '../../utils/video';
 import { deriveExerciseMuscles, deriveWorkoutMuscles, resolveBodyGender, type BodyGender } from '../../utils/weeklyMuscles';
+import { exerciseWithSelectedVariant } from '../../utils/workoutExerciseVariant';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutDetail'>;
 
@@ -119,20 +120,6 @@ function exerciseCues(notes: string, exercise?: WorkoutExerciseDetail | null) {
 function displayValue(value: string, fallback = '-') {
   const cleaned = String(value || '').trim();
   return cleaned || fallback;
-}
-
-function exerciseWithSelectedAlternate(exercise: WorkoutExerciseDetail, selectedIndex?: number): WorkoutExerciseDetail {
-  const alternate = selectedIndex !== undefined && selectedIndex >= 0 ? exercise.alternatives?.[selectedIndex] : null;
-  if (!alternate) return exercise;
-  return {
-    ...exercise,
-    exerciseName: alternate.exerciseName || exercise.exerciseName,
-    sets: alternate.sets || exercise.sets,
-    reps: alternate.reps || exercise.reps,
-    restSec: alternate.restSec || exercise.restSec,
-    notes: alternate.notes || exercise.notes,
-    videoUrl: alternate.videoUrl || exercise.videoUrl,
-  };
 }
 
 function defaultRepsFromPrescription(value: string) {
@@ -237,7 +224,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       setSelectedAlternates(saved.selectedAlternatesByExercise || {});
       const resumedExercises = data.exercises
         .filter((exercise) => !isSectionMarker(exercise.notes))
-        .map((exercise) => exerciseWithSelectedAlternate(exercise, saved.selectedAlternatesByExercise?.[exercise.exerciseId]));
+        .map((exercise) => exerciseWithSelectedVariant(exercise, saved.selectedAlternatesByExercise?.[exercise.exerciseId]));
       const resumeIndex = deriveWorkoutResumeIndex(resumedExercises, saved);
       setActiveIndex(resumeIndex);
       setMovementStarted(false);
@@ -287,7 +274,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const trackableExercises = useMemo(
     () => (detail?.exercises ?? [])
       .filter((exercise) => !isSectionMarker(exercise.notes))
-      .map((exercise) => exerciseWithSelectedAlternate(exercise, selectedAlternates[exercise.exerciseId])),
+      .map((exercise) => exerciseWithSelectedVariant(exercise, selectedAlternates[exercise.exerciseId])),
     [detail, selectedAlternates],
   );
 

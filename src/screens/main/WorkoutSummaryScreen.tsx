@@ -13,6 +13,7 @@ import { loadWorkoutDayCached } from '../../services/preloadService';
 import { loadWorkoutProgress, saveWorkoutProgress } from '../../store/workoutStore';
 import type { WorkoutStackParamList } from '../../navigation/types';
 import type { WorkoutDayDetail, WorkoutExerciseAlternative, WorkoutExerciseDetail } from '../../types/api';
+import { exerciseWithSelectedVariant } from '../../utils/workoutExerciseVariant';
 import { buildWorkoutSummary } from '../../utils/workoutSummary';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
@@ -37,20 +38,6 @@ function modeLabel(mode: 'standard' | 'quick') {
 function exerciseMeta(exercise: WorkoutExerciseDetail) {
   const parts = [`${displayValue(exercise.sets, '1')} sets`, displayValue(exercise.reps, 'guided reps')];
   return parts.join(' · ');
-}
-
-function exerciseWithAlternate(exercise: WorkoutExerciseDetail, selectedIndex?: number): WorkoutExerciseDetail {
-  const alternate = selectedIndex !== undefined && selectedIndex >= 0 ? exercise.alternatives?.[selectedIndex] : null;
-  if (!alternate) return exercise;
-  return {
-    ...exercise,
-    exerciseName: alternate.exerciseName || exercise.exerciseName,
-    sets: alternate.sets || exercise.sets,
-    reps: alternate.reps || exercise.reps,
-    restSec: alternate.restSec || exercise.restSec,
-    notes: alternate.notes || exercise.notes,
-    videoUrl: alternate.videoUrl || exercise.videoUrl,
-  };
 }
 
 const CTA_BASE_HEIGHT = 158;
@@ -211,7 +198,7 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
               </View>
               <View style={styles.exerciseList}>
                 {exercises.map((exercise, index) => {
-                  const activeChoice = exerciseWithAlternate(exercise, selectedAlternates[exercise.exerciseId]);
+                  const activeChoice = exerciseWithSelectedVariant(exercise, selectedAlternates[exercise.exerciseId]);
                   return (
                   <View
                     key={`${exercise.exerciseId}-${index}`}
