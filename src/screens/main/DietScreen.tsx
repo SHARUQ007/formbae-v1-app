@@ -341,6 +341,9 @@ function DietScreenContent({ route, navigation }: Props) {
     async (options?: { force?: boolean; retryPending?: boolean }) => {
       const local = await loadDietDiaryEntries();
       setEntries(local);
+      // Local diary entries are enough to render the tab. Remote merging and
+      // pending uploads can continue without holding the whole screen skeleton.
+      setInitialLoading(false);
       try {
         const remote = await loadDietDiaryCached({ force: options?.force });
         setDietFeedback(remote.feedback ?? null);

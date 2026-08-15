@@ -13,7 +13,14 @@ import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
 import { MotionAnimation } from '../../components/MotionAnimation';
 import { WeeklyBodyMap } from '../../components/WeeklyBodyMap';
-import { loadProfileSettingsCached, loadWorkoutDayCached, loadWorkoutPlanCached } from '../../services/preloadService';
+import {
+  loadProfileSettingsCached,
+  loadWorkoutDayCached,
+  loadWorkoutPlanCached,
+  peekProfileSettingsCached,
+  peekWorkoutDayCached,
+  peekWorkoutPlanCached,
+} from '../../services/preloadService';
 import { fetchUserPlans, PENDING_AI_PLAN_BUILD_KEY, selectWorkoutPlan } from '../../services/workoutService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
 import { getSiteUrl } from '../../constants/config';
@@ -79,21 +86,6 @@ function resolveTrainerPhotoUrl(value?: string) {
 function waitForNextFrame() {
   return new Promise<void>((resolve) => {
     requestAnimationFrame(() => resolve());
-  });
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
-  return new Promise((resolve) => {
-    const timeout = setTimeout(() => resolve(null), ms);
-    promise
-      .then((value) => {
-        clearTimeout(timeout);
-        resolve(value);
-      })
-      .catch(() => {
-        clearTimeout(timeout);
-        resolve(null);
-      });
   });
 }
 
@@ -228,18 +220,23 @@ function GoldenStreakBadge({ streak, celebrationNonce }: { streak: number; celeb
 
 function WorkoutDashboardScreen({ navigation }: Props) {
   const tabBarHeight = useBottomTabBarHeight();
-  const [days, setDays] = useState<PlanDay[]>([]);
-  const [title, setTitle] = useState('My workout plan');
-  const [planId, setPlanId] = useState('');
+  const warmData = peekWorkoutPlanCached();
+  const warmPlan = (warmData?.plan || warmData?.today?.plan) as { planId?: string; days?: PlanDay[]; title?: string } | undefined;
+  const warmDays = warmPlan?.days || [];
+  const initialWarmDay = warmDays.find((day) => !day.completed) || warmDays[0];
+  const warmSettings = peekProfileSettingsCached();
+  const [days, setDays] = useState<PlanDay[]>(warmDays);
+  const [title, setTitle] = useState(warmPlan?.title || 'My workout plan');
+  const [planId, setPlanId] = useState(warmPlan?.planId || warmData?.today?.plan?.planId || '');
   const [selectedTodayPlanDayId, setSelectedTodayPlanDayId] = useState('');
-  const [focusedPlanDayId, setFocusedPlanDayId] = useState('');
+  const [focusedPlanDayId, setFocusedPlanDayId] = useState(initialWarmDay?.planDayId || '');
   const [planDaySelectionTouched, setPlanDaySelectionTouched] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [trainerPhotoFailed, setTrainerPhotoFailed] = useState(false);
-  const [progress, setProgress] = useState<ProgressSummary | null>(null);
-  const [trainer, setTrainer] = useState<TrainerInfo | null>(null);
-  const [aiPlanRefresh, setAiPlanRefresh] = useState<AiPlanRefresh | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [progress, setProgress] = useState<ProgressSummary | null>(warmData?.today?.progress || null);
+  const [trainer, setTrainer] = useState<TrainerInfo | null>(warmData?.today?.assignedTrainer || null);
+  const [aiPlanRefresh, setAiPlanRefresh] = useState<AiPlanRefresh | null>(warmData?.aiPlanRefresh || null);
+  const [loading, setLoading] = useState(!warmData);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [summaryOpening, setSummaryOpening] = useState(false);
@@ -252,12 +249,16 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [seenReadyPlanId, setSeenReadyPlanId] = useState('');
   const [pendingPlanBuild, setPendingPlanBuild] = useState<{ planId: string; trainerName: string; requestedAt: number } | null>(null);
   const [planBuildSyncedAt, setPlanBuildSyncedAt] = useState<number | null>(null);
-  const [bodyGender, setBodyGender] = useState<ReturnType<typeof resolveBodyGender>>('neutral');
+  const [bodyGender, setBodyGender] = useState<ReturnType<typeof resolveBodyGender>>(
+    resolveBodyGender(warmSettings?.profile?.gender),
+  );
 
   const load = useCallback(async (options?: { force?: boolean }) => {
     setError(null);
     try {
-      await flushWorkoutQueue();
+      // Pending session writes are safe to sync in the background. Waiting for
+      // them here made opening the tab depend on connection quality.
+      flushWorkoutQueue().catch(() => undefined);
       const [data, settings, pendingBuildRaw] = await Promise.all([
         loadWorkoutPlanCached({ force: options?.force }),
         loadProfileSettingsCached({ force: options?.force }).catch(() => null),
@@ -421,7 +422,10 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const openWorkoutSummary = async (day: PlanDay | null, mode: 'standard' | 'quick') => {
     if (!day || summaryOpening) return;
     setSummaryOpening(true);
-    const initialDetail = await withTimeout(loadWorkoutDayCached(day.planDayId, mode, { force: Boolean(day.completed) }), 4500);
+    const initialDetail = peekWorkoutDayCached(day.planDayId, mode);
+    // The summary screen can render its own skeleton when this detail was not
+    // preloaded. Navigation itself should never wait for the network.
+    loadWorkoutDayCached(day.planDayId, mode, { force: Boolean(day.completed) }).catch(() => undefined);
     navigation.getParent()?.setOptions({ tabBarStyle: hiddenTabBarStyle });
     await waitForNextFrame();
     navigation.navigate('WorkoutSummary', {

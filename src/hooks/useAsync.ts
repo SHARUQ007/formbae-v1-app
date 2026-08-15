@@ -12,10 +12,14 @@ type AsyncState<T> = {
  * Standardized data-fetching state machine used across screens for
  * consistent loading / error / retry / pull-to-refresh behavior.
  */
-export function useAsync<T>(fn: (mode: 'initial' | 'refresh') => Promise<T>, deps: unknown[] = []) {
+export function useAsync<T>(
+  fn: (mode: 'initial' | 'refresh') => Promise<T>,
+  deps: unknown[] = [],
+  options: { initialData?: T | null } = {},
+) {
   const [state, setState] = useState<AsyncState<T>>({
-    data: null,
-    loading: true,
+    data: options.initialData ?? null,
+    loading: options.initialData == null,
     error: null,
     refreshing: false,
   });
@@ -33,7 +37,9 @@ export function useAsync<T>(fn: (mode: 'initial' | 'refresh') => Promise<T>, dep
   const run = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
     setState((prev) => ({
       ...prev,
-      loading: mode === 'initial' ? true : prev.loading,
+      // Keep already-rendered content visible while revalidating it. A tab
+      // should only fall back to a blocking loader when it has no data at all.
+      loading: mode === 'initial' ? prev.data == null : prev.loading,
       refreshing: mode === 'refresh',
       error: null,
     }));
@@ -49,7 +55,14 @@ export function useAsync<T>(fn: (mode: 'initial' | 'refresh') => Promise<T>, dep
           : error instanceof Error
             ? error.message
             : 'Something went wrong. Please try again.';
-      setState((prev) => ({ ...prev, loading: false, refreshing: false, error: message }));
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        refreshing: false,
+        // A background revalidation failure must not replace usable cached
+        // content with a full-screen error state.
+        error: prev.data == null ? message : null,
+      }));
     }
   }, []);
 

@@ -1,12 +1,11 @@
-import { getCachedResource } from './appCache';
-import { fetchCheckIns } from './checkInService';
+import { getCachedResource, peekCachedResource } from './appCache';
 import { fetchAccountability, fetchAccountabilityBae } from './accountabilityService';
 import { fetchDietDiary } from './dietDiaryService';
 import { fetchMessages } from './messageService';
-import { fetchProgress, flushPendingProgressLogs } from './progressService';
+import { fetchProgress, fetchTrophyLeaderboard, flushPendingProgressLogs } from './progressService';
 import { fetchSettings } from './settingsService';
 import { fetchCoachHub } from './trainerService';
-import { fetchUserPlans, fetchWorkoutDay, fetchWorkoutPlan } from './workoutService';
+import { fetchWorkoutDay, fetchWorkoutPlan } from './workoutService';
 
 export const CACHE_KEYS = {
   workoutPlan: 'workoutPlan',
@@ -17,10 +16,15 @@ export const CACHE_KEYS = {
   profileSettings: 'profileSettings',
   coachBundle: 'coachBundle',
   workoutDay: 'workoutDay',
+  trophyLeaderboard: 'trophyLeaderboard',
 } as const;
 
 export function loadWorkoutPlanCached(options?: { force?: boolean }) {
   return getCachedResource(CACHE_KEYS.workoutPlan, fetchWorkoutPlan, { force: options?.force });
+}
+
+export function peekWorkoutPlanCached() {
+  return peekCachedResource<Awaited<ReturnType<typeof fetchWorkoutPlan>>>(CACHE_KEYS.workoutPlan);
 }
 
 export function loadWorkoutDayCached(planDayId: string, mode: 'standard' | 'quick' = 'standard', options?: { force?: boolean }) {
@@ -31,6 +35,10 @@ export function loadWorkoutDayCached(planDayId: string, mode: 'standard' | 'quic
   );
 }
 
+export function peekWorkoutDayCached(planDayId: string, mode: 'standard' | 'quick' = 'standard') {
+  return peekCachedResource<Awaited<ReturnType<typeof fetchWorkoutDay>>>(`${CACHE_KEYS.workoutDay}:${planDayId}:${mode}`);
+}
+
 export function loadProgressBundleCached(options?: { force?: boolean }) {
   return getCachedResource(
     CACHE_KEYS.progressBundle,
@@ -38,24 +46,16 @@ export function loadProgressBundleCached(options?: { force?: boolean }) {
       // Persisted offline body logs are flushed before reading progress so the
       // response reflects everything the user has already saved on-device.
       await flushPendingProgressLogs();
-      const [progressResult, checkInsResult, userPlansResult, settingsResult] = await Promise.allSettled([
-        fetchProgress(),
-        fetchCheckIns(),
-        fetchUserPlans(),
-        loadProfileSettingsCached(options),
-      ] as const);
-      // Progress is the primary payload. Optional supporting requests should
-      // never hide measurements that were successfully read from the database.
-      if (progressResult.status === 'rejected') throw progressResult.reason;
-      const progress = progressResult.value;
-      const checkIns = checkInsResult.status === 'fulfilled' ? checkInsResult.value : null;
-      const userPlans = userPlansResult.status === 'fulfilled' ? userPlansResult.value : null;
-      const settings = settingsResult.status === 'fulfilled' ? settingsResult.value : null;
+      // Progress is the only payload consumed by the Progress, Trophy and
+      // Action tabs. Do not hold it behind unrelated check-in, plan and profile
+      // requests; those resources are preloaded independently.
+      const progress = await fetchProgress();
+      const settings = peekProfileSettingsCached();
       return {
         progress,
-        checkIns: checkIns?.checkIns ?? [],
-        dueThisWeek: checkIns?.dueThisWeek ?? [],
-        planDays: userPlans?.plans.flatMap((plan) => plan.days ?? []) ?? [],
+        checkIns: [],
+        dueThisWeek: [],
+        planDays: [],
         gender: settings?.profile?.gender || '',
         userName: settings?.user?.name || settings?.profile?.name || '',
       };
@@ -64,12 +64,20 @@ export function loadProgressBundleCached(options?: { force?: boolean }) {
   );
 }
 
+export function peekProgressBundleCached() {
+  return peekCachedResource<Awaited<ReturnType<typeof loadProgressBundleCached>>>(CACHE_KEYS.progressBundle);
+}
+
 export function loadDietDiaryCached(options?: { force?: boolean }) {
   return getCachedResource(CACHE_KEYS.dietDiary, fetchDietDiary, { force: options?.force });
 }
 
 export function loadProfileSettingsCached(options?: { force?: boolean }) {
   return getCachedResource(CACHE_KEYS.profileSettings, fetchSettings, { force: options?.force });
+}
+
+export function peekProfileSettingsCached() {
+  return peekCachedResource<Awaited<ReturnType<typeof fetchSettings>>>(CACHE_KEYS.profileSettings);
 }
 
 export function loadCoachBundleCached(options?: { force?: boolean }) {
@@ -87,6 +95,18 @@ export function loadCoachBundleCached(options?: { force?: boolean }) {
   );
 }
 
+export function peekCoachBundleCached() {
+  return peekCachedResource<Awaited<ReturnType<typeof loadCoachBundleCached>>>(CACHE_KEYS.coachBundle);
+}
+
+export function loadTrophyLeaderboardCached(options?: { force?: boolean }) {
+  return getCachedResource(CACHE_KEYS.trophyLeaderboard, fetchTrophyLeaderboard, { force: options?.force });
+}
+
+export function peekTrophyLeaderboardCached() {
+  return peekCachedResource<Awaited<ReturnType<typeof fetchTrophyLeaderboard>>>(CACHE_KEYS.trophyLeaderboard);
+}
+
 let preloadPromise: Promise<unknown[]> | null = null;
 let lastPreloadStartedAt = 0;
 
@@ -100,6 +120,7 @@ export function preloadMainAppData() {
     loadWorkoutPlanCached(),
     loadDietDiaryCached(),
     loadProgressBundleCached(),
+    loadTrophyLeaderboardCached(),
     loadProfileSettingsCached(),
     loadCoachBundleCached(),
     fetchAccountability(),

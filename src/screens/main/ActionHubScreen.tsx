@@ -21,7 +21,7 @@ import {
   uploadAccountabilityBaeProof,
 } from '../../services/accountabilityService';
 import { cancelAccountabilityReminder, scheduleAccountabilityReminder } from '../../services/notificationService';
-import { loadProgressBundleCached } from '../../services/preloadService';
+import { loadProgressBundleCached, peekProgressBundleCached } from '../../services/preloadService';
 import type { AccountabilityBaeSummary, AccountabilitySummary, TrophySummary } from '../../types/api';
 import {
   currentMealType,
@@ -56,7 +56,9 @@ export function ActionHubScreen({ navigation }: Props) {
   const tabBarHeight = useBottomTabBarHeight();
   const [snapshot, setSnapshot] = useState<ContextualSnapshot | null>(null);
   const [accountability, setAccountability] = useState<AccountabilitySummary | null>(null);
-  const [trophies, setTrophies] = useState<TrophySummary | null>(null);
+  const [trophies, setTrophies] = useState<TrophySummary | null>(
+    () => peekProgressBundleCached()?.progress.trophies ?? null,
+  );
   const [accountabilityBae, setAccountabilityBae] = useState<AccountabilityBaeSummary | null>(null);
   const [baeBusy, setBaeBusy] = useState(false);
   const [friendCode, setFriendCode] = useState('');
@@ -76,16 +78,27 @@ export function ActionHubScreen({ navigation }: Props) {
   const partnerStatus = accountabilityBae?.status;
 
   const load = useCallback(async (force = false) => {
-    const [nextSnapshot, nextAccountability, nextBae, nextProgress] = await Promise.allSettled([
-      resolveContextualSnapshot(),
-      fetchAccountability({ force }),
-      fetchAccountabilityBae({ force }),
-      loadProgressBundleCached({ force }),
+    // Apply each resource as soon as it arrives. The previous all-at-once
+    // update kept the entire tab behind whichever optional service was slowest.
+    const [, nextAccountability, nextBae] = await Promise.allSettled([
+      resolveContextualSnapshot().then((value) => {
+        setSnapshot(value);
+        setInitialLoading(false);
+        return value;
+      }),
+      fetchAccountability({ force }).then((value) => {
+        setAccountability(value);
+        return value;
+      }),
+      fetchAccountabilityBae({ force }).then((value) => {
+        setAccountabilityBae(value);
+        return value;
+      }),
+      loadProgressBundleCached({ force }).then((value) => {
+        setTrophies(value.progress.trophies ?? null);
+        return value;
+      }),
     ]);
-    if (nextSnapshot.status === 'fulfilled') setSnapshot(nextSnapshot.value);
-    if (nextAccountability.status === 'fulfilled') setAccountability(nextAccountability.value);
-    if (nextBae.status === 'fulfilled') setAccountabilityBae(nextBae.value);
-    if (nextProgress.status === 'fulfilled') setTrophies(nextProgress.value.progress.trophies ?? null);
     setAccountabilityUnavailable(nextAccountability.status === 'rejected');
     setBaeUnavailable(nextBae.status === 'rejected');
     setInitialLoading(false);
