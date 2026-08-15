@@ -12,7 +12,7 @@ import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
 import { ErrorState, LoadingState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
-import { loadProgressBundleCached } from '../../services/preloadService';
+import { loadProgressBundleCached, peekProgressBundleCached } from '../../services/preloadService';
 import { logProgress } from '../../services/progressService';
 import type { ProgressSummary } from '../../types/api';
 import { formatDate } from '../../utils/format';
@@ -50,7 +50,7 @@ export function ProgressScreen({ route, navigation }: Props) {
   const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 0;
   const { data, loading, error, reload, refresh, refreshing } = useAsync<Loaded>((mode) =>
     loadProgressBundleCached({ force: mode === 'refresh' }),
-  );
+  [], { initialData: peekProgressBundleCached() });
 
   const [weight, setWeight] = useState('');
   const [chest, setChest] = useState('');

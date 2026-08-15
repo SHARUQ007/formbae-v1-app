@@ -24,7 +24,7 @@ import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { changeCoach } from '../../services/trainerService';
 import { runNativeCheckout } from '../../services/paymentService';
-import { loadCoachBundleCached } from '../../services/preloadService';
+import { loadCoachBundleCached, peekCoachBundleCached } from '../../services/preloadService';
 import { useAuthStore } from '../../store/authStore';
 import { getSiteUrl } from '../../constants/config';
 import type { CoachOption, PaymentPlan } from '../../types/api';
@@ -116,7 +116,7 @@ export function TrainerScreen() {
 
   const { data, loading, error, reload, refresh, refreshing } = useAsync((mode) =>
     loadCoachBundleCached({ force: mode === 'refresh' }),
-  );
+  [], { initialData: peekCoachBundleCached() });
 
   const currentCoach = data?.coachHub.currentTrainer ?? data?.coachHub.trainers[0] ?? null;
   const selectedCoach = useMemo(

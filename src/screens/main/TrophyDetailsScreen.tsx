@@ -7,9 +7,15 @@ import { Card, ScreenContainer, SectionTitle } from '../../components/Card';
 import { ErrorState, LoadingState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import type { ProgressStackParamList } from '../../navigation/types';
-import { loadProgressBundleCached } from '../../services/preloadService';
-import { acceptTrophyInvite, fetchTrophyInvite, fetchTrophyLeaderboard } from '../../services/progressService';
+import {
+  loadProgressBundleCached,
+  loadTrophyLeaderboardCached,
+  peekProgressBundleCached,
+  peekTrophyLeaderboardCached,
+} from '../../services/preloadService';
+import { acceptTrophyInvite, fetchTrophyInvite } from '../../services/progressService';
 import { useAuthStore } from '../../store/authStore';
+import type { ProgressSummary, TrophyLeaderboard } from '../../types/api';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
 import { shadows } from '../../theme/shadows';
@@ -27,6 +33,58 @@ function leaderboardDisplayName(value?: string | null) {
   return name;
 }
 
+type TrophyScreenData = {
+  progress: ProgressSummary;
+  leaderboard: TrophyLeaderboard;
+  leaderboardAvailable: boolean;
+  leaderboardError: string;
+};
+
+function buildTrophyScreenData(
+  progress: ProgressSummary,
+  leaderboard: TrophyLeaderboard | null,
+  preferredName: string,
+  leaderboardError = '',
+): TrophyScreenData {
+  const score = progress.trophies?.score ?? 0;
+  if (!leaderboard) {
+    return {
+      progress,
+      leaderboard: {
+        leaders: [{ rank: 1, displayName: preferredName, score, isCurrentUser: true }],
+        currentUser: { rank: 1, displayName: preferredName, score, isCurrentUser: true },
+        participantCount: 1,
+      },
+      leaderboardAvailable: false,
+      leaderboardError,
+    };
+  }
+  return {
+    progress,
+    leaderboard: {
+      ...leaderboard,
+      leaders: leaderboard.leaders.map((row) => ({
+        ...row,
+        displayName:
+          row.isCurrentUser && preferredName !== 'Member'
+            ? preferredName
+            : leaderboardDisplayName(row.displayName),
+      })),
+      currentUser: leaderboard.currentUser
+        ? {
+            ...leaderboard.currentUser,
+            displayName:
+              leaderboard.currentUser.isCurrentUser && preferredName !== 'Member'
+                ? preferredName
+                : leaderboardDisplayName(leaderboard.currentUser.displayName),
+          }
+        : leaderboard.currentUser,
+    },
+    leaderboardAvailable: true,
+    leaderboardError: '',
+  };
+}
+
 export function TrophyDetailsScreen({ navigation }: Props) {
   const { user, status } = useAuthStore();
   const currentUserName = leaderboardDisplayName(user?.name || status?.name);
@@ -35,48 +93,35 @@ export function TrophyDetailsScreen({ navigation }: Props) {
   const [inviteCode, setInviteCode] = useState('');
   const [sharing, setSharing] = useState(false);
   const [joining, setJoining] = useState(false);
-  const { data, loading, error, reload, refresh, refreshing } = useAsync(async () => {
-    // Always recalculate trophies before reading the leaderboard so both totals match.
-    const bundle = await loadProgressBundleCached({ force: true });
+  const warmBundle = peekProgressBundleCached();
+  const warmLeaderboard = peekTrophyLeaderboardCached();
+  const warmName = leaderboardDisplayName(
+    currentUserName !== 'Member' ? currentUserName : warmBundle?.userName,
+  );
+  const initialData = warmBundle
+    ? buildTrophyScreenData(warmBundle.progress, warmLeaderboard, warmName, 'Updating leaderboard…')
+    : null;
+  const { data, loading, error, reload, refresh, refreshing } = useAsync<TrophyScreenData>(async (mode) => {
+    // Start both independent requests together. Previously the leaderboard
+    // waited for a forced progress refresh, doubling the visible wait.
+    const force = mode === 'refresh';
+    const [bundleResult, leaderboardResult] = await Promise.allSettled([
+      loadProgressBundleCached({ force }),
+      loadTrophyLeaderboardCached({ force }),
+    ] as const);
+    if (bundleResult.status === 'rejected') throw bundleResult.reason;
+    const bundle = bundleResult.value;
     const preferredName = leaderboardDisplayName(
       currentUserName !== 'Member' ? currentUserName : bundle.userName,
     );
-    try {
-      const leaderboard = await fetchTrophyLeaderboard();
-      const namedLeaderboard = {
-        ...leaderboard,
-        leaders: leaderboard.leaders.map((row) => ({
-          ...row,
-          displayName:
-            row.isCurrentUser && preferredName !== 'Member'
-              ? preferredName
-              : leaderboardDisplayName(row.displayName),
-        })),
-        currentUser: leaderboard.currentUser
-          ? {
-              ...leaderboard.currentUser,
-              displayName:
-                leaderboard.currentUser.isCurrentUser && preferredName !== 'Member'
-                  ? preferredName
-                  : leaderboardDisplayName(leaderboard.currentUser.displayName),
-            }
-          : leaderboard.currentUser,
-      };
-      return { progress: bundle.progress, leaderboard: namedLeaderboard, leaderboardAvailable: true, leaderboardError: '' };
-    } catch (leaderboardError) {
-      const score = bundle.progress.trophies?.score ?? 0;
-      return {
-        progress: bundle.progress,
-        leaderboard: {
-          leaders: [{ rank: 1, displayName: preferredName, score, isCurrentUser: true }],
-          currentUser: { rank: 1, displayName: preferredName, score, isCurrentUser: true },
-          participantCount: 1,
-        },
-        leaderboardAvailable: false,
-        leaderboardError: leaderboardError instanceof Error ? leaderboardError.message : 'Could not load leaderboard.',
-      };
-    }
-  });
+    const leaderboard = leaderboardResult.status === 'fulfilled' ? leaderboardResult.value : null;
+    const leaderboardError = leaderboardResult.status === 'rejected'
+      ? leaderboardResult.reason instanceof Error
+        ? leaderboardResult.reason.message
+        : 'Could not load leaderboard.'
+      : '';
+    return buildTrophyScreenData(bundle.progress, leaderboard, preferredName, leaderboardError);
+  }, [], { initialData });
 
   const shareInvite = async () => {
     if (sharing) return;
