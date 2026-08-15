@@ -17,19 +17,81 @@ export type RemoteDietDiaryEntry = {
 };
 
 export type DietCoachFeedback = {
+  schemaVersion?: number;
+  template?: { id: 'weekly-diet-report'; version: number };
   weekStartDate: string;
+  weekEndDate?: string;
   generatedAt: string;
   title: string;
+  headline?: string;
   summary: string;
   nextFocus: string;
   highlights: string[];
+  score?: {
+    overall: number;
+    label: string;
+    trend?: number | null;
+    confidence: 'high' | 'medium' | 'limited';
+    confidenceNote: string;
+    components: Array<{
+      key: string;
+      label: string;
+      score: number;
+      maxScore: number;
+      insight: string;
+    }>;
+  };
+  scoreHistory?: Array<{
+    weekStartDate: string;
+    weekEndDate: string;
+    generatedAt: string;
+    overall: number;
+    label: string;
+  }>;
+  wins?: Array<{ title: string; detail: string; evidence?: string }>;
+  patterns?: Array<{
+    key: string;
+    title: string;
+    status: 'strong' | 'building' | 'attention' | 'limited';
+    summary: string;
+    evidence: string[];
+  }>;
+  foodGroups?: Array<{
+    key: string;
+    label: string;
+    status: 'strong' | 'present' | 'limited' | 'notSeen';
+    observedFoods: string[];
+    insight: string;
+  }>;
+  mealGuidance?: Array<{
+    mealType: 'Breakfast' | 'Lunch' | 'Evening' | 'Dinner';
+    observedCount: number;
+    status: 'observed' | 'limited';
+    pattern: string;
+    advice: string;
+  }>;
+  mealRhythm?: { summary: string; strongestWindow: string; opportunityWindow: string };
+  goalAlignment?: { summary: string; supports: string[]; gaps: string[] };
+  facts?: Array<{ id: string; title: string; body: string; sourceLabel: string; sourceUrl: string }>;
+  nextWeek?: {
+    primaryFocus: string;
+    whyItMatters: string;
+    actions: string[];
+    mealBuilder: { title: string; plants: string; protein: string; carbs: string; extras: string };
+    smartSwaps: Array<{ from: string; to: string; why: string }>;
+  };
+  coachNote?: string;
+  limitations?: string[];
   status?: 'pending' | 'ready';
   nextInDays?: number;
   stats: {
     loggedItems: number;
+    mealMoments?: number;
     daysLogged: number;
+    describedEntries?: number;
     memoryEntries: number;
     photoEntries: number;
+    workoutsCompleted?: number;
     mealCounts: Record<string, number>;
     recentFoods: string[];
   };

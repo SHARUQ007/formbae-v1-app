@@ -35,8 +35,6 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>FormBae uses your camera so you can save food photos in your diet diary.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>FormBae lets you choose existing food photos for your diet diary.</string>
 	<key>RCTNewArchEnabled</key>

@@ -1,0 +1,24 @@
+diff --git a/node_modules/@notifee/react-native/android/src/main/java/io/invertase/notifee/NotifeeApiModule.java b/node_modules/@notifee/react-native/android/src/main/java/io/invertase/notifee/NotifeeApiModule.java
+index d5e4185..61ca7f8 100644
+--- a/node_modules/@notifee/react-native/android/src/main/java/io/invertase/notifee/NotifeeApiModule.java
++++ b/node_modules/@notifee/react-native/android/src/main/java/io/invertase/notifee/NotifeeApiModule.java
+@@ -35,17 +35,10 @@ public class NotifeeApiModule extends ReactContextBaseJavaModule implements Perm
+     return Notifee.getInstance().getMainComponent(defaultComponent);
+   }
+ 
+-  // This method was removed upstream in react-native 0.74+, replaced with invalidate
+-  // We will leave this stub here for older react-native versions compatibility
+-  // ...but it will just delegate to the new invalidate method
+-  public void onCatalystInstanceDestroy() {
+-    invalidate();
+-  }
+-
+-  // This method was added in react-native 0.74 as a replacement for onCatalystInstanceDestroy
+-  // It should be marked @Override but that would cause problems in apps using older react-native
+-  // When minimum supported version is 0.74+ add @Override & remove onCatalystInstanceDestroy
++  // FormBae targets React Native 0.86, where invalidate replaces the removed
++  // onCatalystInstanceDestroy lifecycle hook.
++  @Override
+   public void invalidate() {
+     NotifeeReactUtils.headlessTaskManager.stopAllTasks();
+   }

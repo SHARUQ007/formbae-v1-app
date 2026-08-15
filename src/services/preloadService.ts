@@ -8,7 +8,9 @@ import { fetchCoachHub } from './trainerService';
 import { fetchWorkoutDay, fetchWorkoutPlan } from './workoutService';
 
 export const CACHE_KEYS = {
-  workoutPlan: 'workoutPlan',
+  // Bump when the plan presentation contract changes so persisted legacy
+  // titles such as "Starter Plan by Ava" cannot survive an app update.
+  workoutPlan: 'workoutPlan:v2',
   // Bump when the progress response contract changes so an older persisted
   // bundle cannot hide a newly generated weekly review after an app update.
   progressBundle: 'progressBundle:v10',

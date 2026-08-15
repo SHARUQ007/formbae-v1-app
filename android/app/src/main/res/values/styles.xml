@@ -1,15 +1,15 @@
 <resources>
 
     <!-- Base application theme. -->
-    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <style name="AppTheme.Base" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
         <item name="android:windowBackground">#05060A</item>
         <item name="android:statusBarColor">#05060A</item>
         <item name="android:navigationBarColor">#05060A</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:forceDarkAllowed">false</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
+
+    <style name="AppTheme" parent="AppTheme.Base" />
 
 </resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- React Native reads these generated development resources dynamically. -->
+    <issue id="UnusedResources">
+        <ignore regexp="react_native_dev_server_(port|ip)" />
+    </issue>
+</lint>
