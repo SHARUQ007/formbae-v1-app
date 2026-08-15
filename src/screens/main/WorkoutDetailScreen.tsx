@@ -1199,6 +1199,12 @@ function ExerciseFeedbackSheet({
   onSubmit: () => void;
 }) {
   const movementWillChange = currentAlternateIndex !== selectedAlternateIndex;
+  const exerciseChoices = originalExercise
+    ? [
+        { exerciseName: originalExercise.exerciseName, index: undefined as number | undefined },
+        ...(originalExercise.alternatives || []).map((alternative, index) => ({ exerciseName: alternative.exerciseName, index })),
+      ]
+    : [];
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalRoot}>
@@ -1214,7 +1220,7 @@ function ExerciseFeedbackSheet({
             <View style={styles.sheetTitleBlock}>
               <Text style={styles.sheetKicker}>Workout feedback</Text>
               <Text style={styles.sheetTitle}>{exerciseName}</Text>
-              <Text style={styles.sheetSub}>Tell your trainer what to adjust next time.</Text>
+              <Text style={styles.sheetSub}>Share what worked or choose a better exercise.</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Close feedback">
               <Feather name="x" size={20} color={colors.inkMuted} />
@@ -1238,55 +1244,51 @@ function ExerciseFeedbackSheet({
           </View>
           {originalExercise?.alternatives?.length ? (
             <View style={styles.feedbackAlternateSection}>
-              <View style={styles.feedbackAlternateHeader}>
-                <View style={styles.feedbackAlternateIcon}>
-                  <Feather name="repeat" size={18} color={colors.gold} />
-                </View>
-                <View style={styles.feedbackAlternateCopy}>
-                  <Text style={styles.feedbackAlternateKicker}>Exercise options</Text>
-                  <Text style={styles.feedbackAlternateTitle}>Switch this exercise</Text>
-                  <Text style={styles.feedbackAlternateSubtitle}>Choose an alternate for today's workout.</Text>
-                </View>
+              <Text style={styles.feedbackAlternateTitle}>Prefer another exercise?</Text>
+              <Text style={styles.feedbackAlternateSubtitle}>Choose one below. It replaces {exerciseName} when you save.</Text>
+              <View style={styles.feedbackAlternateList}>
+                {exerciseChoices.map((choice) => {
+                  const selected = selectedAlternateIndex === choice.index;
+                  const current = currentAlternateIndex === choice.index;
+                  return (
+                    <TouchableOpacity
+                      key={`${choice.exerciseName}:${choice.index ?? 'original'}`}
+                      onPress={() => onSelectAlternate(choice.index)}
+                      activeOpacity={0.86}
+                      style={[styles.feedbackAlternateOption, selected && styles.feedbackAlternateOptionSelected]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={current ? `${choice.exerciseName}, current exercise` : `Switch to ${choice.exerciseName} instead`}
+                    >
+                      <View style={[styles.feedbackAlternateRadio, selected && styles.feedbackAlternateRadioSelected]}>
+                        {selected ? <Feather name="check" size={13} color={colors.onPrimary} /> : null}
+                      </View>
+                      <View style={styles.feedbackAlternateOptionCopy}>
+                        <Text style={[styles.feedbackAlternateOptionTitle, selected && styles.feedbackAlternateOptionTitleSelected]}>{choice.exerciseName}</Text>
+                        <Text style={styles.feedbackAlternateOptionMeta}>
+                          {current ? 'Current exercise' : selected ? `Will replace ${exerciseName} when you save` : 'Switch to this exercise instead'}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.feedbackAlternateRow}
-                keyboardShouldPersistTaps="handled"
-              >
-                <TouchableOpacity
-                  onPress={() => onSelectAlternate(undefined)}
-                  activeOpacity={0.86}
-                  style={[styles.feedbackAlternatePill, selectedAlternateIndex === undefined && styles.feedbackAlternatePillActive]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: selectedAlternateIndex === undefined }}
-                >
-                  <Text style={[styles.feedbackAlternateText, selectedAlternateIndex === undefined && styles.feedbackAlternateTextActive]}>
-                    {originalExercise.exerciseName}
-                  </Text>
-                </TouchableOpacity>
-                {originalExercise.alternatives.map((alternate, index) => (
-                  <TouchableOpacity
-                    key={`${alternate.exerciseName}:${index}`}
-                    onPress={() => onSelectAlternate(index)}
-                    activeOpacity={0.86}
-                    style={[styles.feedbackAlternatePill, selectedAlternateIndex === index && styles.feedbackAlternatePillActive]}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: selectedAlternateIndex === index }}
-                  >
-                    <Text style={[styles.feedbackAlternateText, selectedAlternateIndex === index && styles.feedbackAlternateTextActive]}>
-                      {alternate.exerciseName}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              <Text style={styles.feedbackAlternateHint}>Saving updates the movement, muscles and technique video. Your choice also helps personalize future plans.</Text>
+              {movementWillChange ? (
+                <View style={styles.feedbackAlternateNotice}>
+                  <Feather name="info" size={15} color={colors.gold} />
+                  <Text style={styles.feedbackAlternateNoticeText}>Muscles, form guidance and the technique video will update after saving.</Text>
+                </View>
+              ) : null}
             </View>
           ) : null}
+          <View style={styles.feedbackNoteHead}>
+            <Text style={styles.feedbackNoteTitle}>Anything else?</Text>
+            <Text style={styles.feedbackNoteOptional}>Optional</Text>
+          </View>
           <TextInput
             value={feedbackText}
             onChangeText={onFeedbackText}
-            placeholder="Add what felt good, painful, boring, too hard, or too easy."
+            placeholder="Tell us what you'd like adjusted."
             placeholderTextColor={colors.inkSubtle}
             multiline
             style={styles.feedbackInput}
@@ -1300,9 +1302,7 @@ function ExerciseFeedbackSheet({
             accessibilityRole="button"
             accessibilityLabel="Save workout feedback"
           >
-            <Text style={styles.sheetSaveText}>
-              {submitting ? (movementWillChange ? 'Switching...' : 'Saving...') : (movementWillChange ? 'Save & switch exercise' : 'Save feedback')}
-            </Text>
+            <Text style={styles.sheetSaveText}>{submitting ? 'Saving...' : 'Save feedback'}</Text>
             <Feather name="arrow-right" size={18} color={colors.white} />
           </TouchableOpacity>
         </ScrollView>
@@ -2723,6 +2723,7 @@ const styles = StyleSheet.create({
   modalBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.overlay },
   feedbackSheet: {
     maxHeight: '90%',
+    flexGrow: 0,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     backgroundColor: colors.panelRaised,
@@ -3013,65 +3014,79 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.panelMuted,
   },
-  sentimentRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  sentimentRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
   sentimentButton: {
     flex: 1,
-    minHeight: 54,
-    borderRadius: radius.xl,
+    minHeight: 48,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.borderStrong,
     backgroundColor: colors.accentLight,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   sentimentSelected: { backgroundColor: colors.accentFill, borderColor: colors.accent },
   sentimentText: { ...typography.bodyBold, color: colors.accentDark },
   sentimentTextSelected: { color: colors.white },
   feedbackAlternateSection: {
-    borderRadius: radius.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  feedbackAlternateTitle: { fontSize: 17, lineHeight: 23, fontWeight: '800', color: colors.ink },
+  feedbackAlternateSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  feedbackAlternateList: { gap: spacing.xs, marginTop: spacing.sm },
+  feedbackAlternateOption: {
+    minHeight: 60,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.panelMuted,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+    backgroundColor: colors.panel,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
-  feedbackAlternateHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  feedbackAlternateIcon: {
-    width: 42,
-    height: 42,
+  feedbackAlternateOptionSelected: {
+    borderColor: colors.gold,
+    backgroundColor: colors.accentLight,
+  },
+  feedbackAlternateRadio: {
+    width: 22,
+    height: 22,
     borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: colors.borderStrong,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accentLight,
-    borderWidth: 1,
-    borderColor: colors.accentSurface,
   },
-  feedbackAlternateCopy: { flex: 1 },
-  feedbackAlternateKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
-  feedbackAlternateTitle: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
-  feedbackAlternateSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
-  feedbackAlternateRow: { gap: spacing.sm, paddingTop: spacing.sm, paddingRight: spacing.md },
-  feedbackAlternatePill: {
-    maxWidth: 240,
-    minHeight: 42,
-    justifyContent: 'center',
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.panel,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+  feedbackAlternateRadioSelected: {
+    borderColor: colors.gold,
+    backgroundColor: colors.gold,
   },
-  feedbackAlternatePillActive: { borderColor: colors.gold, backgroundColor: colors.gold },
-  feedbackAlternateText: { fontSize: 14, lineHeight: 19, fontWeight: '700', color: colors.inkMuted },
-  feedbackAlternateTextActive: { color: colors.onPrimary },
-  feedbackAlternateHint: { fontSize: 12, lineHeight: 17, color: colors.inkMuted, marginTop: spacing.sm },
+  feedbackAlternateOptionCopy: { flex: 1, minWidth: 0 },
+  feedbackAlternateOptionTitle: { fontSize: 15, lineHeight: 20, fontWeight: '700', color: colors.ink },
+  feedbackAlternateOptionTitleSelected: { color: colors.accentDark },
+  feedbackAlternateOptionMeta: { fontSize: 12, lineHeight: 17, color: colors.inkMuted, marginTop: 1 },
+  feedbackAlternateNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    paddingHorizontal: 2,
+  },
+  feedbackAlternateNoticeText: { flex: 1, fontSize: 12, lineHeight: 17, color: colors.inkMuted },
+  feedbackNoteHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.xs },
+  feedbackNoteTitle: { fontSize: 15, lineHeight: 20, fontWeight: '700', color: colors.ink },
+  feedbackNoteOptional: { fontSize: 12, lineHeight: 17, fontWeight: '600', color: colors.inkSubtle },
   feedbackInput: {
-    minHeight: 118,
-    borderRadius: radius.xl,
-    borderWidth: 1.5,
+    minHeight: 96,
+    borderRadius: radius.md,
+    borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.panelMuted,
     padding: spacing.md,
