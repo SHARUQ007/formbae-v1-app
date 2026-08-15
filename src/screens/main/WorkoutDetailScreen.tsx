@@ -190,16 +190,22 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const [feedbackText, setFeedbackText] = useState('');
   const [feedbackAlternateIndex, setFeedbackAlternateIndex] = useState<number | undefined>(undefined);
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [feedbackSaved, setFeedbackSaved] = useState(false);
   const [resolvedVideoUrls, setResolvedVideoUrls] = useState<Record<string, string>>({});
   const [resolvingVideoKeys, setResolvingVideoKeys] = useState<Set<string>>(new Set());
   const [bodyGender, setBodyGender] = useState<BodyGender>('neutral');
   const pendingNextIndexRef = useRef<number | null>(null);
   const pendingPostSaveRef = useRef<(() => void) | null>(null);
   const resolvingVideoRequestsRef = useRef<Map<string, Promise<string>>>(new Map());
+  const feedbackDismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useLayoutEffect(() => {
     navigation.getParent()?.setOptions({ tabBarStyle: hiddenTabBarStyle });
   }, [navigation]);
+
+  useEffect(() => () => {
+    if (feedbackDismissTimerRef.current) clearTimeout(feedbackDismissTimerRef.current);
+  }, []);
 
   const timer = useRestTimer(() => {
     const nextIndex = pendingNextIndexRef.current;
@@ -458,7 +464,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   };
 
   const submitActiveFeedback = async () => {
-    if (!activeExercise || !originalActiveExercise || !detail || feedbackSubmitting) return;
+    if (!activeExercise || !originalActiveExercise || !detail || feedbackSubmitting || feedbackSaved) return;
     const currentAlternateIndex = selectedAlternates[activeExerciseId];
     const nextAlternateIndex = feedbackSentiment === 'down' ? feedbackAlternateIndex : currentAlternateIndex;
     const feedbackExercise = exerciseWithSelectedVariant(originalActiveExercise, nextAlternateIndex);
@@ -467,6 +473,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     const preferenceText = movementChanged
       ? `Prefer ${feedbackExercise.exerciseName} instead of ${activeExercise.exerciseName}.`
       : '';
+    setFeedbackSaved(false);
     setFeedbackSubmitting(true);
     try {
       await submitWorkoutFeedback({
@@ -483,16 +490,16 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       if (feedbackSentiment === 'down') {
         await selectExerciseVariant(feedbackAlternateIndex).catch(() => undefined);
       }
-      setFeedbackOpen(false);
-      setFeedbackText('');
-      setFeedbackSentiment('up');
-      setFeedbackAlternateIndex(undefined);
-      setReward({
-        id: Date.now(),
-        type: 'set',
-        title: 'Feedback saved',
-        subtitle: 'Your trainer will use this for future plan updates.',
-      });
+      setFeedbackSaved(true);
+      if (feedbackDismissTimerRef.current) clearTimeout(feedbackDismissTimerRef.current);
+      feedbackDismissTimerRef.current = setTimeout(() => {
+        setFeedbackOpen(false);
+        setFeedbackText('');
+        setFeedbackSentiment('up');
+        setFeedbackAlternateIndex(undefined);
+        setFeedbackSaved(false);
+        feedbackDismissTimerRef.current = null;
+      }, 900);
     } catch (submitError) {
       Alert.alert('Could not save feedback', submitError instanceof Error ? submitError.message : 'Please try again.');
     } finally {
@@ -501,17 +508,23 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   };
 
   const openActiveFeedback = () => {
+    if (feedbackDismissTimerRef.current) clearTimeout(feedbackDismissTimerRef.current);
+    feedbackDismissTimerRef.current = null;
     setFeedbackText('');
     setFeedbackSentiment('up');
     setFeedbackAlternateIndex(selectedAlternates[activeExerciseId]);
+    setFeedbackSaved(false);
     setFeedbackOpen(true);
   };
 
   const closeActiveFeedback = () => {
+    if (feedbackDismissTimerRef.current) clearTimeout(feedbackDismissTimerRef.current);
+    feedbackDismissTimerRef.current = null;
     setFeedbackOpen(false);
     setFeedbackText('');
     setFeedbackSentiment('up');
     setFeedbackAlternateIndex(undefined);
+    setFeedbackSaved(false);
   };
 
   const completeActiveExercise = async (setsOverride = setProgress, logsOverride = setLogs) => {
@@ -1050,6 +1063,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         sentiment={feedbackSentiment}
         feedbackText={feedbackText}
         submitting={feedbackSubmitting}
+        saved={feedbackSaved}
         onSentiment={(value) => {
           setFeedbackSentiment(value);
           if (value === 'up') setFeedbackAlternateIndex(selectedAlternates[activeExerciseId]);
@@ -1178,6 +1192,7 @@ function ExerciseFeedbackSheet({
   sentiment,
   feedbackText,
   submitting,
+  saved,
   onSentiment,
   onSelectAlternate,
   onFeedbackText,
@@ -1192,6 +1207,7 @@ function ExerciseFeedbackSheet({
   sentiment: WorkoutFeedbackSentiment;
   feedbackText: string;
   submitting: boolean;
+  saved: boolean;
   onSentiment: (value: WorkoutFeedbackSentiment) => void;
   onSelectAlternate: (index?: number) => void;
   onFeedbackText: (value: string) => void;
@@ -1296,14 +1312,15 @@ function ExerciseFeedbackSheet({
           />
           <TouchableOpacity
             onPress={onSubmit}
-            disabled={submitting}
+            disabled={submitting || saved}
             activeOpacity={0.86}
-            style={styles.sheetSaveButton}
+            style={[styles.sheetSaveButton, saved && styles.feedbackSaveButtonSaved]}
             accessibilityRole="button"
             accessibilityLabel="Save workout feedback"
+            accessibilityLiveRegion="polite"
           >
-            <Text style={styles.sheetSaveText}>{submitting ? 'Saving...' : 'Save feedback'}</Text>
-            <Feather name="arrow-right" size={18} color={colors.white} />
+            <Text style={styles.sheetSaveText}>{saved ? 'Feedback saved' : submitting ? 'Saving...' : 'Save feedback'}</Text>
+            <Feather name={saved ? 'check' : 'arrow-right'} size={18} color={saved ? colors.onPrimary : colors.white} />
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -2917,6 +2934,11 @@ const styles = StyleSheet.create({
     ...shadows.accent,
   },
   sheetSaveButtonSaving: { opacity: 0.86 },
+  feedbackSaveButtonSaved: {
+    backgroundColor: colors.success,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
   sheetSaveButtonError: {
     backgroundColor: colors.panelMuted,
     borderWidth: 1,
