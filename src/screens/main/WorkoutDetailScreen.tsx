@@ -189,6 +189,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackSentiment, setFeedbackSentiment] = useState<WorkoutFeedbackSentiment>('up');
   const [feedbackText, setFeedbackText] = useState('');
+  const [feedbackAlternateIndex, setFeedbackAlternateIndex] = useState<number | undefined>(undefined);
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [resolvedVideoUrls, setResolvedVideoUrls] = useState<Record<string, string>>({});
   const [resolvingVideoKeys, setResolvingVideoKeys] = useState<Set<string>>(new Set());
@@ -291,8 +292,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const activeExercise = trackableExercises[Math.min(activeIndex, Math.max(0, trackableExercises.length - 1))] || null;
   const activeExerciseId = activeExercise?.exerciseId || '';
   const originalActiveExercise = detail?.exercises.find((exercise) => exercise.exerciseId === activeExerciseId);
-  const preferredAlternateSelected = selectedAlternates[activeExerciseId] !== undefined;
-  const selectedAlternateIndex = selectedAlternates[activeExerciseId];
   const activeExerciseReps = activeExercise?.reps || '';
   const activeExerciseIndex = activeExercise ? trackableExercises.findIndex((exercise) => exercise.exerciseId === activeExercise.exerciseId) : 0;
   const activeDone = activeExercise ? completed.has(activeExercise.exerciseId) : false;
@@ -451,45 +450,33 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     [completed, planDayId, selectedAlternates, setLogs],
   );
 
-  const selectExerciseVariant = (alternateIndex?: number) => {
+  const selectExerciseVariant = async (alternateIndex?: number) => {
     if (!activeExerciseId) return;
-    const previousIndex = selectedAlternates[activeExerciseId];
-    const previousName = previousIndex === undefined
-      ? originalActiveExercise?.exerciseName
-      : originalActiveExercise?.alternatives?.[previousIndex]?.exerciseName;
-    const preferredName = alternateIndex === undefined
-      ? originalActiveExercise?.exerciseName
-      : originalActiveExercise?.alternatives?.[alternateIndex]?.exerciseName;
     const next = { ...selectedAlternates };
     if (alternateIndex === undefined) delete next[activeExerciseId];
     else next[activeExerciseId] = alternateIndex;
     setSelectedAlternates(next);
     setMovementStarted(false);
-    saveWorkoutProgress({
+    await saveWorkoutProgress({
       planDayId,
       completedExerciseIds: Array.from(completed),
       setProgressByExercise: setProgress,
       setLogsByExercise: setLogs,
       selectedAlternatesByExercise: next,
       updatedAt: new Date().toISOString(),
-    }).catch(() => undefined);
-    if (detail && preferredName && preferredName !== previousName) {
-      submitWorkoutFeedback({
-        planId: detail.planId,
-        planDayId: detail.planDayId,
-        workoutMode: detail.workoutMode,
-        sentiment: 'up',
-        feedbackText: `Preferred ${preferredName} instead of ${previousName || originalActiveExercise?.exerciseName || 'the planned movement'}.`,
-        exerciseId: activeExerciseId,
-        exerciseName: preferredName,
-        replacedExerciseName: previousName || originalActiveExercise?.exerciseName,
-        preferredExerciseName: preferredName,
-      }).catch(() => undefined);
-    }
+    });
   };
 
   const submitActiveFeedback = async () => {
-    if (!activeExercise || !detail || feedbackSubmitting) return;
+    if (!activeExercise || !originalActiveExercise || !detail || feedbackSubmitting) return;
+    const currentAlternateIndex = selectedAlternates[activeExerciseId];
+    const nextAlternateIndex = feedbackSentiment === 'down' ? feedbackAlternateIndex : currentAlternateIndex;
+    const feedbackExercise = exerciseWithSelectedVariant(originalActiveExercise, nextAlternateIndex);
+    const movementChanged = feedbackSentiment === 'down'
+      && feedbackExercise.exerciseName !== activeExercise.exerciseName;
+    const preferenceText = movementChanged
+      ? `Prefer ${feedbackExercise.exerciseName} instead of ${activeExercise.exerciseName}.`
+      : '';
     setFeedbackSubmitting(true);
     try {
       await submitWorkoutFeedback({
@@ -497,15 +484,19 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         planDayId: detail.planDayId,
         workoutMode: detail.workoutMode,
         sentiment: feedbackSentiment,
-        feedbackText: feedbackText.trim(),
-        exerciseId: activeExercise.exerciseId,
-        exerciseName: activeExercise.exerciseName,
-        replacedExerciseName: preferredAlternateSelected ? originalActiveExercise?.exerciseName : undefined,
-        preferredExerciseName: preferredAlternateSelected ? activeExercise.exerciseName : undefined,
+        feedbackText: feedbackText.trim() || preferenceText,
+        exerciseId: originalActiveExercise.exerciseId,
+        exerciseName: feedbackExercise.exerciseName,
+        replacedExerciseName: movementChanged ? activeExercise.exerciseName : undefined,
+        preferredExerciseName: movementChanged ? feedbackExercise.exerciseName : undefined,
       });
+      if (feedbackSentiment === 'down') {
+        await selectExerciseVariant(feedbackAlternateIndex).catch(() => undefined);
+      }
       setFeedbackOpen(false);
       setFeedbackText('');
       setFeedbackSentiment('up');
+      setFeedbackAlternateIndex(undefined);
       setReward({
         id: Date.now(),
         type: 'set',
@@ -517,6 +508,20 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     } finally {
       setFeedbackSubmitting(false);
     }
+  };
+
+  const openActiveFeedback = () => {
+    setFeedbackText('');
+    setFeedbackSentiment('up');
+    setFeedbackAlternateIndex(selectedAlternates[activeExerciseId]);
+    setFeedbackOpen(true);
+  };
+
+  const closeActiveFeedback = () => {
+    setFeedbackOpen(false);
+    setFeedbackText('');
+    setFeedbackSentiment('up');
+    setFeedbackAlternateIndex(undefined);
   };
 
   const completeActiveExercise = async (setsOverride = setProgress, logsOverride = setLogs) => {
@@ -778,7 +783,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         title={copy.eyebrow}
         right={(
           <TouchableOpacity
-            onPress={() => setFeedbackOpen(true)}
+            onPress={openActiveFeedback}
             style={styles.feedbackButton}
             accessibilityRole="button"
             accessibilityLabel={`Give feedback for ${activeExercise.exerciseName}`}
@@ -843,40 +848,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
               contentContainerStyle={styles.prepContent}
               showsVerticalScrollIndicator={false}
             >
-              {activeAlternativeChoices.length ? (
-                <View style={styles.exerciseChoiceCard}>
-                  <View style={styles.exerciseChoiceHeader}>
-                    <View>
-                      <Text style={styles.exerciseChoiceKicker}>Your preference</Text>
-                      <Text style={styles.exerciseChoiceTitle}>Choose the movement you want today</Text>
-                    </View>
-                    <Feather name="repeat" size={18} color={colors.gold} />
-                  </View>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.exerciseChoiceRow}>
-                    <TouchableOpacity
-                      onPress={() => selectExerciseVariant(undefined)}
-                      style={[styles.exerciseChoicePill, selectedAlternateIndex === undefined && styles.exerciseChoicePillActive]}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: selectedAlternateIndex === undefined }}
-                    >
-                      <Text style={[styles.exerciseChoiceText, selectedAlternateIndex === undefined && styles.exerciseChoiceTextActive]}>{originalActiveExercise?.exerciseName || activeExercise.exerciseName}</Text>
-                    </TouchableOpacity>
-                    {activeAlternativeChoices.map(({ alternative: alternate, index }) => (
-                      <TouchableOpacity
-                        key={`${alternate.exerciseName}:${index}`}
-                        onPress={() => selectExerciseVariant(index)}
-                        style={[styles.exerciseChoicePill, selectedAlternateIndex === index && styles.exerciseChoicePillActive]}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: selectedAlternateIndex === index }}
-                      >
-                        <Text style={[styles.exerciseChoiceText, selectedAlternateIndex === index && styles.exerciseChoiceTextActive]}>{alternate.exerciseName}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                  {selectedAlternateIndex !== undefined ? <Text style={styles.exerciseChoiceHint}>This choice will shape your next personalized plan.</Text> : null}
-                </View>
-              ) : null}
-
               <TouchableOpacity
                 onPress={() => openExerciseVideo(activeExercise)}
                 activeOpacity={0.86}
@@ -1083,12 +1054,19 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       <ExerciseFeedbackSheet
         visible={feedbackOpen}
         exerciseName={activeExercise.exerciseName}
+        originalExercise={originalActiveExercise}
+        alternativeChoices={activeAlternativeChoices}
+        selectedAlternateIndex={feedbackAlternateIndex}
         sentiment={feedbackSentiment}
         feedbackText={feedbackText}
         submitting={feedbackSubmitting}
-        onSentiment={setFeedbackSentiment}
+        onSentiment={(value) => {
+          setFeedbackSentiment(value);
+          if (value === 'up') setFeedbackAlternateIndex(selectedAlternates[activeExerciseId]);
+        }}
+        onSelectAlternate={setFeedbackAlternateIndex}
         onFeedbackText={setFeedbackText}
-        onClose={() => setFeedbackOpen(false)}
+        onClose={closeActiveFeedback}
         onSubmit={submitActiveFeedback}
       />
     </View>
@@ -1201,20 +1179,31 @@ function WorkoutFlowModal({
 function ExerciseFeedbackSheet({
   visible,
   exerciseName,
+  originalExercise,
+  alternativeChoices,
+  selectedAlternateIndex,
   sentiment,
   feedbackText,
   submitting,
   onSentiment,
+  onSelectAlternate,
   onFeedbackText,
   onClose,
   onSubmit,
 }: {
   visible: boolean;
   exerciseName: string;
+  originalExercise?: WorkoutExerciseDetail | null;
+  alternativeChoices: Array<{
+    alternative: NonNullable<WorkoutExerciseDetail['alternatives']>[number];
+    index: number;
+  }>;
+  selectedAlternateIndex?: number;
   sentiment: WorkoutFeedbackSentiment;
   feedbackText: string;
   submitting: boolean;
   onSentiment: (value: WorkoutFeedbackSentiment) => void;
+  onSelectAlternate: (index?: number) => void;
   onFeedbackText: (value: string) => void;
   onClose: () => void;
   onSubmit: () => void;
@@ -1256,6 +1245,45 @@ function ExerciseFeedbackSheet({
               );
             })}
           </View>
+          {sentiment === 'down' && originalExercise && alternativeChoices.length ? (
+            <View style={styles.feedbackAlternateSection}>
+              <Text style={styles.feedbackAlternateKicker}>Movement preference</Text>
+              <Text style={styles.feedbackAlternateTitle}>Would another movement fit better?</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.feedbackAlternateRow}
+                keyboardShouldPersistTaps="handled"
+              >
+                <TouchableOpacity
+                  onPress={() => onSelectAlternate(undefined)}
+                  activeOpacity={0.86}
+                  style={[styles.feedbackAlternatePill, selectedAlternateIndex === undefined && styles.feedbackAlternatePillActive]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: selectedAlternateIndex === undefined }}
+                >
+                  <Text style={[styles.feedbackAlternateText, selectedAlternateIndex === undefined && styles.feedbackAlternateTextActive]}>
+                    {originalExercise.exerciseName}
+                  </Text>
+                </TouchableOpacity>
+                {alternativeChoices.map(({ alternative: alternate, index }) => (
+                  <TouchableOpacity
+                    key={`${alternate.exerciseName}:${index}`}
+                    onPress={() => onSelectAlternate(index)}
+                    activeOpacity={0.86}
+                    style={[styles.feedbackAlternatePill, selectedAlternateIndex === index && styles.feedbackAlternatePillActive]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: selectedAlternateIndex === index }}
+                  >
+                    <Text style={[styles.feedbackAlternateText, selectedAlternateIndex === index && styles.feedbackAlternateTextActive]}>
+                      {alternate.exerciseName}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <Text style={styles.feedbackAlternateHint}>Optional. Your choice applies to today and helps personalize future plans.</Text>
+            </View>
+          ) : null}
           <TextInput
             value={feedbackText}
             onChangeText={onFeedbackText}
@@ -2158,33 +2186,6 @@ const styles = StyleSheet.create({
     paddingLeft: spacing.sm,
   },
   stepFlowText: { fontSize: 14, lineHeight: 20, color: colors.inkMuted, fontWeight: '700' },
-  exerciseChoiceCard: {
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.accentSurface,
-    backgroundColor: colors.accentLight,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  exerciseChoiceHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md },
-  exerciseChoiceKicker: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.gold, textTransform: 'uppercase' },
-  exerciseChoiceTitle: { fontSize: 16, lineHeight: 22, fontWeight: '700', color: colors.ink, marginTop: 2 },
-  exerciseChoiceRow: { gap: spacing.sm, paddingRight: spacing.md },
-  exerciseChoicePill: {
-    maxWidth: 220,
-    minHeight: 40,
-    justifyContent: 'center',
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panel,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  exerciseChoicePillActive: { borderColor: colors.gold, backgroundColor: colors.gold },
-  exerciseChoiceText: { fontSize: 14, lineHeight: 19, fontWeight: '700', color: colors.inkMuted },
-  exerciseChoiceTextActive: { color: colors.onPrimary },
-  exerciseChoiceHint: { fontSize: 13, lineHeight: 18, color: colors.inkMuted },
   videoGuideCard: {
     minHeight: 112,
     borderRadius: radius.lg,
@@ -3027,6 +3028,32 @@ const styles = StyleSheet.create({
   sentimentSelected: { backgroundColor: colors.accentFill, borderColor: colors.accent },
   sentimentText: { ...typography.bodyBold, color: colors.accentDark },
   sentimentTextSelected: { color: colors.white },
+  feedbackAlternateSection: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panelMuted,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  feedbackAlternateKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
+  feedbackAlternateTitle: { ...typography.bodyBold, color: colors.ink, marginTop: 2 },
+  feedbackAlternateRow: { gap: spacing.sm, paddingTop: spacing.sm, paddingRight: spacing.md },
+  feedbackAlternatePill: {
+    maxWidth: 240,
+    minHeight: 42,
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.panel,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  feedbackAlternatePillActive: { borderColor: colors.gold, backgroundColor: colors.gold },
+  feedbackAlternateText: { fontSize: 14, lineHeight: 19, fontWeight: '700', color: colors.inkMuted },
+  feedbackAlternateTextActive: { color: colors.onPrimary },
+  feedbackAlternateHint: { fontSize: 12, lineHeight: 17, color: colors.inkMuted, marginTop: spacing.sm },
   feedbackInput: {
     minHeight: 118,
     borderRadius: radius.xl,
