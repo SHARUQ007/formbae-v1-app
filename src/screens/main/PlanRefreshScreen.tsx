@@ -18,6 +18,7 @@ import { FormInput } from '../../components/FormInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { loadWorkoutPlanCached } from '../../services/preloadService';
 import { PENDING_AI_PLAN_BUILD_KEY, requestAiPlanRefresh } from '../../services/workoutService';
+import { markReadyPlanSeen } from '../../services/planRevealService';
 import { ApiError } from '../../services/apiClient';
 import type { AiPlanRefresh, PlanDay } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
@@ -43,7 +44,6 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'PlanRefresh'>;
 
 const PLAN_REFRESH_DRAFT_PREFIX = 'plan-refresh-draft:';
 const CHECK_IN_LOAD_TIMEOUT_MS = 18000;
-const SEEN_READY_PLAN_KEY = 'formbae_seen_ready_plan';
 
 function withCheckInTimeout<T>(promise: Promise<T>) {
   return new Promise<T>((resolve, reject) => {
@@ -65,10 +65,12 @@ function isRestLikeFocus(value?: string) {
   return /^(rest|recovery|off|reset|deload)$/i.test(String(value || '').trim());
 }
 
-export function PlanRefreshScreen({ navigation }: Props) {
+export function PlanRefreshScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const allowExitRef = useRef(false);
+  const submittingRef = useRef(false);
+  const automaticRetryAttemptedRef = useRef(false);
   const [days, setDays] = useState<PlanDay[]>([]);
   const [aiPlanRefresh, setAiPlanRefresh] = useState<AiPlanRefresh | null>(null);
   const [answers, setAnswers] = useState<AiPlanRefreshAnswers>(emptyAiPlanRefreshAnswers);
@@ -99,7 +101,7 @@ export function PlanRefreshScreen({ navigation }: Props) {
       if (buildStatus === 'building' || buildStatus === 'requested') {
         setPhase('building');
       } else if (buildStatus === 'completed' && refresh?.build?.newPlanId) {
-        await AsyncStorage.setItem(SEEN_READY_PLAN_KEY, refresh.build.newPlanId).catch(() => undefined);
+        await markReadyPlanSeen(refresh.build.newPlanId).catch(() => undefined);
         allowExitRef.current = true;
         setPhase('success');
       } else {
@@ -186,12 +188,13 @@ export function PlanRefreshScreen({ navigation }: Props) {
     ]);
   }), [hasAnswers, navigation, phase]);
 
-  const moveToStep = (nextStep: number) => {
+  const moveToStep = useCallback((nextStep: number) => {
     setStep(Math.max(0, Math.min(questions.length - 1, nextStep)));
     requestAnimationFrame(() => scrollRef.current?.scrollTo({ y: 0, animated: true }));
-  };
+  }, [questions.length]);
 
-  const submit = async () => {
+  const submit = useCallback(async () => {
+    if (submittingRef.current) return;
     const compactAnswers = Object.fromEntries(
       Object.entries(answers).map(([key, value]) => [key, value.trim()]),
     ) as AiPlanRefreshAnswers;
@@ -212,26 +215,27 @@ export function PlanRefreshScreen({ navigation }: Props) {
       return;
     }
 
+    submittingRef.current = true;
     setSaving(true);
+    allowExitRef.current = true;
     const pendingBuild = {
       planId: aiPlanRefresh.planId,
       trainerName: aiPlanRefresh.trainerName || 'Ava',
       requestedAt: Date.now(),
     };
-    const buildRequest = requestAiPlanRefresh({
-      planId: aiPlanRefresh.planId,
-      aiTrainerAnswers: buildAiPlanRefreshPayload(compactAnswers),
-    });
     try {
       await AsyncStorage.setItem(PENDING_AI_PLAN_BUILD_KEY, JSON.stringify(pendingBuild)).catch(() => undefined);
-      allowExitRef.current = true;
-      // Give immediate visual confirmation that the press was accepted. The phase effect
-      // returns to the workout tab, whose takeover screen follows the persisted build state.
+      // The workout root owns the full-screen Ava Plan Tunnel. Persist its pending
+      // marker before navigating so the dashboard can never flash between screens.
       setPhase('building');
-      const result = await buildRequest;
+      const result = await requestAiPlanRefresh({
+        planId: aiPlanRefresh.planId,
+        aiTrainerAnswers: buildAiPlanRefreshPayload(compactAnswers),
+      });
       await AsyncStorage.removeItem(`${PLAN_REFRESH_DRAFT_PREFIX}${aiPlanRefresh.planId}`).catch(() => undefined);
       if (result.status === 'completed' || result.newPlanId) {
         await AsyncStorage.removeItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => undefined);
+        setPhase('success');
       }
       await loadWorkoutPlanCached({ force: true }).catch(() => undefined);
     } catch (error) {
@@ -257,7 +261,7 @@ export function PlanRefreshScreen({ navigation }: Props) {
         return;
       }
       if (latestRefresh?.build?.status === 'completed' && latestRefresh.build.newPlanId) {
-        await AsyncStorage.setItem(SEEN_READY_PLAN_KEY, latestRefresh.build.newPlanId).catch(() => undefined);
+        await markReadyPlanSeen(latestRefresh.build.newPlanId).catch(() => undefined);
         setPhase('success');
         allowExitRef.current = true;
         return;
@@ -267,9 +271,25 @@ export function PlanRefreshScreen({ navigation }: Props) {
         Alert.alert('Could not build plan', error instanceof Error ? error.message : 'Please try again.');
       }
     } finally {
+      submittingRef.current = false;
       setSaving(false);
     }
-  };
+  }, [aiPlanRefresh, answers, moveToStep, navigation, questions]);
+
+  useEffect(() => {
+    if (
+      !route.params?.retryFailedBuild ||
+      automaticRetryAttemptedRef.current ||
+      !draftReady ||
+      loading ||
+      phase !== 'form' ||
+      aiPlanRefresh?.build?.status !== 'failed' ||
+      !questions.length ||
+      !isAiPlanRefreshComplete(answers, questions)
+    ) return;
+    automaticRetryAttemptedRef.current = true;
+    submit().catch(() => undefined);
+  }, [aiPlanRefresh?.build?.status, answers, draftReady, loading, phase, questions, route.params?.retryFailedBuild, submit]);
 
   if (loading) {
     return <CheckInLoading topInset={insets.top} onBack={() => navigation.goBack()} />;

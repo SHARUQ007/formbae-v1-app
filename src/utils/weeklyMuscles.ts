@@ -19,16 +19,26 @@ const BODY_MUSCLES = new Set<BodyMuscle>([
 
 const FULL_BODY_MUSCLES: BodyMuscle[] = ['Chest', 'Shoulders', 'Back', 'Biceps', 'Triceps', 'Core', 'Glutes', 'Quads', 'Hamstrings', 'Calves'];
 
+// Selected alternatives keep the original plan-slot ID, so their displayed name
+// is the reliable identity available to the mobile player.
+const CANONICAL_EXERCISE_MUSCLES = new Map<string, BodyMuscle[]>([
+  ['goblet squat', ['Quads', 'Glutes', 'Core']],
+  ['leg press', ['Quads', 'Glutes', 'Hamstrings']],
+  ['machine leg press', ['Quads', 'Glutes', 'Hamstrings']],
+  ['split squat', ['Quads', 'Glutes', 'Hamstrings']],
+  ['stationary lunge', ['Quads', 'Glutes', 'Hamstrings']],
+]);
+
 const EXERCISE_MUSCLE_RULES: Array<{ muscles: BodyMuscle[]; re: RegExp }> = [
   { muscles: ['Chest'], re: /\b(chest|bench|push[- ]?up|pec|fly|press[- ]?up)\b/i },
-  { muscles: ['Shoulders'], re: /\b(shoulder|deltoid|overhead press|military press|lateral raise|front raise)\b/i },
+  { muscles: ['Shoulders'], re: /\b(shoulder|deltoid|overhead press|military press|lateral raise|front raise|bench press|chest press|push[- ]?up)\b/i },
   { muscles: ['Back'], re: /\b(back|row|pull[- ]?up|pulldown|lat pull|reverse fly|superman)\b/i },
   { muscles: ['Biceps'], re: /\b(biceps?|curl|chin[- ]?up)\b/i },
-  { muscles: ['Triceps'], re: /\b(triceps?|pushdown|skull crusher|dip)\b/i },
+  { muscles: ['Triceps'], re: /\b(triceps?|pushdown|skull crusher|dip|bench press|chest press|push[- ]?up)\b/i },
   { muscles: ['Core'], re: /\b(core|abs?|abdominal|plank|crunch|sit[- ]?up|dead bug|hollow|woodchop|woodchopper|rotation|russian twist|mountain climber)\b/i },
-  { muscles: ['Glutes'], re: /\b(glutes?|hip thrust|glute bridge|kickback|abduction)\b/i },
+  { muscles: ['Glutes'], re: /\b(glutes?|hip thrust|glute bridge|kickback|abduction|squat|lunge|leg press|step[- ]?up|deadlift)\b/i },
   { muscles: ['Quads'], re: /\b(quads?|quadriceps|squat|lunge|leg press|leg extension|step[- ]?up|wall sit|bike|cycling|treadmill|run|walk)\b/i },
-  { muscles: ['Hamstrings'], re: /\b(hamstrings?|romanian deadlift|rdl|leg curl|good morning|hinge|bike|cycling)\b/i },
+  { muscles: ['Hamstrings'], re: /\b(hamstrings?|romanian deadlift|rdl|deadlift|leg curl|good morning|hinge|lunge|split squat|leg press|step[- ]?up|bike|cycling)\b/i },
   { muscles: ['Calves'], re: /\b(calves?|calf|heel raise|bike|cycling|treadmill|run|walk|jump rope)\b/i },
 ];
 
@@ -131,6 +141,13 @@ export function deriveExerciseMuscles(
 ): BodyMuscle[] {
   if (!exercise) return [];
   const notes = String(exercise.notes || '');
+  const normalizedName = String(exercise.exerciseName || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+  const canonical = CANONICAL_EXERCISE_MUSCLES.get(normalizedName);
+  if (canonical) return canonical.slice(0, 4);
   const explicit = notes.match(/(?:^|[|\n])\s*(?:Target Muscles?|Muscles?)\s*:\s*([^|\n]+)/i)?.[1] || '';
   const generated = normalizeMuscleLabels(explicit.split(/[,/·]/));
   if (generated.length) return generated.slice(0, 4);
@@ -143,7 +160,28 @@ export function deriveExerciseMuscles(
       .flatMap((rule) => rule.muscles),
   );
   const narrowed = aiDayMuscles.filter((muscle) => likely.has(muscle));
-  return (narrowed.length ? narrowed : aiDayMuscles).slice(0, 4);
+  // A movement-level match is more specific than the day summary. Falling back
+  // to unrelated day muscles here can turn a canonical lower-body alternative
+  // (for example Leg Press) into an upper-body body map.
+  if (likely.size) {
+    const inferred = Array.from(likely);
+    const remaining = inferred.filter((muscle) => !narrowed.includes(muscle));
+    return [...narrowed, ...remaining].slice(0, 4);
+  }
+  return aiDayMuscles.slice(0, 4);
+}
+
+export function haveCompatibleMuscleTargets(source: BodyMuscle[], candidate: BodyMuscle[]) {
+  const sourceSet = new Set(source);
+  const candidateSet = new Set(candidate);
+  const sourcePrimary = source[0];
+  const candidatePrimary = candidate[0];
+  if (!sourcePrimary || !candidatePrimary) return false;
+  const sharedCount = source.filter((muscle) => candidateSet.has(muscle)).length;
+  const requiredShared = Math.ceil(Math.min(sourceSet.size, candidateSet.size) / 2);
+  return candidateSet.has(sourcePrimary)
+    && sourceSet.has(candidatePrimary)
+    && sharedCount >= requiredShared;
 }
 
 export function deriveWeeklyMuscles(

@@ -6,7 +6,7 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { ScreenContainer, SectionTitle } from '../../components/Card';
+import { ScreenContainer } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState } from '../../components/States';
@@ -457,19 +457,39 @@ export function ActionHubScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
         {activeView === 'today' ? (
-          <>
-            <View style={styles.todaySectionHead}>
-              <View style={styles.todaySectionCopy}>
-                <Text style={styles.todaySectionTitle}>Today’s focus</Text>
-                <Text style={styles.todaySectionSubtitle}>Small actions that keep your plan moving.</Text>
+          <View style={styles.todayDashboard}>
+            <View style={styles.todayHero}>
+              <View style={styles.todayHeroTop}>
+                <Text style={styles.todayHeroKicker}>Today’s plan</Text>
+                <View style={styles.todayMovePill}>
+                  <Feather name="check-circle" size={13} color={colors.gold} />
+                  <Text style={styles.todayMovePillText}>{uniqueTodayTasks.length} move{uniqueTodayTasks.length === 1 ? '' : 's'}</Text>
+                </View>
               </View>
-              <View style={styles.todaySectionCountPill}>
-                <Text style={styles.todaySectionCount}>{uniqueTodayTasks.length}</Text>
+              <Text style={styles.todayHeroTitle}>{commitmentActive ? 'Keep your promise moving' : 'Build momentum, one move at a time'}</Text>
+              <Text style={styles.todayHeroSubtitle}>{commitmentActive ? 'Your active promise leads today. Finish it, then keep the streak alive.' : 'Choose what fits right now. Every small action moves your plan forward.'}</Text>
+              <View style={styles.todayHeroRule}>
+                {uniqueTodayTasks.map((task, index) => <View key={task.key} style={[styles.todayHeroSegment, index === 0 && styles.todayHeroSegmentActive]} />)}
               </View>
             </View>
+
+            <View style={styles.todayQueueHeader}>
+              <View>
+                <Text style={styles.todayQueueTitle}>Your moves</Text>
+                <Text style={styles.todayQueueCaption}>Start anywhere</Text>
+              </View>
+              <Feather name="arrow-down" size={18} color={colors.inkSubtle} />
+            </View>
             <View style={styles.todayTaskList}>
-              {uniqueTodayTasks.map((task) => (
-                <TodayTaskRow key={task.key} task={task} loading={startingTaskKey === task.key} onPress={() => startTodayTask(task)} />
+              {uniqueTodayTasks.map((task, index) => (
+                <TodayTaskRow
+                  key={task.key}
+                  task={task}
+                  index={index}
+                  last={index === uniqueTodayTasks.length - 1}
+                  loading={startingTaskKey === task.key}
+                  onPress={() => startTodayTask(task)}
+                />
               ))}
             </View>
             {commitmentActive ? (
@@ -483,12 +503,20 @@ export function ActionHubScreen({ navigation }: Props) {
               />
             ) : null}
 
-            <SectionTitle>Your record</SectionTitle>
-            <View style={styles.consistencyCard}>
-              <ConsistencyMetric icon="shield" label="Promises kept" value={`${accountability?.keptCount || 0}`} />
-              <ConsistencyMetric icon="check-circle" label="Plan complete" value={planDays.length ? `${completedDays}/${planDays.length}` : '—'} />
+            <View style={styles.todayRecordSection}>
+              <View style={styles.todayRecordHeader}>
+                <View>
+                  <Text style={styles.todayRecordKicker}>Momentum</Text>
+                  <Text style={styles.todayRecordTitle}>Your record</Text>
+                </View>
+                <Text style={styles.todayRecordCaption}>Built one day at a time</Text>
+              </View>
+              <View style={styles.consistencyCard}>
+                <ConsistencyMetric icon="shield" label="Promises kept" value={`${accountability?.keptCount || 0}`} />
+                <ConsistencyMetric icon="check-circle" label="Plan complete" value={planDays.length ? `${completedDays}/${planDays.length}` : '—'} />
+              </View>
             </View>
-          </>
+          </View>
         ) : (
           <>
             {baeUnavailable && accountabilityBae ? (
@@ -750,31 +778,34 @@ function commitmentMet(kind: string, targetId: string, snapshot: ContextualSnaps
   return false;
 }
 
-function TodayTaskRow({ task, loading, onPress }: { task: TodayTask; loading: boolean; onPress: () => void }) {
+function TodayTaskRow({ task, index, last, loading, onPress }: { task: TodayTask; index: number; last: boolean; loading: boolean; onPress: () => void }) {
   return (
     <TouchableOpacity
       activeOpacity={0.84}
       onPress={onPress}
       disabled={loading}
-      style={[styles.todayTaskRow, task.active && styles.todayTaskRowActive]}
+      style={[styles.todayTaskRow, !last && styles.todayTaskRowDivider, task.active && styles.todayTaskRowActive]}
       accessibilityRole="button"
       accessibilityLabel={`${task.title}. ${task.detail}. ${task.action}`}
       accessibilityState={{ busy: loading }}
     >
-      <View style={[styles.todayTaskRowIcon, task.active && styles.todayTaskRowIconActive]}>
-        {loading ? <ActivityIndicator size="small" color={colors.gold} /> : <Feather name={task.icon} size={18} color={colors.gold} />}
+      <View style={styles.todayTaskLead}>
+        <Text style={styles.todayTaskIndex}>{String(index + 1).padStart(2, '0')}</Text>
+        <View style={[styles.todayTaskRowIcon, task.active && styles.todayTaskRowIconActive]}>
+          {loading ? <ActivityIndicator size="small" color={colors.gold} /> : <Feather name={task.icon} size={19} color={colors.gold} />}
+        </View>
       </View>
       <View style={styles.todayTaskRowCopy}>
         <Text style={styles.todayTaskRowTitle}>{task.title}</Text>
         <Text style={styles.todayTaskRowDetail}>{task.detail}</Text>
       </View>
-      <View style={styles.todayTaskRowAction}><Text style={styles.todayTaskRowActionText}>{task.action}</Text><Feather name="chevron-right" size={17} color={colors.inkSubtle} /></View>
+      <View style={styles.todayTaskRowAction}><Text style={styles.todayTaskRowActionText}>{task.action}</Text><Feather name="chevron-right" size={15} color={colors.gold} /></View>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: {},
+  scroll: { flexGrow: 1 },
   pageHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   pageHeaderCopy: { flex: 1, minWidth: 0 },
   kicker: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
@@ -792,28 +823,44 @@ const styles = StyleSheet.create({
   inlineNoticeBody: { ...typography.caption, color: colors.inkMuted, lineHeight: 17, marginTop: 1 },
   inlineNoticeAction: { minHeight: 36, justifyContent: 'center', paddingHorizontal: spacing.sm },
   inlineNoticeActionText: { ...typography.caption, color: colors.gold, fontWeight: '900' },
-  accountabilityTabs: { flexDirection: 'row', gap: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border, marginTop: spacing.lg },
-  accountabilityTab: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, borderBottomWidth: 2, borderBottomColor: colors.bg },
-  accountabilityTabActive: { borderBottomColor: colors.gold },
+  accountabilityTabs: { flexDirection: 'row', gap: spacing.xs, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.panel, padding: spacing.xs, marginTop: spacing.lg },
+  accountabilityTab: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, borderWidth: 1, borderColor: 'transparent', borderRadius: radius.md },
+  accountabilityTabActive: { borderColor: colors.goldMuted, backgroundColor: colors.panelWarm },
   accountabilityTabText: { ...typography.bodyBold, color: colors.inkMuted },
   accountabilityTabTextActive: { color: colors.ink },
-  todaySectionHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginTop: spacing.xl, marginBottom: spacing.md },
-  todaySectionCopy: { flex: 1, minWidth: 0 },
-  todaySectionTitle: { ...typography.title, color: colors.ink },
-  todaySectionSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  todaySectionCountPill: { minWidth: 32, height: 32, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
-  todaySectionCount: { ...typography.label, color: colors.ink, fontWeight: '800' },
-  todayTaskList: { gap: spacing.sm },
-  todayTaskRow: { minHeight: 84, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.panel, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  todayTaskRowActive: { backgroundColor: colors.panelWarm, borderColor: colors.goldMuted },
-  todayTaskRowIcon: { width: 42, height: 42, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
+  todayDashboard: { flex: 1 },
+  todayHero: { marginTop: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.goldMuted, backgroundColor: colors.panelWarm, padding: spacing.md },
+  todayHeroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  todayHeroKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
+  todayMovePill: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.accentLight, paddingHorizontal: spacing.sm },
+  todayMovePillText: { ...typography.caption, color: colors.gold, fontWeight: '800' },
+  todayHeroTitle: { ...typography.title, color: colors.inkStrong, marginTop: spacing.md },
+  todayHeroSubtitle: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: spacing.xs, maxWidth: 350 },
+  todayHeroRule: { height: 5, flexDirection: 'row', gap: 5, marginTop: spacing.md },
+  todayHeroSegment: { flex: 1, borderRadius: radius.pill, backgroundColor: colors.borderStrong },
+  todayHeroSegmentActive: { backgroundColor: colors.gold },
+  todayQueueHeader: { minHeight: 54, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: spacing.xs, paddingBottom: spacing.sm, marginTop: spacing.md },
+  todayQueueTitle: { ...typography.bodyBold, color: colors.ink },
+  todayQueueCaption: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  todayTaskList: { overflow: 'hidden', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  todayTaskRow: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.panel, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  todayTaskRowDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  todayTaskRowActive: { backgroundColor: colors.panelWarm },
+  todayTaskLead: { width: 44, alignItems: 'center', gap: 3 },
+  todayTaskIndex: { fontSize: 9, lineHeight: 11, color: colors.inkSubtle, fontWeight: '900', letterSpacing: 1 },
+  todayTaskRowIcon: { width: 40, height: 40, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
   todayTaskRowIconActive: { backgroundColor: colors.accentLight },
   todayTaskRowCopy: { flex: 1, minWidth: 0 },
   todayTaskRowTitle: { ...typography.bodyBold, color: colors.ink },
-  todayTaskRowDetail: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  todayTaskRowAction: { flexDirection: 'row', alignItems: 'center', gap: 1, paddingLeft: spacing.xs },
+  todayTaskRowDetail: { ...typography.caption, color: colors.inkMuted, lineHeight: 17, marginTop: 2 },
+  todayTaskRowAction: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 1, borderRadius: radius.pill, backgroundColor: colors.accentLight, paddingLeft: spacing.sm, paddingRight: 6 },
   todayTaskRowActionText: { ...typography.caption, color: colors.gold, fontWeight: '800' },
   markDoneAction: { marginTop: spacing.sm },
+  todayRecordSection: { marginTop: 'auto', paddingTop: spacing.xl },
+  todayRecordHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.sm },
+  todayRecordKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
+  todayRecordTitle: { ...typography.title, color: colors.ink, marginTop: 1 },
+  todayRecordCaption: { ...typography.caption, color: colors.inkMuted, textAlign: 'right' },
   partnerSection: { paddingBottom: spacing.sm, marginTop: spacing.xl },
   baeHeader: { minHeight: 46, flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, marginBottom: spacing.md },
   baeHeaderCopy: { flex: 1, minWidth: 0 },

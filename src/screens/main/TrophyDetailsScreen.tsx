@@ -184,17 +184,17 @@ export function TrophyDetailsScreen({ navigation }: Props) {
               <TrophyRule
                 icon="dumbbell"
                 title="1 workout completed"
-                value="+3"
+                value="+5"
               />
               <TrophyRule
                 icon="notebook-edit-outline"
                 title="3 food logs"
-                value="+1"
+                value="+2"
               />
               <TrophyRule
                 icon="calendar-check-outline"
                 title="Missed workout"
-                value="−1"
+                value="−2"
               />
               <TrophyRule
                 icon="notebook-remove-outline"

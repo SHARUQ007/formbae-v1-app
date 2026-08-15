@@ -15,6 +15,7 @@ import { MotionAnimation } from '../../components/MotionAnimation';
 import { WeeklyBodyMap } from '../../components/WeeklyBodyMap';
 import { loadProfileSettingsCached, loadWorkoutDayCached, loadWorkoutPlanCached } from '../../services/preloadService';
 import { fetchUserPlans, PENDING_AI_PLAN_BUILD_KEY, selectWorkoutPlan } from '../../services/workoutService';
+import { hasSeenReadyPlan, markReadyPlanSeen } from '../../services/planRevealService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
 import { getSiteUrl } from '../../constants/config';
 import type { AiPlanRefresh, PlanDay, ProgressSummary, TrainerInfo, UserPlanSummary } from '../../types/api';
@@ -31,7 +32,6 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutList'>;
 const TODAY_WORKOUT_KEY_PREFIX = 'formbae_today_workout:';
 const LAST_SEEN_STREAK_KEY = 'formbae_last_seen_workout_streak';
 const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebration';
-const SEEN_READY_PLAN_KEY = 'formbae_seen_ready_plan';
 const PENDING_PLAN_BUILD_MAX_AGE_MS = 10 * 60 * 1000;
 const GOLD = '#f5b301';
 const FLAME_CORE = '#ffe08a';
@@ -249,7 +249,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [plansLoading, setPlansLoading] = useState(false);
   const [plansError, setPlansError] = useState<string | null>(null);
   const [switchingPlanId, setSwitchingPlanId] = useState('');
-  const [seenReadyPlanId, setSeenReadyPlanId] = useState('');
+  const [readyPlanAcknowledged, setReadyPlanAcknowledged] = useState(false);
   const [pendingPlanBuild, setPendingPlanBuild] = useState<{ planId: string; trainerName: string; requestedAt: number } | null>(null);
   const [planBuildSyncedAt, setPlanBuildSyncedAt] = useState<number | null>(null);
   const [bodyGender, setBodyGender] = useState<ReturnType<typeof resolveBodyGender>>('neutral');
@@ -299,8 +299,8 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         await AsyncStorage.removeItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => undefined);
       }
       setPendingPlanBuild(localPendingBuild);
-      const seenReady = await AsyncStorage.getItem(SEEN_READY_PLAN_KEY).catch(() => '');
-      setSeenReadyPlanId(seenReady || '');
+      const readyPlanId = data.aiPlanRefresh?.build?.newPlanId || '';
+      setReadyPlanAcknowledged(await hasSeenReadyPlan(readyPlanId));
       setBodyGender(resolveBodyGender(settings?.profile?.gender));
       setTrainerPhotoFailed(false);
       if (warmDay?.planDayId) {
@@ -319,7 +319,13 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const planBuilding = planBuildStatus === 'building' || planBuildStatus === 'requested' || Boolean(pendingPlanBuild);
   const backendBuildStartedAt = Date.parse(aiPlanRefresh?.build?.requestedAt || '');
   const planBuildStartedAt = Number.isFinite(backendBuildStartedAt) ? backendBuildStartedAt : pendingPlanBuild?.requestedAt;
-  const planReadyToReveal = planBuildStatus === 'completed' && Boolean(builtPlanId) && builtPlanId === planId && seenReadyPlanId !== builtPlanId;
+  const planReadyToReveal = planBuildStatus === 'completed' && Boolean(builtPlanId) && builtPlanId === planId && !readyPlanAcknowledged;
+
+  useEffect(() => {
+    navigation.getParent()?.setOptions({
+      tabBarStyle: planBuilding || planReadyToReveal ? hiddenTabBarStyle : appTabBarStyle,
+    });
+  }, [navigation, planBuilding, planReadyToReveal]);
 
   useEffect(() => {
     if (!planBuilding) return undefined;
@@ -329,7 +335,9 @@ function WorkoutDashboardScreen({ navigation }: Props) {
 
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
-      navigation.getParent()?.setOptions({ tabBarStyle: appTabBarStyle });
+      navigation.getParent()?.setOptions({
+        tabBarStyle: planBuilding || planReadyToReveal ? hiddenTabBarStyle : appTabBarStyle,
+      });
       (async () => {
         const pending = await AsyncStorage.getItem(PENDING_STREAK_CELEBRATION_KEY).catch(() => null);
         const pendingCompletion = parsePendingCompletion(pending);
@@ -344,7 +352,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
       })().catch(() => undefined);
     });
     return unsub;
-  }, [navigation, load]);
+  }, [navigation, load, planBuilding, planReadyToReveal]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -461,8 +469,8 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         mode="ready"
         trainerName={aiPlanRefresh?.trainerName || 'Ava'}
         onContinue={() => {
-          setSeenReadyPlanId(builtPlanId);
-          AsyncStorage.setItem(SEEN_READY_PLAN_KEY, builtPlanId).catch(() => undefined);
+          setReadyPlanAcknowledged(true);
+          markReadyPlanSeen(builtPlanId).catch(() => undefined);
           navigation.getParent()?.setOptions({ tabBarStyle: appTabBarStyle });
         }}
       />
@@ -563,9 +571,9 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                   </View>
                 ) : (
                   <PrimaryButton
-                    title={aiPlanRefresh.build?.status === 'failed' ? 'Review & try again' : 'Start check-in'}
+                    title={aiPlanRefresh.build?.status === 'failed' ? 'Try building again' : 'Start check-in'}
                     icon={aiPlanRefresh.build?.status === 'failed' ? 'refresh-cw' : 'arrow-right'}
-                    onPress={() => navigation.navigate('PlanRefresh')}
+                    onPress={() => navigation.navigate('PlanRefresh', aiPlanRefresh.build?.status === 'failed' ? { retryFailedBuild: true } : undefined)}
                     style={styles.aiRefreshButton}
                   />
                 )}
@@ -775,23 +783,23 @@ export const WorkoutsScreen = WorkoutDashboardScreen;
 
 const AVA_PLAN_ESTIMATE_MS = 105_000;
 const AVA_BUILD_EVENTS = [
-  { at: 6, icon: 'edit-3', text: 'Reading your latest check-in' },
-  { at: 10, icon: 'bar-chart-2', text: 'Comparing your last block and recovery' },
-  { at: 14, icon: 'check-circle', text: 'Day 1 built · foundation and form', day: 1 },
-  { at: 18, icon: 'activity', text: 'Adding the Day 1 warm-up sequence' },
-  { at: 23, icon: 'check-circle', text: 'Day 2 built · strength progression', day: 2 },
-  { at: 28, icon: 'repeat', text: 'Pairing exercises that flow well' },
-  { at: 34, icon: 'check-circle', text: 'Day 3 built · recovery and mobility', day: 3 },
-  { at: 39, icon: 'clock', text: 'Timing reps, sets and rest periods' },
-  { at: 45, icon: 'check-circle', text: 'Day 4 built · balanced training load', day: 4 },
-  { at: 51, icon: 'target', text: 'Dialing in targets for every exercise' },
-  { at: 57, icon: 'check-circle', text: 'Day 5 built · progression mapped', day: 5 },
-  { at: 63, icon: 'shield', text: 'Checking fatigue and recovery spacing' },
-  { at: 70, icon: 'check-circle', text: 'Day 6 built · intensity balanced', day: 6 },
-  { at: 76, icon: 'zap', text: 'Building shorter workout alternatives' },
-  { at: 83, icon: 'check-circle', text: 'Day 7 built · your week is mapped', day: 7 },
-  { at: 88, icon: 'sliders', text: 'Adding coaching cues and substitutions' },
-  { at: 92, icon: 'search', text: 'Running the final plan quality check' },
+  { at: 6, icon: 'edit-3', text: 'Studying your latest check-in' },
+  { at: 10, icon: 'bar-chart-2', text: 'Reviewing your recent workout history' },
+  { at: 14, icon: 'check-circle', text: 'Day 1 shaped · meeting you where you are', day: 1 },
+  { at: 18, icon: 'activity', text: 'Choosing a warm-up for your body' },
+  { at: 23, icon: 'check-circle', text: 'Day 2 shaped · building strength steadily', day: 2 },
+  { at: 28, icon: 'repeat', text: 'Matching exercises to your preferences' },
+  { at: 34, icon: 'check-circle', text: 'Day 3 shaped · recovery where you need it', day: 3 },
+  { at: 39, icon: 'clock', text: 'Personalizing your sets, reps and rest' },
+  { at: 45, icon: 'check-circle', text: 'Day 4 shaped · balancing your training load', day: 4 },
+  { at: 51, icon: 'target', text: 'Choosing movements for your goals' },
+  { at: 57, icon: 'check-circle', text: 'Day 5 shaped · progress without overload', day: 5 },
+  { at: 63, icon: 'shield', text: 'Spacing sessions around your recovery' },
+  { at: 70, icon: 'check-circle', text: 'Day 6 shaped · intensity matched to you', day: 6 },
+  { at: 76, icon: 'zap', text: 'Creating shorter options for busy days' },
+  { at: 83, icon: 'check-circle', text: 'Day 7 shaped · your week fits together', day: 7 },
+  { at: 88, icon: 'sliders', text: 'Adding coaching cues and exercise swaps' },
+  { at: 92, icon: 'search', text: 'Reviewing every detail like your coach' },
 ] as const;
 
 function AvaPlanTakeover({
@@ -841,18 +849,18 @@ function AvaPlanTakeover({
   if (mode === 'ready') {
     return (
       <ScreenContainer withBottomInset style={styles.avaTakeover}>
-        <View style={styles.avaReadyBody}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.avaReadyBody}>
           <MotionAnimation kind="success" size={116} />
-          <Text style={styles.avaKicker}>Your next training block</Text>
-          <Text style={styles.avaTitle}>Your new plan is ready</Text>
-          <Text style={styles.avaDetail}>{trainerName} rebuilt your week around what worked, what changed and how you want to train next.</Text>
+          <Text style={styles.avaKicker}>Designed around you</Text>
+          <Text style={styles.avaTitle}>{trainerName} finished your new plan</Text>
+          <Text style={styles.avaDetail}>{trainerName} studied your training history, your latest check-in and what feels best for your body to shape a week that fits you.</Text>
           <View style={styles.avaReadyCard}>
-            <View style={styles.avaReadyRow}><Feather name="calendar" size={20} color={colors.accent} /><Text style={styles.avaReadyText}>A fresh seven-day workout split</Text></View>
-            <View style={styles.avaReadyRow}><Feather name="sliders" size={20} color={colors.accent} /><Text style={styles.avaReadyText}>Updated intensity, recovery and exercise choices</Text></View>
-            <View style={styles.avaReadyRow}><Feather name="refresh-cw" size={20} color={colors.accent} /><Text style={styles.avaReadyText}>Built from your latest check-in</Text></View>
+            <View style={styles.avaReadyRow}><Feather name="calendar" size={20} color={colors.accent} /><Text style={styles.avaReadyText}>Seven days shaped around your routine</Text></View>
+            <View style={styles.avaReadyRow}><Feather name="sliders" size={20} color={colors.accent} /><Text style={styles.avaReadyText}>Intensity and recovery chosen for your body</Text></View>
+            <View style={styles.avaReadyRow}><Feather name="refresh-cw" size={20} color={colors.accent} /><Text style={styles.avaReadyText}>Your preferences built into every session</Text></View>
           </View>
-        </View>
-        <PrimaryButton title="See my new workout" icon="arrow-right" size="lg" onPress={() => onContinue?.()} style={styles.avaReadyButton} />
+        </ScrollView>
+        <PrimaryButton title="Start my new plan" icon="arrow-right" size="lg" onPress={() => onContinue?.()} style={styles.avaReadyButton} />
       </ScreenContainer>
     );
   }
@@ -870,8 +878,8 @@ function AvaPlanTakeover({
   const elapsedLabel = `${Math.floor(elapsedSeconds / 60)}:${String(elapsedSeconds % 60).padStart(2, '0')}`;
   const syncAgeSeconds = lastSyncedAt ? Math.max(0, Math.floor((Date.now() - lastSyncedAt) / 1000)) : null;
   const backendActive = syncAgeSeconds !== null && syncAgeSeconds < 15;
-  const connectionLabel = backendActive ? 'Plan in motion' : syncAgeSeconds === null ? 'Warming up…' : 'Setting up the next move';
-  const updateLabel = syncAgeSeconds === null ? 'Loading the rack' : syncAgeSeconds < 5 ? 'New work added' : 'Next move incoming';
+  const connectionLabel = backendActive ? `${trainerName} is working` : syncAgeSeconds === null ? `${trainerName} is getting started…` : `${trainerName} is shaping your plan`;
+  const updateLabel = syncAgeSeconds === null ? 'Reviewing your notes' : syncAgeSeconds < 5 ? 'Coach notes updated' : 'Thoughtfully taking shape';
   return (
     <ScreenContainer withBottomInset style={styles.avaTakeover}>
       <ScrollView
@@ -888,9 +896,9 @@ function AvaPlanTakeover({
             <Animated.View style={[styles.avaOnlineDot, { opacity: activityOpacity, transform: [{ scale: pulseScale }] }]} />
           </View>
           <View style={styles.avaStatusCopy}>
-            <Text style={styles.avaStatusKicker}>Workout programming in progress</Text>
-            <Text style={styles.avaStatusTitle}>{trainerName} is training your week</Text>
-            <Text style={styles.avaStatusDetail}>Your answers are locked in. Ava is turning them into sessions, sets and recovery.</Text>
+            <Text style={styles.avaStatusKicker}>Your coach is building your plan</Text>
+            <Text style={styles.avaStatusTitle}>{trainerName} is designing your week</Text>
+            <Text style={styles.avaStatusDetail}>{trainerName} is studying how you’ve trained, what your body responds to and how you want to feel—then shaping every session around you.</Text>
           </View>
         </View>
 
@@ -906,8 +914,8 @@ function AvaPlanTakeover({
         <View style={styles.avaBuildCard}>
           <View style={styles.avaBuildTop}>
             <View>
-              <Text style={styles.avaBuildLabel}>Programming your week</Text>
-              <Text style={styles.avaBuildEstimate}>{buildProgress >= 94 ? 'Final form check in progress' : estimateLabel}</Text>
+              <Text style={styles.avaBuildLabel}>Curating your training week</Text>
+              <Text style={styles.avaBuildEstimate}>{buildProgress >= 94 ? `${trainerName} is reviewing every detail` : estimateLabel}</Text>
             </View>
             <Text style={styles.avaBuildPercent}>{buildProgress}%</Text>
           </View>
@@ -916,8 +924,8 @@ function AvaPlanTakeover({
           </View>
 
           <View style={styles.avaDaysHeader}>
-            <Text style={styles.avaDaysTitle}>Weekly split</Text>
-            <Text style={styles.avaDaysCount}>{daysBuilt} of 7 days built</Text>
+            <Text style={styles.avaDaysTitle}>Your tailored week</Text>
+            <Text style={styles.avaDaysCount}>{daysBuilt} of 7 sessions shaped</Text>
           </View>
           <View style={styles.avaDaysGrid}>
             {[1, 2, 3, 4, 5, 6, 7].map((day) => {
@@ -932,7 +940,7 @@ function AvaPlanTakeover({
           </View>
 
           <View style={styles.avaFeedHeader}>
-            <Text style={styles.avaFeedLabel}>Inside Ava’s workout room</Text>
+            <Text style={styles.avaFeedLabel}>What {trainerName} is considering</Text>
             <View style={styles.avaLivePill}><View style={styles.avaLiveDot} /><Text style={styles.avaLiveText}>Live</Text></View>
           </View>
           <View style={styles.avaMessageFeed}>
@@ -953,10 +961,10 @@ function AvaPlanTakeover({
               );
             })}
           </View>
-          <View style={styles.avaBuildHintRow}><Feather name="check-circle" size={14} color={colors.gold} /><Text style={styles.avaBuildHint}>Your check-in is done. Ava keeps programming even if you leave this tab.</Text></View>
+          <View style={styles.avaBuildHintRow}><Feather name="check-circle" size={14} color={colors.gold} /><Text style={styles.avaBuildHint}>Your check-in is with {trainerName}. Your coach will keep shaping the plan even if you leave this tab.</Text></View>
         </View>
       </ScrollView>
-      <View style={styles.avaSafeRow}><Feather name="shield" size={15} color={colors.inkSubtle} /><Text style={styles.avaSafeText}>You can close the app—Ava will keep working.</Text></View>
+      <View style={styles.avaSafeRow}><Feather name="shield" size={15} color={colors.inkSubtle} /><Text style={styles.avaSafeText}>You can step away—{trainerName} will keep designing your plan.</Text></View>
     </ScreenContainer>
   );
 }
@@ -1121,7 +1129,7 @@ function PlanSwitcherModal({
 const styles = StyleSheet.create({
   avaTakeover: { backgroundColor: colors.bg, paddingHorizontal: spacing.lg },
   avaBuildBody: { flexGrow: 1, paddingTop: spacing.md, paddingBottom: spacing.lg },
-  avaReadyBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  avaReadyBody: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingTop: spacing.lg, paddingBottom: spacing.xl },
   avaKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', textAlign: 'center', marginTop: spacing.lg },
   avaTitle: { ...typography.display, color: colors.ink, textAlign: 'center', marginTop: spacing.sm },
   avaDetail: { ...typography.body, color: colors.inkMuted, lineHeight: 24, textAlign: 'center', marginTop: spacing.sm, maxWidth: 430 },

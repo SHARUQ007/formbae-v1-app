@@ -148,8 +148,8 @@ export function ProgressScreen({ route, navigation }: Props) {
     ? deriveCurrentWeekStreak(progress.completionHistory)
     : Math.min(7, progress.currentStreak);
   const fallbackWorkoutCount = progress.completionHistory?.length ?? progress.completed;
-  const fallbackFoodLogPoints = Math.floor(reviewStats.mealsLogged / 3);
-  const fallbackTrophyScore = fallbackWorkoutCount * 3 + fallbackFoodLogPoints + weeklyStreak * 2;
+  const fallbackFoodLogPoints = Math.floor(reviewStats.mealsLogged / 3) * 2;
+  const fallbackTrophyScore = fallbackWorkoutCount * 5 + fallbackFoodLogPoints + weeklyStreak * 2;
   const trophies = progress.trophies ?? {
     score: fallbackTrophyScore,
     change: 0,
@@ -159,7 +159,7 @@ export function ProgressScreen({ route, navigation }: Props) {
     workoutCount: fallbackWorkoutCount,
     starCount: reviewStats.mealsLogged,
     currentStreak: weeklyStreak,
-    breakdown: { workouts: fallbackWorkoutCount * 3, stars: fallbackFoodLogPoints, streakAchievement: 0, streakMomentum: weeklyStreak * 2, weeklyPace: 0, foodPace: 0 },
+    breakdown: { workouts: fallbackWorkoutCount * 5, stars: fallbackFoodLogPoints, streakAchievement: 0, streakMomentum: weeklyStreak * 2, weeklyPace: 0, foodPace: 0 },
   };
   const trophyBandSize = Math.max(1, trophies.nextMilestone - trophies.safeZone);
   const trophyBandProgress = Math.max(0, Math.min(1, (trophies.score - trophies.safeZone) / trophyBandSize));

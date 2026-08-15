@@ -3,6 +3,7 @@ import {
   currentWeekDateRange,
   deriveCurrentWeekStreak,
   deriveExerciseMuscles,
+  haveCompatibleMuscleTargets,
   deriveWeeklyMuscles,
   deriveWorkoutMuscles,
   isDateInCurrentWeek,
@@ -131,5 +132,30 @@ describe('weekly body map', () => {
       notes: 'Rotate through the torso.',
     }, ['Core', 'Quads', 'Calves'])).toEqual(['Core']);
     expect(deriveExerciseMuscles({ exerciseName: 'Legacy movement', notes: '' })).toEqual([]);
+  });
+
+  it('keeps movement-level inference authoritative when day metadata conflicts', () => {
+    expect(deriveExerciseMuscles({
+      exerciseName: 'Leg Press',
+      notes: '',
+    }, ['Chest', 'Shoulders', 'Triceps'])).toEqual(['Quads', 'Glutes', 'Hamstrings']);
+  });
+
+  it('does not let incorrect generated notes override a canonical exercise', () => {
+    expect(deriveExerciseMuscles({
+      exerciseName: 'Leg Press',
+      notes: 'Target Muscles: Chest, Shoulders, Triceps | Generated incorrectly.',
+    }, ['Chest', 'Shoulders', 'Triceps'])).toEqual(['Quads', 'Glutes', 'Hamstrings']);
+  });
+
+  it('rejects cross-muscle alternatives', () => {
+    expect(haveCompatibleMuscleTargets(
+      ['Quads', 'Glutes', 'Hamstrings'],
+      ['Chest', 'Shoulders', 'Triceps'],
+    )).toBe(false);
+    expect(haveCompatibleMuscleTargets(
+      ['Quads', 'Glutes', 'Core'],
+      ['Quads', 'Glutes', 'Hamstrings'],
+    )).toBe(true);
   });
 });

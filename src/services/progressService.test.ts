@@ -57,7 +57,7 @@ describe('progress measurement persistence', () => {
 
     const progress = await fetchProgress();
 
-    expect(progress.trophies?.score).toBe(12);
+    expect(progress.trophies?.score).toBe(18);
     expect(progress.trophies?.workoutCount).toBe(2);
     expect(progress.trophies?.starCount).toBe(8);
   });

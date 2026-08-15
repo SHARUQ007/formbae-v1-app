@@ -550,18 +550,6 @@ function DietScreenContent({ route, navigation }: Props) {
     () => entries.filter(entry => !isSkippedEntry(entry)).length,
     [entries],
   );
-  const previousWeekEntryCount = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const mondayOffset = (today.getDay() + 6) % 7;
-    const currentWeekStart = shiftDate(today, -mondayOffset);
-    const previousWeekStart = shiftDate(currentWeekStart, -7);
-    return entries.filter(entry => {
-      if (isSkippedEntry(entry)) return false;
-      const occurredAt = new Date(entry.createdAt);
-      return occurredAt >= previousWeekStart && occurredAt < currentWeekStart;
-    }).length;
-  }, [entries]);
   const todayMealMoments = useMemo(
     () =>
       new Set(
@@ -1199,22 +1187,6 @@ function DietScreenContent({ route, navigation }: Props) {
           </TouchableOpacity>
         ) : null}
 
-        <TouchableOpacity
-          activeOpacity={0.76}
-          style={styles.homeReportCountdown}
-          onPress={() => {
-            setReportReturnTab('log');
-            setActiveTab('report');
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={`Open diet report. ${reportCountdown}`}
-        >
-          <Text style={styles.homeReportCountdownText}>
-            Next Diet Report in {reportDays} day{reportDays === 1 ? '' : 's'}
-          </Text>
-          <Feather name="arrow-right" size={15} color={colors.inkSubtle} />
-        </TouchableOpacity>
-
         <View style={styles.memoryHero}>
           <View style={styles.memoryHeroTop}>
             <View style={styles.memoryHeroIcon}>
@@ -1289,7 +1261,7 @@ function DietScreenContent({ route, navigation }: Props) {
             style={styles.secondaryCard}
             onPress={() => setActiveTab('diary')}
             accessibilityRole="button"
-            accessibilityLabel={`Open food diary. ${previousWeekEntryCount} entries last week`}
+            accessibilityLabel={`Open food diary. ${weeklyDiaryItems} entries this week`}
           >
             <View style={styles.secondaryCardIcon}>
               <Feather name="book-open" size={20} color={colors.gold} />
@@ -1297,7 +1269,7 @@ function DietScreenContent({ route, navigation }: Props) {
             <View style={styles.secondaryCardCopy}>
               <Text style={styles.secondaryCardTitle}>Food diary</Text>
               <Text style={styles.secondaryCardMeta} numberOfLines={1}>
-                {previousWeekEntryCount} entr{previousWeekEntryCount === 1 ? 'y' : 'ies'} last week
+                {weeklyDiaryItems} entr{weeklyDiaryItems === 1 ? 'y' : 'ies'} this week
               </Text>
             </View>
             <Feather
@@ -2189,20 +2161,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  homeReportCountdown: {
-    minHeight: 32,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  homeReportCountdownText: {
-    ...typography.caption,
-    color: colors.inkMuted,
-    fontWeight: '700',
-  },
-
   // Log card
   memoryHero: {
     borderRadius: radius.lg,

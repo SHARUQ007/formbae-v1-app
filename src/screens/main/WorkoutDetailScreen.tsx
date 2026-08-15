@@ -44,7 +44,8 @@ import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
 import { shadows } from '../../theme/shadows';
 import { isPlayableVideo } from '../../utils/video';
-import { deriveExerciseMuscles, deriveWorkoutMuscles, resolveBodyGender, type BodyGender } from '../../utils/weeklyMuscles';
+import { deriveExerciseMuscles, deriveWorkoutMuscles, haveCompatibleMuscleTargets, resolveBodyGender, type BodyGender } from '../../utils/weeklyMuscles';
+import { exerciseWithSelectedVariant } from '../../utils/workoutExerciseVariant';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutDetail'>;
 
@@ -84,7 +85,7 @@ function cleanExerciseNotes(notes: string) {
 }
 
 const EXERCISE_FOCUS_RULES: Array<{ label: string; re: RegExp }> = [
-  { label: 'Chest', re: /\b(bench|chest|push[- ]?up|press)\b/i },
+  { label: 'Chest', re: /\b(bench|chest|push[- ]?up|pec|fly)\b/i },
   { label: 'Shoulders', re: /\b(shoulder|overhead|lateral|front raise)\b/i },
   { label: 'Back', re: /\b(row|pull[- ]?up|pulldown|lat|back)\b/i },
   { label: 'Legs', re: /\b(squat|lunge|leg press|step[- ]?up|quad)\b/i },
@@ -95,8 +96,8 @@ const EXERCISE_FOCUS_RULES: Array<{ label: string; re: RegExp }> = [
 ];
 const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebration';
 
-function exerciseFocusTags(exercise?: WorkoutExerciseDetail | null, day?: WorkoutDayDetail | null) {
-  const haystack = `${exercise?.exerciseName || ''} ${exercise?.notes || ''} ${day?.focus || ''}`;
+function exerciseFocusTags(exercise?: WorkoutExerciseDetail | null) {
+  const haystack = `${exercise?.exerciseName || ''} ${exercise?.notes || ''}`;
   const tags = EXERCISE_FOCUS_RULES.filter((rule) => rule.re.test(haystack)).map((rule) => rule.label);
   return Array.from(new Set(tags)).slice(0, 3);
 }
@@ -110,6 +111,7 @@ function exerciseCues(notes: string, exercise?: WorkoutExerciseDetail | null) {
   if (cues.length) return cues;
   const name = String(exercise?.exerciseName || '').toLowerCase();
   if (name.includes('squat')) return ['Brace before each rep and keep knees tracking over toes.', 'Use a controlled descent, then drive through the floor.'];
+  if (name.includes('leg press')) return ['Keep your hips and back supported against the pad.', 'Track your knees over your toes and press through the whole foot.'];
   if (name.includes('press')) return ['Set your shoulder blades before the first rep.', 'Control the weight down, then press with a steady path.'];
   if (name.includes('row')) return ['Keep your torso stable and pull with your elbow.', 'Pause briefly at the top before lowering with control.'];
   if (name.includes('deadlift')) return ['Brace hard before lifting and keep the bar close.', 'Hinge from the hips and finish tall without overextending.'];
@@ -119,20 +121,6 @@ function exerciseCues(notes: string, exercise?: WorkoutExerciseDetail | null) {
 function displayValue(value: string, fallback = '-') {
   const cleaned = String(value || '').trim();
   return cleaned || fallback;
-}
-
-function exerciseWithSelectedAlternate(exercise: WorkoutExerciseDetail, selectedIndex?: number): WorkoutExerciseDetail {
-  const alternate = selectedIndex !== undefined && selectedIndex >= 0 ? exercise.alternatives?.[selectedIndex] : null;
-  if (!alternate) return exercise;
-  return {
-    ...exercise,
-    exerciseName: alternate.exerciseName || exercise.exerciseName,
-    sets: alternate.sets || exercise.sets,
-    reps: alternate.reps || exercise.reps,
-    restSec: alternate.restSec || exercise.restSec,
-    notes: alternate.notes || exercise.notes,
-    videoUrl: alternate.videoUrl || exercise.videoUrl,
-  };
 }
 
 function defaultRepsFromPrescription(value: string) {
@@ -237,7 +225,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       setSelectedAlternates(saved.selectedAlternatesByExercise || {});
       const resumedExercises = data.exercises
         .filter((exercise) => !isSectionMarker(exercise.notes))
-        .map((exercise) => exerciseWithSelectedAlternate(exercise, saved.selectedAlternatesByExercise?.[exercise.exerciseId]));
+        .map((exercise) => exerciseWithSelectedVariant(exercise, saved.selectedAlternatesByExercise?.[exercise.exerciseId]));
       const resumeIndex = deriveWorkoutResumeIndex(resumedExercises, saved);
       setActiveIndex(resumeIndex);
       setMovementStarted(false);
@@ -287,7 +275,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const trackableExercises = useMemo(
     () => (detail?.exercises ?? [])
       .filter((exercise) => !isSectionMarker(exercise.notes))
-      .map((exercise) => exerciseWithSelectedAlternate(exercise, selectedAlternates[exercise.exerciseId])),
+      .map((exercise) => exerciseWithSelectedVariant(exercise, selectedAlternates[exercise.exerciseId])),
     [detail, selectedAlternates],
   );
 
@@ -313,12 +301,21 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const activeSetNumber = Math.min(activeSets, activeSetCount + 1);
   const activeRest = Number(activeExercise?.restSec || 0);
   const activeNotes = cleanExerciseNotes(activeExercise?.notes || '');
-  const activeFocusTags = exerciseFocusTags(activeExercise, detail);
+  const activeFocusTags = exerciseFocusTags(activeExercise);
   const dayMuscles = useMemo(() => deriveWorkoutMuscles(detail), [detail]);
   const activeMuscles = useMemo(
     () => deriveExerciseMuscles(activeExercise, dayMuscles),
     [activeExercise, dayMuscles],
   );
+  const activeAlternativeChoices = useMemo(() => {
+    const sourceMuscles = deriveExerciseMuscles(originalActiveExercise, dayMuscles);
+    return (originalActiveExercise?.alternatives || [])
+      .map((alternative, index) => ({ alternative, index }))
+      .filter(({ alternative }) => haveCompatibleMuscleTargets(
+        sourceMuscles,
+        deriveExerciseMuscles(alternative),
+      ));
+  }, [dayMuscles, originalActiveExercise]);
   const activeCues = exerciseCues(activeNotes, activeExercise);
   const activeVideoKey = activeExercise ? videoResolveKey(activeExercise) : '';
   const activeVideoResolving = activeVideoKey ? resolvingVideoKeys.has(activeVideoKey) : false;
@@ -846,7 +843,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
               contentContainerStyle={styles.prepContent}
               showsVerticalScrollIndicator={false}
             >
-              {originalActiveExercise?.alternatives?.length ? (
+              {activeAlternativeChoices.length ? (
                 <View style={styles.exerciseChoiceCard}>
                   <View style={styles.exerciseChoiceHeader}>
                     <View>
@@ -862,9 +859,9 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                       accessibilityRole="button"
                       accessibilityState={{ selected: selectedAlternateIndex === undefined }}
                     >
-                      <Text style={[styles.exerciseChoiceText, selectedAlternateIndex === undefined && styles.exerciseChoiceTextActive]}>{originalActiveExercise.exerciseName}</Text>
+                      <Text style={[styles.exerciseChoiceText, selectedAlternateIndex === undefined && styles.exerciseChoiceTextActive]}>{originalActiveExercise?.exerciseName || activeExercise.exerciseName}</Text>
                     </TouchableOpacity>
-                    {originalActiveExercise.alternatives.map((alternate, index) => (
+                    {activeAlternativeChoices.map(({ alternative: alternate, index }) => (
                       <TouchableOpacity
                         key={`${alternate.exerciseName}:${index}`}
                         onPress={() => selectExerciseVariant(index)}

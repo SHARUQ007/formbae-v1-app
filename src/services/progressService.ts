@@ -133,8 +133,8 @@ export async function fetchProgress() {
   const workoutCount = progress.completionHistory?.length ?? progress.completed ?? 0;
   const mealCount = progress.weeklyReview?.stats?.mealsLogged ?? 0;
   const currentStreak = Math.max(0, progress.currentStreak || 0);
-  const workoutPoints = workoutCount * 3;
-  const starPoints = Math.floor(mealCount / 3);
+  const workoutPoints = workoutCount * 5;
+  const starPoints = Math.floor(mealCount / 3) * 2;
   const streakPoints = currentStreak * 2;
   const score = Math.max(0, workoutPoints + starPoints + streakPoints);
   const safeZone = Math.floor(score / 25) * 25;

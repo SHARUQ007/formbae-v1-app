@@ -1,0 +1,25 @@
+diff --git a/node_modules/@react-native-community/cli-platform-apple/build/commands/runCommand/installApp.js b/node_modules/@react-native-community/cli-platform-apple/build/commands/runCommand/installApp.js
+index c23d9ed..07f690e 100644
+--- a/node_modules/@react-native-community/cli-platform-apple/build/commands/runCommand/installApp.js
++++ b/node_modules/@react-native-community/cli-platform-apple/build/commands/runCommand/installApp.js
+@@ -72,10 +72,17 @@ async function installApp({
+   }
+   _cliTools().logger.info(`Installing "${_picocolors().default.bold(appPath)}`);
+   if (udid && appPath) {
+-    const installParameters = isSimulator ? ['simctl', 'install', udid, appPath] : ['devicectl', 'device', 'install', 'app', '--device', udid, appPath];
+-    _child_process().default.spawnSync('xcrun', installParameters, {
+-      stdio: 'inherit'
++    // Xcode 26's devicectl can hang before transferring an app to a physical
++    // device. ios-deploy uses the stable MobileDevice install path; the CLI's
++    // existing devicectl launch step still handles launching on modern iOS.
++    const installCommand = isSimulator ? 'xcrun' : 'ios-deploy';
++    const installParameters = isSimulator ? ['simctl', 'install', udid, appPath] : ['--bundle', appPath, '--id', udid, '--no-wifi', '--timeout', '30'];
++    const installResult = _child_process().default.spawnSync(installCommand, installParameters, {
++      stdio: isSimulator ? 'inherit' : 'ignore'
+     });
++    if (installResult.status !== 0) {
++      throw new (_cliTools().CLIError)(`Failed to install the app with ${installCommand}`);
++    }
+   }
+   const bundleID = _child_process().default.execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print:CFBundleIdentifier', plistPath], {
+     encoding: 'utf8'
