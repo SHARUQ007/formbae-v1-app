@@ -4,12 +4,16 @@ import { loadToken, login as loginRequest, logout as logoutRequest } from '../se
 import { fetchUserStatus } from '../services/statusService';
 import { setUnauthorizedHandler } from '../services/apiClient';
 import { registerForRemotePush, syncReminders } from '../services/notificationService';
-import { invalidateCachedResource } from '../services/appCache';
+import { getCacheSessionId, invalidateCachedResource, setCacheSession } from '../services/appCache';
 import { preloadMainAppData } from '../services/preloadService';
 import { flushWorkoutQueue } from '../store/workoutStore';
 import type { SessionUser, UserStatus } from '../types/api';
 
-const STATUS_CACHE_KEY = 'formbae_auth_status_v1';
+const STATUS_CACHE_PREFIX = 'formbae_auth_status_v2:';
+
+function statusCacheKey(token: string) {
+  return `${STATUS_CACHE_PREFIX}${getCacheSessionId(token)}`;
+}
 
 function runPostAuthInit() {
   // Fire-and-forget; never blocks or breaks the UI.
@@ -23,9 +27,9 @@ function runPostAuthInit() {
   }).catch(() => undefined);
 }
 
-async function loadCachedStatus(): Promise<UserStatus | null> {
+async function loadCachedStatus(token: string): Promise<UserStatus | null> {
   try {
-    const raw = await AsyncStorage.getItem(STATUS_CACHE_KEY);
+    const raw = await AsyncStorage.getItem(statusCacheKey(token));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { status?: UserStatus; updatedAt?: number };
     if (!parsed.status || !parsed.updatedAt) return null;
@@ -36,12 +40,18 @@ async function loadCachedStatus(): Promise<UserStatus | null> {
   }
 }
 
-function saveCachedStatus(status: UserStatus) {
-  AsyncStorage.setItem(STATUS_CACHE_KEY, JSON.stringify({ status, updatedAt: Date.now() })).catch(() => undefined);
+function saveCachedStatus(token: string, status: UserStatus) {
+  AsyncStorage.setItem(statusCacheKey(token), JSON.stringify({ status, updatedAt: Date.now() })).catch(() => undefined);
 }
 
-function clearCachedStatus() {
-  AsyncStorage.removeItem(STATUS_CACHE_KEY).catch(() => undefined);
+function clearCachedStatus(token?: string | null) {
+  if (token) {
+    AsyncStorage.removeItem(statusCacheKey(token)).catch(() => undefined);
+    return;
+  }
+  AsyncStorage.getAllKeys()
+    .then(keys => AsyncStorage.multiRemove(keys.filter(key => key.startsWith(STATUS_CACHE_PREFIX))))
+    .catch(() => undefined);
 }
 
 type AuthState = {
@@ -84,32 +94,38 @@ export function useAuthStore() {
 
   const bootstrap = useCallback(async () => {
     setState({ loading: true, error: null });
+    let bootstrapToken: string | null = null;
     try {
       const token = await loadToken();
+      bootstrapToken = token;
       if (!token) {
+        setCacheSession(null);
         setState({ ready: true, token: null, user: null, status: null, loading: false });
         return;
       }
+      setCacheSession(token);
       preloadMainAppData();
-      const cachedStatus = await loadCachedStatus();
+      const cachedStatus = await loadCachedStatus(token);
       if (cachedStatus) {
         setState({ ready: true, token, status: cachedStatus, loading: false });
         runPostAuthInit();
         fetchUserStatus()
           .then((freshStatus) => {
-            saveCachedStatus(freshStatus);
+            saveCachedStatus(token, freshStatus);
             setState({ status: freshStatus });
           })
           .catch(() => undefined);
         return;
       }
       const status = await fetchUserStatus();
-      saveCachedStatus(status);
+      saveCachedStatus(token, status);
       setState({ ready: true, token, status, loading: false });
       runPostAuthInit();
     } catch {
       await logoutRequest();
-      clearCachedStatus();
+      invalidateCachedResource();
+      clearCachedStatus(bootstrapToken);
+      setCacheSession(null);
       setState({ ready: true, token: null, user: null, status: null, loading: false });
     }
   }, []);
@@ -118,6 +134,7 @@ export function useAuthStore() {
     setState({ loading: true, error: null });
     try {
       const response = await loginRequest(mobile, name, createIfMissing);
+      setCacheSession(response.token);
       setState({
         ready: true,
         token: response.token,
@@ -125,7 +142,7 @@ export function useAuthStore() {
         status: response.status,
         loading: false,
       });
-      saveCachedStatus(response.status);
+      saveCachedStatus(response.token, response.status);
       runPostAuthInit();
       return response;
     } catch (error) {
@@ -137,7 +154,7 @@ export function useAuthStore() {
 
   const refreshStatus = useCallback(async () => {
     const status = await fetchUserStatus();
-    saveCachedStatus(status);
+    if (state.token) saveCachedStatus(state.token, status);
     setState({ status });
     return status;
   }, []);
@@ -147,7 +164,8 @@ export function useAuthStore() {
       await logoutRequest();
     } finally {
       invalidateCachedResource();
-      clearCachedStatus();
+      clearCachedStatus(state.token);
+      setCacheSession(null);
       setState({ ready: true, token: null, user: null, status: null, loading: false, error: null });
     }
   }, []);
@@ -156,7 +174,8 @@ export function useAuthStore() {
     setUnauthorizedHandler(() => {
       logoutRequest().finally(() => {
         invalidateCachedResource();
-        clearCachedStatus();
+        clearCachedStatus(state.token);
+        setCacheSession(null);
         setState({ ready: true, token: null, user: null, status: null, loading: false, error: null });
       });
     });

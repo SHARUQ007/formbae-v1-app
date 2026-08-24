@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -13,6 +13,7 @@ import { WorkoutScreenHeader } from '../../features/workout/components/WorkoutSc
 import { loadWorkoutDayCached } from '../../services/preloadService';
 import { loadWorkoutProgress } from '../../store/workoutStore';
 import type { WorkoutStackParamList } from '../../navigation/types';
+import { hiddenTabBarStyle } from '../../navigation/tabBarStyle';
 import type { WorkoutDayDetail, WorkoutExerciseDetail } from '../../types/api';
 import { exerciseWithSelectedVariant } from '../../utils/workoutExerciseVariant';
 import { buildWorkoutSummary } from '../../utils/workoutSummary';
@@ -52,6 +53,10 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
   const [selectedAlternates, setSelectedAlternates] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(!initialDetail);
   const [error, setError] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
+    navigation.getParent()?.setOptions({ tabBarStyle: hiddenTabBarStyle });
+  }, [navigation]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -165,12 +170,13 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
                   ))}
                 </View>
               </View>
+              <View style={styles.insightDivider} />
               <View style={styles.insightBlock}>
-                <Text style={styles.insightLabel}>Why this session</Text>
+                <Text style={styles.insightLabel}>What this builds</Text>
                 <View style={styles.benefitList}>
                   {summary.benefits.slice(0, 2).map((benefit) => (
                     <View key={benefit} style={styles.benefitRow}>
-                      <View style={styles.checkDot}><Feather name="check" size={12} color={colors.goldMuted} /></View>
+                      <Feather name="check" size={15} color={colors.gold} />
                       <Text style={styles.benefitText}>{benefit}</Text>
                     </View>
                   ))}
@@ -307,8 +313,9 @@ const styles = StyleSheet.create({
   metricLabel: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.inkMuted, textTransform: 'uppercase' },
   metricValue: { fontSize: 16, lineHeight: 22, fontWeight: '600', color: colors.ink, marginTop: 1 },
   summaryDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: spacing.lg },
-  insightBlock: { gap: spacing.sm, marginBottom: spacing.md },
-  insightLabel: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.inkSubtle, textTransform: 'uppercase' },
+  insightBlock: { gap: spacing.sm },
+  insightLabel: { ...typography.overline, color: colors.inkMuted, textTransform: 'uppercase' },
+  insightDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: spacing.md },
   planSection: {
     borderRadius: radius.lg,
     backgroundColor: colors.panel,
@@ -321,28 +328,23 @@ const styles = StyleSheet.create({
   planHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.sm },
   planEyebrow: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.accentDark, textTransform: 'uppercase' },
   planTitle: { fontSize: 18, lineHeight: 25, fontWeight: '600', color: colors.ink, marginTop: 3 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   muscleChip: {
+    minHeight: 30,
     borderRadius: radius.pill,
-    backgroundColor: colors.panelRaised,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  muscleText: { fontSize: 14, lineHeight: 19, color: colors.ink, fontWeight: '700' },
-  benefitList: { gap: spacing.xs },
-  benefitRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
-  checkDot: {
-    width: 20,
-    height: 20,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentFill,
+    backgroundColor: colors.panelMuted,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 1,
   },
-  benefitText: { fontSize: 17, lineHeight: 25, fontWeight: '400', color: colors.inkMuted, flex: 1 },
+  muscleText: { fontSize: 13, lineHeight: 18, color: colors.ink, fontWeight: '600' },
+  benefitList: { gap: spacing.sm },
+  benefitRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    alignItems: 'flex-start',
+  },
+  benefitText: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: colors.inkMuted, flex: 1 },
   exerciseCount: { fontSize: 14, lineHeight: 20, color: colors.inkSubtle, fontWeight: '800' },
   exerciseList: {},
   exerciseRow: {

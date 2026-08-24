@@ -220,6 +220,7 @@ export type WorkoutLog = {
 };
 
 export type ProgressSummary = {
+  userId: string;
   adherencePct: number;
   completed: number;
   planned: number;
@@ -320,12 +321,75 @@ export type AccountabilityBaeSummary = {
   partnerProofUrl?: string;
 };
 
-export type WeeklyProgressReview = {
+export type WeeklyProgressReportSnapshot = {
+  schemaVersion?: number;
+  headline?: string;
+  summary?: string;
+  confidence?: { level: 'high' | 'medium' | 'low'; reason: string; missingSignals?: string[] };
+  highlights?: Array<{ title: string; evidence: string; whyItMatters: string }>;
+  keyFindings?: Array<{ domain: string; title: string; insight: string; evidence?: string[] }>;
+  domains?: Array<{ key: string; title: string; status: 'strong' | 'building' | 'attention' | 'insufficient'; summary: string; evidence?: string[]; actions?: string[] }>;
+  actionPlan?: Array<{ priority: number; domain: string; title: string; why: string; steps?: string[]; successMeasure?: string }>;
+  watchouts?: Array<{ title: string; reason: string; response: string }>;
+  coachNote?: string;
+  evidenceBasis?: Array<{ id: string; title: string; url: string }>;
+  metrics?: {
+    momentumScore: number;
+    momentumLabel: string;
+    dimensions: Array<{ key: string; label: string; value: number; status: 'strong' | 'building' | 'attention' }>;
+    dailyActivity: Array<{ date: string; label: string; workouts: number; foodLogs: number }>;
+    workoutFocus: Array<{ label: string; count: number }>;
+    feedbackSignals: Array<{ label: string; count: number }>;
+    bodyChanges: Array<{ key: string; label: string; unit: string; start: number; current: number; change: number }>;
+  };
+  period?: { start: string; end: string };
+  reportStats?: {
+    workoutsCompleted: number;
+    workoutsPlanned: number;
+    adherencePct: number;
+    currentStreak: number;
+    mealsLogged: number;
+    dietDaysLogged: number;
+    workoutFeedbackCount: number;
+    checkInCount: number;
+    bodyLogCount: number;
+    dietEnrichmentScore?: number;
+    dietPatternScore?: number | null;
+  };
+  wins?: string[];
+  workoutInsight?: string;
+  workoutRecommendation?: string;
+  nutritionInsight?: string;
+  nutritionRecommendation?: string;
+  nextFocusTitle?: string;
+  nextFocusReason?: string;
+  nextFocusDomain?: 'workout' | 'diet' | 'body';
+  stats?: {
+    workoutsCompleted: number;
+    workoutsPlanned: number;
+    adherencePct: number;
+    currentStreak: number;
+    mealsLogged: number;
+    dietDaysLogged: number;
+    workoutFeedbackCount: number;
+    checkInCount: number;
+    bodyLogCount: number;
+  };
+};
+
+export type WeeklyProgressReview = WeeklyProgressReportSnapshot & {
+  generatedForUserId: string;
   status: 'pending' | 'ready';
   weekStartDate: string;
   generatedAt: string;
   nextInDays: number;
   requirements?: { workouts: number; meals: number };
+  history?: Array<{
+    reportId: string;
+    generatedAt: string;
+    weekStartDate?: string;
+    report: WeeklyProgressReportSnapshot;
+  }>;
   stats: {
     workoutsCompleted: number;
     workoutsPlanned: number;
@@ -337,12 +401,6 @@ export type WeeklyProgressReview = {
     checkInCount: number;
     bodyLogCount: number;
   };
-  headline?: string;
-  summary?: string;
-  wins?: string[];
-  workoutInsight?: string;
-  workoutRecommendation?: string;
-  nutritionInsight?: string;
   nutritionRecommendation?: string;
   nextFocusTitle?: string;
   nextFocusReason?: string;

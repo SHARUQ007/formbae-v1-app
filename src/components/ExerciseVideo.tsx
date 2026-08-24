@@ -59,7 +59,7 @@ function DirectExerciseVideo({ url, compact = false, fill = false, style }: { ur
         renderError={() => (
           <View style={styles.fallback}>
             <Text style={styles.fallbackTitle}>Video could not load here</Text>
-            <Text style={styles.retryText}>Swipe down for the next exercise.</Text>
+            <Text style={styles.retryText}>Try again in a moment.</Text>
           </View>
         )}
       />

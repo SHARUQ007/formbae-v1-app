@@ -22,9 +22,10 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { TechniqueVideoBackdrop } from '../../components/TechniqueVideoBackdrop';
+import { ExerciseVideo } from '../../components/ExerciseVideo';
 import { WeeklyBodyMap } from '../../components/WeeklyBodyMap';
 import { loadProfileSettingsCached, loadWorkoutDayCached } from '../../services/preloadService';
-import { getWorkoutVideoOverride, resolveWorkoutVideo } from '../../services/workoutService';
+import { getWorkoutVideoOverride, replaceWorkoutVideo, resolveWorkoutVideo } from '../../services/workoutService';
 import { submitWorkoutFeedback, type WorkoutFeedbackSentiment } from '../../services/workoutFeedbackService';
 import {
   completeWithQueue,
@@ -59,16 +60,12 @@ type SetSaveResult = {
   setTotal: number;
   exerciseName: string;
 };
+type VideoReplacementStatus = 'idle' | 'finding' | 'changed' | 'unavailable';
 
 const SET_REWARD_LINES = ['Strong work.', 'That set counts.', 'Momentum building.', 'Nicely done.'];
 
 function videoResolveKey(exercise: WorkoutExerciseDetail) {
   return `${exercise.exerciseId || ''}:${exercise.exerciseName}:${exercise.order}`;
-}
-
-function getSectionLabel(notes: string, fallback: string) {
-  const section = notes.match(/(?:^|[|\n])\s*Section:\s*([^|\n]+)/i)?.[1]?.trim();
-  return section || fallback;
 }
 
 function isSectionMarker(notes: string) {
@@ -84,43 +81,86 @@ function cleanExerciseNotes(notes: string) {
     .join(' · ');
 }
 
-const EXERCISE_FOCUS_RULES: Array<{ label: string; re: RegExp }> = [
-  { label: 'Chest', re: /\b(bench|chest|push[- ]?up|pec|fly)\b/i },
-  { label: 'Shoulders', re: /\b(shoulder|overhead|lateral|front raise)\b/i },
-  { label: 'Back', re: /\b(row|pull[- ]?up|pulldown|lat|back)\b/i },
-  { label: 'Legs', re: /\b(squat|lunge|leg press|step[- ]?up|quad)\b/i },
-  { label: 'Glutes', re: /\b(glute|hip thrust|bridge|deadlift|hinge)\b/i },
-  { label: 'Core', re: /\b(core|plank|crunch|dead bug|hollow)\b/i },
-  { label: 'Conditioning', re: /\b(cardio|interval|run|walk|treadmill|conditioning)\b/i },
-  { label: 'Mobility', re: /\b(stretch|mobility|warm[- ]?up|cool[- ]?down)\b/i },
-];
 const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebration';
 
-function exerciseFocusTags(exercise?: WorkoutExerciseDetail | null) {
-  const haystack = `${exercise?.exerciseName || ''} ${exercise?.notes || ''}`;
-  const tags = EXERCISE_FOCUS_RULES.filter((rule) => rule.re.test(haystack)).map((rule) => rule.label);
-  return Array.from(new Set(tags)).slice(0, 3);
-}
-
 function exerciseCues(notes: string, exercise?: WorkoutExerciseDetail | null) {
+  const name = String(exercise?.exerciseName || '').toLowerCase();
+  // Keep common movements paired with reliable, movement-specific guidance.
+  if (name.includes('leg press')) return ['Keep your hips and back supported against the pad.', 'Track your knees over your toes and press through the whole foot.'];
+  if (name.includes('squat')) return ['Brace before each rep and keep knees tracking over toes.', 'Use a controlled descent, then drive through the floor.'];
+  if (name.includes('deadlift')) return ['Brace hard before lifting and keep the weight close.', 'Hinge from the hips and finish tall without overextending.'];
+  if (name.includes('row')) return ['Keep your torso stable and pull with your elbow.', 'Pause briefly at the top before lowering with control.'];
+  if (name.includes('press')) return ['Set your shoulder blades before the first rep.', 'Control the weight down, then press with a steady path.'];
+
   const cues = notes
     .split(/[.·]/)
     .map((part) => part.trim())
     .filter((part) => part.length > 10)
     .slice(0, 2);
   if (cues.length) return cues;
-  const name = String(exercise?.exerciseName || '').toLowerCase();
-  if (name.includes('squat')) return ['Brace before each rep and keep knees tracking over toes.', 'Use a controlled descent, then drive through the floor.'];
-  if (name.includes('leg press')) return ['Keep your hips and back supported against the pad.', 'Track your knees over your toes and press through the whole foot.'];
-  if (name.includes('press')) return ['Set your shoulder blades before the first rep.', 'Control the weight down, then press with a steady path.'];
-  if (name.includes('row')) return ['Keep your torso stable and pull with your elbow.', 'Pause briefly at the top before lowering with control.'];
-  if (name.includes('deadlift')) return ['Brace hard before lifting and keep the bar close.', 'Hinge from the hips and finish tall without overextending.'];
   return ['Move with control and stop the set if form breaks.', 'Match the target reps while keeping breathing steady.'];
 }
 
 function displayValue(value: string, fallback = '-') {
   const cleaned = String(value || '').trim();
   return cleaned || fallback;
+}
+
+function displayTarget(value: string) {
+  const cleaned = displayValue(value);
+  if (cleaned === '-' || /(?:sec|min|hour|rep|amrap|failure)/i.test(cleaned)) return cleaned;
+  return /\d/.test(cleaned) ? `${cleaned} reps` : cleaned;
+}
+
+function estimatedSetSeconds(prescription: string) {
+  const value = String(prescription || '').toLowerCase();
+  const minutes = value.match(/(\d+(?:\.\d+)?)\s*(?:min|minute)/);
+  if (minutes?.[1]) return Math.max(20, Math.round(Number(minutes[1]) * 60));
+  const seconds = value.match(/(\d+)\s*(?:sec|second|s\b)/);
+  if (seconds?.[1]) return Math.max(20, Number(seconds[1]));
+  const targets = value.match(/\d+/g)?.map(Number).filter(Number.isFinite) || [];
+  const targetReps = targets.length > 1 ? (targets[0] + targets[1]) / 2 : targets[0] || 10;
+  return Math.max(25, Math.min(75, Math.round(targetReps * 3.5)));
+}
+
+function formatEstimatedTime(seconds: number) {
+  if (seconds <= 0) return 'Done';
+  const minutes = Math.max(1, Math.ceil(seconds / 60));
+  return `~${minutes}m`;
+}
+
+function getWorkoutProgressSnapshot(
+  exercises: WorkoutExerciseDetail[],
+  completed: Set<string>,
+  setProgress: Record<string, number>,
+) {
+  const completedMovements = exercises.filter((exercise) => completed.has(exercise.exerciseId)).length;
+  const totalSets = exercises.reduce((sum, exercise) => sum + Math.max(1, Number(exercise.sets || 1)), 0);
+  const savedSets = exercises.reduce((sum, exercise) => {
+    const exerciseSets = Math.max(1, Number(exercise.sets || 1));
+    return sum + (completed.has(exercise.exerciseId)
+      ? exerciseSets
+      : Math.min(exerciseSets, setProgress[exercise.exerciseId] || 0));
+  }, 0);
+  const estimatedRemainingSeconds = exercises.reduce((sum, exercise) => {
+    const exerciseSets = Math.max(1, Number(exercise.sets || 1));
+    const completedSets = completed.has(exercise.exerciseId)
+      ? exerciseSets
+      : Math.min(exerciseSets, setProgress[exercise.exerciseId] || 0);
+    const remainingSets = Math.max(0, exerciseSets - completedSets);
+    if (!remainingSets) return sum;
+    const workSeconds = remainingSets * estimatedSetSeconds(exercise.reps);
+    const restSeconds = Math.max(0, remainingSets - 1) * Math.max(0, Number(exercise.restSec || 0));
+    return sum + workSeconds + restSeconds + 20;
+  }, 0);
+
+  return {
+    completedMovements,
+    totalSets,
+    savedSets,
+    estimatedRemainingSeconds,
+    progress: totalSets ? savedSets / totalSets : 0,
+  };
 }
 
 function defaultRepsFromPrescription(value: string) {
@@ -194,6 +234,8 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const [feedbackSaved, setFeedbackSaved] = useState(false);
   const [resolvedVideoUrls, setResolvedVideoUrls] = useState<Record<string, string>>({});
   const [resolvingVideoKeys, setResolvingVideoKeys] = useState<Set<string>>(new Set());
+  const [videoReloadKey, setVideoReloadKey] = useState(0);
+  const [videoReplacementStatus, setVideoReplacementStatus] = useState<VideoReplacementStatus>('idle');
   const [bodyGender, setBodyGender] = useState<BodyGender>('neutral');
   const pendingNextIndexRef = useRef<number | null>(null);
   const pendingPostSaveRef = useRef<(() => void) | null>(null);
@@ -306,7 +348,6 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const activeSetNumber = Math.min(activeSets, activeSetCount + 1);
   const activeRest = Number(activeExercise?.restSec || 0);
   const activeNotes = cleanExerciseNotes(activeExercise?.notes || '');
-  const activeFocusTags = exerciseFocusTags(activeExercise);
   const dayMuscles = useMemo(() => deriveWorkoutMuscles(detail), [detail]);
   const activeMuscles = useMemo(
     () => deriveExerciseMuscles(activeExercise, dayMuscles),
@@ -323,6 +364,16 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     return compatibleChoices.length ? compatibleChoices : choices;
   }, [dayMuscles, originalActiveExercise]);
   const activeCues = exerciseCues(activeNotes, activeExercise);
+  const workoutSnapshot = useMemo(
+    () => getWorkoutProgressSnapshot(trackableExercises, completed, setProgress),
+    [completed, setProgress, trackableExercises],
+  );
+  const workoutEtaLabel = workoutSnapshot.estimatedRemainingSeconds > 0
+    ? `${formatEstimatedTime(workoutSnapshot.estimatedRemainingSeconds)} left`
+    : 'Complete';
+  const workoutPlanProgressLabel = workoutSnapshot.completedMovements > 0
+    ? `${workoutSnapshot.completedMovements} of ${trackableExercises.length} movements complete`
+    : `${trackableExercises.length} movements`;
   const activeVideoKey = activeExercise ? videoResolveKey(activeExercise) : '';
   const activeVideoResolving = activeVideoKey ? resolvingVideoKeys.has(activeVideoKey) : false;
   const activeNeedsWeight = isWeightedExercise(activeExercise);
@@ -406,31 +457,59 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     resolveExerciseVideo(activeExercise).catch(() => undefined);
   }, [activeExercise, resolveExerciseVideo, videoUrlForExercise]);
 
-  const openExerciseVideo = useCallback(
-    async (exercise: WorkoutExerciseDetail) => {
-      let resolvedUrl = videoUrlForExercise(exercise);
-      if (!isPlayableVideo(resolvedUrl)) {
-        resolvedUrl = await resolveExerciseVideo(exercise);
-      }
-      if (!isPlayableVideo(resolvedUrl)) {
-        Alert.alert('Video is still being prepared', 'Try again in a moment. We are searching for the best technique video for this movement.');
-        return;
-      }
-      if (!detail?.planDayId) return;
-      navigation.navigate('WorkoutVideo', {
-        title: exercise.exerciseName,
-        subtitle: getSectionLabel(exercise.notes, detail?.focus || 'Workout'),
-        videoUrl: resolvedUrl,
+  const activeVideoUrl = activeExercise ? videoUrlForExercise(activeExercise) : '';
+
+  useEffect(() => {
+    setVideoReloadKey((value) => value + 1);
+    setVideoReplacementStatus('idle');
+  }, [activeExerciseId, activeExercise?.exerciseName]);
+
+  useEffect(() => {
+    if (videoReplacementStatus !== 'changed' && videoReplacementStatus !== 'unavailable') return undefined;
+    const timeout = setTimeout(() => setVideoReplacementStatus('idle'), videoReplacementStatus === 'changed' ? 1600 : 2600);
+    return () => clearTimeout(timeout);
+  }, [videoReplacementStatus]);
+
+  const tryAnotherActiveVideo = useCallback(async () => {
+    if (!activeExercise || !detail?.planDayId || videoReplacementStatus === 'finding') return;
+    const currentUrl = videoUrlForExercise(activeExercise);
+    setVideoReplacementStatus('finding');
+    try {
+      const replacement = await replaceWorkoutVideo({
         planDayId: detail.planDayId,
         workoutMode: detail.workoutMode,
-        exerciseId: exercise.exerciseId,
-        exerciseName: exercise.exerciseName,
-        order: exercise.order,
+        exerciseId: activeExercise.exerciseId,
+        exerciseName: activeExercise.exerciseName,
+        order: activeExercise.order,
         focus: detail.focus,
+        previousVideoUrl: currentUrl,
       });
-    },
-    [detail?.focus, detail?.planDayId, detail?.workoutMode, navigation, resolveExerciseVideo, videoUrlForExercise],
-  );
+      if (!isPlayableVideo(replacement.videoUrl) || replacement.videoUrl === currentUrl) {
+        throw new Error('No different video was found');
+      }
+      const key = videoResolveKey(activeExercise);
+      setResolvedVideoUrls((value) => ({ ...value, [key]: replacement.videoUrl }));
+      setDetail((value) => value
+        ? {
+            ...value,
+            exercises: value.exercises.map((entry) => (
+              videoResolveKey(entry) === key ? { ...entry, videoUrl: replacement.videoUrl } : entry
+            )),
+          }
+        : value);
+      setVideoReloadKey((value) => value + 1);
+      setVideoReplacementStatus('changed');
+    } catch {
+      setVideoReplacementStatus('unavailable');
+    }
+  }, [activeExercise, detail?.focus, detail?.planDayId, detail?.workoutMode, videoReplacementStatus, videoUrlForExercise]);
+  const videoReplacementLabel = videoReplacementStatus === 'finding'
+    ? 'Finding…'
+    : videoReplacementStatus === 'changed'
+      ? 'Changed'
+      : videoReplacementStatus === 'unavailable'
+        ? 'None found'
+        : 'Try another';
 
   useEffect(() => {
     if (!activeExerciseId || activeDone) {
@@ -826,22 +905,42 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         </View>
       </View>
 
-      <View style={[styles.executionShell, compactStep && styles.executionShellCompact, movementStarted && styles.executionShellActive]}>
+      <ScrollView
+        style={[styles.executionShell, compactStep && styles.executionShellCompact, movementStarted && styles.executionShellActive]}
+        contentContainerStyle={styles.executionContent}
+        showsVerticalScrollIndicator={false}
+      >
           <View style={styles.movementHead}>
             <Text style={styles.movementKicker}>Movement {activeExerciseIndex + 1} of {trackableExercises.length}</Text>
-            <TouchableOpacity onPress={() => setFlowOpen(true)} style={styles.stepFlowButton} accessibilityRole="button" accessibilityLabel="Open workout flow">
-              <Feather name="list" size={16} color={colors.inkMuted} />
-              <Text style={styles.stepFlowText}>View plan</Text>
-            </TouchableOpacity>
           </View>
 
           <Text style={styles.activeName}>{activeExercise.exerciseName}</Text>
 
-          {activeMuscles.length ? (
+          <TouchableOpacity
+            onPress={() => setFlowOpen(true)}
+            activeOpacity={0.84}
+            style={styles.workoutPlanCard}
+            accessibilityRole="button"
+            accessibilityLabel={`View workout plan. ${workoutPlanProgressLabel}. ${workoutEtaLabel}.`}
+          >
+            <View style={styles.workoutPlanIcon}>
+              <Feather name="clipboard" size={17} color={colors.ink} />
+            </View>
+            <View style={styles.workoutPlanCopy}>
+              <Text style={styles.workoutPlanTitle}>View workout plan</Text>
+              <Text style={styles.workoutPlanMeta} numberOfLines={1}>
+                {workoutPlanProgressLabel} · {workoutEtaLabel}
+              </Text>
+            </View>
+            <View style={styles.workoutPlanArrow}>
+              <Feather name="chevron-right" size={19} color={colors.ink} />
+            </View>
+          </TouchableOpacity>
+
+          {!movementStarted && activeMuscles.length ? (
             <View style={styles.muscleMapCard}>
               <View style={styles.muscleMapCopy}>
                 <Text style={styles.muscleMapKicker}>Muscles working</Text>
-                <Text style={styles.muscleMapTitle}>Highlighted for this movement</Text>
                 <View style={styles.muscleMapTags}>
                   {activeMuscles.map((muscle) => (
                     <View key={muscle} style={styles.muscleMapTag}>
@@ -856,65 +955,76 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
             </View>
           ) : null}
 
-          {!movementStarted ? (
-            <ScrollView
-              style={styles.prepScroller}
-              contentContainerStyle={styles.prepContent}
-              showsVerticalScrollIndicator={false}
-            >
+          <View style={styles.trainingStage}>
+            <InlineTechniqueVideo
+              exerciseName={activeExercise.exerciseName}
+              url={activeVideoUrl}
+              resolving={activeVideoResolving}
+              reloadKey={videoReloadKey}
+            />
+            <View style={styles.stageVideoActions}>
               <TouchableOpacity
-                onPress={() => openExerciseVideo(activeExercise)}
-                activeOpacity={0.86}
-                style={styles.videoGuideCard}
+                onPress={() => setVideoReloadKey((value) => value + 1)}
+                disabled={!isPlayableVideo(activeVideoUrl)}
+                style={[styles.stageOverlayButton, !isPlayableVideo(activeVideoUrl) && styles.stageVideoButtonDisabled]}
                 accessibilityRole="button"
-                accessibilityLabel={`Open video for ${activeExercise.exerciseName}`}
+                accessibilityLabel="Replay technique video"
               >
-                <View style={styles.videoGuidePreview}>
-                  <TechniqueVideoBackdrop resolving={activeVideoResolving} />
-                </View>
-                <View style={styles.videoGuideCopy}>
-                  <Text style={styles.videoGuideKicker}>Technique</Text>
-                  <Text style={styles.videoGuideTitle}>{activeVideoResolving ? 'Preparing video' : 'Watch demonstration'}</Text>
-                  <Text style={styles.videoGuideMeta}>{activeVideoResolving ? 'Finding a clear form reference' : `Review before set ${activeSetNumber}`}</Text>
-                </View>
-                <View style={styles.videoGuideArrow}>
-                  <Feather name="chevron-right" size={19} color={colors.inkMuted} />
-                </View>
+                <Feather name="rotate-ccw" size={17} color={colors.white} />
               </TouchableOpacity>
+              <TouchableOpacity
+                onPress={tryAnotherActiveVideo}
+                disabled={videoReplacementStatus === 'finding'}
+                style={styles.stageOverlayButtonWide}
+                accessibilityRole="button"
+                accessibilityLabel={videoReplacementLabel}
+                accessibilityState={{ busy: videoReplacementStatus === 'finding' }}
+              >
+                {videoReplacementStatus === 'finding' ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Feather name={videoReplacementStatus === 'changed' ? 'check' : videoReplacementStatus === 'unavailable' ? 'info' : 'refresh-cw'} size={16} color={colors.white} />
+                )}
+                <Text style={styles.stageOverlayButtonText} numberOfLines={1}>{videoReplacementLabel}</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.stageMetricsOverlay}>
+                <View style={styles.stageMetricOverlay}>
+                  <Text style={styles.stageMetricLabel}>Set</Text>
+                  <Text style={styles.stageMetricValue}>{activeSetNumber} / {activeSets}</Text>
+                </View>
+                <View style={styles.stageMetricDivider} />
+                <View style={styles.stageMetricOverlay}>
+                  <Text style={styles.stageMetricLabel}>Target</Text>
+                  <Text style={styles.stageMetricValue} numberOfLines={1}>{displayValue(activeExercise.reps)}</Text>
+                </View>
+                <View style={styles.stageMetricDivider} />
+                <View style={styles.stageMetricOverlay}>
+                  <Text style={styles.stageMetricLabel}>Rest</Text>
+                  <Text style={styles.stageMetricValue}>{displayValue(activeExercise.restSec, '0')}s</Text>
+                </View>
+            </View>
+          </View>
 
-              <View style={styles.prescriptionStrip}>
-                <View style={styles.prescriptionMetric}>
-                  <Text style={styles.prescriptionMetricLabel}>Set</Text>
-                  <Text style={styles.prescriptionMetricValue}>{activeSetNumber} of {activeSets}</Text>
-                </View>
-                <View style={styles.prescriptionDivider} />
-                <View style={[styles.prescriptionMetric, styles.prescriptionMetricWide]}>
-                  <Text style={styles.prescriptionMetricLabel}>Target</Text>
-                  <Text style={styles.prescriptionMetricValue}>
-                    {displayValue(activeExercise.reps)}
-                  </Text>
-                </View>
-                <View style={styles.prescriptionDivider} />
-                <View style={styles.prescriptionMetric}>
-                  <Text style={styles.prescriptionMetricLabel}>Rest</Text>
-                  <Text style={styles.prescriptionMetricValue}>{displayValue(activeExercise.restSec, '0')}s</Text>
-                </View>
-              </View>
-
+          {!movementStarted ? (
+            <View style={styles.prepContent}>
               <View style={styles.coachCueCard}>
                 <View style={styles.coachCueHeader}>
-                  <Text style={styles.coachCueKicker}>Form notes</Text>
-                  <Text style={styles.coachCueTags}>
-                    {activeFocusTags.length ? activeFocusTags.join(' · ') : 'Technique'}
-                  </Text>
-                </View>
-                <Text style={styles.coachCuePrimary}>{activeCues[0]}</Text>
-                {activeCues[1] ? (
-                  <View style={styles.coachCueSecondaryRow}>
-                    <Text style={styles.coachCueIndex}>02</Text>
-                    <Text style={styles.coachCueSecondary}>{activeCues[1]}</Text>
+                  <View style={styles.coachCueIcon}>
+                    <Feather name="check" size={16} color={colors.gold} />
                   </View>
-                ) : null}
+                  <Text style={styles.coachCueKicker}>Form cues</Text>
+                </View>
+                <View style={styles.coachCueList}>
+                  {activeCues.slice(0, 2).map((cue, index) => (
+                    <View key={`${index}-${cue}`} style={styles.coachCueRow}>
+                      <View style={styles.coachCueNumber}>
+                        <Text style={styles.coachCueNumberText}>{index + 1}</Text>
+                      </View>
+                      <Text style={styles.coachCueText}>{cue}</Text>
+                    </View>
+                  ))}
+                </View>
               </View>
 
               {activeLastLog ? (
@@ -925,13 +1035,9 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                   </Text>
                 </View>
               ) : null}
-            </ScrollView>
+            </View>
           ) : (
-            <ScrollView
-              style={styles.liveScroller}
-              contentContainerStyle={styles.liveContent}
-              showsVerticalScrollIndicator={false}
-            >
+            <View style={styles.liveContent}>
               <View style={styles.liveWorkoutCard}>
                 <View style={styles.liveTimerHeader}>
                   <View>
@@ -943,41 +1049,28 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                 <View style={styles.liveProgressTrack}>
                   <View style={[styles.liveProgressFill, { width: `${Math.min(100, Math.max(10, (activeSetNumber / activeSets) * 100))}%` }]} />
                 </View>
-                <View style={styles.liveMetricRow}>
-                  <View style={styles.liveMetricPill}>
-                    <Text style={styles.liveMetricLabel}>Target</Text>
-                    <Text style={styles.liveMetricValue}>{displayValue(activeExercise.reps)}</Text>
+              </View>
+              <View style={styles.coachCueCard}>
+                <View style={styles.coachCueHeader}>
+                  <View style={styles.coachCueIcon}>
+                    <Feather name="check" size={16} color={colors.gold} />
                   </View>
-                  <View style={styles.liveMetricPill}>
-                    <Text style={styles.liveMetricLabel}>Rest next</Text>
-                    <Text style={styles.liveMetricValue}>{displayValue(activeExercise.restSec, '0')}s</Text>
-                  </View>
+                  <Text style={styles.coachCueKicker}>Form cues</Text>
+                </View>
+                <View style={styles.coachCueList}>
+                  {activeCues.slice(0, 2).map((cue, index) => (
+                    <View key={`${index}-${cue}`} style={styles.coachCueRow}>
+                      <View style={styles.coachCueNumber}>
+                        <Text style={styles.coachCueNumberText}>{index + 1}</Text>
+                      </View>
+                      <Text style={styles.coachCueText}>{cue}</Text>
+                    </View>
+                  ))}
                 </View>
               </View>
-              <View style={styles.instructionCard}>
-                <View style={styles.instructionHead}>
-                  <Text style={styles.instructionTitle}>Form notes</Text>
-                </View>
-                <Text style={styles.instructionText}>
-                  {activeNotes || `Keep control through the full range. Match the target ${displayValue(activeExercise.reps)} and stop if form breaks.`}
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => openExerciseVideo(activeExercise)}
-                activeOpacity={0.86}
-                style={styles.videoStepCardCompactActive}
-                accessibilityRole="button"
-                accessibilityLabel={`Open video for ${activeExercise.exerciseName}`}
-              >
-                <View style={styles.videoMiniIcon}>
-                  <Feather name="play" size={16} color={colors.gold} style={styles.videoMiniPlayGlyph} />
-                </View>
-                <Text style={styles.videoMiniText}>{activeVideoResolving ? 'Finding video' : 'Technique video'}</Text>
-                <Feather name="chevron-right" size={20} color={colors.inkMuted} />
-              </TouchableOpacity>
-            </ScrollView>
+            </View>
           )}
-      </View>
+      </ScrollView>
 
       <View style={[styles.actionDock, { paddingBottom: insets.bottom + spacing.sm }]}>
         {movementStarted && !timer.running ? (
@@ -1021,6 +1114,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         exercises={trackableExercises}
         activeExerciseId={activeExercise.exerciseId}
         completed={completed}
+        setProgress={setProgress}
         onSelect={(index) => {
           setFlowOpen(false);
           moveToExercise(index);
@@ -1094,6 +1188,35 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
 
 export const WorkoutDetailScreen = FocusedWorkoutDetailScreen;
 
+function InlineTechniqueVideo({
+  exerciseName,
+  url,
+  resolving,
+  reloadKey,
+}: {
+  exerciseName: string;
+  url: string;
+  resolving: boolean;
+  reloadKey: number;
+}) {
+  const playable = isPlayableVideo(url);
+  return (
+    <View style={styles.inlineVideoSurface}>
+        {playable ? (
+          <ExerciseVideo key={`${exerciseName}-${reloadKey}-${url}`} url={url} fill style={styles.inlineVideoPlayer} />
+        ) : (
+          <View style={styles.inlineVideoPreparing}>
+            <TechniqueVideoBackdrop resolving={resolving} />
+            <View style={styles.inlineVideoPreparingCopy} pointerEvents="none">
+              <Text style={styles.inlineVideoPreparingTitle}>{resolving ? 'Preparing demonstration' : 'Video unavailable'}</Text>
+              <Text style={styles.inlineVideoPreparingText}>{resolving ? 'Finding a clear form reference' : 'Use the form notes below for this set.'}</Text>
+            </View>
+          </View>
+        )}
+    </View>
+  );
+}
+
 function Header({
   onBack,
   title,
@@ -1122,24 +1245,53 @@ function Header({
 function ExerciseRow({
   exercise,
   index,
+  last,
   active,
   done,
+  next,
+  savedSets,
   onPress,
 }: {
   exercise: WorkoutExerciseDetail;
   index: number;
+  last: boolean;
   active: boolean;
   done: boolean;
+  next: boolean;
+  savedSets: number;
   onPress: () => void;
 }) {
+  const totalSets = Math.max(1, Number(exercise.sets || 1));
+  const completedSets = done ? totalSets : Math.min(totalSets, savedSets);
+  const progress = completedSets / totalSets;
+  const status = done ? 'Done' : active ? 'Now' : completedSets > 0 ? 'Started' : next ? 'Next' : '';
+  const setLabel = completedSets > 0
+    ? `${completedSets} of ${totalSets} sets`
+    : `${totalSets} ${totalSets === 1 ? 'set' : 'sets'}`;
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.84} style={[styles.exerciseRow, active && styles.exerciseRowActive]}>
-      <View style={[styles.exerciseNum, done && styles.exerciseNumDone, active && styles.exerciseNumActive]}>
-        {done ? <Feather name="check" size={15} color={colors.white} /> : <Text style={[styles.exerciseNumText, active && styles.exerciseNumTextActive]}>{index + 1}</Text>}
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.84}
+      style={[styles.exerciseRow, !last && styles.exerciseRowDivider, done && styles.exerciseRowDone, active && styles.exerciseRowActive]}
+      accessibilityRole="button"
+      accessibilityLabel={`${exercise.exerciseName}. ${status || 'Remaining'}. ${setLabel}. Target ${displayTarget(exercise.reps)}.`}
+    >
+      <View style={[styles.exerciseNum, done && styles.exerciseNumDone, active && !done && styles.exerciseNumActive]}>
+        {done ? <Feather name="check" size={15} color={colors.gold} /> : <Text style={[styles.exerciseNumText, active && styles.exerciseNumTextActive]}>{index + 1}</Text>}
       </View>
       <View style={styles.exerciseRowText}>
-        <Text style={styles.exerciseRowTitle}>{exercise.exerciseName}</Text>
-        <Text style={styles.exerciseRowMeta}>{displayValue(exercise.sets, '1')} sets · {displayValue(exercise.reps)} · {displayValue(exercise.restSec, '0')}s rest</Text>
+        <View style={styles.exerciseRowTitleLine}>
+          <Text style={styles.exerciseRowTitle} numberOfLines={1}>{exercise.exerciseName}</Text>
+          {status ? (
+            <Text style={[styles.exerciseRowStatus, active && styles.exerciseRowStatusActive, done && styles.exerciseRowStatusDone]}>{status}</Text>
+          ) : null}
+        </View>
+        <Text style={styles.exerciseRowMeta}>{setLabel} · {displayTarget(exercise.reps)}</Text>
+        {!done && (active || completedSets > 0) ? (
+          <View style={styles.exerciseSetTrack}>
+            <View style={[styles.exerciseSetFill, { width: `${Math.round(progress * 100)}%` }]} />
+          </View>
+        ) : null}
       </View>
       <Feather name={active ? 'play-circle' : 'chevron-right'} size={19} color={active ? colors.accent : colors.inkSubtle} />
     </TouchableOpacity>
@@ -1151,6 +1303,7 @@ function WorkoutFlowModal({
   exercises,
   activeExerciseId,
   completed,
+  setProgress,
   onSelect,
   onClose,
 }: {
@@ -1158,9 +1311,16 @@ function WorkoutFlowModal({
   exercises: WorkoutExerciseDetail[];
   activeExerciseId: string;
   completed: Set<string>;
+  setProgress: Record<string, number>;
   onSelect: (index: number) => void;
   onClose: () => void;
 }) {
+  const snapshot = getWorkoutProgressSnapshot(exercises, completed, setProgress);
+  const activeExercise = exercises.find((exercise) => exercise.exerciseId === activeExerciseId);
+  const activeExerciseIndex = exercises.findIndex((exercise) => exercise.exerciseId === activeExerciseId);
+  const remainingMovements = Math.max(0, exercises.length - snapshot.completedMovements);
+  const completionPercent = Math.round(snapshot.progress * 100);
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalRoot}>
@@ -1168,23 +1328,50 @@ function WorkoutFlowModal({
         <View style={styles.flowSheet}>
           <View style={styles.sheetHandle} />
           <View style={styles.sheetHead}>
-            <View>
-              <Text style={styles.sheetKicker}>Workout flow</Text>
-              <Text style={styles.sheetTitle}>Choose a movement</Text>
-              <Text style={styles.sheetSub}>{exercises.length} movements in this session</Text>
+            <View style={styles.sheetTitleBlock}>
+              <Text style={styles.sheetTitle}>Workout plan</Text>
+              <Text style={styles.sheetSub}>{activeExercise ? `${activeExercise.exerciseName} in progress` : 'Your session progress'}</Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Close workout snapshot">
               <Feather name="x" size={20} color={colors.inkMuted} />
             </TouchableOpacity>
           </View>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.exerciseList}>
+          <View style={styles.flowSummary}>
+            <View style={styles.flowSummaryHeadline}>
+              <View style={styles.flowSummaryMetric}>
+                <Text style={styles.flowSummaryValue}>{completionPercent}%</Text>
+                <Text style={styles.flowSummaryLabel}>Session complete</Text>
+              </View>
+              <View style={styles.flowSummaryTime}>
+                <Feather name="clock" size={15} color={colors.inkMuted} />
+                <View>
+                  <Text style={styles.flowSummaryTimeValue}>{formatEstimatedTime(snapshot.estimatedRemainingSeconds)}</Text>
+                  <Text style={styles.flowSummaryTimeLabel}>remaining</Text>
+                </View>
+              </View>
+            </View>
+            <View style={styles.flowProgressTrack}>
+              <View style={[styles.flowProgressFill, { width: `${Math.round(snapshot.progress * 100)}%` }]} />
+            </View>
+            <View style={styles.flowProgressFooter}>
+              <Text style={styles.flowMovementProgress}>{snapshot.completedMovements} of {exercises.length} movements · {snapshot.savedSets} of {snapshot.totalSets} sets</Text>
+            </View>
+          </View>
+          <View style={styles.flowListHead}>
+            <Text style={styles.flowListTitle}>Movements</Text>
+            <Text style={styles.flowListHint}>{remainingMovements} remaining</Text>
+          </View>
+          <ScrollView style={styles.flowList} showsVerticalScrollIndicator={false} contentContainerStyle={styles.exerciseList}>
             {exercises.map((exercise, index) => (
               <ExerciseRow
                 key={exercise.exerciseId}
                 exercise={exercise}
                 index={index}
+                last={index === exercises.length - 1}
                 active={exercise.exerciseId === activeExerciseId}
                 done={completed.has(exercise.exerciseId)}
+                next={index === activeExerciseIndex + 1}
+                savedSets={setProgress[exercise.exerciseId] || 0}
                 onPress={() => onSelect(index)}
               />
             ))}
@@ -1541,6 +1728,8 @@ function SetEntryModal({
   onCelebrationComplete: (result: SetSaveResult) => void;
 }) {
   const modalInsets = useSafeAreaInsets();
+  const { width: viewportWidth } = useWindowDimensions();
+  const useInputColumns = needsWeight && viewportWidth >= 360;
   const [savePhase, setSavePhase] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [saveResult, setSaveResult] = useState<SetSaveResult | null>(null);
   const successScale = useRef(new Animated.Value(0.65)).current;
@@ -1606,11 +1795,11 @@ function SetEntryModal({
         ? SET_REWARD_LINES[(saveResult.savedSetNumber - 1) % SET_REWARD_LINES.length]
         : '';
   const rewardMessage = saveResult?.workoutComplete
-    ? 'Every set is saved. Your session recap is ready.'
+    ? 'Every set is saved. Your recap is ready.'
     : saveResult?.movementComplete
-      ? `All ${saveResult.setTotal} sets are saved. Your next movement is ready.`
+      ? 'All sets complete. Your next movement is ready.'
       : saveResult
-        ? `${saveResult.setTotal - saveResult.savedSetNumber} ${saveResult.setTotal - saveResult.savedSetNumber === 1 ? 'set' : 'sets'} left. Catch your breath, then go again.`
+        ? `${saveResult.setTotal - saveResult.savedSetNumber} ${saveResult.setTotal - saveResult.savedSetNumber === 1 ? 'set' : 'sets'} remaining in this movement.`
         : '';
   const rewardProgress = saveResult
     ? `${Math.min(100, Math.round((saveResult.savedSetNumber / Math.max(1, saveResult.setTotal)) * 100))}%` as `${number}%`
@@ -1643,27 +1832,36 @@ function SetEntryModal({
                 },
               ]}
             >
-              <Animated.View style={[styles.setSaveSuccessIcon, { transform: [{ scale: successScale }] }]}>
-                <View style={styles.setSaveSuccessIconInner}>
-                  <Feather
-                    name={saveResult.workoutComplete ? 'award' : 'check'}
-                    size={30}
-                    color={colors.onPrimary}
-                  />
+              <View style={styles.setSaveSuccessHead}>
+                <Animated.View style={[styles.setSaveSuccessIcon, { transform: [{ scale: successScale }] }]}>
+                  <View style={styles.setSaveSuccessIconInner}>
+                    <Feather
+                      name={saveResult.workoutComplete ? 'award' : 'check'}
+                      size={23}
+                      color={colors.onPrimary}
+                    />
+                  </View>
+                </Animated.View>
+                <View style={styles.setSaveSuccessHeadCopy}>
+                  <Text style={styles.setSaveSuccessKicker}>{rewardKicker}</Text>
+                  <Text style={styles.setSaveSuccessTitle}>{rewardTitle}</Text>
                 </View>
-              </Animated.View>
-              <Text style={styles.setSaveSuccessKicker}>{rewardKicker}</Text>
-              <Text style={styles.setSaveSuccessTitle}>{rewardTitle}</Text>
-              <Text style={styles.setSaveSuccessExercise} numberOfLines={2}>{saveResult.exerciseName}</Text>
+              </View>
+              <View style={styles.setSaveSuccessExerciseRow}>
+                <Feather name="activity" size={16} color={colors.gold} />
+                <Text style={styles.setSaveSuccessExercise} numberOfLines={1}>{saveResult.exerciseName}</Text>
+              </View>
 
-              <View style={styles.setSaveProgressMeta}>
-                <Text style={styles.setSaveProgressLabel}>Movement progress</Text>
-                <Text style={styles.setSaveProgressValue}>{saveResult.savedSetNumber}/{saveResult.setTotal} sets</Text>
+              <View style={styles.setSaveProgressCard}>
+                <View style={styles.setSaveProgressMeta}>
+                  <Text style={styles.setSaveProgressLabel}>Movement progress</Text>
+                  <Text style={styles.setSaveProgressValue}>{saveResult.savedSetNumber} of {saveResult.setTotal} sets</Text>
+                </View>
+                <View style={styles.setSaveProgressTrack}>
+                  <View style={[styles.setSaveProgressFill, { width: rewardProgress }]} />
+                </View>
+                <Text style={styles.setSaveSuccessMessage}>{rewardMessage}</Text>
               </View>
-              <View style={styles.setSaveProgressTrack}>
-                <View style={[styles.setSaveProgressFill, { width: rewardProgress }]} />
-              </View>
-              <Text style={styles.setSaveSuccessMessage}>{rewardMessage}</Text>
             </Animated.View>
           ) : (
             <>
@@ -1675,23 +1873,34 @@ function SetEntryModal({
               >
                 <View style={styles.sheetHead}>
                   <View style={styles.setEntryHeadText}>
-                    <Text style={styles.sheetKicker}>Log set {setNumber} of {setTotal}</Text>
-                    <Text style={styles.sheetTitle}>{exerciseName}</Text>
-                    <Text style={styles.sheetSub}>Time under work: {formatTimer(elapsed)}</Text>
+                    <Text style={styles.sheetKicker}>Set {setNumber} of {setTotal}</Text>
+                    <Text style={styles.setEntryTitle} numberOfLines={2}>{exerciseName}</Text>
                   </View>
                   <TouchableOpacity onPress={handleClose} disabled={controlsLocked} style={styles.closeButton}>
                     <Feather name="x" size={20} color={colors.inkMuted} />
                   </TouchableOpacity>
                 </View>
 
-                <View style={styles.setEntryTarget}>
-                  <Feather name="target" size={18} color={colors.accentDark} />
-                  <Text style={styles.setEntryTargetText}>Target: {targetReps}</Text>
+                <View style={styles.setEntryMetrics}>
+                  <View style={styles.setEntryMetric}>
+                    <View>
+                      <Text style={styles.setEntryMetricLabel}>Target reps</Text>
+                      <Text style={styles.setEntryMetricValue}>{targetReps}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.setEntryMetricDivider} />
+                  <View style={styles.setEntryMetric}>
+                    <Feather name="clock" size={17} color={colors.inkMuted} />
+                    <View>
+                      <Text style={styles.setEntryMetricLabel}>Work time</Text>
+                      <Text style={styles.setEntryMetricValue}>{formatTimer(elapsed)}</Text>
+                    </View>
+                  </View>
                 </View>
 
-                <View style={styles.sheetInputStack}>
-                  <View style={styles.sheetInputGroup}>
-                    <Text style={styles.logInputLabel}>Reps completed</Text>
+                <View style={[styles.sheetInputStack, useInputColumns && styles.sheetInputStackColumns]}>
+                  <View style={[styles.sheetInputGroup, useInputColumns && styles.sheetInputGroupColumn]}>
+                    <Text style={styles.sheetInputLabel}>Reps completed</Text>
                     <View style={styles.sheetStepperInputRow}>
                       <TouchableOpacity onPress={() => onAdjustReps(-1)} disabled={controlsLocked} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Decrease reps">
                         <Feather name="minus" size={20} color={colors.accentDark} />
@@ -1713,22 +1922,25 @@ function SetEntryModal({
                   </View>
 
                   {needsWeight ? (
-                    <View style={styles.sheetInputGroup}>
-                      <Text style={styles.logInputLabel}>Weight used</Text>
+                    <View style={[styles.sheetInputGroup, useInputColumns && styles.sheetInputGroupColumn]}>
+                      <Text style={styles.sheetInputLabel}>Weight used</Text>
                       <View style={styles.sheetStepperInputRow}>
                         <TouchableOpacity onPress={() => onAdjustWeight(-1)} disabled={controlsLocked} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Decrease weight">
                           <Feather name="minus" size={20} color={colors.accentDark} />
                         </TouchableOpacity>
-                        <TextInput
-                          value={weight}
-                          onChangeText={onWeight}
-                          keyboardType="decimal-pad"
-                          placeholder="0 kg"
-                          placeholderTextColor={colors.inkSubtle}
-                          style={styles.sheetLogInput}
-                          textAlign="center"
-                          editable={!controlsLocked}
-                        />
+                        <View style={styles.sheetLogValueWithUnit}>
+                          <TextInput
+                            value={weight}
+                            onChangeText={onWeight}
+                            keyboardType="decimal-pad"
+                            placeholder="0"
+                            placeholderTextColor={colors.inkSubtle}
+                            style={styles.sheetLogInputWithUnit}
+                            textAlign="right"
+                            editable={!controlsLocked}
+                          />
+                          <Text style={styles.sheetLogUnit}>kg</Text>
+                        </View>
                         <TouchableOpacity onPress={() => onAdjustWeight(1)} disabled={controlsLocked} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Increase weight">
                           <Feather name="plus" size={20} color={colors.accentDark} />
                         </TouchableOpacity>
@@ -1740,6 +1952,7 @@ function SetEntryModal({
 
               <View style={[styles.sheetActionDock, { paddingBottom: modalInsets.bottom + spacing.sm }]}>
                 <TouchableOpacity onPress={handleClose} disabled={controlsLocked} style={styles.sheetSecondaryButton} accessibilityRole="button" accessibilityLabel="Resume set">
+                  <Feather name="play" size={16} color={colors.inkMuted} />
                   <Text style={styles.sheetSecondaryText}>Resume</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -1873,17 +2086,14 @@ const styles = StyleSheet.create({
   executionShell: {
     flex: 1,
     marginHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    justifyContent: 'flex-start',
     overflow: 'hidden',
-    gap: spacing.xs,
   },
+  executionContent: { justifyContent: 'flex-start', paddingTop: spacing.sm, paddingBottom: spacing.md },
   executionShellActive: {
     backgroundColor: colors.bg,
   },
   executionShellCompact: {
     marginHorizontal: spacing.md,
-    paddingTop: spacing.xs,
   },
   restCard: {
     flex: 1,
@@ -2059,13 +2269,13 @@ const styles = StyleSheet.create({
     ...typography.subtitle,
     color: colors.ink,
   },
-  lastLogText: { fontSize: 15, lineHeight: 21, color: colors.accentDark, fontWeight: '700', flex: 1 },
+  lastLogText: { fontSize: 15, lineHeight: 21, color: colors.ink, fontWeight: '700', flex: 1 },
   lastLogCard: {
     minHeight: 64,
     borderRadius: radius.lg,
-    backgroundColor: colors.accentLight,
+    backgroundColor: colors.panelMuted,
     borderWidth: 1,
-    borderColor: colors.accentSurface,
+    borderColor: colors.border,
     padding: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
@@ -2212,15 +2422,112 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.sm,
   },
-  stepFlowButton: {
-    minHeight: 36,
+  workoutPlanCard: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    marginTop: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panel,
+  },
+  workoutPlanIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.panelMuted,
+  },
+  workoutPlanCopy: { flex: 1, minWidth: 0 },
+  workoutPlanTitle: { fontSize: 14, lineHeight: 19, fontWeight: '800', color: colors.ink },
+  workoutPlanMeta: { fontSize: 11, lineHeight: 16, fontWeight: '600', color: colors.inkMuted, marginTop: 2 },
+  workoutPlanArrow: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.panelMuted,
+  },
+  trainingStage: {
+    marginTop: spacing.sm,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    padding: 7,
+  },
+  inlineVideoSurface: {
+    width: '100%',
+    aspectRatio: 9 / 16,
+    borderRadius: radius.md,
+    backgroundColor: '#000',
+    overflow: 'hidden',
+  },
+  inlineVideoPlayer: { width: '100%', height: '100%', borderRadius: 0 },
+  inlineVideoPreparing: { flex: 1, backgroundColor: '#090a0d' },
+  inlineVideoPreparingCopy: { position: 'absolute', left: spacing.sm, right: spacing.sm, bottom: spacing.sm },
+  inlineVideoPreparingTitle: { fontSize: 14, lineHeight: 19, fontWeight: '800', color: colors.white },
+  inlineVideoPreparingText: { fontSize: 11, lineHeight: 16, fontWeight: '600', color: 'rgba(255,255,255,0.68)', marginTop: 2 },
+  stageVideoActions: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    zIndex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  stageOverlayButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#15161b',
+    borderWidth: 1,
+    borderColor: '#303138',
+  },
+  stageOverlayButtonWide: {
+    minHeight: 44,
+    maxWidth: 150,
+    borderRadius: radius.pill,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingLeft: spacing.sm,
+    gap: 7,
+    paddingHorizontal: 13,
+    backgroundColor: '#15161b',
+    borderWidth: 1,
+    borderColor: '#303138',
   },
-  stepFlowText: { fontSize: 14, lineHeight: 20, color: colors.inkMuted, fontWeight: '700' },
+  stageOverlayButtonText: { fontSize: 12, lineHeight: 16, fontWeight: '800', color: colors.white, flexShrink: 1 },
+  stageMetricsOverlay: {
+    position: 'absolute',
+    left: spacing.md,
+    right: spacing.md,
+    bottom: spacing.md,
+    zIndex: 2,
+    minHeight: 64,
+    borderRadius: radius.lg,
+    backgroundColor: '#15161b',
+    borderWidth: 1,
+    borderColor: '#303138',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xs,
+  },
+  stageMetricOverlay: { flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  stageMetricDivider: { width: 1, height: 32, backgroundColor: '#303138' },
+  stageMetricLabel: { fontSize: 9, lineHeight: 12, fontWeight: '800', color: '#9a9ba3', textTransform: 'uppercase', letterSpacing: 0.8 },
+  stageMetricValue: { fontSize: 17, lineHeight: 22, fontWeight: '900', color: colors.white, marginTop: 2 },
+  stageVideoButtonDisabled: { opacity: 0.42 },
   videoGuideCard: {
     minHeight: 112,
     borderRadius: radius.lg,
@@ -2340,27 +2647,49 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.sm,
   },
   coachCueCard: {
-    borderLeftWidth: 2,
-    borderLeftColor: colors.goldMuted,
-    paddingLeft: spacing.md,
-    paddingRight: spacing.xs,
-    paddingVertical: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  coachCueHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.sm },
-  coachCueKicker: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.gold, textTransform: 'uppercase' },
-  coachCueTags: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: colors.inkSubtle, textAlign: 'right', flexShrink: 1 },
-  coachCuePrimary: { fontSize: 18, lineHeight: 26, fontWeight: '600', color: colors.ink, marginTop: spacing.sm },
-  coachCueSecondaryRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.sm },
-  coachCueIndex: { ...typography.overline, color: colors.inkSubtle, letterSpacing: 1 },
-  coachCueSecondary: { fontSize: 15, lineHeight: 22, fontWeight: '500', color: colors.inkMuted, flex: 1 },
-  liveWorkoutCard: {
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
+    borderRadius: radius.lg,
+    borderWidth: 1,
     borderColor: colors.border,
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.xs,
-    gap: spacing.md,
+    backgroundColor: colors.panel,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+  },
+  coachCueHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  coachCueIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.panelMuted,
+  },
+  coachCueKicker: { fontSize: 14, lineHeight: 19, fontWeight: '800', color: colors.ink },
+  coachCueList: { marginTop: spacing.xs },
+  coachCueRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  coachCueNumber: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.panelMuted,
+  },
+  coachCueNumberText: { fontSize: 11, lineHeight: 14, fontWeight: '900', color: colors.gold },
+  coachCueText: { fontSize: 15, lineHeight: 21, fontWeight: '600', color: colors.ink, flex: 1 },
+  liveWorkoutCard: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panel,
+    padding: spacing.md,
+    gap: spacing.sm,
     marginTop: spacing.sm,
   },
   liveTimerHeader: {
@@ -2370,10 +2699,10 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   liveTimerLabel: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.gold, textTransform: 'uppercase' },
-  liveTimer: { fontSize: 48, lineHeight: 52, fontWeight: '900', color: colors.ink },
-  liveTimerMeta: { fontSize: 17, lineHeight: 24, fontWeight: '600', color: colors.ink, marginTop: 2 },
+  liveTimer: { fontSize: 34, lineHeight: 39, fontWeight: '800', color: colors.ink, fontVariant: ['tabular-nums'] },
+  liveTimerMeta: { fontSize: 15, lineHeight: 21, fontWeight: '600', color: colors.ink, marginTop: 1 },
   liveProgressTrack: {
-    height: 8,
+    height: 6,
     borderRadius: radius.pill,
     backgroundColor: colors.border,
     overflow: 'hidden',
@@ -2395,17 +2724,6 @@ const styles = StyleSheet.create({
   },
   liveMetricLabel: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.inkSubtle, textTransform: 'uppercase' },
   liveMetricValue: { fontSize: 18, lineHeight: 25, fontWeight: '600', color: colors.ink, marginTop: 2 },
-  instructionCard: {
-    borderLeftWidth: 2,
-    borderLeftColor: colors.goldMuted,
-    paddingLeft: spacing.md,
-    paddingVertical: spacing.sm,
-    paddingRight: spacing.xs,
-    marginTop: spacing.md,
-  },
-  instructionHead: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
-  instructionTitle: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.gold, textTransform: 'uppercase' },
-  instructionText: { fontSize: 18, lineHeight: 27, fontWeight: '600', color: colors.ink },
   videoStepCard: {
     minHeight: 104,
     borderRadius: 26,
@@ -2620,9 +2938,9 @@ const styles = StyleSheet.create({
   activeStepText: { ...typography.bodyBold, color: colors.accentDark, fontWeight: '800' },
   activeText: { flex: 1 },
   activeKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
-  activeName: { fontSize: 28, lineHeight: 35, fontWeight: '800', color: colors.ink, marginTop: spacing.sm, letterSpacing: -0.3 },
+  activeName: { fontSize: 24, lineHeight: 30, fontWeight: '800', color: colors.ink, marginTop: spacing.xs, letterSpacing: -0.25 },
   muscleMapCard: {
-    minHeight: 126,
+    minHeight: 108,
     borderRadius: radius.lg,
     backgroundColor: colors.panel,
     borderWidth: 1,
@@ -2637,9 +2955,9 @@ const styles = StyleSheet.create({
   muscleMapKicker: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.gold, textTransform: 'uppercase' },
   muscleMapTitle: { fontSize: 16, lineHeight: 22, fontWeight: '700', color: colors.ink, marginTop: 3 },
   muscleMapTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: spacing.sm },
-  muscleMapTag: { borderRadius: radius.pill, backgroundColor: colors.accentLight, paddingHorizontal: 9, paddingVertical: 5 },
+  muscleMapTag: { borderRadius: radius.pill, backgroundColor: colors.panelMuted, paddingHorizontal: 9, paddingVertical: 5 },
   muscleMapTagText: { fontSize: 13, lineHeight: 18, fontWeight: '700', color: colors.accentDark },
-  muscleMapFigure: { width: 148, alignSelf: 'stretch', justifyContent: 'center' },
+  muscleMapFigure: { width: 124, alignSelf: 'stretch', justifyContent: 'center' },
   activeStatus: {
     width: 36,
     height: 36,
@@ -2650,10 +2968,8 @@ const styles = StyleSheet.create({
   },
   activeStatusDone: { backgroundColor: colors.accentFill },
   activeStatusLive: { backgroundColor: colors.warn },
-  prepScroller: { flex: 1, marginTop: spacing.xs },
-  prepContent: { paddingBottom: spacing.sm, gap: spacing.sm },
-  liveScroller: { flex: 1 },
-  liveContent: { paddingBottom: spacing.sm },
+  prepContent: { paddingTop: spacing.xs, paddingBottom: spacing.sm, gap: spacing.sm },
+  liveContent: { paddingTop: spacing.xs, paddingBottom: spacing.sm },
   videoBox: { alignItems: 'center', justifyContent: 'center' },
   videoActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   videoActionButton: { flex: 1 },
@@ -2726,18 +3042,20 @@ const styles = StyleSheet.create({
   flowButtonText: { flex: 1 },
   flowButtonTitle: { ...typography.bodyBold, color: colors.ink },
   flowButtonMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  exerciseList: { gap: spacing.sm },
+  exerciseList: { overflow: 'hidden', borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted },
+  flowList: { flexShrink: 1 },
   exerciseRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    borderRadius: radius.xl,
-    backgroundColor: colors.panelRaised,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
+    minHeight: 68,
+    backgroundColor: 'transparent',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
-  exerciseRowActive: { borderColor: colors.accent, backgroundColor: colors.accentLight },
+  exerciseRowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  exerciseRowActive: { backgroundColor: colors.panelRaised },
+  exerciseRowDone: { backgroundColor: colors.panel },
   exerciseNum: {
     width: 36,
     height: 36,
@@ -2746,13 +3064,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.panelMuted,
   },
-  exerciseNumDone: { backgroundColor: colors.accentFill },
-  exerciseNumActive: { backgroundColor: colors.panelRaised },
+  exerciseNumDone: { backgroundColor: colors.accentLight },
+  exerciseNumActive: { backgroundColor: colors.gold, borderWidth: 0 },
   exerciseNumText: { ...typography.bodyBold, color: colors.inkMuted },
-  exerciseNumTextActive: { color: colors.accentDark },
-  exerciseRowText: { flex: 1 },
-  exerciseRowTitle: { ...typography.bodyBold, color: colors.ink },
+  exerciseNumTextActive: { color: colors.onPrimary, fontWeight: '900' },
+  exerciseRowText: { flex: 1, minWidth: 0 },
+  exerciseRowTitleLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  exerciseRowTitle: { ...typography.bodyBold, color: colors.ink, flex: 1 },
+  exerciseRowStatus: { fontSize: 10, lineHeight: 13, fontWeight: '800', color: colors.inkSubtle },
+  exerciseRowStatusActive: { color: colors.accentDark },
+  exerciseRowStatusDone: { color: colors.gold },
   exerciseRowMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  exerciseSetTrack: { height: 3, borderRadius: radius.pill, backgroundColor: colors.border, overflow: 'hidden', marginTop: 7 },
+  exerciseSetFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
   modalBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: colors.overlay },
   feedbackSheet: {
@@ -2763,78 +3087,84 @@ const styles = StyleSheet.create({
     backgroundColor: colors.panelRaised,
   },
   setEntrySheet: {
-    maxHeight: '78%',
+    maxHeight: '72%',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     backgroundColor: colors.panelRaised,
     overflow: 'hidden',
   },
-  setEntrySheetCompact: { maxHeight: '62%' },
+  setEntrySheetCompact: { maxHeight: '58%' },
   setEntrySheetSuccess: {
-    minHeight: '46%',
-    backgroundColor: colors.panelWarm,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: colors.accentSurface,
+    minHeight: 300,
+    backgroundColor: colors.panelRaised,
   },
   setEntryHandle: { marginTop: spacing.sm, marginBottom: 0 },
-  setEntryHandleSuccess: { backgroundColor: colors.goldMuted },
+  setEntryHandleSuccess: { backgroundColor: colors.borderStrong },
   setSaveSuccess: {
-    flex: 1,
-    minHeight: 360,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing.lg,
+    minHeight: 280,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
   },
+  setSaveSuccessHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  setSaveSuccessHeadCopy: { flex: 1, minWidth: 0 },
   setSaveSuccessIcon: {
-    width: 88,
-    height: 88,
+    width: 58,
+    height: 58,
     borderRadius: radius.pill,
     backgroundColor: colors.accentLight,
     borderWidth: 1,
     borderColor: colors.accentSurface,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.md,
   },
   setSaveSuccessIconInner: {
-    width: 64,
-    height: 64,
+    width: 42,
+    height: 42,
     borderRadius: radius.pill,
-    backgroundColor: colors.gold,
+    backgroundColor: colors.primaryAction,
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadows.accent,
   },
   setSaveSuccessKicker: {
     ...typography.overline,
     color: colors.gold,
     textTransform: 'uppercase',
-    textAlign: 'center',
   },
   setSaveSuccessTitle: {
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 23,
+    lineHeight: 29,
     fontWeight: '900',
-    letterSpacing: -0.4,
+    letterSpacing: -0.2,
     color: colors.ink,
-    textAlign: 'center',
-    marginTop: spacing.xs,
+    marginTop: 2,
+  },
+  setSaveSuccessExerciseRow: {
+    minHeight: 44,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panelMuted,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    marginTop: spacing.md,
   },
   setSaveSuccessExercise: {
-    ...typography.body,
+    ...typography.bodyBold,
     color: colors.inkMuted,
-    textAlign: 'center',
-    marginTop: 3,
+    flex: 1,
+  },
+  setSaveProgressCard: {
+    borderRadius: radius.xl,
+    backgroundColor: colors.panelMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginTop: spacing.sm,
   },
   setSaveProgressMeta: {
-    alignSelf: 'stretch',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: spacing.lg,
   },
   setSaveProgressLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
   setSaveProgressValue: { ...typography.caption, color: colors.gold, fontWeight: '900' },
@@ -2854,15 +3184,13 @@ const styles = StyleSheet.create({
   setSaveSuccessMessage: {
     ...typography.caption,
     color: colors.inkMuted,
-    textAlign: 'center',
-    marginTop: spacing.md,
-    maxWidth: 320,
+    marginTop: spacing.sm,
   },
   setEntryContentScroll: { flexGrow: 0, flexShrink: 1 },
   setEntryContent: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
   },
   sheetScrollContent: {
     paddingHorizontal: spacing.lg,
@@ -2870,28 +3198,34 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
   },
   setEntryHeadText: { flex: 1 },
-  setEntryTarget: {
-    minHeight: 48,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentLight,
+  setEntryTitle: { ...typography.title, color: colors.ink, marginTop: 3 },
+  setEntryMetrics: {
+    minHeight: 64,
+    borderRadius: radius.xl,
+    backgroundColor: colors.panelMuted,
     borderWidth: 1,
-    borderColor: colors.accentSurface,
+    borderColor: colors.border,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
     marginBottom: spacing.md,
   },
-  setEntryTargetText: { ...typography.bodyBold, color: colors.accentDark },
+  setEntryMetric: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.xs },
+  setEntryMetricDivider: { width: StyleSheet.hairlineWidth, height: 34, backgroundColor: colors.borderStrong },
+  setEntryMetricLabel: { fontSize: 10, lineHeight: 14, fontWeight: '800', color: colors.inkSubtle, textTransform: 'uppercase', letterSpacing: 0.7 },
+  setEntryMetricValue: { fontSize: 17, lineHeight: 22, fontWeight: '800', color: colors.ink, marginTop: 1, fontVariant: ['tabular-nums'] },
   sheetInputStack: {
     gap: spacing.md,
     paddingBottom: spacing.sm,
   },
+  sheetInputStackColumns: { flexDirection: 'row', alignItems: 'flex-start' },
   sheetInputGroup: {
     gap: 6,
   },
+  sheetInputGroupColumn: { flex: 1, minWidth: 0 },
+  sheetInputLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
   sheetStepperInputRow: {
-    minHeight: 64,
+    minHeight: 58,
     borderRadius: radius.xl,
     backgroundColor: colors.panelMuted,
     borderWidth: 1,
@@ -2901,8 +3235,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
   },
   sheetStepperButton: {
-    width: 52,
-    height: 52,
+    width: 42,
+    height: 42,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2914,11 +3248,15 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: spacing.sm,
     paddingVertical: 0,
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 24,
+    lineHeight: 30,
     fontWeight: '900',
     color: colors.ink,
+    fontVariant: ['tabular-nums'],
   },
+  sheetLogValueWithUnit: { flex: 1, minWidth: 48, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 3 },
+  sheetLogInputWithUnit: { minWidth: 30, maxWidth: 66, paddingHorizontal: 0, paddingVertical: 0, fontSize: 24, lineHeight: 30, fontWeight: '900', color: colors.ink, fontVariant: ['tabular-nums'] },
+  sheetLogUnit: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
   sheetActionDock: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -2929,26 +3267,28 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
   },
   sheetSecondaryButton: {
-    flex: 0.82,
-    minHeight: 58,
-    borderRadius: radius.pill,
+    flex: 0.72,
+    minHeight: 56,
+    borderRadius: radius.xl,
     backgroundColor: colors.panelMuted,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
   },
   sheetSecondaryText: { ...typography.bodyBold, color: colors.inkMuted },
   sheetSaveButton: {
-    flex: 1.18,
-    minHeight: 58,
-    borderRadius: radius.pill,
-    backgroundColor: colors.gold,
+    flex: 1.28,
+    minHeight: 56,
+    borderRadius: radius.xl,
+    backgroundColor: colors.primaryAction,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    ...shadows.accent,
+    ...shadows.card,
   },
   sheetSaveButtonSaving: { opacity: 0.86 },
   feedbackSaveButtonSaved: {
@@ -2966,14 +3306,34 @@ const styles = StyleSheet.create({
   sheetSaveText: { ...typography.bodyBold, color: colors.onPrimary, fontWeight: '900' },
   sheetSaveTextError: { color: colors.ink },
   flowSheet: {
-    maxHeight: '76%',
+    maxHeight: '90%',
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    backgroundColor: colors.panelRaised,
+    backgroundColor: colors.panel,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
     paddingBottom: spacing.lg,
   },
+  flowSummary: {
+    borderRadius: radius.lg,
+    backgroundColor: colors.panelMuted,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  flowSummaryHeadline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  flowSummaryMetric: { flex: 1 },
+  flowSummaryValue: { fontSize: 27, lineHeight: 31, fontWeight: '900', color: colors.ink, fontVariant: ['tabular-nums'] },
+  flowSummaryLabel: { fontSize: 11, lineHeight: 16, fontWeight: '700', color: colors.inkMuted, marginTop: 1 },
+  flowSummaryTime: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8 },
+  flowSummaryTimeValue: { fontSize: 20, lineHeight: 24, fontWeight: '900', color: colors.ink, textAlign: 'right', fontVariant: ['tabular-nums'] },
+  flowSummaryTimeLabel: { fontSize: 10, lineHeight: 14, fontWeight: '700', color: colors.inkMuted, textAlign: 'right' },
+  flowProgressTrack: { height: 5, borderRadius: radius.pill, backgroundColor: colors.border, overflow: 'hidden', marginTop: spacing.sm },
+  flowProgressFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
+  flowProgressFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 7 },
+  flowMovementProgress: { fontSize: 11, lineHeight: 16, fontWeight: '700', color: colors.inkMuted },
+  flowListHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2, marginBottom: spacing.sm, paddingHorizontal: 2 },
+  flowListTitle: { fontSize: 15, lineHeight: 20, fontWeight: '800', color: colors.ink },
+  flowListHint: { fontSize: 11, lineHeight: 16, fontWeight: '700', color: colors.inkSubtle },
   statsSheet: {
     maxHeight: '82%',
     borderTopLeftRadius: 30,

@@ -41,8 +41,14 @@ export function MainSubscriptionScreen({ navigation }: Props) {
       {subscription?.state === 'grace' ? (
         <TouchableOpacity activeOpacity={0.92} onPress={() => navigation.navigate('Renewal')} style={styles.banner} accessibilityRole="button" accessibilityLabel={`Subscription grace period. ${graceDays} days left. Renew now.`}>
           <View style={styles.icon}><Feather name="clock" size={18} color={colors.gold} /></View>
-          <View style={styles.copy}><Text style={styles.title}>{graceDays} day{graceDays === 1 ? '' : 's'} left in grace period</Text><Text style={styles.body}>Full access continues · Renew now</Text></View>
-          <Feather name="chevron-right" size={19} color={colors.gold} />
+          <View style={styles.copy}>
+            <Text style={styles.title}>{graceDays} day{graceDays === 1 ? '' : 's'} to renew</Text>
+            <Text style={styles.body}>Your access remains active</Text>
+          </View>
+          <View style={styles.action}>
+            <Text style={styles.actionText}>Renew</Text>
+            <Feather name="chevron-right" size={17} color={colors.gold} />
+          </View>
         </TouchableOpacity>
       ) : null}
     </View>
@@ -51,9 +57,11 @@ export function MainSubscriptionScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  banner: { position: 'absolute', left: spacing.md, right: spacing.md, bottom: 105, minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panelWarm, paddingHorizontal: spacing.md, ...shadows.md },
-  icon: { width: 36, height: 36, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight },
+  banner: { position: 'absolute', left: spacing.md, right: spacing.md, bottom: 105, minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panel, paddingHorizontal: 12, paddingVertical: 10, ...shadows.sm },
+  icon: { width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
   copy: { flex: 1, minWidth: 0 },
   title: { ...typography.bodyBold, color: colors.ink },
   body: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  action: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 1, paddingLeft: spacing.sm },
+  actionText: { ...typography.label, color: colors.gold },
 });

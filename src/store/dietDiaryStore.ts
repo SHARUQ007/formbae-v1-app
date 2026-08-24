@@ -4,6 +4,7 @@ import type { Asset } from 'react-native-image-picker';
 import { timestampValue, validTimestamp } from '../utils/dietDiaryTime';
 
 const KEY = 'formbae_diet_diary_entries_v1';
+const MEAL_TIME_KEY = 'formbae_food_memory_times_v1';
 const DIR = `${RNFS.DocumentDirectoryPath}/diet-diary`;
 
 export type DietDiaryEntry = {
@@ -26,6 +27,40 @@ export type DietDiaryEntry = {
 };
 
 export type MealType = 'Breakfast' | 'Lunch' | 'Evening' | 'Dinner';
+export type RememberedMealTimes = Partial<Record<MealType, { hour: number; minute: number }>>;
+
+export async function loadRememberedMealTimes(): Promise<RememberedMealTimes> {
+  const raw = await AsyncStorage.getItem(MEAL_TIME_KEY);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as RememberedMealTimes;
+    return Object.fromEntries(
+      Object.entries(parsed).filter(([, value]) =>
+        value
+        && Number.isInteger(value.hour)
+        && value.hour >= 0
+        && value.hour <= 23
+        && Number.isInteger(value.minute)
+        && value.minute >= 0
+        && value.minute <= 59,
+      ),
+    ) as RememberedMealTimes;
+  } catch {
+    return {};
+  }
+}
+
+export async function rememberMealTime(mealType: MealType, value: Date | string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return loadRememberedMealTimes();
+  await AsyncStorage.mergeItem(
+    MEAL_TIME_KEY,
+    JSON.stringify({
+      [mealType]: { hour: date.getHours(), minute: date.getMinutes() },
+    }),
+  );
+  return loadRememberedMealTimes();
+}
 
 export function normalizeMealType(value?: string): MealType {
   if (value === 'Breakfast' || value === 'Lunch' || value === 'Evening' || value === 'Dinner') return value;

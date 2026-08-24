@@ -18,6 +18,17 @@ function unique(values: string[], limit: number) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).slice(0, limit);
 }
 
+function polishBenefit(value: string) {
+  const benefit = value.trim().replace(/[.!]+$/, '');
+  if (/^kickstarts? fat loss with compound lifts?$/i.test(benefit)) {
+    return 'Compound lifts train multiple muscle groups';
+  }
+  if (/^builds? (?:a )?full[- ]body strength foundation$/i.test(benefit)) {
+    return 'Builds balanced, full-body strength';
+  }
+  return benefit;
+}
+
 export function readStoredWorkoutSummary(notes?: string): Partial<WorkoutSummary> | null {
   const match = String(notes || '').match(SUMMARY_RE);
   if (!match?.[1]) return null;
@@ -45,7 +56,7 @@ export function buildWorkoutSummary(day: DayLike): WorkoutSummary | null {
 
   return {
     muscles: unique(ai.muscles, 6),
-    benefits: unique(ai.benefits, 4),
+    benefits: unique(ai.benefits.map(polishBenefit), 4),
     calories: ai.calories,
     muscleGain: ai.muscleGain,
     duration: ai.duration,

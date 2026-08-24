@@ -82,6 +82,16 @@ export type CheckoutResult = {
   error?: string;
 };
 
+function normalizeCheckoutContact(value: string): string {
+  const trimmed = value.trim();
+  const digits = trimmed.replace(/\D/g, '');
+  if (!digits) return '';
+  if (trimmed.startsWith('+')) return `+${digits}`;
+  if (digits.length === 10) return `+91${digits}`;
+  if (digits.length === 12 && digits.startsWith('91')) return `+${digits}`;
+  return `+${digits}`;
+}
+
 /**
  * Full native checkout: create order -> open Razorpay SDK -> verify -> return synced status.
  */
@@ -90,9 +100,17 @@ export async function runNativeCheckout(params: {
   user: { name: string; mobile: string; email?: string };
   paywallId?: string;
   selectedTrainerId?: string;
+  /** Prevent renewal flows from ever falling back to a one-time Razorpay order. */
+  requireRecurring?: boolean;
 }): Promise<CheckoutResult> {
   const paywallId = params.paywallId || params.plan.paywallId;
   const isRecurring = params.plan.billing === 'recurring';
+  if (params.requireRecurring && !isRecurring) {
+    return {
+      success: false,
+      error: 'AutoPay is not available for this renewal plan. Refresh the plans and try again.',
+    };
+  }
   let checkoutTarget:
     | { type: 'order'; keyId: string; orderId: string; amount: number; currency: string; planName: string }
     | { type: 'subscription'; keyId: string; subscriptionId: string; amount: number; currency: string; planName: string };
@@ -136,6 +154,11 @@ export async function runNativeCheckout(params: {
     return { success: false, error: 'Payment is not configured. Please try again shortly.' };
   }
 
+  const contact = normalizeCheckoutContact(params.user.mobile);
+  const email = params.user.email?.trim() || '';
+  const recurringCheckout = checkoutTarget.type === 'subscription';
+  const upiFirstCheckout = checkoutTarget.currency.toUpperCase() === 'INR';
+
   const options = {
     key: keyId,
     ...(checkoutTarget.type === 'subscription'
@@ -144,13 +167,37 @@ export async function runNativeCheckout(params: {
     amount: checkoutTarget.amount,
     currency: checkoutTarget.currency,
     name: 'FormBae',
-    description: params.plan.label || params.plan.planName,
+    description: recurringCheckout
+      ? `${params.plan.label || params.plan.planName} AutoPay mandate`
+      : params.plan.label || params.plan.planName,
     prefill: {
       name: params.user.name,
-      contact: params.user.mobile,
-      email: params.user.email || '',
+      contact,
+      email,
     },
-    theme: { color: '#111111' },
+    // Razorpay preselects UPI only when both contact and email are available.
+    // The display block below still keeps UPI first when an email is absent.
+    ...(upiFirstCheckout && contact && email ? { method: 'upi' } : {}),
+    ...(upiFirstCheckout
+      ? {
+          config: {
+            display: {
+              blocks: {
+                upi: {
+                  name: recurringCheckout ? 'Set up AutoPay with UPI' : 'Pay with UPI',
+                  instruments: [{ method: 'upi' }],
+                },
+              },
+              sequence: ['block.upi'],
+              preferences: { show_default_blocks: true },
+            },
+          },
+        }
+      : {}),
+    retry: { enabled: true, max_count: 4 },
+    send_sms_hash: true,
+    modal: { animation: true, backdropclose: false },
+    theme: { color: '#F0CE78', backdrop_color: '#05060A' },
   } as unknown as Parameters<typeof RazorpayCheckout.open>[0];
 
   let checkout: {

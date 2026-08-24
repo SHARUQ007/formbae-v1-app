@@ -78,6 +78,7 @@ export function ActionHubScreen({ navigation }: Props) {
   const partnerStatus = accountabilityBae?.status;
 
   const load = useCallback(async (force = false) => {
+    if (force) autoCompletedDate.current = '';
     // Apply each resource as soon as it arrives. The previous all-at-once
     // update kept the entire tab behind whichever optional service was slowest.
     const [, nextAccountability, nextBae] = await Promise.allSettled([
@@ -216,21 +217,6 @@ export function ActionHubScreen({ navigation }: Props) {
     }
   };
 
-  const completeCommitment = async () => {
-    if (savingCommitment) return;
-    setSavingCommitment(true);
-    try {
-      const next = await updateAccountability({ action: 'complete' });
-      setAccountability(next);
-      setAccountabilityUnavailable(false);
-      cancelAccountabilityReminder().catch(() => undefined);
-    } catch (error) {
-      Alert.alert('Could not update commitment', error instanceof Error ? error.message : 'Please try again.');
-    } finally {
-      setSavingCommitment(false);
-    }
-  };
-
   const startBaeMatch = async (preference: 'male' | 'female' | 'friend') => {
     if (baeBusy) return;
     setBaeBusy(true);
@@ -354,8 +340,6 @@ export function ActionHubScreen({ navigation }: Props) {
   }
 
   const plan = snapshot.workoutData?.plan || snapshot.workoutData?.today?.plan;
-  const planDays = plan?.days || [];
-  const completedDays = planDays.filter((day) => day.completed).length;
   const dateLabel = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
   const commitment = accountability?.today;
   const commitmentActive = commitment?.status === 'active';
@@ -443,9 +427,8 @@ export function ActionHubScreen({ navigation }: Props) {
             <MaterialCommunityIcon name="trophy-outline" size={20} color={colors.gold} />
             <View style={styles.trophyButtonCopy}>
               <Text style={styles.trophyButtonValue}>{trophies?.score ?? '—'}</Text>
-              <Text style={styles.trophyButtonLabel}>Trophies</Text>
             </View>
-            <Feather name="chevron-right" size={17} color={colors.gold} />
+            <Feather name="chevron-right" size={17} color={colors.inkMuted} />
           </TouchableOpacity>
         </View>
 
@@ -471,63 +454,20 @@ export function ActionHubScreen({ navigation }: Props) {
         </View>
         {activeView === 'today' ? (
           <View style={styles.todayDashboard}>
-            <View style={styles.todayHero}>
-              <View style={styles.todayHeroTop}>
-                <Text style={styles.todayHeroKicker}>Today’s plan</Text>
-                <View style={styles.todayMovePill}>
-                  <Feather name="check-circle" size={13} color={colors.gold} />
-                  <Text style={styles.todayMovePillText}>{uniqueTodayTasks.length} move{uniqueTodayTasks.length === 1 ? '' : 's'}</Text>
-                </View>
-              </View>
-              <Text style={styles.todayHeroTitle}>{commitmentActive ? 'Keep your promise moving' : 'Build momentum, one move at a time'}</Text>
-              <Text style={styles.todayHeroSubtitle}>{commitmentActive ? 'Your active promise leads today. Finish it, then keep the streak alive.' : 'Choose what fits right now. Every small action moves your plan forward.'}</Text>
-              <View style={styles.todayHeroRule}>
-                {uniqueTodayTasks.map((task, index) => <View key={task.key} style={[styles.todayHeroSegment, index === 0 && styles.todayHeroSegmentActive]} />)}
-              </View>
-            </View>
-
             <View style={styles.todayQueueHeader}>
-              <View>
-                <Text style={styles.todayQueueTitle}>Your moves</Text>
-                <Text style={styles.todayQueueCaption}>Start anywhere</Text>
-              </View>
-              <Feather name="arrow-down" size={18} color={colors.inkSubtle} />
+              <Text style={styles.todayQueueTitle}>Today</Text>
+              <Text style={styles.todayQueueCount}>{uniqueTodayTasks.length} task{uniqueTodayTasks.length === 1 ? '' : 's'}</Text>
             </View>
             <View style={styles.todayTaskList}>
               {uniqueTodayTasks.map((task, index) => (
                 <TodayTaskRow
                   key={task.key}
                   task={task}
-                  index={index}
                   last={index === uniqueTodayTasks.length - 1}
                   loading={startingTaskKey === task.key}
                   onPress={() => startTodayTask(task)}
                 />
               ))}
-            </View>
-            {commitmentActive ? (
-              <PrimaryButton
-                title="Mark task complete"
-                icon="check"
-                onPress={completeCommitment}
-                loading={savingCommitment}
-                disabled={accountabilityUnavailable}
-                style={styles.markDoneAction}
-              />
-            ) : null}
-
-            <View style={styles.todayRecordSection}>
-              <View style={styles.todayRecordHeader}>
-                <View>
-                  <Text style={styles.todayRecordKicker}>Momentum</Text>
-                  <Text style={styles.todayRecordTitle}>Your record</Text>
-                </View>
-                <Text style={styles.todayRecordCaption}>Built one day at a time</Text>
-              </View>
-              <View style={styles.consistencyCard}>
-                <ConsistencyMetric icon="shield" label="Promises kept" value={`${accountability?.keptCount || 0}`} />
-                <ConsistencyMetric icon="check-circle" label="Plan complete" value={planDays.length ? `${completedDays}/${planDays.length}` : '—'} />
-              </View>
             </View>
           </View>
         ) : (
@@ -580,7 +520,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
     <View style={styles.baeHeader}>
       <View style={styles.baeHeaderCopy}>
         <Text style={styles.baeTitle}>Accountability Bae</Text>
-        <Text style={styles.baeHeaderCaption}>A private daily check-in with a partner</Text>
+        <Text style={styles.baeHeaderCaption}>A daily check-in with a partner</Text>
       </View>
       {data.status === 'matched' ? <Badge label="Active" tone="gold" icon="check" style={styles.activeBadge} /> : null}
     </View>
@@ -599,7 +539,7 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
           <View style={styles.baeLockIcon}><MaterialCommunityIcon name="trophy-outline" size={30} color={colors.gold} /></View>
           <Text style={styles.baeLockEyebrow}>{forceLocked ? 'ACCESS PAUSED' : 'UNLOCK AT 50 TROPHIES'}</Text>
           <Text style={styles.baeLockTitle}>{forceLocked ? 'Accountability Bae is unavailable' : 'Earn your way in'}</Text>
-          <Text style={styles.baeLockText}>{forceLocked ? 'Your access is currently managed by FormBae support.' : `Earn ${remaining} more ${remaining === 1 ? 'trophy' : 'trophies'} to unlock private partner challenges.`}</Text>
+          <Text style={styles.baeLockText}>{forceLocked ? 'Your access is currently managed by FormBae support.' : `Earn ${remaining} more ${remaining === 1 ? 'trophy' : 'trophies'} to unlock partner challenges.`}</Text>
           <View style={styles.baeTrophyProgressHead}><Text style={styles.baeTrophyProgressValue}>{score} trophies</Text><Text style={styles.baeTrophyProgressTarget}>{threshold}</Text></View>
           <View style={styles.baeTrophyTrack}><View style={[styles.baeTrophyFill, { width: progress }]} /></View>
           <PrimaryButton title="View trophy progress" icon="award" variant="secondary" onPress={onViewTrophies} style={styles.baeTrophyButton} />
@@ -738,18 +678,6 @@ function InlineNotice({ icon, title, body, action, onPress, standalone = false }
   );
 }
 
-function ConsistencyMetric({ icon, label, value }: { icon: string; label: string; value: string }) {
-  return (
-    <View style={styles.metric}>
-      <View style={styles.metricValueRow}>
-        <View style={styles.metricIcon}><Feather name={icon} size={16} color={colors.gold} /></View>
-        <Text style={styles.metricValue}>{value}</Text>
-      </View>
-      <Text style={styles.metricLabel} numberOfLines={2}>{label}</Text>
-    </View>
-  );
-}
-
 function BaePreference({ icon, label, onPress, disabled }: { icon: string; label: string; onPress: () => void; disabled: boolean }) {
   const detail = label === 'Friend' ? 'Invite someone with a private code' : `Find a ${label.toLowerCase()} accountability partner`;
   return (
@@ -782,7 +710,12 @@ function ProofTile({ label, submitted, imageUrl, locked }: { label: string; subm
 
 function commitmentMet(kind: string, targetId: string, snapshot: ContextualSnapshot) {
   if (kind === 'diet') {
-    return snapshot.dietEntries.some((entry) => isToday(entry.createdAt) && entry.mealType === targetId);
+    const loggedMeals = new Set(
+      snapshot.dietEntries
+        .filter((entry) => isToday(entry.createdAt) && entry.kind !== 'skip' && entry.status !== 'skipped')
+        .map((entry) => entry.mealType),
+    );
+    return loggedMeals.size >= 3;
   }
   if (kind === 'workout') {
     const plan = snapshot.workoutData?.plan || snapshot.workoutData?.today?.plan;
@@ -791,7 +724,7 @@ function commitmentMet(kind: string, targetId: string, snapshot: ContextualSnaps
   return false;
 }
 
-function TodayTaskRow({ task, index, last, loading, onPress }: { task: TodayTask; index: number; last: boolean; loading: boolean; onPress: () => void }) {
+function TodayTaskRow({ task, last, loading, onPress }: { task: TodayTask; last: boolean; loading: boolean; onPress: () => void }) {
   return (
     <TouchableOpacity
       activeOpacity={0.84}
@@ -803,7 +736,6 @@ function TodayTaskRow({ task, index, last, loading, onPress }: { task: TodayTask
       accessibilityState={{ busy: loading }}
     >
       <View style={styles.todayTaskLead}>
-        <Text style={styles.todayTaskIndex}>{String(index + 1).padStart(2, '0')}</Text>
         <View style={[styles.todayTaskRowIcon, task.active && styles.todayTaskRowIconActive]}>
           {loading ? <ActivityIndicator size="small" color={colors.gold} /> : <Feather name={task.icon} size={19} color={colors.gold} />}
         </View>
@@ -812,7 +744,7 @@ function TodayTaskRow({ task, index, last, loading, onPress }: { task: TodayTask
         <Text style={styles.todayTaskRowTitle}>{task.title}</Text>
         <Text style={styles.todayTaskRowDetail}>{task.detail}</Text>
       </View>
-      <View style={styles.todayTaskRowAction}><Text style={styles.todayTaskRowActionText}>{task.action}</Text><Feather name="chevron-right" size={15} color={colors.gold} /></View>
+      <View style={styles.todayTaskRowAction}><Text style={styles.todayTaskRowActionText}>{task.action}</Text><Feather name="chevron-right" size={17} color={colors.inkMuted} /></View>
     </TouchableOpacity>
   );
 }
@@ -823,11 +755,11 @@ const styles = StyleSheet.create({
   pageHeaderCopy: { flex: 1, minWidth: 0 },
   kicker: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
   pageTitle: { ...typography.display, color: colors.inkStrong, marginTop: 2 },
-  trophyButton: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderRadius: radius.md, borderWidth: 1, borderColor: colors.goldMuted, backgroundColor: colors.panelWarm, paddingHorizontal: spacing.sm },
-  trophyButtonCopy: { minWidth: 42 },
+  trophyButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, paddingHorizontal: spacing.sm },
+  trophyButtonCopy: { minWidth: 24 },
   trophyButtonValue: { fontSize: 17, lineHeight: 19, color: colors.ink, fontWeight: '900' },
   trophyButtonLabel: { fontSize: 9, lineHeight: 11, color: colors.inkMuted, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
-  activeBadge: { backgroundColor: colors.panelWarm, borderColor: colors.goldMuted },
+  activeBadge: { backgroundColor: colors.panelRaised, borderColor: colors.borderStrong },
   inlineNotice: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.sm, marginTop: spacing.md },
   inlineNoticeStandalone: { marginTop: spacing.xl },
   inlineNoticeIcon: { width: 36, height: 36, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
@@ -838,49 +770,43 @@ const styles = StyleSheet.create({
   inlineNoticeActionText: { ...typography.caption, color: colors.gold, fontWeight: '900' },
   accountabilityTabs: { flexDirection: 'row', gap: spacing.xs, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.panel, padding: spacing.xs, marginTop: spacing.lg },
   accountabilityTab: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, borderWidth: 1, borderColor: 'transparent', borderRadius: radius.md },
-  accountabilityTabActive: { borderColor: colors.goldMuted, backgroundColor: colors.panelWarm },
+  accountabilityTabActive: { borderColor: colors.borderStrong, backgroundColor: colors.panelRaised },
   accountabilityTabText: { ...typography.bodyBold, color: colors.inkMuted },
   accountabilityTabTextActive: { color: colors.ink },
   todayDashboard: { flex: 1 },
-  todayHero: { marginTop: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.goldMuted, backgroundColor: colors.panelWarm, padding: spacing.md },
+  todayHero: { marginTop: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.md },
   todayHeroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   todayHeroKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
-  todayMovePill: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.accentLight, paddingHorizontal: spacing.sm },
+  todayMovePill: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelRaised, paddingHorizontal: spacing.sm },
   todayMovePillText: { ...typography.caption, color: colors.gold, fontWeight: '800' },
   todayHeroTitle: { ...typography.title, color: colors.inkStrong, marginTop: spacing.md },
   todayHeroSubtitle: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: spacing.xs, maxWidth: 350 },
   todayHeroRule: { height: 5, flexDirection: 'row', gap: 5, marginTop: spacing.md },
   todayHeroSegment: { flex: 1, borderRadius: radius.pill, backgroundColor: colors.borderStrong },
   todayHeroSegmentActive: { backgroundColor: colors.gold },
-  todayQueueHeader: { minHeight: 54, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: spacing.xs, paddingBottom: spacing.sm, marginTop: spacing.md },
+  todayQueueHeader: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.xs, marginTop: spacing.lg },
   todayQueueTitle: { ...typography.bodyBold, color: colors.ink },
-  todayQueueCaption: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  todayQueueCount: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
   todayTaskList: { overflow: 'hidden', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
-  todayTaskRow: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.panel, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  todayTaskRow: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.panel, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   todayTaskRowDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
-  todayTaskRowActive: { backgroundColor: colors.panelWarm },
-  todayTaskLead: { width: 44, alignItems: 'center', gap: 3 },
+  todayTaskRowActive: { backgroundColor: colors.panelMuted },
+  todayTaskLead: { width: 40, alignItems: 'center' },
   todayTaskIndex: { fontSize: 9, lineHeight: 11, color: colors.inkSubtle, fontWeight: '900', letterSpacing: 1 },
   todayTaskRowIcon: { width: 40, height: 40, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
-  todayTaskRowIconActive: { backgroundColor: colors.accentLight },
+  todayTaskRowIconActive: { backgroundColor: colors.panelRaised },
   todayTaskRowCopy: { flex: 1, minWidth: 0 },
   todayTaskRowTitle: { ...typography.bodyBold, color: colors.ink },
   todayTaskRowDetail: { ...typography.caption, color: colors.inkMuted, lineHeight: 17, marginTop: 2 },
-  todayTaskRowAction: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 1, borderRadius: radius.pill, backgroundColor: colors.accentLight, paddingLeft: spacing.sm, paddingRight: 6 },
-  todayTaskRowActionText: { ...typography.caption, color: colors.gold, fontWeight: '800' },
-  markDoneAction: { marginTop: spacing.sm },
-  todayRecordSection: { marginTop: 'auto', paddingTop: spacing.xl },
-  todayRecordHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.sm },
-  todayRecordKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
-  todayRecordTitle: { ...typography.title, color: colors.ink, marginTop: 1 },
-  todayRecordCaption: { ...typography.caption, color: colors.inkMuted, textAlign: 'right' },
+  todayTaskRowAction: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: spacing.xs },
+  todayTaskRowActionText: { ...typography.caption, color: colors.ink, fontWeight: '800' },
   partnerSection: { paddingBottom: spacing.sm, marginTop: spacing.xl },
   baeHeader: { minHeight: 46, flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, marginBottom: spacing.md },
   baeHeaderCopy: { flex: 1, minWidth: 0 },
   baeTitle: { ...typography.title, color: colors.ink },
   baeHeaderCaption: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   baeLockHero: { alignItems: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.panel, padding: spacing.lg },
-  baeLockIcon: { width: 66, height: 66, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelWarm, borderWidth: 1, borderColor: colors.goldMuted },
+  baeLockIcon: { width: 66, height: 66, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
   baeLockEyebrow: { ...typography.overline, color: colors.gold, marginTop: spacing.md },
   baeLockTitle: { ...typography.title, color: colors.ink, textAlign: 'center', marginTop: spacing.xs },
   baeLockText: { ...typography.body, color: colors.inkMuted, textAlign: 'center', lineHeight: 22, maxWidth: 320, marginTop: spacing.xs },
@@ -908,7 +834,7 @@ const styles = StyleSheet.create({
   baeWaitingKicker: { ...typography.overline, color: colors.gold },
   baeWaitingTitle: { ...typography.title, color: colors.ink, marginTop: spacing.xs },
   baeWaitingDescription: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: spacing.xs },
-  friendInviteBox: { minHeight: 74, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.goldMuted, backgroundColor: colors.panelWarm, paddingHorizontal: spacing.md, marginTop: spacing.sm },
+  friendInviteBox: { minHeight: 74, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, paddingHorizontal: spacing.md, marginTop: spacing.sm },
   friendCodeLabel: { ...typography.overline, color: colors.inkMuted },
   friendCodeValue: { fontSize: 22, lineHeight: 27, color: colors.ink, fontWeight: '900', letterSpacing: 2, marginTop: 2 },
   friendShareButton: { minWidth: 92 },
@@ -919,13 +845,13 @@ const styles = StyleSheet.create({
   baeTextButton: { alignSelf: 'center', marginTop: spacing.sm },
   baeDisabled: { opacity: 0.45 },
   baePartnerRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.panel, paddingHorizontal: spacing.md },
-  baePartnerAvatar: { width: 46, height: 46, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelWarm, borderWidth: 1, borderColor: colors.goldMuted },
+  baePartnerAvatar: { width: 46, height: 46, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
   baePartnerInitial: { ...typography.subtitle, color: colors.ink, fontWeight: '900' },
   baePartnerCopy: { flex: 1, minWidth: 0 },
   baePartnerLabel: { ...typography.overline, color: colors.inkMuted },
   baePartnerName: { ...typography.bodyBold, color: colors.ink, marginTop: 1 },
   baeMoreButton: { width: 40, height: 40, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
-  baeChallenge: { padding: spacing.md, marginTop: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.goldMuted, backgroundColor: colors.panelWarm },
+  baeChallenge: { padding: spacing.md, marginTop: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
   baeChallengeTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
   baeChallengeIcon: { width: 42, height: 42, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
   baeDuePill: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.sm, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelRaised },
@@ -953,15 +879,9 @@ const styles = StyleSheet.create({
   proofStatusDone: { color: colors.gold },
   proofGuidance: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: spacing.md },
   baeProofButton: { marginTop: spacing.md },
-  baeCompleteBanner: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, backgroundColor: colors.panelWarm, borderWidth: 1, borderColor: colors.goldMuted, paddingHorizontal: spacing.md, marginTop: spacing.md },
+  baeCompleteBanner: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, marginTop: spacing.md },
   baeCompleteIcon: { width: 34, height: 34, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.gold },
   baeCompleteCopy: { flex: 1 },
   baeCompleteTitle: { ...typography.bodyBold, color: colors.ink },
   baeCompleteText: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
-  consistencyCard: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm },
-  metric: { flex: 1, minWidth: 0, minHeight: 92, justifyContent: 'center', borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, paddingHorizontal: spacing.sm, paddingVertical: spacing.md },
-  metricValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  metricIcon: { width: 20, alignItems: 'flex-start', justifyContent: 'center' },
-  metricValue: { fontSize: 21, lineHeight: 26, fontWeight: '900', color: colors.inkStrong },
-  metricLabel: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', marginTop: 4 },
 });

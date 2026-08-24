@@ -3,7 +3,9 @@ import {
   addTextDietDiaryEntry,
   addSkippedDietDiaryEntry,
   loadDietDiaryEntries,
+  loadRememberedMealTimes,
   mergeRemoteDietDiaryEntries,
+  rememberMealTime,
 } from './dietDiaryStore';
 
 describe('diet diary persistence', () => {
@@ -74,5 +76,15 @@ describe('diet diary persistence', () => {
     expect(skipped.kind).toBe('skip');
     expect(entries[0]).toMatchObject({ mealType: 'Dinner', status: 'skipped' });
     expect(entries[0].note).toBeUndefined();
+  });
+
+  it('remembers a meal time for future days', async () => {
+    const selected = new Date(2026, 7, 23, 19, 15, 0, 0);
+
+    await rememberMealTime('Dinner', selected);
+
+    await expect(loadRememberedMealTimes()).resolves.toEqual({
+      Dinner: { hour: 19, minute: 15 },
+    });
   });
 });

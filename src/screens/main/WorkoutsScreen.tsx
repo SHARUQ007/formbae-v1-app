@@ -75,9 +75,13 @@ function formatPlanDate(plan: UserPlanSummary) {
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function resolveTrainerPhotoUrl(value?: string) {
+function resolveTrainerPhotoUrl(value?: string, trainerName?: string) {
   const url = String(value || '').trim();
-  if (!url) return '';
+  if (!url) {
+    return String(trainerName || '').trim().toLowerCase() === 'ava'
+      ? `${getSiteUrl()}/ai-questionnaire/goal-baseline.webp`
+      : '';
+  }
   if (/^https?:\/\//i.test(url)) return url;
   if (url.startsWith('/')) return `${getSiteUrl()}${url}`;
   return url;
@@ -246,7 +250,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [plansLoading, setPlansLoading] = useState(false);
   const [plansError, setPlansError] = useState<string | null>(null);
   const [switchingPlanId, setSwitchingPlanId] = useState('');
-  const [readyPlanAcknowledged, setReadyPlanAcknowledged] = useState(false);
+  const [readyPlanAcknowledged, setReadyPlanAcknowledged] = useState<boolean | null>(null);
   const [pendingPlanBuild, setPendingPlanBuild] = useState<{ planId: string; trainerName: string; requestedAt: number } | null>(null);
   const [planBuildSyncedAt, setPlanBuildSyncedAt] = useState<number | null>(null);
   const [bodyGender, setBodyGender] = useState<ReturnType<typeof resolveBodyGender>>(
@@ -320,7 +324,17 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const planBuilding = planBuildStatus === 'building' || planBuildStatus === 'requested' || Boolean(pendingPlanBuild);
   const backendBuildStartedAt = Date.parse(aiPlanRefresh?.build?.requestedAt || '');
   const planBuildStartedAt = Number.isFinite(backendBuildStartedAt) ? backendBuildStartedAt : pendingPlanBuild?.requestedAt;
-  const planReadyToReveal = planBuildStatus === 'completed' && Boolean(builtPlanId) && builtPlanId === planId && !readyPlanAcknowledged;
+  const planReadyToReveal = planBuildStatus === 'completed'
+    && Boolean(builtPlanId)
+    && builtPlanId === planId
+    && readyPlanAcknowledged === false;
+
+  useEffect(() => {
+    if (!planReadyToReveal) return;
+    // Persist on presentation, not only on button press, so a reload or app
+    // interruption cannot make the same completed-plan reveal appear again.
+    markReadyPlanSeen(builtPlanId).catch(() => undefined);
+  }, [builtPlanId, planReadyToReveal]);
 
   useEffect(() => {
     navigation.getParent()?.setOptions({
@@ -484,11 +498,10 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const doneCount = days.filter((d) => d.completed).length;
   const todayCount = todayDay?.exercises?.length ?? 0;
   const planProgress = days.length ? doneCount / days.length : 0;
-  const planProgressPct = Math.round(planProgress * 100);
   const currentStreak = progress?.completionHistory
     ? deriveCurrentWeekStreak(progress.completionHistory)
     : Math.min(7, progress?.currentStreak ?? 0);
-  const trainerPhoto = resolveTrainerPhotoUrl(trainer?.trainerPhotoUrl);
+  const trainerPhoto = resolveTrainerPhotoUrl(trainer?.trainerPhotoUrl, trainer?.name);
 
   return (
     <ScreenContainer>
@@ -633,12 +646,10 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                   <Text style={styles.weekTitle}>This week</Text>
                   <Text style={styles.weekMeta}>{doneCount} of {days.length} workouts complete</Text>
                 </View>
-                <Text style={styles.weekPercent}>{planProgressPct}%</Text>
               </View>
-              <ProgressBar value={planProgress} />
+              <ProgressBar value={planProgress} height={4} trackColor={colors.panelRaised} fillColor={colors.gold} />
 
               <View style={styles.weekPicker} accessibilityRole="radiogroup">
-                <View pointerEvents="none" style={styles.weekTrack} />
                 {days.map((day) => {
                   const selected = day.planDayId === focusedDay?.planDayId;
                   const isToday = day.planDayId === todayDay?.planDayId;
@@ -660,6 +671,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                         style={[
                           styles.weekDayNode,
                           day.completed && styles.weekDayNodeDone,
+                          selected && day.completed && styles.weekDayNodeSelectedDone,
                           isToday && !day.completed && styles.weekDayNodeToday,
                           selected && !day.completed && styles.weekDayNodeSelected,
                           selected && isToday && !day.completed && styles.weekDayNodeSelectedToday,
@@ -695,7 +707,15 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                           {focusedDay.completed ? 'Completed' : focusedDay.planDayId === todayDay?.planDayId ? 'Today' : 'Scheduled'}
                         </Text>
                       </View>
-                      <Text style={styles.focusedWorkoutTitle}>{focusedDay.focus || 'Workout'}</Text>
+                      <Text
+                        style={styles.focusedWorkoutTitle}
+                        numberOfLines={2}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.82}
+                        ellipsizeMode="tail"
+                      >
+                        {focusedDay.focus || 'Workout'}
+                      </Text>
                       <Text style={styles.focusedWorkoutMeta}>
                         {focusedDay.exercises?.length ?? 0} exercise{(focusedDay.exercises?.length ?? 0) === 1 ? '' : 's'}
                       </Text>
@@ -707,28 +727,34 @@ function WorkoutDashboardScreen({ navigation }: Props) {
 
                   <View style={styles.workoutOverviewDivider} />
 
-                  <View style={styles.targetMapHeaderCopy}>
-                    <Text style={styles.targetMapEyebrow}>Targeted muscles</Text>
-                    <Text style={styles.targetMapHint}>Highlighted areas update with the selected day</Text>
+                  <View style={styles.targetMusclesSection}>
+                    <View style={styles.targetMapHeader}>
+                      <Text style={styles.targetMapEyebrow}>Targeted muscles</Text>
+                      {focusedMuscles.length ? (
+                        <Text style={styles.targetMapCount}>{focusedMuscles.length} area{focusedMuscles.length === 1 ? '' : 's'}</Text>
+                      ) : null}
+                    </View>
+
+                    {focusedMuscles.length ? (
+                      <View style={styles.targetMuscleLegend}>
+                        {focusedMuscles.slice(0, 3).map((muscle) => (
+                          <View key={muscle} style={styles.targetMuscleChip}>
+                            <View style={styles.targetMuscleDot} />
+                            <Text style={styles.targetMuscleText} numberOfLines={1}>{muscle}</Text>
+                          </View>
+                        ))}
+                        {focusedMuscles.length > 3 ? (
+                          <Text style={styles.targetMuscleOverflow}>+{focusedMuscles.length - 3}</Text>
+                        ) : null}
+                      </View>
+                    ) : (
+                      <View style={styles.targetAnalysisEmpty}>
+                        <Text style={styles.targetAnalysisEmptyTitle}>Target areas unavailable</Text>
+                      </View>
+                    )}
+
+                    <WeeklyBodyMap gender={bodyGender} muscles={focusedMuscles} compact showLabels={false} />
                   </View>
-
-                  <WeeklyBodyMap gender={bodyGender} muscles={focusedMuscles} compact />
-
-                  {focusedMuscles.length ? (
-                    <View style={styles.targetMuscleLegend}>
-                      {focusedMuscles.map((muscle) => (
-                        <View key={muscle} style={styles.targetMuscleChip}>
-                          <View style={styles.targetMuscleDot} />
-                          <Text style={styles.targetMuscleText}>{muscle}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : (
-                    <View style={styles.targetAnalysisEmpty}>
-                      <Text style={styles.targetAnalysisEmptyTitle}>AI muscle analysis unavailable</Text>
-                      <Text style={styles.targetAnalysisEmptyText}>This plan needs to be re-saved by your trainer before target areas can be shown.</Text>
-                    </View>
-                  )}
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -1327,57 +1353,42 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentLight,
   },
   weekSection: { marginTop: spacing.xl },
-  weekHeader: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.md, marginBottom: spacing.sm },
+  weekHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
   weekHeaderCopy: { flex: 1, minWidth: 0 },
   weekTitle: { ...typography.subtitle, color: colors.ink },
   weekMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  weekPercent: { ...typography.bodyBold, color: colors.inkMuted },
   weekPicker: {
     flexDirection: 'row',
-    marginTop: spacing.lg,
-    paddingHorizontal: 8,
-    paddingTop: spacing.md,
-    paddingBottom: 10,
-    borderRadius: radius.lg,
+    alignItems: 'center',
+    marginTop: spacing.md,
+    padding: 6,
+    borderRadius: radius.md,
     backgroundColor: colors.panel,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
-  },
-  weekTrack: {
-    position: 'absolute',
-    left: 30,
-    right: 30,
-    top: 32,
-    height: 1,
-    backgroundColor: colors.borderStrong,
-    zIndex: 0,
   },
   weekDay: {
     flex: 1,
     minWidth: 0,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    zIndex: 1,
-  },
-  weekDayNode: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.pill,
-    backgroundColor: colors.panel,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
+    minHeight: 38,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  weekDayNodeDone: { backgroundColor: colors.primaryAction, borderColor: colors.primaryAction },
-  weekDayNodeToday: { backgroundColor: colors.panelWarm, borderColor: colors.goldMuted },
-  weekDayNodeSelected: { backgroundColor: colors.panelRaised, borderColor: colors.borderStrong, borderWidth: 2 },
-  weekDayNodeSelectedToday: { backgroundColor: colors.panelWarm, borderColor: colors.goldMuted },
+  weekDayNode: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.md,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekDayNodeDone: { backgroundColor: colors.primaryAction },
+  weekDayNodeSelectedDone: { borderWidth: 2, borderColor: colors.gold },
+  weekDayNodeToday: { backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
+  weekDayNodeSelected: { backgroundColor: colors.gold, borderWidth: 0 },
+  weekDayNodeSelectedToday: { backgroundColor: colors.gold, borderWidth: 0 },
   weekDayNumber: { ...typography.label, color: colors.inkMuted, fontWeight: '700' },
   weekDayNumberToday: { color: colors.gold },
-  weekDayNumberSelected: { color: colors.ink },
+  weekDayNumberSelected: { color: colors.onPrimary, fontWeight: '900' },
   workoutOverviewCard: {
     marginTop: spacing.md,
     borderRadius: radius.xl,
@@ -1388,45 +1399,57 @@ const styles = StyleSheet.create({
   },
   workoutOverviewHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   workoutOverviewDivider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.md },
-  targetMapHeaderCopy: { flex: 1, minWidth: 0 },
+  targetMusclesSection: {
+    backgroundColor: colors.panelMuted,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    overflow: 'hidden',
+  },
+  targetMapHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   targetMapEyebrow: { ...typography.overline, color: colors.goldMuted, textTransform: 'uppercase' },
-  targetMapHint: { ...typography.caption, color: colors.inkMuted, marginTop: 3 },
+  targetMapCount: { ...typography.caption, color: colors.inkSubtle, fontWeight: '700' },
   targetMuscleLegend: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: spacing.xs,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.md,
+    alignItems: 'center',
+    gap: 6,
+    marginTop: spacing.sm,
+    height: 30,
+    overflow: 'hidden',
   },
   targetMuscleChip: {
-    width: '48.5%',
-    minHeight: 34,
+    minHeight: 28,
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
-    borderRadius: radius.sm,
+    gap: 6,
+    borderRadius: radius.pill,
     backgroundColor: colors.panelRaised,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
-  targetMuscleDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.gold },
-  targetMuscleText: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
+  targetMuscleDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.gold },
+  targetMuscleText: { ...typography.caption, color: colors.ink, fontWeight: '700', flexShrink: 1 },
+  targetMuscleOverflow: { ...typography.caption, color: colors.inkMuted, fontWeight: '800', marginLeft: 2 },
   targetAnalysisEmpty: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: spacing.md,
+    height: 38,
+    justifyContent: 'center',
   },
   targetAnalysisEmptyTitle: { ...typography.caption, color: colors.ink, fontWeight: '800' },
-  targetAnalysisEmptyText: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: 3 },
   focusedWorkoutCopy: { flex: 1, minWidth: 0 },
   focusedWorkoutStateRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   focusedWorkoutDay: { ...typography.caption, color: colors.inkSubtle },
   workoutStateDivider: { width: 3, height: 3, borderRadius: 2, backgroundColor: colors.inkSubtle },
   focusedWorkoutState: { ...typography.caption, color: colors.inkMuted },
   focusedWorkoutStateToday: { color: colors.goldMuted, fontWeight: '700' },
-  focusedWorkoutTitle: { ...typography.title, color: colors.ink, marginTop: spacing.xs },
+  focusedWorkoutTitle: {
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '700',
+    letterSpacing: -0.1,
+    height: 48,
+    color: colors.ink,
+    marginTop: spacing.xs,
+  },
   focusedWorkoutMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 4 },
   focusedWorkoutOpen: {
     width: 40,

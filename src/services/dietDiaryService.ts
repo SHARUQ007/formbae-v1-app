@@ -56,6 +56,15 @@ export type DietCoachFeedback = {
     summary: string;
     evidence: string[];
   }>;
+  priorityInsights?: Array<{
+    rank: number;
+    title: string;
+    observation: string;
+    whyItMatters: string;
+    nextStep: string;
+    evidence: string[];
+    confidence: 'high' | 'medium' | 'limited';
+  }>;
   foodGroups?: Array<{
     key: string;
     label: string;
@@ -72,6 +81,7 @@ export type DietCoachFeedback = {
   }>;
   mealRhythm?: { summary: string; strongestWindow: string; opportunityWindow: string };
   goalAlignment?: { summary: string; supports: string[]; gaps: string[] };
+  trainingNutrition?: { summary: string; trainingDayAction: string; restDayAction: string };
   facts?: Array<{ id: string; title: string; body: string; sourceLabel: string; sourceUrl: string }>;
   nextWeek?: {
     primaryFocus: string;
@@ -79,7 +89,10 @@ export type DietCoachFeedback = {
     actions: string[];
     mealBuilder: { title: string; plants: string; protein: string; carbs: string; extras: string };
     smartSwaps: Array<{ from: string; to: string; why: string }>;
+    implementationPlan?: { cue: string; action: string; fallback: string; successMeasure: string };
+    trackingFocus?: string;
   };
+  questionsForNextWeek?: string[];
   coachNote?: string;
   limitations?: string[];
   status?: 'pending' | 'ready';
@@ -162,12 +175,13 @@ export async function uploadSkippedDietMeal(params: {
     body: { ...params, status: 'skipped' },
   });
   invalidateCachedResource('dietDiary');
+  invalidateCachedResource('progressBundle');
   return response;
 }
 
 export async function updateRemoteDietDiaryEntry(
   entryId: string,
-  params: { mealType: MealType; note: string },
+  params: { mealType: MealType; note: string; createdAt?: string },
 ) {
   const response = await apiRequest<{ ok: boolean; entry: RemoteDietDiaryEntry }>(
     `/diet/diary/${encodeURIComponent(entryId)}`,

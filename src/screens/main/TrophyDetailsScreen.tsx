@@ -3,6 +3,7 @@ import { Alert, Modal, RefreshControl, ScrollView, Share, StyleSheet, Text, Text
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card, ScreenContainer, SectionTitle } from '../../components/Card';
 import { ErrorState, LoadingState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
@@ -85,10 +86,11 @@ function buildTrophyScreenData(
   };
 }
 
-export function TrophyDetailsScreen({ navigation }: Props) {
+export function TrophyDetailsScreen({ navigation, route }: Props) {
+  const insets = useSafeAreaInsets();
   const { user, status } = useAuthStore();
   const currentUserName = leaderboardDisplayName(user?.name || status?.name);
-  const [infoOpen, setInfoOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(Boolean(route.params?.openInfo));
   const [joinOpen, setJoinOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [sharing, setSharing] = useState(false);
@@ -209,12 +211,17 @@ export function TrophyDetailsScreen({ navigation }: Props) {
       </View>
       <Modal visible={infoOpen} transparent animationType="slide" onRequestClose={() => setInfoOpen(false)}>
         <View style={styles.infoModalBackdrop}>
-          <ScrollView style={styles.infoModalCard} contentContainerStyle={styles.infoModalContent} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={styles.infoModalCard}
+            contentContainerStyle={[styles.infoModalContent, { paddingBottom: insets.bottom + spacing.xl }]}
+            showsVerticalScrollIndicator={false}
+            contentInsetAdjustmentBehavior="always"
+          >
             <View style={styles.sheetHandle} />
             <View style={styles.infoModalHead}>
               <View style={styles.infoModalTitleRow}>
                 <View style={styles.infoModalTitleIcon}><MaterialCommunityIcon name="trophy-outline" size={21} color={colors.gold} /></View>
-                <Text style={styles.modalTitle}>How trophies work</Text>
+                <Text style={styles.modalTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>How trophies work</Text>
               </View>
               <TouchableOpacity style={styles.modalClose} onPress={() => setInfoOpen(false)} accessibilityRole="button" accessibilityLabel="Close trophy information">
                 <Feather name="x" size={21} color={colors.ink} />
@@ -222,24 +229,24 @@ export function TrophyDetailsScreen({ navigation }: Props) {
             </View>
             <View style={styles.infoScoreRow}>
               <View style={styles.infoScoreMedallion}><MaterialCommunityIcon name="trophy" size={30} color={colors.gold} /></View>
-              <View style={styles.infoScoreCopy}><Text style={styles.infoScoreLabel}>YOUR SCORE</Text><Text style={styles.infoScoreValue}>{trophy.score}<Text style={styles.infoScoreUnit}> trophies</Text></Text></View>
-              <View style={styles.infoSafeZone}><MaterialCommunityIcon name="shield-check" size={18} color={colors.success} /><Text style={styles.infoSafeZoneText}>Safe zone {trophy.safeZone}</Text></View>
+              <View style={styles.infoScoreCopy}><Text style={styles.infoScoreLabel}>YOUR SCORE</Text><Text style={styles.infoScoreValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>{trophy.score}<Text style={styles.infoScoreUnit}> trophies</Text></Text></View>
+              <View style={styles.infoSafeZone}><MaterialCommunityIcon name="shield-check" size={18} color={colors.gold} /><Text style={styles.infoSafeZoneText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Safe zone {trophy.safeZone}</Text></View>
             </View>
             <View style={styles.rulesGrid}>
               <TrophyRule
                 icon="dumbbell"
                 title="1 workout completed"
-                value="+5"
+                value="+10"
               />
               <TrophyRule
                 icon="notebook-edit-outline"
-                title="3 food logs"
-                value="+2"
+                title="1 food log"
+                value="+1"
               />
               <TrophyRule
                 icon="calendar-check-outline"
                 title="Missed workout"
-                value="−2"
+                value="−3"
               />
               <TrophyRule
                 icon="notebook-remove-outline"
@@ -254,9 +261,9 @@ export function TrophyDetailsScreen({ navigation }: Props) {
               />
             </View>
             <View style={styles.safeZoneCard}>
-              <View style={styles.safeZoneRule}><MaterialCommunityIcon name="shield-check-outline" size={21} color={colors.success} /><Text style={styles.safeZoneRuleText}>Safe zone every 25 trophies</Text></View>
+              <View style={styles.safeZoneRule}><MaterialCommunityIcon name="shield-check-outline" size={21} color={colors.gold} /><Text style={styles.safeZoneRuleText}>Safe zone every 25 trophies</Text></View>
               <View style={styles.safeZoneTrack}><View style={[styles.safeZoneTrackFill, { width: `${safeZoneProgress * 100}%` }]} /></View>
-              <Text style={styles.nextSafeZoneText}>{trophy.pointsToNext} to next safe zone</Text>
+              <Text style={styles.nextSafeZoneText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>{trophy.pointsToNext} to next safe zone</Text>
             </View>
           </ScrollView>
         </View>
@@ -366,37 +373,37 @@ const styles = StyleSheet.create({
   joinCodeButtonText: { ...typography.caption, color: colors.ink, fontWeight: '900' },
   modalBackdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'center', padding: spacing.lg },
   modalCard: { borderRadius: radius.xl, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.borderStrong, padding: spacing.lg },
-  infoModalBackdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end', paddingHorizontal: spacing.sm },
-  infoModalCard: { maxHeight: '92%', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, backgroundColor: colors.panel, borderWidth: 1, borderBottomWidth: 0, borderColor: colors.borderStrong, ...shadows.lg },
-  infoModalContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xl, gap: spacing.md },
+  infoModalBackdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end', paddingHorizontal: spacing.md },
+  infoModalCard: { width: '100%', maxHeight: '92%', alignSelf: 'center', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, backgroundColor: colors.panel, borderWidth: 1, borderBottomWidth: 0, borderColor: colors.borderStrong, overflow: 'hidden', ...shadows.lg },
+  infoModalContent: { width: '100%', paddingHorizontal: spacing.md, paddingTop: spacing.sm, gap: spacing.md },
   sheetHandle: { alignSelf: 'center', width: 42, height: 4, borderRadius: radius.pill, backgroundColor: colors.borderStrong, marginBottom: spacing.xs },
   infoModalHead: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
-  infoModalTitleRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  infoModalTitleRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   infoModalTitleIcon: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
   modalClose: { width: 40, height: 40, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
-  infoScoreRow: { minHeight: 92, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panelWarm, padding: spacing.md },
-  infoScoreMedallion: { width: 54, height: 54, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
+  infoScoreRow: { width: '100%', minHeight: 92, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panelWarm, padding: spacing.md },
+  infoScoreMedallion: { width: 50, height: 50, flexShrink: 0, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
   infoScoreCopy: { flex: 1, minWidth: 0 },
   infoScoreValue: { fontSize: 32, lineHeight: 37, color: colors.ink, fontWeight: '900', letterSpacing: -0.5 },
   infoScoreUnit: { fontSize: 12, lineHeight: 16, color: colors.inkMuted, fontWeight: '700', letterSpacing: 0 },
   infoScoreLabel: { ...typography.overline, color: colors.gold, fontWeight: '800' },
-  infoSafeZone: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, backgroundColor: colors.successLight, paddingHorizontal: 9, paddingVertical: 7 },
-  infoSafeZoneText: { fontSize: 10, lineHeight: 13, color: colors.success, fontWeight: '900' },
-  rulesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  trophyRule: { width: '47.5%', minHeight: 132, flexGrow: 1, alignItems: 'flex-start', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted, padding: spacing.md },
+  infoSafeZone: { maxWidth: '42%', minWidth: 0, flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 9, paddingVertical: 7 },
+  infoSafeZoneText: { minWidth: 0, flexShrink: 1, fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '900' },
+  rulesGrid: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  trophyRule: { width: '47.5%', minWidth: 0, minHeight: 132, flexGrow: 1, alignItems: 'flex-start', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted, padding: spacing.md },
   trophyRuleWide: { width: '100%', minHeight: 112 },
   trophyRuleIcon: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight },
   trophyRuleValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 'auto' },
   trophyRuleValue: { fontSize: 23, lineHeight: 28, color: colors.ink, fontWeight: '900' },
   trophyRuleTitle: { ...typography.caption, color: colors.inkMuted, fontWeight: '800', marginTop: 2 },
-  safeZoneCard: { borderRadius: radius.lg, borderWidth: 1, borderColor: 'rgba(131,214,164,0.28)', backgroundColor: colors.successLight, padding: spacing.md },
+  safeZoneCard: { width: '100%', minWidth: 0, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted, padding: spacing.md },
   safeZoneRule: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   safeZoneRuleText: { ...typography.bodyBold, color: colors.ink, flex: 1 },
   safeZoneTrack: { height: 6, borderRadius: radius.pill, backgroundColor: colors.panelRaised, overflow: 'hidden', marginTop: spacing.md },
-  safeZoneTrackFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.success },
-  nextSafeZoneText: { ...typography.caption, color: colors.inkMuted, fontWeight: '800', marginTop: spacing.sm },
+  safeZoneTrackFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
+  nextSafeZoneText: { width: '100%', ...typography.caption, color: colors.inkMuted, fontWeight: '800', marginTop: spacing.sm },
   modalIcon: { width: 48, height: 48, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, marginBottom: spacing.md },
-  modalTitle: { ...typography.title, color: colors.ink },
+  modalTitle: { minWidth: 0, flexShrink: 1, ...typography.title, color: colors.ink },
   modalCopy: { ...typography.body, color: colors.inkMuted, marginTop: spacing.xs },
   codeInput: { height: 54, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panelMuted, color: colors.ink, textAlign: 'center', fontSize: 18, fontWeight: '900', letterSpacing: 3, marginTop: spacing.lg, paddingHorizontal: spacing.md },
   modalActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },

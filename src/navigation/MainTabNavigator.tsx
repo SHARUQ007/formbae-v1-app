@@ -100,7 +100,7 @@ export function MainTabNavigator() {
         component={ProgressNavigator}
         options={({ route }) => ({
           tabBarIcon: progressIcon,
-          tabBarStyle: ['ProgressReport', 'TrophyDetails'].includes(getFocusedRouteNameFromRoute(route) || '') ? hiddenTabBarStyle : appTabBarStyle,
+          tabBarStyle: ['ProgressReport', 'ProgressReportHistory', 'TrophyDetails'].includes(getFocusedRouteNameFromRoute(route) || '') ? hiddenTabBarStyle : appTabBarStyle,
         })}
       />
       <Tab.Screen name="Profile" component={ProfileNavigator} options={{ tabBarIcon: profileIcon }} />

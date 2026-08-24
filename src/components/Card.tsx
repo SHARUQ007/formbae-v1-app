@@ -1,3 +1,4 @@
+import { Children, isValidElement } from 'react';
 import { View, Text, StyleSheet, ViewStyle, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Feather from 'react-native-vector-icons/Feather';
@@ -37,6 +38,10 @@ type ScreenContainerProps = Props & {
 
 export function ScreenContainer({ children, style, withBottomInset = false }: ScreenContainerProps) {
   const insets = useSafeAreaInsets();
+  // A screen container is structural and may only host rendered elements.
+  // Filtering accidental primitive children prevents React Native from trying
+  // to mount a raw string directly inside a native View.
+  const elementChildren = Children.toArray(children).filter(isValidElement);
   return (
     <View
       style={[
@@ -48,7 +53,7 @@ export function ScreenContainer({ children, style, withBottomInset = false }: Sc
         style,
       ]}
     >
-      {children}
+      {elementChildren}
     </View>
   );
 }

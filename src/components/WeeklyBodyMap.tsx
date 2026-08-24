@@ -86,7 +86,7 @@ function AnatomicalFigure({
           data={data}
           gender={gender}
           side={side}
-          scale={mini ? 0.29 : compact ? 0.45 : 0.53}
+          scale={mini ? 0.29 : compact ? 0.39 : 0.53}
           border={colors.borderStrong}
           defaultFill="#34353c"
           defaultStroke="#17181d"
@@ -119,14 +119,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     paddingTop: spacing.md,
   },
-  mapCompact: { minHeight: 204, paddingTop: spacing.sm },
+  mapCompact: { minHeight: 174, paddingTop: spacing.xs },
   mapMini: { minHeight: 116, paddingTop: 0 },
   figure: { flex: 1, alignItems: 'center' },
   bodyCanvas: { height: 212, alignItems: 'center', justifyContent: 'center' },
-  bodyCanvasCompact: { height: 176 },
+  bodyCanvasCompact: { height: 148 },
   bodyCanvasMini: { height: 112 },
   figureLabel: { ...typography.caption, color: colors.inkSubtle, marginTop: spacing.xs },
   divider: { width: 1, height: 178, backgroundColor: colors.border },
-  dividerCompact: { height: 146 },
+  dividerCompact: { height: 122 },
   dividerMini: { height: 92 },
 });

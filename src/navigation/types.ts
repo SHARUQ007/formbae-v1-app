@@ -41,7 +41,8 @@ export type MainTabParamList = {
 export type ProgressStackParamList = {
   ProgressMain: { action?: 'overview' | 'logBody'; requestId?: number } | undefined;
   ProgressReport: undefined;
-  TrophyDetails: undefined;
+  ProgressReportHistory: undefined;
+  TrophyDetails: { openInfo?: boolean } | undefined;
 };
 
 export type WorkoutStackParamList = {

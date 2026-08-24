@@ -18,6 +18,7 @@ export function ProgressNavigator() {
     >
       <Stack.Screen name="ProgressMain" component={ProgressScreen} />
       <Stack.Screen name="ProgressReport" component={ProgressScreen} />
+      <Stack.Screen name="ProgressReportHistory" component={ProgressScreen} />
       <Stack.Screen name="TrophyDetails" component={TrophyDetailsScreen} />
     </Stack.Navigator>
   );
