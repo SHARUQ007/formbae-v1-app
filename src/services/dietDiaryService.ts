@@ -48,6 +48,10 @@ export type DietCoachFeedback = {
     overall: number;
     label: string;
   }>;
+  charts?: {
+    mealLogging?: DietReportChart;
+    scoreTrend?: DietReportChart;
+  };
   wins?: Array<{ title: string; detail: string; evidence?: string }>;
   patterns?: Array<{
     key: string;
@@ -108,6 +112,17 @@ export type DietCoachFeedback = {
     mealCounts: Record<string, number>;
     recentFoods: string[];
   };
+};
+
+export type DietReportChart = {
+  type: 'bar' | 'line';
+  metric: 'loggedMeals' | 'foodPatternScore';
+  title: string;
+  subtitle: string;
+  unit: 'meals' | 'points';
+  points: Array<{ key: string; date: string; label: string; value: number }>;
+  minValue?: number;
+  maxValue: number;
 };
 
 export async function fetchDietDiary() {

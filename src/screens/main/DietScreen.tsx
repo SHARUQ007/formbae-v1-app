@@ -51,6 +51,7 @@ import {
   uploadSkippedDietMeal,
   uploadTextDietDiaryEntry,
   type DietCoachFeedback,
+  type DietReportChart,
 } from '../../services/dietDiaryService';
 import { getAuthToken } from '../../services/apiClient';
 import { loadDietDiaryCached } from '../../services/preloadService';
@@ -220,6 +221,54 @@ function formatReportPeriod(start?: string, end?: string) {
   if (!endDate || Number.isNaN(endDate.getTime())) return `Week of ${startLabel}`;
   const endLabel = endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
   return `${startLabel} – ${endLabel}`;
+}
+
+function DietReportBarChart({ chart }: { chart: DietReportChart }) {
+  const points = chart.points || [];
+  const maxValue = Math.max(1, chart.maxValue || 1, ...points.map(point => point.value));
+  const total = points.reduce((sum, point) => sum + point.value, 0);
+  const strongest = points.reduce<(typeof points)[number] | undefined>(
+    (best, point) => (!best || point.value > best.value ? point : best),
+    undefined,
+  );
+
+  return (
+    <View style={styles.reportChartCard} accessibilityLabel={`${chart.title}. ${total} ${chart.unit} in total.`}>
+      <View style={styles.reportChartHeader}>
+        <View style={styles.reportChartTitleBlock}>
+          <Text style={styles.reportSectionEyebrow}>YOUR RHYTHM</Text>
+          <Text style={styles.reportChartTitle}>{chart.title}</Text>
+          <Text style={styles.reportChartSubtitle}>{chart.subtitle}</Text>
+        </View>
+        <View style={styles.reportChartTotal}>
+          <Text style={styles.reportChartTotalValue}>{total}</Text>
+          <Text style={styles.reportChartTotalLabel}>this week</Text>
+        </View>
+      </View>
+
+      <View style={styles.reportChartPlot}>
+        {points.map(point => {
+          const barHeight = point.value ? Math.max(12, Math.round((point.value / maxValue) * 84)) : 4;
+          return (
+            <View key={point.key} style={styles.reportChartColumn}>
+              <Text style={[styles.reportChartValue, !point.value && styles.reportChartValueMuted]}>{point.value || '·'}</Text>
+              <View style={styles.reportChartBarTrack}>
+                <View style={[styles.reportChartBar, !point.value && styles.reportChartBarEmpty, { height: barHeight }]} />
+              </View>
+              <Text style={styles.reportChartLabel}>{point.label}</Text>
+            </View>
+          );
+        })}
+      </View>
+
+      <View style={styles.reportChartFooter}>
+        <Feather name="info" size={14} color={colors.inkSubtle} />
+        <Text style={styles.reportChartFooterText}>
+          {strongest?.value ? `${strongest.label} was your most complete logging day.` : 'Log meals across the week to reveal your rhythm.'}
+        </Text>
+      </View>
+    </View>
+  );
 }
 
 function isMemoryEntry(entry: DietDiaryEntry) {
@@ -1706,20 +1755,17 @@ function DietScreenContent({ route, navigation }: Props) {
         </>
       ) : (
         <>
-          <View style={styles.reportChapter}>
-            <View style={styles.reportChapterNumber}><Text style={styles.reportChapterNumberText}>01</Text></View>
-            <View style={styles.reportChapterCopy}>
-              <Text style={styles.reportChapterEyebrow}>YOUR WEEK</Text>
-              <Text style={styles.reportChapterTitle}>The big picture</Text>
-            </View>
-            <View style={styles.reportChapterLine} />
+          <View style={styles.reportMasthead}>
+            <Text style={styles.reportMastheadEyebrow}>WEEKLY FOOD REVIEW</Text>
+            <Text style={styles.reportMastheadTitle}>Your week, clearly</Text>
+            <Text style={styles.reportMastheadPeriod}>{formatReportPeriod(dietFeedback.weekStartDate, dietFeedback.weekEndDate)}</Text>
           </View>
 
           <View style={styles.reportScoreHero}>
             <View style={styles.reportScoreTopline}>
               <View>
-                <Text style={styles.reportSectionEyebrow}>WEEKLY SNAPSHOT</Text>
-                <Text style={styles.reportPeriod}>{formatReportPeriod(dietFeedback.weekStartDate, dietFeedback.weekEndDate)}</Text>
+                <Text style={styles.reportSectionEyebrow}>FOOD-PATTERN SCORE</Text>
+                <Text style={styles.reportPeriod}>Based on meals you described</Text>
               </View>
               <View style={styles.reportLatestPill}>
                 <View style={styles.reportReadyDot} />
@@ -1768,6 +1814,10 @@ function DietScreenContent({ route, navigation }: Props) {
             ))}
           </View>
 
+          {dietFeedback.charts?.mealLogging?.points?.length ? (
+            <DietReportBarChart chart={dietFeedback.charts.mealLogging} />
+          ) : null}
+
           {dietFeedback.priorityInsights?.length ? (
             <View style={styles.reportSectionCard}>
               <Text style={styles.reportSectionEyebrow}>PERSONALIZED PRIORITIES</Text>
@@ -1791,13 +1841,9 @@ function DietScreenContent({ route, navigation }: Props) {
             </View>
           ) : null}
 
-          <View style={styles.reportChapter}>
-            <View style={styles.reportChapterNumber}><Text style={styles.reportChapterNumberText}>02</Text></View>
-            <View style={styles.reportChapterCopy}>
-              <Text style={styles.reportChapterEyebrow}>ACTION PLAN</Text>
-              <Text style={styles.reportChapterTitle}>Your next 7 days</Text>
-            </View>
-            <View style={styles.reportChapterLine} />
+          <View style={styles.reportSectionHeading}>
+            <Text style={styles.reportSectionHeadingEyebrow}>NEXT WEEK</Text>
+            <Text style={styles.reportSectionHeadingTitle}>One focus, three moves</Text>
           </View>
 
           <View style={styles.reportActionPlan}>
@@ -1826,13 +1872,9 @@ function DietScreenContent({ route, navigation }: Props) {
 
           {dietFeedback.mealGuidance?.length ? (
             <>
-              <View style={styles.reportChapter}>
-                <View style={styles.reportChapterNumber}><Text style={styles.reportChapterNumberText}>03</Text></View>
-                <View style={styles.reportChapterCopy}>
-                  <Text style={styles.reportChapterEyebrow}>MEAL GUIDE</Text>
-                  <Text style={styles.reportChapterTitle}>Breakfast to dinner</Text>
-                </View>
-                <View style={styles.reportChapterLine} />
+              <View style={styles.reportSectionHeading}>
+                <Text style={styles.reportSectionHeadingEyebrow}>MEAL GUIDE</Text>
+                <Text style={styles.reportSectionHeadingTitle}>Small upgrades by meal</Text>
               </View>
 
               <View style={styles.reportMealAdviceSection}>
@@ -1869,13 +1911,9 @@ function DietScreenContent({ route, navigation }: Props) {
           ) : null}
 
           {supportsDetailedReport ? (
-            <View style={styles.reportChapter}>
-              <View style={styles.reportChapterNumber}><Text style={styles.reportChapterNumberText}>04</Text></View>
-              <View style={styles.reportChapterCopy}>
-                <Text style={styles.reportChapterEyebrow}>DEEP DIVE</Text>
-                <Text style={styles.reportChapterTitle}>Patterns behind the score</Text>
-              </View>
-              <View style={styles.reportChapterLine} />
+            <View style={styles.reportSectionHeading}>
+              <Text style={styles.reportSectionHeadingEyebrow}>DETAILS</Text>
+              <Text style={styles.reportSectionHeadingTitle}>What shaped your week</Text>
             </View>
           ) : null}
 
@@ -2029,13 +2067,9 @@ function DietScreenContent({ route, navigation }: Props) {
                 </View>
               ) : null}
 
-              <View style={styles.reportChapter}>
-                <View style={styles.reportChapterNumber}><Text style={styles.reportChapterNumberText}>05</Text></View>
-                <View style={styles.reportChapterCopy}>
-                  <Text style={styles.reportChapterEyebrow}>SOURCES</Text>
-                  <Text style={styles.reportChapterTitle}>Evidence behind the guidance</Text>
-                </View>
-                <View style={styles.reportChapterLine} />
+              <View style={styles.reportSectionHeading}>
+                <Text style={styles.reportSectionHeadingEyebrow}>SOURCES</Text>
+                <Text style={styles.reportSectionHeadingTitle}>Why this guidance is here</Text>
               </View>
 
               {dietFeedback.facts?.length ? (
@@ -3432,6 +3466,35 @@ const styles = StyleSheet.create({
   },
   reportCountdownLabel: { ...typography.label, color: colors.inkMuted },
   reportCountdownDays: { ...typography.label, color: colors.gold, fontWeight: '800' },
+  reportMasthead: {
+    paddingHorizontal: spacing.xs,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+  },
+  reportMastheadEyebrow: { ...typography.overline, color: colors.gold, letterSpacing: 1.4 },
+  reportMastheadTitle: {
+    fontSize: 25,
+    lineHeight: 31,
+    fontWeight: '900',
+    letterSpacing: -0.45,
+    color: colors.ink,
+    marginTop: 4,
+  },
+  reportMastheadPeriod: { ...typography.label, color: colors.inkMuted, marginTop: 3 },
+  reportSectionHeading: {
+    paddingHorizontal: spacing.xs,
+    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  reportSectionHeadingEyebrow: { ...typography.overline, color: colors.gold, letterSpacing: 1.2 },
+  reportSectionHeadingTitle: {
+    fontSize: 21,
+    lineHeight: 26,
+    fontWeight: '800',
+    letterSpacing: -0.25,
+    color: colors.ink,
+    marginTop: 2,
+  },
   reportChapter: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3473,9 +3536,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
   },
   reportSectionCard: {
-    padding: spacing.md,
+    padding: spacing.lg,
     marginBottom: spacing.md,
-    borderRadius: radius.xl,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.panel,
@@ -3496,13 +3559,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.sm,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
   reportPriorityRank: {
-    width: 28,
-    height: 28,
+    width: 26,
+    height: 26,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.pill,
@@ -3512,15 +3575,15 @@ const styles = StyleSheet.create({
   reportPriorityCopy: { flex: 1, minWidth: 0 },
   reportPriorityTitle: { ...typography.bodyBold, color: colors.ink },
   reportPriorityObservation: { fontSize: 14, lineHeight: 20, color: colors.inkMuted, marginTop: 3 },
-  reportPriorityWhy: { ...typography.caption, color: colors.inkSubtle, marginTop: spacing.xs },
+  reportPriorityWhy: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.xs },
   reportPriorityActionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: spacing.sm },
   reportPriorityAction: { ...typography.label, color: colors.ink, flex: 1 },
   reportScoreHero: {
-    padding: spacing.md,
+    padding: spacing.lg,
     marginBottom: spacing.md,
-    borderRadius: radius.xl,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
     backgroundColor: colors.panel,
   },
   reportScoreTopline: {
@@ -3541,8 +3604,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
     borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
     backgroundColor: colors.panelRaised,
   },
   reportLatestPillText: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
@@ -3553,14 +3614,14 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   reportScoreRing: {
-    width: 76,
-    height: 76,
+    width: 82,
+    height: 82,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.bgTint,
+    borderWidth: 5,
+    borderColor: colors.goldMuted,
+    backgroundColor: colors.panelRaised,
   },
   reportScoreValue: {
     fontSize: 27,
@@ -3586,6 +3647,51 @@ const styles = StyleSheet.create({
   reportScoreTrendDown: { color: colors.error },
   reportHeadline: { fontSize: 20, lineHeight: 26, fontWeight: '800', color: colors.ink, marginTop: spacing.md },
   reportSummary: { ...typography.body, color: colors.inkMuted, marginTop: spacing.xs, lineHeight: 21 },
+  reportChartCard: {
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panel,
+  },
+  reportChartHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  reportChartTitleBlock: { flex: 1, minWidth: 0 },
+  reportChartTitle: { fontSize: 18, lineHeight: 23, fontWeight: '800', color: colors.ink, marginTop: 2 },
+  reportChartSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  reportChartTotal: { alignItems: 'flex-end' },
+  reportChartTotalValue: { fontSize: 26, lineHeight: 30, fontWeight: '900', color: colors.ink },
+  reportChartTotalLabel: { ...typography.caption, color: colors.inkSubtle },
+  reportChartPlot: {
+    height: 132,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.xs,
+    marginTop: spacing.lg,
+    paddingTop: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  reportChartColumn: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'flex-end' },
+  reportChartValue: { ...typography.caption, color: colors.inkMuted, fontWeight: '800', marginBottom: 5 },
+  reportChartValueMuted: { color: colors.inkSubtle },
+  reportChartBarTrack: { flex: 1, width: '58%', justifyContent: 'flex-end' },
+  reportChartBar: {
+    width: '100%',
+    minHeight: 4,
+    borderTopLeftRadius: 5,
+    borderTopRightRadius: 5,
+    backgroundColor: colors.gold,
+  },
+  reportChartBarEmpty: { backgroundColor: colors.panelRaised },
+  reportChartLabel: { ...typography.caption, color: colors.inkSubtle, fontWeight: '700', marginTop: 7, marginBottom: 7 },
+  reportChartFooter: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingTop: spacing.sm },
+  reportChartFooterText: { ...typography.caption, color: colors.inkMuted, flex: 1 },
   reportComponentList: { marginTop: spacing.md },
   reportHistoryList: { marginTop: spacing.md },
   reportHistoryRow: {
@@ -3713,12 +3819,12 @@ const styles = StyleSheet.create({
   reportInsightBody: { fontSize: 13, lineHeight: 18, color: colors.inkMuted, marginTop: spacing.xs },
   reportInsightSignal: { ...typography.caption, color: colors.gold, marginTop: spacing.sm },
   reportActionPlan: {
-    padding: spacing.md,
+    padding: spacing.lg,
     marginBottom: spacing.md,
-    borderRadius: radius.xl,
+    borderRadius: radius.lg,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panel,
+    borderColor: colors.goldMuted,
+    backgroundColor: colors.panelWarm,
   },
   reportActionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   reportActionHeaderIcon: {
