@@ -162,7 +162,6 @@ function getWorkoutProgressSnapshot(
     progress: totalSets ? savedSets / totalSets : 0,
   };
 }
-
 function defaultRepsFromPrescription(value: string) {
   const range = String(value || '').match(/(\d+)\s*[-–]\s*(\d+)/);
   if (range?.[2]) return range[2];
