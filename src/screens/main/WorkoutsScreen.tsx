@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Easing, Image, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Easing, Image, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { ScreenContainer, ScreenTitle, Card, SectionTitle } from '../../components/Card';
+import { ScreenContainer, Card, SectionTitle } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { ErrorState, EmptyState, LoadingState } from '../../components/States';
 import { SkeletonBlock } from '../../components/Skeleton';
@@ -39,6 +39,32 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutList'>;
 const TODAY_WORKOUT_KEY_PREFIX = 'formbae_today_workout:';
 const LAST_SEEN_STREAK_KEY = 'formbae_last_seen_workout_streak';
 const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebration';
+
+function keepHeadingEndingTogether(value: string) {
+  const words = value.trim().split(/\s+/);
+  if (words.length < 2) return value.trim();
+  const ending = words.slice(-2).join(' ');
+  if (ending.length > 18) return value.trim();
+  return `${words.slice(0, -2).join(' ')}${words.length > 2 ? ' ' : ''}${ending.replace(' ', '\u00a0')}`;
+}
+
+function premiumHeading(value: string) {
+  return String(value || '')
+    .replace(/\s*[+&]\s*/g, ' and ')
+    .replace(/[·•|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function planHeadingParts(value: string) {
+  const cleaned = premiumHeading(value);
+  const phaseMatch = cleaned.match(/\s+(Foundation|Phase\s+\d+)$/i);
+  if (!phaseMatch) return { title: cleaned, phase: '' };
+  return {
+    title: cleaned.slice(0, phaseMatch.index).trim(),
+    phase: phaseMatch[1],
+  };
+}
 const PENDING_PLAN_BUILD_MAX_AGE_MS = 10 * 60 * 1000;
 const GOLD = '#f5b301';
 const FLAME_CORE = '#ffe08a';
@@ -224,6 +250,7 @@ function GoldenStreakBadge({ streak, celebrationNonce }: { streak: number; celeb
 
 function WorkoutDashboardScreen({ navigation }: Props) {
   const tabBarHeight = useBottomTabBarHeight();
+  const { width: viewportWidth } = useWindowDimensions();
   const warmData = peekWorkoutPlanCached();
   const warmPlan = (warmData?.plan || warmData?.today?.plan) as { planId?: string; days?: PlanDay[]; title?: string } | undefined;
   const warmDays = warmPlan?.days || [];
@@ -502,11 +529,18 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     ? deriveCurrentWeekStreak(progress.completionHistory)
     : Math.min(7, progress?.currentStreak ?? 0);
   const trainerPhoto = resolveTrainerPhotoUrl(trainer?.trainerPhotoUrl, trainer?.name);
+  const planHeading = planHeadingParts(title);
+  const planTitleFontSize = viewportWidth < 380 || planHeading.title.length > 34
+    ? 27
+    : planHeading.title.length > 22
+      ? 29
+      : 32;
 
   return (
     <ScreenContainer>
       <ScrollView
         showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="never"
         contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
       >
@@ -518,8 +552,13 @@ function WorkoutDashboardScreen({ navigation }: Props) {
           <>
             <View style={styles.headerRow}>
               <View style={styles.headerText}>
-                <Text style={styles.eyebrow}>Workout</Text>
-                <ScreenTitle>{title}</ScreenTitle>
+                <Text style={styles.eyebrow}>{planHeading.phase ? `Workout ${planHeading.phase}` : 'Workout'}</Text>
+                <Text
+                  style={[styles.planTitle, { fontSize: planTitleFontSize, lineHeight: planTitleFontSize + 6 }]}
+                  accessibilityRole="header"
+                >
+                  {keepHeadingEndingTogether(planHeading.title)}
+                </Text>
                 <Text style={styles.summary}>
                   {doneCount} of {days.length} days complete
                 </Text>
@@ -538,7 +577,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                   </TouchableOpacity>
                 </View>
               </View>
-              <Text style={styles.todayTitle}>{todayDay?.focus || 'Workout'}</Text>
+              <Text style={styles.todayTitle}>{premiumHeading(todayDay?.focus || 'Workout')}</Text>
               <Text style={styles.todayMeta}>
                 {todayCount} exercise{todayCount === 1 ? '' : 's'}
                 {trainer?.name ? ` · Coach ${trainer.name}` : ''}
@@ -1229,9 +1268,10 @@ const styles = StyleSheet.create({
   },
   scroll: {},
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
-  headerText: { flex: 1 },
+  headerText: { flex: 1, minWidth: 0 },
   eyebrow: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 2 },
-  summary: { ...typography.caption, color: colors.inkMuted, marginTop: -spacing.xs },
+  planTitle: { fontWeight: '800', letterSpacing: -0.6, color: colors.ink, flexShrink: 1 },
+  summary: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.xs },
   streakBadge: {
     minWidth: 72,
     minHeight: 52,

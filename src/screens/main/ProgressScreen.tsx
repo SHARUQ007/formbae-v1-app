@@ -14,6 +14,7 @@ import { ErrorState, LoadingState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { loadProgressBundleCached, peekProgressBundleCached } from '../../services/preloadService';
 import { logProgress } from '../../services/progressService';
+import { subscribeToTrophySummary } from '../../services/trophyRealtime';
 import type { ProgressSummary } from '../../types/api';
 import { formatDate } from '../../utils/format';
 import { colors } from '../../theme/colors';
@@ -51,7 +52,7 @@ export function ProgressScreen({ route, navigation }: Props) {
   // The progress navigator is also rendered standalone while previewing this
   // flow, where no bottom-tab height provider exists.
   const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 0;
-  const { data, loading, error, reload, refresh, refreshing } = useAsync<Loaded>((mode) =>
+  const { data, loading, error, reload, refresh, refreshing, setData } = useAsync<Loaded>((mode) =>
     loadProgressBundleCached({ force: mode === 'refresh' }),
   [], { initialData: peekProgressBundleCached() });
 
@@ -62,6 +63,13 @@ export function ProgressScreen({ route, navigation }: Props) {
   const [logMode, setLogMode] = useState<LogMode | null>(null);
   const [savingBody, setSavingBody] = useState(false);
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('weight');
+
+  useEffect(() => subscribeToTrophySummary((trophies) => {
+    setData((current) => current ? {
+      ...current,
+      progress: { ...current.progress, trophies },
+    } : current);
+  }), [setData]);
 
   useEffect(() => {
     if (route.name !== 'ProgressMain') return;
@@ -812,8 +820,8 @@ function WeeklyActivityChart({ data }: { data: Array<{ date: string; label: stri
         {data.map(item => (
           <View key={item.date} style={styles.activityDay}>
             <View style={styles.activityBarArea}>
-              <View style={[styles.activityBar, styles.activityWorkoutBar, { height: item.workouts ? Math.max(8, (item.workouts / peak) * 86) : 2 }]} />
-              <View style={[styles.activityBar, styles.activityFoodBar, { height: item.foodLogs ? Math.max(8, (item.foodLogs / peak) * 86) : 2 }]} />
+              <View style={[styles.activityBar, styles.activityWorkoutBar, activityBarHeight(item.workouts, peak)]} />
+              <View style={[styles.activityBar, styles.activityFoodBar, activityBarHeight(item.foodLogs, peak)]} />
             </View>
             <Text style={styles.activityDayLabel}>{item.label}</Text>
           </View>
@@ -821,6 +829,10 @@ function WeeklyActivityChart({ data }: { data: Array<{ date: string; label: stri
       </View>
     </Card>
   );
+}
+
+function activityBarHeight(value: number, peak: number) {
+  return { height: value ? Math.max(8, (value / peak) * 86) : 2 };
 }
 
 function DimensionScorecard({ dimensions }: { dimensions: Array<{ key: string; label: string; value: number; status: string }> }) {

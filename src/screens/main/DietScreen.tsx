@@ -154,22 +154,6 @@ function formatEditableTime(value: Date) {
   });
 }
 
-function parseEditableTime(value: string, date: Date) {
-  const match = value.trim().toUpperCase().match(/^(\d{1,2})(?::(\d{1,2}))?\s*(AM|PM)?$/);
-  if (!match) return null;
-  let hour = Number(match[1]);
-  const minute = Number(match[2] || 0);
-  const period = match[3];
-  if (minute > 59 || (period ? hour < 1 || hour > 12 : hour > 23)) return null;
-  if (period) {
-    hour %= 12;
-    if (period === 'PM') hour += 12;
-  }
-  const result = new Date(date);
-  result.setHours(hour, minute, 0, 0);
-  return result;
-}
-
 function formatDiaryDate(value: Date) {
   const today = new Date();
   const yesterday = shiftDate(today, -1);
@@ -266,6 +250,144 @@ function DietReportBarChart({ chart }: { chart: DietReportChart }) {
         <Text style={styles.reportChartFooterText}>
           {strongest?.value ? `${strongest.label} was your most complete logging day.` : 'Log meals across the week to reveal your rhythm.'}
         </Text>
+      </View>
+    </View>
+  );
+}
+
+function DietReportStory({ feedback }: { feedback: DietCoachFeedback }) {
+  const stats = feedback.stats;
+  const actions = (feedback.nextWeek?.actions?.length ? feedback.nextWeek.actions : feedback.highlights || []).slice(0, 3);
+  const priorities = (feedback.priorityInsights || []).slice(0, 3);
+  const mealsForStory = (feedback.mealGuidance || []).slice(0, 4);
+  const implementation = feedback.nextWeek?.implementationPlan;
+
+  return (
+    <View style={styles.reportDocument}>
+      <View style={styles.reportCover}>
+        <View style={styles.reportCoverHeader}>
+          <View style={styles.reportCoverHeaderCopy}>
+            <Text style={styles.reportCoverEyebrow}>WEEKLY NUTRITION REPORT</Text>
+            <Text style={styles.reportCoverPeriod}>{formatReportPeriod(feedback.weekStartDate, feedback.weekEndDate)}</Text>
+          </View>
+        </View>
+
+        <View style={styles.reportCoverScoreRow}>
+          <View style={styles.reportCoverScore}>
+            <Text style={styles.reportCoverScoreValue}>{feedback.score?.overall ?? '—'}</Text>
+            <Text style={styles.reportCoverScoreMax}>/100</Text>
+          </View>
+          <View style={styles.reportCoverScoreCopy}>
+            <Text style={styles.reportCoverScoreLabel}>{feedback.score?.label || 'Food-pattern review'}</Text>
+            <Text style={styles.reportCoverTrend}>
+              {typeof feedback.score?.trend === 'number'
+                ? `${feedback.score.trend >= 0 ? '+' : ''}${feedback.score.trend} from your last report`
+                : 'Your first weekly baseline'}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={styles.reportCoverHeadline}>{feedback.headline || 'Your week at a glance'}</Text>
+        <Text style={styles.reportCoverSummary}>{feedback.summary}</Text>
+
+        <View style={styles.reportCoverStats}>
+          {[
+            { value: stats.mealMoments ?? stats.loggedItems ?? 0, label: 'Meals logged' },
+            { value: stats.daysLogged ?? 0, label: 'Days covered' },
+            { value: stats.workoutsCompleted ?? 0, label: 'Workouts' },
+          ].map((item, index) => (
+            <View key={item.label} style={[styles.reportCoverStat, index > 0 && styles.reportCoverStatDivided]}>
+              <Text style={styles.reportCoverStatValue}>{item.value}</Text>
+              <Text style={styles.reportCoverStatLabel}>{item.label}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.reportChapterHeader}>
+        <Text style={styles.reportChapterIndex}>01</Text>
+        <View style={styles.reportChapterCopy}>
+          <Text style={styles.reportChapterEyebrow}>NEXT WEEK</Text>
+          <Text style={styles.reportChapterHeading}>One focus, three actions</Text>
+        </View>
+      </View>
+
+      <View style={styles.reportFocusPanel}>
+        <Text style={styles.reportFocusLabel}>YOUR FOCUS</Text>
+        <Text style={styles.reportFocusTitle}>{feedback.nextWeek?.primaryFocus || feedback.nextFocus}</Text>
+        {feedback.nextWeek?.whyItMatters ? <Text style={styles.reportFocusWhy}>{feedback.nextWeek.whyItMatters}</Text> : null}
+        <View style={styles.reportFocusSteps}>
+          {actions.map((action, index) => (
+            <View key={`${action}-${index}`} style={styles.reportFocusStep}>
+              <View style={styles.reportFocusStepNumber}><Text style={styles.reportFocusStepNumberText}>{index + 1}</Text></View>
+              <Text style={styles.reportFocusStepText}>{action}</Text>
+            </View>
+          ))}
+        </View>
+        {implementation?.action ? (
+          <View style={styles.reportImplementation}>
+            <Text style={styles.reportImplementationLabel}>START HERE</Text>
+            <Text style={styles.reportImplementationAction}>{implementation.action}</Text>
+            {implementation.fallback ? <Text style={styles.reportImplementationDetail}>Backup plan: {implementation.fallback}</Text> : null}
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.reportChapterHeader}>
+        <Text style={styles.reportChapterIndex}>02</Text>
+        <View style={styles.reportChapterCopy}>
+          <Text style={styles.reportChapterEyebrow}>KEY FINDINGS</Text>
+          <Text style={styles.reportChapterHeading}>What your week suggests</Text>
+        </View>
+      </View>
+
+      <View style={styles.reportFindingsPanel}>
+        {priorities.length ? priorities.map((insight, index) => (
+          <View key={`${insight.title}-${index}`} style={[styles.reportFinding, index > 0 && styles.reportFindingDivided]}>
+            <Text style={styles.reportFindingIndex}>{String(index + 1).padStart(2, '0')}</Text>
+            <View style={styles.reportFindingCopy}>
+              <View style={styles.reportFindingTitleRow}>
+                <Text style={styles.reportFindingTitle}>{insight.title}</Text>
+                <Text style={styles.reportFindingConfidence}>{insight.confidence}</Text>
+              </View>
+              <Text style={styles.reportFindingObservation}>{insight.observation}</Text>
+              {insight.whyItMatters ? <Text style={styles.reportFindingWhy}>{insight.whyItMatters}</Text> : null}
+              <View style={styles.reportFindingActionRow}>
+                <Feather name="arrow-right" size={14} color={colors.gold} />
+                <Text style={styles.reportFindingAction}>{insight.nextStep}</Text>
+              </View>
+            </View>
+          </View>
+        )) : <Text style={styles.reportEmpty}>Keep logging meals to reveal your strongest patterns.</Text>}
+      </View>
+
+      <View style={styles.reportChapterHeader}>
+        <Text style={styles.reportChapterIndex}>03</Text>
+        <View style={styles.reportChapterCopy}>
+          <Text style={styles.reportChapterEyebrow}>MEAL BY MEAL</Text>
+          <Text style={styles.reportChapterHeading}>Guidance you can use</Text>
+        </View>
+      </View>
+
+      <View style={styles.reportMealGuidePanel}>
+        {mealsForStory.length ? mealsForStory.map((guidance, index) => {
+          const appearance = mealAppearance[guidance.mealType];
+          return (
+            <View key={guidance.mealType} style={[styles.reportMealGuideRow, index > 0 && styles.reportMealGuideRowDivided]}>
+              <View style={styles.reportMealGuideIcon}>
+                <Feather name={appearance.icon} size={16} color={colors.inkMuted} />
+              </View>
+              <View style={styles.reportMealGuideCopy}>
+                <View style={styles.reportMealGuideTitleRow}>
+                  <Text style={styles.reportMealGuideTitle}>{guidance.mealType}</Text>
+                  <Text style={styles.reportMealGuideCount}>{guidance.observedCount || 0} logged</Text>
+                </View>
+                {guidance.pattern ? <Text style={styles.reportMealGuidePattern}>{guidance.pattern}</Text> : null}
+                <Text style={styles.reportMealGuideAdvice}>{guidance.advice}</Text>
+              </View>
+            </View>
+          );
+        }) : <Text style={styles.reportEmpty}>Add meals across the day to unlock meal-by-meal guidance.</Text>}
       </View>
     </View>
   );
@@ -427,7 +549,7 @@ function DietScreenContent({ route, navigation }: Props) {
   const [textModalOpen, setTextModalOpen] = useState(false);
   const [textEntry, setTextEntry] = useState('');
   const [timeEditorOpen, setTimeEditorOpen] = useState(false);
-  const [timeEntry, setTimeEntry] = useState('');
+  const [timeEntry, setTimeEntry] = useState(() => new Date());
   const [rememberedMealTimes, setRememberedMealTimes] = useState<RememberedMealTimes>({});
   const [savedMeal, setSavedMeal] = useState<{
     mealType: MealType;
@@ -732,7 +854,6 @@ function DietScreenContent({ route, navigation }: Props) {
   const reportDays = reportDaysLeft(dietFeedback);
   const reportProgress = reportCycleProgress(dietFeedback);
   const reportCountdown = reportCountdownText(dietFeedback);
-  const reportStats = dietFeedback?.stats;
   const supportsDetailedReport =
     dietFeedback?.template?.id === 'weekly-diet-report' ||
     (dietFeedback?.schemaVersion ?? 0) >= 2;
@@ -797,23 +918,27 @@ function DietScreenContent({ route, navigation }: Props) {
   );
 
   const openMemoryTimeEditor = () => {
-    Keyboard.dismiss();
-    setTimeEntry(formatEditableTime(memoryTimeForSlot(selectedDate, selectedMeal)));
+    if (timeEditorOpen) {
+      setTimeEditorOpen(false);
+      return;
+    }
+    setTimeEntry(memoryTimeForSlot(selectedDate, selectedMeal));
     setTimeEditorOpen(true);
   };
 
-  const applyMemoryTime = () => {
-    const parsed = parseEditableTime(timeEntry, selectedDate);
-    if (!parsed) {
-      Alert.alert('Enter a valid time', 'Use a time such as 5:30 PM or 17:30.');
-      return;
-    }
-    if (parsed.getTime() > Date.now()) {
-      Alert.alert('Choose an earlier time', 'A food memory cannot be set in the future.');
-      return;
-    }
-    memoryTimesRef.current.set(memorySlotDraftKey(selectedDate, selectedMeal), parsed);
-    setTimeEditorOpen(false);
+  const updateMemoryTime = (transform: (value: Date) => void) => {
+    const next = new Date(timeEntry);
+    transform(next);
+    if (!isSameDay(next, selectedDate) || next.getTime() > Date.now()) return;
+    memoryTimesRef.current.set(memorySlotDraftKey(selectedDate, selectedMeal), next);
+    setTimeEntry(next);
+  };
+
+  const setMemoryMeridiem = (period: 'AM' | 'PM') => {
+    updateMemoryTime(next => {
+      const hour = next.getHours() % 12;
+      next.setHours(hour + (period === 'PM' ? 12 : 0));
+    });
   };
 
   const moveMemorySlot = useCallback(
@@ -823,6 +948,7 @@ function DietScreenContent({ route, navigation }: Props) {
           ? previousMemorySlot(selectedDate, selectedMeal)
           : nextMemorySlot(selectedDate, selectedMeal);
       if (!next) return;
+      setTimeEditorOpen(false);
       const currentKey = memorySlotDraftKey(selectedDate, selectedMeal);
       memoryDraftsRef.current.set(currentKey, textEntry);
       setSelectedDate(next.date);
@@ -1755,165 +1881,15 @@ function DietScreenContent({ route, navigation }: Props) {
         </>
       ) : (
         <>
-          <View style={styles.reportMasthead}>
-            <Text style={styles.reportMastheadEyebrow}>WEEKLY FOOD REVIEW</Text>
-            <Text style={styles.reportMastheadTitle}>Your week, clearly</Text>
-            <Text style={styles.reportMastheadPeriod}>{formatReportPeriod(dietFeedback.weekStartDate, dietFeedback.weekEndDate)}</Text>
-          </View>
-
-          <View style={styles.reportScoreHero}>
-            <View style={styles.reportScoreTopline}>
-              <View>
-                <Text style={styles.reportSectionEyebrow}>FOOD-PATTERN SCORE</Text>
-                <Text style={styles.reportPeriod}>Based on meals you described</Text>
-              </View>
-              <View style={styles.reportLatestPill}>
-                <View style={styles.reportReadyDot} />
-                <Text style={styles.reportLatestPillText}>Latest</Text>
-              </View>
-            </View>
-
-            <View style={styles.reportScoreMain}>
-              {dietFeedback.score ? (
-                <View style={styles.reportScoreRing}>
-                  <Text style={styles.reportScoreValue}>{dietFeedback.score.overall}</Text>
-                  <Text style={styles.reportScoreOutOf}>/100</Text>
-                </View>
-              ) : (
-                <View style={styles.reportLegacyIcon}>
-                  <Feather name="pie-chart" size={24} color={colors.gold} />
-                </View>
-              )}
-              <View style={styles.reportScoreCopy}>
-                <Text style={styles.reportScoreLabel}>{dietFeedback.score?.label || 'Your food pattern'}</Text>
-                {typeof dietFeedback.score?.trend === 'number' ? (
-                  <Text style={[styles.reportScoreTrend, dietFeedback.score.trend < 0 && styles.reportScoreTrendDown]}>
-                    {dietFeedback.score.trend >= 0 ? '+' : ''}{dietFeedback.score.trend} this week
-                  </Text>
-                ) : dietFeedback.score ? (
-                  <Text style={styles.reportScoreTrend}>First weekly baseline</Text>
-                ) : null}
-              </View>
-            </View>
-
-            <Text style={styles.reportHeadline} numberOfLines={2} adjustsFontSizeToFit>{dietFeedback.headline || 'This week at a glance'}</Text>
-            {dietFeedback.summary ? <Text style={styles.reportSummary}>{dietFeedback.summary}</Text> : null}
-          </View>
-
-          <View style={styles.reportStatsRow}>
-            {[
-              { value: reportStats?.mealMoments ?? reportStats?.loggedItems ?? 0, label: 'Meals', icon: 'coffee' },
-              { value: reportStats?.daysLogged ?? 0, label: 'Days', icon: 'calendar' },
-              { value: reportStats?.workoutsCompleted ?? 0, label: 'Training', icon: 'activity' },
-            ].map(stat => (
-              <View key={stat.label} style={styles.reportStat}>
-                <Feather name={stat.icon} size={15} color={colors.gold} />
-                <Text style={styles.reportStatValue}>{stat.value}</Text>
-                <Text style={styles.reportStatLabel}>{stat.label}</Text>
-              </View>
-            ))}
-          </View>
-
-          {dietFeedback.charts?.mealLogging?.points?.length ? (
-            <DietReportBarChart chart={dietFeedback.charts.mealLogging} />
-          ) : null}
-
-          {dietFeedback.priorityInsights?.length ? (
-            <View style={styles.reportSectionCard}>
-              <Text style={styles.reportSectionEyebrow}>PERSONALIZED PRIORITIES</Text>
-              <Text style={styles.reportSectionTitle}>What matters most</Text>
-              <View style={styles.reportPriorityList}>
-                {dietFeedback.priorityInsights.slice(0, 3).map((insight, index) => (
-                  <View key={`${insight.title}-${index}`} style={styles.reportPriority}>
-                    <View style={styles.reportPriorityRank}><Text style={styles.reportPriorityRankText}>{index + 1}</Text></View>
-                    <View style={styles.reportPriorityCopy}>
-                      <Text style={styles.reportPriorityTitle}>{insight.title}</Text>
-                      <Text style={styles.reportPriorityObservation}>{insight.observation}</Text>
-                      {insight.whyItMatters ? <Text style={styles.reportPriorityWhy}>{insight.whyItMatters}</Text> : null}
-                      <View style={styles.reportPriorityActionRow}>
-                        <Feather name="arrow-right" size={14} color={colors.gold} />
-                        <Text style={styles.reportPriorityAction}>{insight.nextStep}</Text>
-                      </View>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            </View>
-          ) : null}
-
-          <View style={styles.reportSectionHeading}>
-            <Text style={styles.reportSectionHeadingEyebrow}>NEXT WEEK</Text>
-            <Text style={styles.reportSectionHeadingTitle}>One focus, three moves</Text>
-          </View>
-
-          <View style={styles.reportActionPlan}>
-            <View style={styles.reportActionHeader}>
-              <View style={styles.reportActionHeaderIcon}><Feather name="arrow-up-right" size={18} color={colors.onPrimary} /></View>
-              <Text style={styles.reportActionEyebrow}>FOCUS FOR THE NEXT 7 DAYS</Text>
-            </View>
-            <Text style={styles.reportActionTitle}>{dietFeedback.nextWeek?.primaryFocus || dietFeedback.nextFocus || 'Make one meal more balanced each day.'}</Text>
-            {dietFeedback.nextWeek?.whyItMatters ? <Text style={styles.reportActionWhy}>{dietFeedback.nextWeek.whyItMatters}</Text> : null}
-            {(dietFeedback.nextWeek?.actions?.length ? dietFeedback.nextWeek.actions : dietFeedback.highlights || []).slice(0, 3).map((action, index) => (
-              <View key={`${action}-${index}`} style={styles.reportActionItem}>
-                <View style={styles.reportActionNumber}><Text style={styles.reportActionNumberText}>{index + 1}</Text></View>
-                <Text style={styles.reportActionItemText} numberOfLines={2}>{action}</Text>
-              </View>
-            ))}
-            {dietFeedback.nextWeek?.implementationPlan?.action ? (
-              <View style={styles.reportExperiment}>
-                <Text style={styles.reportExperimentLabel}>YOUR 7-DAY EXPERIMENT</Text>
-                {dietFeedback.nextWeek.implementationPlan.cue ? <Text style={styles.reportExperimentCue}>{dietFeedback.nextWeek.implementationPlan.cue}</Text> : null}
-                <Text style={styles.reportExperimentAction}>{dietFeedback.nextWeek.implementationPlan.action}</Text>
-                {dietFeedback.nextWeek.implementationPlan.fallback ? <Text style={styles.reportExperimentMeta}>Easy fallback · {dietFeedback.nextWeek.implementationPlan.fallback}</Text> : null}
-                {dietFeedback.nextWeek.implementationPlan.successMeasure ? <Text style={styles.reportExperimentMeta}>Success · {dietFeedback.nextWeek.implementationPlan.successMeasure}</Text> : null}
-              </View>
-            ) : null}
-          </View>
-
-          {dietFeedback.mealGuidance?.length ? (
-            <>
-              <View style={styles.reportSectionHeading}>
-                <Text style={styles.reportSectionHeadingEyebrow}>MEAL GUIDE</Text>
-                <Text style={styles.reportSectionHeadingTitle}>Small upgrades by meal</Text>
-              </View>
-
-              <View style={styles.reportMealAdviceSection}>
-                <View style={styles.reportMealAdviceHeader}>
-                  <View>
-                    <Text style={styles.reportSectionEyebrow}>MEAL-BY-MEAL</Text>
-                    <Text style={styles.reportSectionTitle}>A plan for each meal</Text>
-                  </View>
-                  <Feather name="arrow-right" size={17} color={colors.inkSubtle} />
-                </View>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.reportMealAdviceList}
-                >
-                  {dietFeedback.mealGuidance.map(guidance => {
-                    const appearance = mealAppearance[guidance.mealType];
-                    return (
-                      <View key={guidance.mealType} style={styles.reportMealAdviceCard}>
-                        <View style={[styles.reportMealAdviceIcon, { backgroundColor: appearance.backgroundColor }]}>
-                          <Feather name={appearance.icon} size={17} color={appearance.color} />
-                        </View>
-                        <View style={styles.reportMealAdviceTitleRow}>
-                          <Text style={styles.reportMealAdviceTitle}>{guidance.mealType}</Text>
-                          <Text style={styles.reportMealAdviceCount}>{guidance.observedCount || '—'}</Text>
-                        </View>
-                        <Text style={styles.reportMealAdviceText} numberOfLines={2}>{guidance.advice}</Text>
-                      </View>
-                    );
-                  })}
-                </ScrollView>
-              </View>
-            </>
-          ) : null}
+          <DietReportStory feedback={dietFeedback} />
 
           {supportsDetailedReport ? (
-            <View style={styles.reportSectionHeading}>
-              <Text style={styles.reportSectionHeadingEyebrow}>DETAILS</Text>
-              <Text style={styles.reportSectionHeadingTitle}>What shaped your week</Text>
+            <View style={styles.reportChapterHeader}>
+              <Text style={styles.reportChapterIndex}>04</Text>
+              <View style={styles.reportChapterCopy}>
+                <Text style={styles.reportChapterEyebrow}>DEEPER REVIEW</Text>
+                <Text style={styles.reportChapterHeading}>The detail behind your week</Text>
+              </View>
             </View>
           ) : null}
 
@@ -1950,6 +1926,7 @@ function DietScreenContent({ route, navigation }: Props) {
                           <Text style={styles.reportComponentValue}>{component.score}<Text style={styles.reportComponentMax}>/{component.maxScore}</Text></Text>
                         </View>
                         <View style={styles.reportComponentTrack}><View style={[styles.reportComponentFill, { width: `${component.maxScore ? (component.score / component.maxScore) * 100 : 0}%` }]} /></View>
+                        {component.insight ? <Text style={styles.reportComponentInsight}>{component.insight}</Text> : null}
                       </View>
                     ))}
                   </View>
@@ -1963,9 +1940,11 @@ function DietScreenContent({ route, navigation }: Props) {
                   <View style={styles.reportWinList}>
                     {dietFeedback.wins.map((win, index) => (
                         <View key={`${win.title}-${index}`} style={styles.reportWin}>
-                          <View style={styles.reportWinIcon}><Feather name="check" size={16} color={colors.success} /></View>
+                          <View style={styles.reportWinIcon}><Feather name="check" size={16} color={colors.inkMuted} /></View>
                           <View style={styles.reportWinCopy}>
                             <Text style={styles.reportWinTitle}>{win.title}</Text>
+                            {win.detail ? <Text style={styles.reportWinDetail}>{win.detail}</Text> : null}
+                            {win.evidence ? <Text style={styles.reportEvidence}>{win.evidence}</Text> : null}
                           </View>
                       </View>
                     ))}
@@ -1983,7 +1962,8 @@ function DietScreenContent({ route, navigation }: Props) {
                         <View style={[styles.reportPatternDot, pattern.status === 'strong' && styles.reportPatternDotStrong, pattern.status === 'attention' && styles.reportPatternDotAttention]} />
                         <View style={styles.reportPatternCopy}>
                           <Text style={styles.reportPatternTitle}>{pattern.title}</Text>
-                          <Text style={styles.reportPatternBody} numberOfLines={1}>{pattern.summary}</Text>
+                          <Text style={styles.reportPatternBody}>{pattern.summary}</Text>
+                          {pattern.evidence?.[0] ? <Text style={styles.reportPatternEvidence}>{pattern.evidence[0]}</Text> : null}
                         </View>
                       </View>
                     ))}
@@ -2002,7 +1982,8 @@ function DietScreenContent({ route, navigation }: Props) {
                           <Text style={styles.reportFoodGroupLabel}>{group.label}</Text>
                           <Text style={[styles.reportFoodGroupStatus, group.status === 'strong' && styles.reportFoodGroupStatusStrong]}>{group.status === 'notSeen' ? 'Not seen' : group.status}</Text>
                         </View>
-                        {group.observedFoods?.length ? <Text style={styles.reportObservedFoods} numberOfLines={1}>{group.observedFoods.join(' · ')}</Text> : null}
+                        {group.observedFoods?.length ? <Text style={styles.reportObservedFoods}>{group.observedFoods.join(' · ')}</Text> : null}
+                        {group.insight ? <Text style={styles.reportFoodGroupInsight}>{group.insight}</Text> : null}
                       </View>
                     ))}
                   </View>
@@ -2015,16 +1996,36 @@ function DietScreenContent({ route, navigation }: Props) {
                     <View style={styles.reportInsightCard}>
                       <View style={styles.reportInsightIcon}><Feather name="clock" size={17} color={colors.gold} /></View>
                       <Text style={styles.reportInsightTitle}>Meal rhythm</Text>
-                      {dietFeedback.mealRhythm?.strongestWindow ? <Text style={styles.reportInsightBody} numberOfLines={1}>Strongest · {dietFeedback.mealRhythm.strongestWindow}</Text> : null}
-                      {dietFeedback.mealRhythm?.opportunityWindow ? <Text style={styles.reportInsightBody} numberOfLines={1}>Opportunity · {dietFeedback.mealRhythm.opportunityWindow}</Text> : null}
+                      {dietFeedback.mealRhythm?.summary ? <Text style={styles.reportInsightSummary}>{dietFeedback.mealRhythm.summary}</Text> : null}
+                      {dietFeedback.mealRhythm?.strongestWindow ? <Text style={styles.reportInsightBody}>Strongest · {dietFeedback.mealRhythm.strongestWindow}</Text> : null}
+                      {dietFeedback.mealRhythm?.opportunityWindow ? <Text style={styles.reportInsightBody}>Opportunity · {dietFeedback.mealRhythm.opportunityWindow}</Text> : null}
                     </View>
                   ) : null}
                   {dietFeedback.goalAlignment?.supports?.length || dietFeedback.goalAlignment?.gaps?.length ? (
                     <View style={styles.reportInsightCard}>
                       <View style={styles.reportInsightIcon}><Feather name="target" size={17} color={colors.gold} /></View>
                       <Text style={styles.reportInsightTitle}>Goal fit</Text>
-                      {dietFeedback.goalAlignment?.supports?.slice(0, 1).map(item => <Text key={`support-${item}`} style={styles.reportInsightBody} numberOfLines={1}>Supports · {item}</Text>)}
-                      {dietFeedback.goalAlignment?.gaps?.slice(0, 1).map(item => <Text key={`gap-${item}`} style={styles.reportInsightBody} numberOfLines={1}>Improve · {item}</Text>)}
+                      {dietFeedback.goalAlignment?.summary ? <Text style={styles.reportInsightSummary}>{dietFeedback.goalAlignment.summary}</Text> : null}
+                      {dietFeedback.goalAlignment?.supports?.slice(0, 1).map(item => <Text key={`support-${item}`} style={styles.reportInsightBody}>Supports · {item}</Text>)}
+                      {dietFeedback.goalAlignment?.gaps?.slice(0, 1).map(item => <Text key={`gap-${item}`} style={styles.reportInsightBody}>Improve · {item}</Text>)}
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+
+              {dietFeedback.coachNote || dietFeedback.questionsForNextWeek?.length ? (
+                <View style={styles.reportSectionCard}>
+                  <Text style={styles.reportSectionEyebrow}>COACH NOTE</Text>
+                  <Text style={styles.reportSectionTitle}>Carry this forward</Text>
+                  {dietFeedback.coachNote ? <Text style={styles.reportCoachText}>{dietFeedback.coachNote}</Text> : null}
+                  {dietFeedback.questionsForNextWeek?.length ? (
+                    <View style={styles.reportQuestionList}>
+                      {dietFeedback.questionsForNextWeek.slice(0, 3).map((question, index) => (
+                        <View key={`${question}-${index}`} style={styles.reportQuestion}>
+                          <Text style={styles.reportQuestionNumber}>{index + 1}</Text>
+                          <Text style={styles.reportQuestionText}>{question}</Text>
+                        </View>
+                      ))}
                     </View>
                   ) : null}
                 </View>
@@ -2048,7 +2049,7 @@ function DietScreenContent({ route, navigation }: Props) {
                     {(['plants', 'protein', 'carbs', 'extras'] as const).map(key => dietFeedback.nextWeek?.mealBuilder[key] ? (
                       <View key={key} style={styles.reportMealBuilderRow}>
                         <Text style={styles.reportMealBuilderLabel}>{key}</Text>
-                        <Text style={styles.reportMealBuilderValue} numberOfLines={2}>{dietFeedback.nextWeek.mealBuilder[key]}</Text>
+                        <Text style={styles.reportMealBuilderValue}>{dietFeedback.nextWeek.mealBuilder[key]}</Text>
                       </View>
                     ) : null)}
                   </View>
@@ -2059,7 +2060,10 @@ function DietScreenContent({ route, navigation }: Props) {
                         <View key={`${swap.to}-${index}`} style={styles.reportSwap}>
                           <Text style={styles.reportSwapFrom}>{swap.from}</Text>
                           <Feather name="arrow-right" size={15} color={colors.gold} />
-                          <View style={styles.reportSwapCopy}><Text style={styles.reportSwapTo}>{swap.to}</Text></View>
+                          <View style={styles.reportSwapCopy}>
+                            <Text style={styles.reportSwapTo}>{swap.to}</Text>
+                            {swap.why ? <Text style={styles.reportSwapWhy}>{swap.why}</Text> : null}
+                          </View>
                         </View>
                       ))}
                     </View>
@@ -2067,9 +2071,16 @@ function DietScreenContent({ route, navigation }: Props) {
                 </View>
               ) : null}
 
-              <View style={styles.reportSectionHeading}>
-                <Text style={styles.reportSectionHeadingEyebrow}>SOURCES</Text>
-                <Text style={styles.reportSectionHeadingTitle}>Why this guidance is here</Text>
+              {dietFeedback.charts?.mealLogging?.points?.length ? (
+                <DietReportBarChart chart={dietFeedback.charts.mealLogging} />
+              ) : null}
+
+              <View style={styles.reportChapterHeader}>
+                <Text style={styles.reportChapterIndex}>05</Text>
+                <View style={styles.reportChapterCopy}>
+                  <Text style={styles.reportChapterEyebrow}>METHOD &amp; SOURCES</Text>
+                  <Text style={styles.reportChapterHeading}>How this report was built</Text>
+                </View>
               </View>
 
               {dietFeedback.facts?.length ? (
@@ -2080,7 +2091,11 @@ function DietScreenContent({ route, navigation }: Props) {
                     {dietFeedback.facts.map(fact => (
                       <TouchableOpacity key={fact.id} style={styles.reportFact} activeOpacity={0.8} onPress={() => Linking.openURL(fact.sourceUrl).catch(() => undefined)} accessibilityRole="link" accessibilityLabel={`Read source: ${fact.sourceLabel}`}>
                         <View style={styles.reportFactIcon}><Feather name="book-open" size={16} color={colors.gold} /></View>
-                        <View style={styles.reportFactCopy}><Text style={styles.reportFactTitle}>{fact.title}</Text><Text style={styles.reportFactSource}>{fact.sourceLabel}</Text></View>
+                        <View style={styles.reportFactCopy}>
+                          <Text style={styles.reportFactTitle}>{fact.title}</Text>
+                          {fact.body ? <Text style={styles.reportFactBody}>{fact.body}</Text> : null}
+                          <Text style={styles.reportFactSource}>{fact.sourceLabel}</Text>
+                        </View>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -2089,7 +2104,10 @@ function DietScreenContent({ route, navigation }: Props) {
 
               <View style={styles.reportMethodNote}>
                 <Feather name="shield" size={16} color={colors.inkSubtle} />
-                <Text style={styles.reportMethodText}>Based on described meals. It is not a calorie, nutrient or medical assessment.</Text>
+                <Text style={styles.reportMethodText}>
+                  {[dietFeedback.score?.confidenceNote, ...(dietFeedback.limitations || [])].filter(Boolean).slice(0, 3).join(' ') ||
+                    'Based on described meals. It is not a calorie, nutrient or medical assessment.'}
+                </Text>
               </View>
             </>
           ) : null}
@@ -2111,6 +2129,7 @@ function DietScreenContent({ route, navigation }: Props) {
     <ScreenContainer>
       <ScrollView
         showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="never"
         contentContainerStyle={[
           styles.scroll,
           { paddingBottom: tabBarHeight + spacing.xl },
@@ -2495,6 +2514,77 @@ function DietScreenContent({ route, navigation }: Props) {
                   />
                 </TouchableOpacity>
               </View>
+              {timeEditorOpen && !selectedMealSkip ? (
+                <View style={styles.inlineTimeEditor}>
+                  <View style={styles.inlineTimeHeader}>
+                    <View>
+                      <Text style={styles.inlineTimeLabel}>MEAL TIME</Text>
+                      <Text style={styles.inlineTimeHint}>Saved with this meal</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => setTimeEditorOpen(false)}
+                      style={styles.inlineTimeClose}
+                      accessibilityRole="button"
+                      accessibilityLabel="Close meal time controls"
+                    >
+                      <Feather name="check" size={16} color={colors.ink} />
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.inlineTimeControls}>
+                    <TouchableOpacity
+                      onPress={() => updateMemoryTime(value => value.setHours(value.getHours() - 1))}
+                      style={styles.inlineTimeStep}
+                      accessibilityRole="button"
+                      accessibilityLabel="One hour earlier"
+                    >
+                      <Feather name="minus" size={16} color={colors.ink} />
+                    </TouchableOpacity>
+                    <Text style={styles.inlineTimeValue}>{timeEntry.getHours() % 12 || 12}</Text>
+                    <TouchableOpacity
+                      onPress={() => updateMemoryTime(value => value.setHours(value.getHours() + 1))}
+                      style={styles.inlineTimeStep}
+                      accessibilityRole="button"
+                      accessibilityLabel="One hour later"
+                    >
+                      <Feather name="plus" size={16} color={colors.ink} />
+                    </TouchableOpacity>
+                    <Text style={styles.inlineTimeColon}>:</Text>
+                    <TouchableOpacity
+                      onPress={() => updateMemoryTime(value => value.setMinutes(value.getMinutes() - 15))}
+                      style={styles.inlineTimeStep}
+                      accessibilityRole="button"
+                      accessibilityLabel="Fifteen minutes earlier"
+                    >
+                      <Feather name="minus" size={16} color={colors.ink} />
+                    </TouchableOpacity>
+                    <Text style={styles.inlineTimeValue}>{String(timeEntry.getMinutes()).padStart(2, '0')}</Text>
+                    <TouchableOpacity
+                      onPress={() => updateMemoryTime(value => value.setMinutes(value.getMinutes() + 15))}
+                      style={styles.inlineTimeStep}
+                      accessibilityRole="button"
+                      accessibilityLabel="Fifteen minutes later"
+                    >
+                      <Feather name="plus" size={16} color={colors.ink} />
+                    </TouchableOpacity>
+                    <View style={styles.inlineTimePeriod}>
+                      {(['AM', 'PM'] as const).map(period => {
+                        const selected = (timeEntry.getHours() >= 12 ? 'PM' : 'AM') === period;
+                        return (
+                          <TouchableOpacity
+                            key={period}
+                            onPress={() => setMemoryMeridiem(period)}
+                            style={[styles.inlineTimePeriodButton, selected && styles.inlineTimePeriodButtonSelected]}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected }}
+                          >
+                            <Text style={[styles.inlineTimePeriodText, selected && styles.inlineTimePeriodTextSelected]}>{period}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                </View>
+              ) : null}
               <View style={[styles.memoryAnswerStage, selectedMealSkip && styles.memoryAnswerStageCompleted]}>
                 {selectedMealSkip ? (
                   <View style={styles.skippedPanel}>
@@ -2588,40 +2678,6 @@ function DietScreenContent({ route, navigation }: Props) {
               </View>
             </ScrollView>
           </KeyboardAvoidingView>
-          {timeEditorOpen ? (
-            <View style={styles.timeModalBackdrop}>
-              <View style={styles.timeModalCard}>
-                <Text style={styles.timeModalTitle}>Edit meal time</Text>
-                <TextInput
-                  value={timeEntry}
-                  onChangeText={setTimeEntry}
-                  placeholder="5:30 PM"
-                  placeholderTextColor={colors.inkSubtle}
-                  autoFocus
-                  autoCapitalize="characters"
-                  selectTextOnFocus
-                  style={styles.timeInput}
-                  accessibilityLabel="Meal time"
-                />
-                <View style={styles.timeModalActions}>
-                  <TouchableOpacity
-                    onPress={() => setTimeEditorOpen(false)}
-                    style={styles.timeCancelButton}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.timeCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={applyMemoryTime}
-                    style={styles.timeDoneButton}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.timeDoneText}>Done</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          ) : null}
         </ScreenContainer>
       </Modal>
 
@@ -3430,14 +3486,85 @@ const styles = StyleSheet.create({
   reportListText: { ...typography.body, color: colors.ink, flex: 1 },
 
   // Weekly report v2
+  reportDocument: { marginBottom: spacing.lg },
+  reportCover: {
+    paddingHorizontal: spacing.xs,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl,
+    marginBottom: spacing.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  reportCoverHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.sm },
+  reportCoverHeaderCopy: { flex: 1, minWidth: 0 },
+  reportCoverEyebrow: { ...typography.overline, color: colors.inkMuted, letterSpacing: 1.25 },
+  reportCoverPeriod: { ...typography.caption, color: colors.inkMuted, marginTop: 3 },
+  reportCoverScoreRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.lg, marginTop: spacing.xl },
+  reportCoverScore: { flexDirection: 'row', alignItems: 'baseline', minWidth: 88 },
+  reportCoverScoreValue: { fontSize: 44, lineHeight: 48, fontWeight: '800', letterSpacing: -1.5, color: colors.ink },
+  reportCoverScoreMax: { ...typography.caption, color: colors.inkMuted, marginLeft: 2 },
+  reportCoverScoreCopy: { flex: 1, minWidth: 0 },
+  reportCoverScoreLabel: { fontSize: 16, lineHeight: 21, fontWeight: '700', color: colors.ink },
+  reportCoverTrend: { ...typography.caption, color: colors.inkMuted, marginTop: 3 },
+  reportCoverHeadline: { fontSize: 23, lineHeight: 29, fontWeight: '800', letterSpacing: -0.35, color: colors.ink, marginTop: spacing.xl },
+  reportCoverSummary: { fontSize: 14, lineHeight: 21, color: colors.inkMuted, marginTop: spacing.sm },
+  reportCoverStats: { flexDirection: 'row', marginTop: spacing.xl, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  reportCoverStat: { flex: 1, minWidth: 0, paddingHorizontal: spacing.xs },
+  reportCoverStatDivided: { borderLeftWidth: 1, borderLeftColor: colors.border },
+  reportCoverStatValue: { fontSize: 18, lineHeight: 23, fontWeight: '800', color: colors.ink },
+  reportCoverStatLabel: { fontSize: 10, lineHeight: 14, color: colors.inkMuted, marginTop: 2 },
+  reportChapterHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.lg, marginBottom: spacing.md, paddingHorizontal: spacing.xs },
+  reportChapterIndex: { width: 26, paddingTop: 1, fontSize: 11, lineHeight: 15, fontWeight: '800', color: colors.gold, letterSpacing: 0.7 },
+  reportChapterCopy: { flex: 1, minWidth: 0 },
+  reportChapterEyebrow: { ...typography.overline, color: colors.inkSubtle, letterSpacing: 1.05 },
+  reportChapterHeading: { fontSize: 20, lineHeight: 25, fontWeight: '700', letterSpacing: -0.2, color: colors.ink, marginTop: 1 },
+  reportFocusPanel: { padding: spacing.lg, marginBottom: spacing.xl, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  reportFocusIcon: { width: 0, height: 0 },
+  reportFocusLabel: { ...typography.overline, color: colors.inkSubtle },
+  reportFocusTitle: { fontSize: 22, lineHeight: 28, fontWeight: '800', letterSpacing: -0.3, color: colors.ink, marginTop: spacing.xs },
+  reportFocusWhy: { fontSize: 14, lineHeight: 21, color: colors.inkMuted, marginTop: spacing.sm },
+  reportFocusSteps: { marginTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border },
+  reportFocusStep: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingTop: spacing.sm },
+  reportFocusStepNumber: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center', marginTop: 1, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.borderStrong },
+  reportFocusStepNumberText: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '800' },
+  reportFocusStepText: { flex: 1, fontSize: 14, lineHeight: 20, color: colors.ink, paddingBottom: spacing.sm },
+  reportImplementation: { marginTop: spacing.lg, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  reportImplementationLabel: { ...typography.overline, color: colors.inkSubtle },
+  reportImplementationCue: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.sm },
+  reportImplementationAction: { ...typography.bodyBold, color: colors.ink, marginTop: 3 },
+  reportImplementationDetails: { gap: spacing.xs, marginTop: spacing.sm },
+  reportImplementationDetail: { ...typography.caption, color: colors.inkMuted },
+  reportFindingsPanel: { paddingHorizontal: spacing.xs, marginBottom: spacing.xl, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
+  reportFinding: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, paddingVertical: spacing.lg },
+  reportFindingDivided: { borderTopWidth: 1, borderTopColor: colors.border },
+  reportFindingIndex: { width: 26, ...typography.caption, color: colors.inkSubtle, fontWeight: '800', letterSpacing: 0.5 },
+  reportFindingCopy: { flex: 1, minWidth: 0 },
+  reportFindingTitleRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.sm },
+  reportFindingTitle: { ...typography.bodyBold, color: colors.ink, flex: 1 },
+  reportFindingConfidence: { fontSize: 9, lineHeight: 12, color: colors.inkSubtle, fontWeight: '700', textTransform: 'uppercase' },
+  reportFindingObservation: { fontSize: 14, lineHeight: 20, color: colors.inkMuted, marginTop: spacing.xs },
+  reportFindingWhy: { ...typography.caption, color: colors.inkSubtle, marginTop: spacing.xs },
+  reportFindingActionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: spacing.sm },
+  reportFindingAction: { ...typography.label, color: colors.ink, flex: 1 },
+  reportMealGuidePanel: { paddingHorizontal: spacing.xs, marginBottom: spacing.xl, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
+  reportMealGuideRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, paddingVertical: spacing.lg },
+  reportMealGuideRowDivided: { borderTopWidth: 1, borderTopColor: colors.border },
+  reportMealGuideIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
+  reportMealGuideCopy: { flex: 1, minWidth: 0 },
+  reportMealGuideTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  reportMealGuideTitle: { ...typography.bodyBold, color: colors.ink },
+  reportMealGuideCount: { ...typography.caption, color: colors.inkSubtle },
+  reportMealGuidePattern: { fontSize: 13, lineHeight: 18, color: colors.ink, marginTop: spacing.xs },
+  reportMealGuideAdvice: { fontSize: 13, lineHeight: 19, color: colors.inkMuted, marginTop: 3 },
+  reportEmpty: { fontSize: 14, lineHeight: 21, color: colors.inkMuted, paddingVertical: spacing.lg },
   reportPendingHero: {
     alignItems: 'flex-start',
     padding: spacing.lg,
     marginBottom: spacing.md,
     borderRadius: radius.xl,
     borderWidth: 1,
-    borderColor: colors.accentSurface,
-    backgroundColor: colors.panelWarm,
+    borderColor: colors.border,
+    backgroundColor: colors.panel,
   },
   reportPendingIcon: {
     width: 48,
@@ -3447,8 +3574,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: colors.goldMuted,
-    backgroundColor: colors.accentLight,
+    borderColor: colors.border,
+    backgroundColor: colors.panelRaised,
   },
   reportPendingEyebrow: {
     ...typography.overline,
@@ -3519,11 +3646,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: 0.5,
   },
-  reportChapterCopy: { minWidth: 0 },
-  reportChapterEyebrow: {
-    ...typography.overline,
-    color: colors.inkSubtle,
-  },
   reportChapterTitle: {
     ...typography.bodyBold,
     color: colors.ink,
@@ -3536,12 +3658,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
   },
   reportSectionCard: {
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xl,
+    marginBottom: 0,
+    borderRadius: 0,
+    borderTopWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.panel,
+    backgroundColor: 'transparent',
   },
   reportSectionEyebrow: {
     ...typography.overline,
@@ -3648,12 +3771,13 @@ const styles = StyleSheet.create({
   reportHeadline: { fontSize: 20, lineHeight: 26, fontWeight: '800', color: colors.ink, marginTop: spacing.md },
   reportSummary: { ...typography.body, color: colors.inkMuted, marginTop: spacing.xs, lineHeight: 21 },
   reportChartCard: {
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xl,
+    marginBottom: 0,
+    borderRadius: 0,
+    borderTopWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.panel,
+    backgroundColor: 'transparent',
   },
   reportChartHeader: {
     flexDirection: 'row',
@@ -3749,7 +3873,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.pill,
-    backgroundColor: colors.successLight,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   reportWinCopy: { flex: 1, minWidth: 0 },
   reportWinTitle: { ...typography.bodyBold, color: colors.ink },
@@ -3776,6 +3901,7 @@ const styles = StyleSheet.create({
   reportPatternCopy: { flex: 1, minWidth: 0 },
   reportPatternTitle: { ...typography.bodyBold, color: colors.ink },
   reportPatternBody: { ...typography.body, color: colors.inkMuted, marginTop: 2 },
+  reportPatternEvidence: { ...typography.caption, color: colors.inkSubtle, marginTop: spacing.xs },
   reportFoodGroupList: { marginTop: spacing.md },
   reportFoodGroup: {
     paddingVertical: spacing.md,
@@ -3791,20 +3917,20 @@ const styles = StyleSheet.create({
   reportFoodGroupLabel: { ...typography.bodyBold, color: colors.ink, flex: 1 },
   reportFoodGroupStatus: {
     ...typography.caption,
-    color: colors.gold,
+    color: colors.inkMuted,
     textTransform: 'capitalize',
     fontWeight: '800',
   },
   reportFoodGroupStatusStrong: { color: colors.success },
   reportObservedFoods: { ...typography.label, color: colors.ink, marginTop: spacing.sm },
   reportFoodGroupInsight: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.xs },
-  reportInsightGrid: { gap: spacing.sm, marginBottom: spacing.md },
+  reportInsightGrid: { marginBottom: 0, borderTopWidth: 1, borderTopColor: colors.border },
   reportInsightCard: {
-    padding: spacing.md,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panel,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: 'transparent',
   },
   reportInsightIcon: {
     width: 36,
@@ -3813,9 +3939,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: spacing.md,
     borderRadius: radius.md,
-    backgroundColor: colors.panelRaised,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   reportInsightTitle: { fontSize: 18, lineHeight: 23, fontWeight: '800', color: colors.ink },
+  reportInsightSummary: { fontSize: 13, lineHeight: 18, color: colors.inkMuted, marginTop: spacing.xs, marginBottom: spacing.xs },
   reportInsightBody: { fontSize: 13, lineHeight: 18, color: colors.inkMuted, marginTop: spacing.xs },
   reportInsightSignal: { ...typography.caption, color: colors.gold, marginTop: spacing.sm },
   reportActionPlan: {
@@ -3856,16 +3984,13 @@ const styles = StyleSheet.create({
   },
   reportActionNumberText: { ...typography.caption, color: colors.ink, fontWeight: '900' },
   reportActionItemText: { fontSize: 14, lineHeight: 20, color: colors.ink, flex: 1 },
-  reportExperiment: {
-    marginTop: spacing.md,
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  reportExperimentLabel: { ...typography.overline, color: colors.goldMuted },
+  reportExperiment: { marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  reportExperimentCard: { padding: spacing.lg, marginBottom: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  reportExperimentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   reportExperimentCue: { ...typography.caption, color: colors.inkSubtle, marginTop: spacing.sm },
   reportExperimentAction: { ...typography.bodyBold, color: colors.ink, marginTop: 3 },
-  reportExperimentMeta: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.xs },
+  reportExperimentMetaList: { marginTop: spacing.sm, gap: spacing.xs },
+  reportExperimentMeta: { ...typography.caption, color: colors.inkMuted },
   reportTrainingAction: {
     ...typography.label,
     color: colors.ink,
@@ -3921,11 +4046,9 @@ const styles = StyleSheet.create({
   reportMealAdviceText: { ...typography.label, color: colors.ink, marginTop: spacing.xs },
   reportMealBuilder: {
     marginTop: spacing.lg,
-    padding: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.accentSurface,
-    backgroundColor: colors.bgTint,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   reportMealBuilderTitle: { ...typography.bodyBold, color: colors.gold, marginBottom: spacing.sm },
   reportMealBuilderRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: 5 },
@@ -3968,7 +4091,7 @@ const styles = StyleSheet.create({
   reportFactCopy: { flex: 1, minWidth: 0 },
   reportFactTitle: { ...typography.bodyBold, color: colors.ink },
   reportFactBody: { ...typography.body, color: colors.inkMuted, marginTop: 2 },
-  reportFactSource: { ...typography.caption, color: colors.gold, marginTop: spacing.sm },
+  reportFactSource: { ...typography.caption, color: colors.inkMuted, textDecorationLine: 'underline', marginTop: spacing.sm },
   reportCoachNote: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -3992,6 +4115,10 @@ const styles = StyleSheet.create({
   reportCoachCopy: { flex: 1, minWidth: 0 },
   reportCoachLabel: { ...typography.overline, color: colors.gold },
   reportCoachText: { ...typography.body, color: colors.ink, marginTop: spacing.xs },
+  reportQuestionList: { marginTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  reportQuestion: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: spacing.sm },
+  reportQuestionNumber: { width: 22, height: 22, textAlign: 'center', textAlignVertical: 'center', borderRadius: radius.pill, backgroundColor: colors.panelRaised, ...typography.caption, color: colors.gold, fontWeight: '900' },
+  reportQuestionText: { flex: 1, fontSize: 14, lineHeight: 20, color: colors.inkMuted },
   reportMethodNote: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -4244,6 +4371,26 @@ const styles = StyleSheet.create({
   slotValue: { ...typography.subtitle, color: colors.ink },
   slotMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
   slotTimeButton: { flexDirection: 'row', alignItems: 'center', gap: 5, minHeight: 24 },
+  inlineTimeEditor: {
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panel,
+  },
+  inlineTimeHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+  inlineTimeLabel: { ...typography.overline, color: colors.gold, letterSpacing: 1.1 },
+  inlineTimeHint: { ...typography.caption, color: colors.inkSubtle, marginTop: 1 },
+  inlineTimeClose: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.panelRaised },
+  inlineTimeControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 5, marginTop: spacing.md },
+  inlineTimeStep: { width: 32, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg },
+  inlineTimeValue: { minWidth: 24, fontSize: 18, lineHeight: 22, fontWeight: '800', color: colors.ink, textAlign: 'center' },
+  inlineTimeColon: { fontSize: 18, lineHeight: 22, fontWeight: '800', color: colors.inkMuted },
+  inlineTimePeriod: { flexDirection: 'row', padding: 2, borderRadius: radius.sm, backgroundColor: colors.bg },
+  inlineTimePeriodButton: { minWidth: 34, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 6 },
+  inlineTimePeriodButtonSelected: { backgroundColor: colors.primaryAction },
+  inlineTimePeriodText: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
+  inlineTimePeriodTextSelected: { color: colors.onPrimary },
   memoryAnswerStage: { minHeight: 164, gap: spacing.sm },
   memoryAnswerStageCompleted: { justifyContent: 'center' },
   textInput: {
@@ -4291,19 +4438,6 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   timeModalTitle: { ...typography.title, color: colors.ink },
-  timeInput: {
-    height: 54,
-    marginTop: spacing.lg,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.bg,
-    color: colors.ink,
-    ...typography.body,
-    fontWeight: '800',
-    textAlign: 'center',
-    paddingHorizontal: spacing.md,
-  },
   timeModalActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   timeCancelButton: {
     flex: 1,
@@ -4315,16 +4449,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   timeCancelText: { ...typography.bodyBold, color: colors.inkMuted },
-  timeDoneButton: {
-    flex: 1,
-    minHeight: 48,
-    borderRadius: radius.md,
-    backgroundColor: colors.primaryAction,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  timeDoneText: { ...typography.bodyBold, color: colors.onPrimary },
-
   // Save toast
   saveToast: {
     position: 'absolute',

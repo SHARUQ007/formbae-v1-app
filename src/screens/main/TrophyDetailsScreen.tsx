@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Modal, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
@@ -15,6 +15,7 @@ import {
   peekTrophyLeaderboardCached,
 } from '../../services/preloadService';
 import { acceptTrophyInvite, fetchTrophyInvite } from '../../services/progressService';
+import { subscribeToTrophySummary } from '../../services/trophyRealtime';
 import { useAuthStore } from '../../store/authStore';
 import type { ProgressSummary, TrophyLeaderboard } from '../../types/api';
 import { colors } from '../../theme/colors';
@@ -103,7 +104,7 @@ export function TrophyDetailsScreen({ navigation, route }: Props) {
   const initialData = warmBundle
     ? buildTrophyScreenData(warmBundle.progress, warmLeaderboard, warmName, 'Updating leaderboard…')
     : null;
-  const { data, loading, error, reload, refresh, refreshing } = useAsync<TrophyScreenData>(async (mode) => {
+  const { data, loading, error, reload, refresh, refreshing, setData } = useAsync<TrophyScreenData>(async (mode) => {
     // Start both independent requests together. Previously the leaderboard
     // waited for a forced progress refresh, doubling the visible wait.
     const force = mode === 'refresh';
@@ -124,6 +125,26 @@ export function TrophyDetailsScreen({ navigation, route }: Props) {
       : '';
     return buildTrophyScreenData(bundle.progress, leaderboard, preferredName, leaderboardError);
   }, [], { initialData });
+
+  useEffect(() => subscribeToTrophySummary((trophies) => {
+    setData((current) => {
+      if (!current) return current;
+      const updateRow = (row: TrophyLeaderboard['leaders'][number]) => row.isCurrentUser
+        ? { ...row, score: trophies.score }
+        : row;
+      return {
+        ...current,
+        progress: { ...current.progress, trophies },
+        leaderboard: {
+          ...current.leaderboard,
+          leaders: current.leaderboard.leaders.map(updateRow),
+          currentUser: current.leaderboard.currentUser
+            ? updateRow(current.leaderboard.currentUser)
+            : current.leaderboard.currentUser,
+        },
+      };
+    });
+  }), [setData]);
 
   const shareInvite = async () => {
     if (sharing) return;

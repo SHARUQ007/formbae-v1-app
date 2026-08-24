@@ -1,6 +1,7 @@
 import { ApiError, apiRequest } from './apiClient';
 import { invalidateCachedResource } from './appCache';
-import type { AiPlanRefresh, TodayPayload, UserPlanSummary, WorkoutDayDetail } from '../types/api';
+import { publishOrRefreshTrophySummary } from './trophyRealtime';
+import type { AiPlanRefresh, TodayPayload, TrophySummary, UserPlanSummary, WorkoutDayDetail } from '../types/api';
 import {ensureEquipmentFreeQuickWorkout} from '../utils/quickWorkout';
 
 export const PENDING_AI_PLAN_BUILD_KEY = 'formbae_pending_ai_plan_build';
@@ -107,13 +108,14 @@ export async function completeWorkoutAction(params: {
   workoutMode?: string;
   streakOnly?: boolean;
 }) {
-  const response = await apiRequest<{ ok: boolean; completed: boolean; date: string }>('/workouts/complete', {
+  const response = await apiRequest<{ ok: boolean; completed: boolean; date: string; trophies?: TrophySummary }>('/workouts/complete', {
     method: 'POST',
     body: params,
   });
   invalidateCachedResource('workoutPlan');
   invalidateCachedResource('workoutDay');
   invalidateCachedResource('progressBundle');
+  publishOrRefreshTrophySummary(response.trophies);
   return response;
 }
 

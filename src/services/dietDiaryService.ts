@@ -2,7 +2,9 @@ import type { Asset } from 'react-native-image-picker';
 import RNFS from 'react-native-fs';
 import { apiRequest, getDirectApiUrl } from './apiClient';
 import { invalidateCachedResource } from './appCache';
+import { publishOrRefreshTrophySummary } from './trophyRealtime';
 import type { MealType } from '../store/dietDiaryStore';
+import type { TrophySummary } from '../types/api';
 
 export type RemoteDietDiaryEntry = {
   entryId: string;
@@ -15,6 +17,8 @@ export type RemoteDietDiaryEntry = {
   imageMime: string;
   imageUrl: string;
 };
+
+type DietDiaryMutationResponse = { ok: boolean; entry: RemoteDietDiaryEntry; trophies?: TrophySummary };
 
 export type DietCoachFeedback = {
   schemaVersion?: number;
@@ -143,7 +147,7 @@ export async function uploadDietDiaryEntry(params: {
   }
   if (!imageBase64) throw new Error('The saved photo could not be read for upload.');
 
-  const response = await apiRequest<{ ok: boolean; entry: RemoteDietDiaryEntry }>('/diet/diary', {
+  const response = await apiRequest<DietDiaryMutationResponse>('/diet/diary', {
     method: 'POST',
     timeoutMs: 30000,
     body: {
@@ -157,6 +161,7 @@ export async function uploadDietDiaryEntry(params: {
   });
   invalidateCachedResource('dietDiary');
   invalidateCachedResource('progressBundle');
+  publishOrRefreshTrophySummary(response.trophies);
   return response;
 }
 
@@ -166,7 +171,7 @@ export async function uploadTextDietDiaryEntry(params: {
   note: string;
   createdAt: string;
 }) {
-  const response = await apiRequest<{ ok: boolean; entry: RemoteDietDiaryEntry }>('/diet/diary', {
+  const response = await apiRequest<DietDiaryMutationResponse>('/diet/diary', {
     method: 'POST',
     body: {
       clientId: params.clientId,
@@ -177,6 +182,7 @@ export async function uploadTextDietDiaryEntry(params: {
   });
   invalidateCachedResource('dietDiary');
   invalidateCachedResource('progressBundle');
+  publishOrRefreshTrophySummary(response.trophies);
   return response;
 }
 
@@ -185,12 +191,13 @@ export async function uploadSkippedDietMeal(params: {
   mealType: MealType;
   createdAt: string;
 }) {
-  const response = await apiRequest<{ ok: boolean; entry: RemoteDietDiaryEntry }>('/diet/diary', {
+  const response = await apiRequest<DietDiaryMutationResponse>('/diet/diary', {
     method: 'POST',
     body: { ...params, status: 'skipped' },
   });
   invalidateCachedResource('dietDiary');
   invalidateCachedResource('progressBundle');
+  publishOrRefreshTrophySummary(response.trophies);
   return response;
 }
 
@@ -198,7 +205,7 @@ export async function updateRemoteDietDiaryEntry(
   entryId: string,
   params: { mealType: MealType; note: string; createdAt?: string },
 ) {
-  const response = await apiRequest<{ ok: boolean; entry: RemoteDietDiaryEntry }>(
+  const response = await apiRequest<DietDiaryMutationResponse>(
     `/diet/diary/${encodeURIComponent(entryId)}`,
     {
       method: 'PATCH',
@@ -207,13 +214,15 @@ export async function updateRemoteDietDiaryEntry(
   );
   invalidateCachedResource('dietDiary');
   invalidateCachedResource('progressBundle');
+  publishOrRefreshTrophySummary(response.trophies);
   return response;
 }
 
 export async function deleteRemoteDietDiaryEntry(entryId: string) {
-  const response = await apiRequest<{ ok: boolean }>(`/diet/diary/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
+  const response = await apiRequest<{ ok: boolean; trophies?: TrophySummary }>(`/diet/diary/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
   invalidateCachedResource('dietDiary');
   invalidateCachedResource('progressBundle');
+  publishOrRefreshTrophySummary(response.trophies);
   return response;
 }
 

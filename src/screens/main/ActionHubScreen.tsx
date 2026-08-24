@@ -22,6 +22,7 @@ import {
 } from '../../services/accountabilityService';
 import { cancelAccountabilityReminder, scheduleAccountabilityReminder } from '../../services/notificationService';
 import { loadProgressBundleCached, peekProgressBundleCached } from '../../services/preloadService';
+import { subscribeToTrophySummary } from '../../services/trophyRealtime';
 import type { AccountabilityBaeSummary, AccountabilitySummary, TrophySummary } from '../../types/api';
 import {
   currentMealType,
@@ -70,6 +71,8 @@ export function ActionHubScreen({ navigation }: Props) {
   const [accountabilityUnavailable, setAccountabilityUnavailable] = useState(false);
   const [baeUnavailable, setBaeUnavailable] = useState(false);
   const autoCompletedDate = useRef('');
+
+  useEffect(() => subscribeToTrophySummary(setTrophies), []);
 
   const applyBaeSummary = useCallback((next: AccountabilityBaeSummary) => {
     setAccountabilityBae(next);
