@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Image, ScrollView, Text, View, StyleSheet, useWindowDimensions } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
@@ -9,8 +9,8 @@ import { Badge } from '../../components/Badge';
 import { ErrorState, LoadingState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { fetchRecommendedTrainer } from '../../services/trainerService';
-import { getSiteUrl } from '../../constants/config';
 import type { OnboardingStackParamList } from '../../navigation/types';
+import { getCoachArtworkSource } from '../../utils/coachArtwork';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
 import { spacing } from '../../theme/spacing';
@@ -18,21 +18,16 @@ import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'TrainerMatch'>;
 
-function resolveTrainerPhoto(value?: string) {
-  const url = String(value || '').trim();
-  if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
-  if (url.startsWith('/')) return `${getSiteUrl()}${url}`;
-  return url;
-}
-
 export function TrainerMatchScreen({ navigation }: Props) {
   const { fontScale } = useWindowDimensions();
   const { data, loading, error, reload } = useAsync(() => fetchRecommendedTrainer());
   const trainer = data?.trainer ?? null;
   const [photoFailed, setPhotoFailed] = useState(false);
-  const trainerPhoto = resolveTrainerPhoto(trainer?.photoUrl);
   const trainerName = String(trainer?.name || '').trim() || 'Your coach';
+  const trainerPhoto = useMemo(
+    () => getCoachArtworkSource({ name: trainerName, photoUrl: trainer?.photoUrl }),
+    [trainer?.photoUrl, trainerName],
+  );
   const coachType = String(trainer?.coachType || '').trim() || 'FormBae trainer';
   const description = String(trainer?.description || '').trim();
   const whyThisMatch = String(trainer?.why || '').trim();
@@ -68,7 +63,7 @@ export function TrainerMatchScreen({ navigation }: Props) {
           <View style={[styles.visual, largeText && styles.visualLargeText]}>
             {trainerPhoto && !photoFailed ? (
               <Image
-                source={{ uri: trainerPhoto }}
+                source={trainerPhoto}
                 style={styles.photo}
                 resizeMode="cover"
                 onError={() => setPhotoFailed(true)}

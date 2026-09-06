@@ -2,17 +2,21 @@ import { DarkTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useRef } from 'react';
 import { SplashScreen } from '../screens/auth/SplashScreen';
-import { AuthNavigator } from './AuthNavigator';
-import { OnboardingNavigator } from './OnboardingNavigator';
-import { PaidTransitionNavigator } from './PaidTransitionNavigator';
-import { MainSubscriptionScreen } from './MainSubscriptionScreen';
-import { SubscriptionRenewalScreen } from '../screens/paid/SubscriptionRenewalScreen';
 import { useAuthStore } from '../store/authStore';
 import { trackMobileActivity } from '../services/activityService';
 import type { RootStackParamList } from './types';
 import { colors } from '../theme/colors';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+// Splash is the only route required for the first frame. Resolve every other
+// flow on demand so onboarding, payment, and the main tabs do not execute
+// during cold start.
+const getAuthNavigator = () => require('./AuthNavigator').AuthNavigator;
+const getOnboardingNavigator = () => require('./OnboardingNavigator').OnboardingNavigator;
+const getPaidTransitionNavigator = () => require('./PaidTransitionNavigator').PaidTransitionNavigator;
+const getMainSubscriptionScreen = () => require('./MainSubscriptionScreen').MainSubscriptionScreen;
+const getSubscriptionRenewalScreen = () => require('../screens/paid/SubscriptionRenewalScreen').SubscriptionRenewalScreen;
 
 const navigationTheme = {
   ...DarkTheme,
@@ -87,11 +91,11 @@ export function RootNavigator() {
     >
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Splash" component={SplashScreen} />
-        <Stack.Screen name="Auth" component={AuthNavigator} />
-        <Stack.Screen name="Onboarding" component={OnboardingNavigator} />
-        <Stack.Screen name="PaidTransition" component={PaidTransitionNavigator} />
-        <Stack.Screen name="Main" component={MainSubscriptionScreen} />
-        <Stack.Screen name="Renewal" component={SubscriptionRenewalScreen} />
+        <Stack.Screen name="Auth" getComponent={getAuthNavigator} />
+        <Stack.Screen name="Onboarding" getComponent={getOnboardingNavigator} />
+        <Stack.Screen name="PaidTransition" getComponent={getPaidTransitionNavigator} />
+        <Stack.Screen name="Main" getComponent={getMainSubscriptionScreen} options={{ animation: 'fade' }} />
+        <Stack.Screen name="Renewal" getComponent={getSubscriptionRenewalScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

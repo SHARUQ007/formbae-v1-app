@@ -51,7 +51,13 @@ export type CoachScreenParams = {
 };
 
 export type WorkoutStackParamList = {
-  WorkoutList: undefined;
+  WorkoutList: {
+    pendingPlanBuild?: {
+      planId: string;
+      trainerName: string;
+      requestedAt: number;
+    };
+  } | undefined;
   Coach: CoachScreenParams | undefined;
   PlanRefresh: { retryFailedBuild?: boolean } | undefined;
   WorkoutSummary: { planDayId: string; title: string; mode?: 'standard' | 'quick'; initialDetail?: WorkoutDayDetail };

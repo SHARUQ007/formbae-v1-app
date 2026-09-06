@@ -21,12 +21,23 @@ function hashSession(value: string) {
   return hash.toString(36);
 }
 
-export function getCacheSessionId(token: string | null | undefined) {
-  return token ? `user-${hashSession(token)}` : 'signed-out';
+export function getCacheSessionId(token: string | null | undefined, userId?: string | null) {
+  const stableIdentity = String(userId || '').trim();
+  const identity = stableIdentity || token;
+  return identity ? `user-${hashSession(identity)}` : 'signed-out';
 }
 
-export function setCacheSession(token: string | null | undefined) {
-  cacheSession = getCacheSessionId(token);
+export function setCacheSession(token: string | null | undefined, userId?: string | null) {
+  cacheSession = getCacheSessionId(token, userId);
+}
+
+/**
+ * Identifies the cache namespace currently in use without exposing the token.
+ * Startup warm-up uses this to ensure a new login can never inherit another
+ * user's in-flight preload.
+ */
+export function getActiveCacheSessionId() {
+  return cacheSession;
 }
 
 function scopedKey(key: string, session = cacheSession) {

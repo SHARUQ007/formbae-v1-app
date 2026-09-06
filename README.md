@@ -179,7 +179,7 @@ Key compliance facts:
 
 ## Remaining TODOs
 
-- [ ] Generate final app icon + splash sets from the FormBae logo (placeholders in place)
+- [x] Use the canonical FormBae app icon across native launchers, splash screens, and in-app branding
 - [ ] Add a public web account-deletion URL for the Play data-safety form
 - [ ] Add Firebase config files to activate remote push (infra + code already wired)
 - [ ] Confirm payment classification with store reviewers (web-first fallback ready if required)

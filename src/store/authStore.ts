@@ -15,10 +15,12 @@ function statusCacheKey(token: string) {
   return `${STATUS_CACHE_PREFIX}${getCacheSessionId(token)}`;
 }
 
-function runPostAuthInit() {
+function runPostAuthInit(status: UserStatus) {
   // Fire-and-forget; never blocks or breaks the UI.
   flushWorkoutQueue().catch(() => undefined);
-  preloadMainAppData();
+  // Main-app endpoints are expensive and irrelevant to onboarding/payment
+  // routes. Splash coordinates this same session-scoped preload for home.
+  if (status.recommendedNextScreen === 'home') preloadMainAppData();
   registerForRemotePush().catch(() => undefined);
   syncReminders({
     workoutReminders: true,
@@ -104,11 +106,11 @@ export function useAuthStore() {
         return;
       }
       setCacheSession(token);
-      preloadMainAppData();
       const cachedStatus = await loadCachedStatus(token);
       if (cachedStatus) {
+        setCacheSession(token, cachedStatus.userId);
         setState({ ready: true, token, status: cachedStatus, loading: false });
-        runPostAuthInit();
+        runPostAuthInit(cachedStatus);
         fetchUserStatus()
           .then((freshStatus) => {
             saveCachedStatus(token, freshStatus);
@@ -118,9 +120,10 @@ export function useAuthStore() {
         return;
       }
       const status = await fetchUserStatus();
+      setCacheSession(token, status.userId);
       saveCachedStatus(token, status);
       setState({ ready: true, token, status, loading: false });
-      runPostAuthInit();
+      runPostAuthInit(status);
     } catch {
       await logoutRequest();
       invalidateCachedResource();
@@ -134,7 +137,7 @@ export function useAuthStore() {
     setState({ loading: true, error: null });
     try {
       const response = await loginRequest(mobile, name, createIfMissing);
-      setCacheSession(response.token);
+      setCacheSession(response.token, response.user.userId);
       setState({
         ready: true,
         token: response.token,
@@ -143,7 +146,7 @@ export function useAuthStore() {
         loading: false,
       });
       saveCachedStatus(response.token, response.status);
-      runPostAuthInit();
+      runPostAuthInit(response.status);
       return response;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Login failed';
@@ -154,6 +157,7 @@ export function useAuthStore() {
 
   const refreshStatus = useCallback(async () => {
     const status = await fetchUserStatus();
+    if (state.token) setCacheSession(state.token, status.userId);
     if (state.token) saveCachedStatus(state.token, status);
     setState({ status });
     return status;

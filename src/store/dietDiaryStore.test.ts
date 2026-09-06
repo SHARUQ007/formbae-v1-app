@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { setCacheSession } from '../services/appCache';
 import {
   addTextDietDiaryEntry,
   addSkippedDietDiaryEntry,
@@ -10,7 +11,12 @@ import {
 
 describe('diet diary persistence', () => {
   beforeEach(async () => {
+    setCacheSession(null);
     await AsyncStorage.clear();
+  });
+
+  afterEach(() => {
+    setCacheSession(null);
   });
 
   it('keeps multiple foods logged for the same meal and timestamp', async () => {
@@ -85,6 +91,25 @@ describe('diet diary persistence', () => {
 
     await expect(loadRememberedMealTimes()).resolves.toEqual({
       Dinner: { hour: 19, minute: 15 },
+    });
+  });
+
+  it('keeps local entries isolated when accounts change', async () => {
+    setCacheSession('token-a', 'user-a');
+    await addTextDietDiaryEntry('Breakfast', 'Oats');
+    await rememberMealTime('Breakfast', new Date(2026, 7, 23, 8, 15));
+
+    setCacheSession('token-b', 'user-b');
+    await expect(loadDietDiaryEntries()).resolves.toEqual([]);
+    await expect(loadRememberedMealTimes()).resolves.toEqual({});
+
+    await addTextDietDiaryEntry('Dinner', 'Rice');
+    setCacheSession('new-token-a', 'user-a');
+    await expect(loadDietDiaryEntries()).resolves.toEqual([
+      expect.objectContaining({ mealType: 'Breakfast', note: 'Oats' }),
+    ]);
+    await expect(loadRememberedMealTimes()).resolves.toEqual({
+      Breakfast: { hour: 8, minute: 15 },
     });
   });
 });

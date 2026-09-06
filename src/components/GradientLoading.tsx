@@ -22,7 +22,7 @@ export function GradientLoading({
       contentContainerStyle={[styles.container, { paddingTop: insets.top + spacing.xl, paddingBottom: insets.bottom + spacing.xl }]}
       showsVerticalScrollIndicator={false}
     >
-      {showBrand ? <LogoMark size={84} /> : null}
+      {showBrand ? <LogoMark size={72} /> : null}
       <Text style={styles.title}>{title}</Text>
       {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       <MotionAnimation kind="loading" size={64} style={styles.progress} />

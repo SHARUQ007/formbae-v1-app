@@ -18,7 +18,6 @@ import { FormInput } from '../../components/FormInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { loadWorkoutPlanCached } from '../../services/preloadService';
 import { PENDING_AI_PLAN_BUILD_KEY, requestAiPlanRefresh } from '../../services/workoutService';
-import { markReadyPlanSeen } from '../../services/planRevealService';
 import { ApiError } from '../../services/apiClient';
 import type { AiPlanRefresh, PlanDay } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
@@ -45,6 +44,11 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'PlanRefresh'>;
 const PLAN_REFRESH_DRAFT_PREFIX = 'plan-refresh-draft:';
 const CHECK_IN_LOAD_TIMEOUT_MS = 18000;
 type PlanRefreshPhase = 'form' | 'building' | 'success';
+type PendingPlanBuild = {
+  planId: string;
+  trainerName: string;
+  requestedAt: number;
+};
 
 export function resolvePlanRefreshPhase(refresh: AiPlanRefresh | null): PlanRefreshPhase {
   const buildStatus = refresh?.build?.status;
@@ -88,6 +92,7 @@ export function PlanRefreshScreen({ navigation, route }: Props) {
   const [saving, setSaving] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const [phase, setPhase] = useState<PlanRefreshPhase>('form');
+  const [pendingBuild, setPendingBuild] = useState<PendingPlanBuild | null>(null);
 
   useLayoutEffect(() => {
     navigation.getParent()?.setOptions({ tabBarStyle: hiddenTabBarStyle });
@@ -107,12 +112,18 @@ export function PlanRefreshScreen({ navigation, route }: Props) {
       setAiPlanRefresh(refresh);
       const nextPhase = resolvePlanRefreshPhase(refresh);
       if (nextPhase === 'building') {
+        const serverRequestedAt = Date.parse(refresh?.build?.requestedAt || '');
+        setPendingBuild({
+          planId: refresh?.build?.planId || refresh?.planId || '',
+          trainerName: refresh?.trainerName || 'Ava',
+          requestedAt: Number.isFinite(serverRequestedAt) ? serverRequestedAt : Date.now(),
+        });
         setPhase('building');
       } else if (nextPhase === 'success' && refresh?.build?.newPlanId) {
-        await markReadyPlanSeen(refresh.build.newPlanId).catch(() => undefined);
         allowExitRef.current = true;
         setPhase('success');
       } else {
+        setPendingBuild(null);
         setPhase('form');
       }
       if (!options?.silent) {
@@ -170,6 +181,11 @@ export function PlanRefreshScreen({ navigation, route }: Props) {
 
   const hasAnswers = useMemo(() => Object.values(answers).some((value) => value.trim().length > 0), [answers]);
 
+  const returnToWorkouts = useCallback(() => {
+    allowExitRef.current = true;
+    navigation.popTo('WorkoutList', pendingBuild ? { pendingPlanBuild: pendingBuild } : undefined);
+  }, [navigation, pendingBuild]);
+
   useEffect(() => {
     if (!draftReady || !aiPlanRefresh?.planId || phase !== 'form') return;
     AsyncStorage.setItem(
@@ -179,10 +195,10 @@ export function PlanRefreshScreen({ navigation, route }: Props) {
   }, [aiPlanRefresh?.planId, answers, draftReady, phase, step]);
 
   useEffect(() => {
-    if (phase !== 'building' && phase !== 'success') return;
+    if (phase !== 'success') return;
     allowExitRef.current = true;
-    navigation.popToTop();
-  }, [navigation, phase]);
+    navigation.popTo('WorkoutList', pendingBuild ? { pendingPlanBuild: pendingBuild } : undefined);
+  }, [navigation, pendingBuild, phase]);
 
   useEffect(() => navigation.addListener('beforeRemove', (event) => {
     if (allowExitRef.current || phase === 'success' || phase === 'building' || (phase === 'form' && !hasAnswers)) return;
@@ -226,15 +242,23 @@ export function PlanRefreshScreen({ navigation, route }: Props) {
     submittingRef.current = true;
     setSaving(true);
     allowExitRef.current = true;
-    const pendingBuild = {
+    const pendingBuildRequest = {
       planId: aiPlanRefresh.planId,
       trainerName: aiPlanRefresh.trainerName || 'Ava',
       requestedAt: Date.now(),
     };
     try {
-      await AsyncStorage.setItem(PENDING_AI_PLAN_BUILD_KEY, JSON.stringify(pendingBuild)).catch(() => undefined);
-      // The workout root owns the full-screen Ava Plan Tunnel. Persist its pending
-      // marker before navigating so the dashboard can never flash between screens.
+      await AsyncStorage.setItem(PENDING_AI_PLAN_BUILD_KEY, JSON.stringify(pendingBuildRequest)).catch(() => undefined);
+      setPendingBuild(pendingBuildRequest);
+      setAiPlanRefresh((current) => current ? {
+        ...current,
+        due: false,
+        build: {
+          status: 'building',
+          planId: pendingBuildRequest.planId,
+          requestedAt: new Date(pendingBuildRequest.requestedAt).toISOString(),
+        },
+      } : current);
       setPhase('building');
       const result = await requestAiPlanRefresh({
         planId: aiPlanRefresh.planId,
@@ -242,17 +266,22 @@ export function PlanRefreshScreen({ navigation, route }: Props) {
       });
       await AsyncStorage.removeItem(`${PLAN_REFRESH_DRAFT_PREFIX}${aiPlanRefresh.planId}`).catch(() => undefined);
       if (result.status === 'completed' || result.newPlanId) {
-        await AsyncStorage.removeItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => undefined);
+        const latest = await loadWorkoutPlanCached({ force: true }).catch(() => null);
+        const terminalStatus = latest?.aiPlanRefresh?.build?.status;
+        if (terminalStatus === 'completed' || terminalStatus === 'failed') {
+          await AsyncStorage.removeItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => undefined);
+        }
         setPhase('success');
+        return;
       }
       await loadWorkoutPlanCached({ force: true }).catch(() => undefined);
     } catch (error) {
-      await AsyncStorage.removeItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => undefined);
       if (error instanceof ApiError && error.status === 409 && error.message === 'plan_build_in_progress') {
         setPhase('building');
         return;
       }
       if (error instanceof ApiError && error.status === 409) {
+        await AsyncStorage.removeItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => undefined);
         await AsyncStorage.removeItem(`${PLAN_REFRESH_DRAFT_PREFIX}${aiPlanRefresh.planId}`).catch(() => undefined);
         allowExitRef.current = true;
         setPhase('form');
@@ -269,9 +298,17 @@ export function PlanRefreshScreen({ navigation, route }: Props) {
         return;
       }
       if (latestRefresh?.build?.status === 'completed' && latestRefresh.build.newPlanId) {
-        await markReadyPlanSeen(latestRefresh.build.newPlanId).catch(() => undefined);
+        await AsyncStorage.removeItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => undefined);
         setPhase('success');
         allowExitRef.current = true;
+        return;
+      }
+      if (latestRefresh?.build?.status === 'failed') {
+        await AsyncStorage.removeItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => undefined);
+      } else {
+        // A timeout or connection loss does not mean the server stopped. Keep the
+        // local build marker authoritative until polling observes a terminal state.
+        setPhase('building');
         return;
       }
       setPhase('form');
@@ -310,6 +347,16 @@ export function PlanRefreshScreen({ navigation, route }: Props) {
         message={loadError || 'This check-in is no longer available. Your current plan may already be up to date.'}
         onBack={() => navigation.goBack()}
         onRetry={() => load({ force: true })}
+      />
+    );
+  }
+
+  if (phase === 'building') {
+    return (
+      <CheckInBuilding
+        topInset={insets.top}
+        trainerName={aiPlanRefresh.trainerName || pendingBuild?.trainerName || 'Ava'}
+        onBack={returnToWorkouts}
       />
     );
   }
@@ -496,6 +543,28 @@ function CheckInLoading({ topInset, onBack }: { topInset: number; onBack: () => 
   );
 }
 
+function CheckInBuilding({ topInset, trainerName, onBack }: { topInset: number; trainerName: string; onBack: () => void }) {
+  return (
+    <View style={styles.stateScreen}>
+      <ScreenHeader topInset={topInset} onBack={onBack} />
+      <View style={styles.centeredStateBody}>
+        <View style={styles.buildingSavedIcon}><Feather name="check" size={30} color={colors.onPrimary} /></View>
+        <Text style={styles.buildingKicker}>Check-in saved</Text>
+        <Text style={styles.stateTitle}>{trainerName} is building your next plan</Text>
+        <Text style={styles.stateDetail}>Your answers are safely with your coach. You can return to workouts while the plan takes shape.</Text>
+        <View style={styles.buildingStatusCard}>
+          <ActivityIndicator size="small" color={colors.gold} />
+          <View style={styles.buildingStatusCopy}>
+            <Text style={styles.buildingStatusTitle}>Designing your next two weeks</Text>
+            <Text style={styles.buildingStatusDetail}>Usually ready in about 2 minutes</Text>
+          </View>
+        </View>
+        <PrimaryButton title="Back to workouts" icon="arrow-left" onPress={onBack} style={styles.stateButton} />
+      </View>
+    </View>
+  );
+}
+
 function CheckInError({ topInset, message, onBack, onRetry }: { topInset: number; message: string; onBack: () => void; onRetry: () => void }) {
   return (
     <View style={styles.stateScreen}>
@@ -640,6 +709,12 @@ const styles = StyleSheet.create({
   stateBody: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.xl, alignItems: 'center' },
   centeredStateBody: { flex: 1, paddingHorizontal: spacing.xl, paddingBottom: spacing.xxl, alignItems: 'center', justifyContent: 'center' },
   loadingOrb: { width: 56, height: 56, borderRadius: radius.pill, backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg },
+  buildingSavedIcon: { width: 72, height: 72, borderRadius: radius.pill, backgroundColor: colors.primaryAction, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.md },
+  buildingKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: spacing.sm },
+  buildingStatusCard: { alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panelRaised, padding: spacing.lg },
+  buildingStatusCopy: { flex: 1, minWidth: 0 },
+  buildingStatusTitle: { ...typography.bodyBold, color: colors.ink },
+  buildingStatusDetail: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   stateIcon: { width: 72, height: 72, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', marginBottom: spacing.lg },
   errorIcon: { backgroundColor: colors.errorLight, borderWidth: 1, borderColor: 'rgba(255,129,140,0.3)' },
   currentIcon: { backgroundColor: colors.primaryAction },

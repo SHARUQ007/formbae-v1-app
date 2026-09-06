@@ -22,7 +22,7 @@
 - Live legal pages: `/privacy-policy`, `/terms-of-use`, `/refund-policy`, `/support`.
 
 ## Android release build
-1. `cd App && npm install`
+1. `cd app && npm ci`
 2. Set `.env` (production `BACKEND_API_BASE_URL`, `SITE_URL`).
 3. Create/keep an upload keystore; configure signing in `android/app/build.gradle` (`signingConfigs.release`) via `~/.gradle/gradle.properties` (never commit the keystore).
 4. `cd android && ./gradlew clean bundleRelease` → `app/build/outputs/bundle/release/app-release.aab`.
@@ -38,9 +38,9 @@
 6. Fill App Privacy (Nutrition labels) using `docs/store-compliance.md` §1.
 
 ## Icons & splash
-- App icon: replace placeholder mipmaps (`android/app/src/main/res/mipmap-*`) and iOS `Images.xcassets/AppIcon` with the FormBae logo set.
-- Splash: configure a branded launch screen (iOS `LaunchScreen`, Android splash). Source asset: `src/assets/logo.png`.
-- TODO: generate full icon sets from the FormBae logo before submission.
+- App icon: the canonical artwork lives at `ios/FormBae/Images.xcassets/AppIcon.appiconset/AppIcon-1024.png`.
+- In-app branding uses the runtime-sized derivative at `src/assets/app-icon.png`; Android uses the full-resolution copy at `android/app/src/main/res/drawable-nodpi/formbae_app_icon.png`. Both preserve the canonical artwork.
+- The native launch screen and React loading screens use this same icon.
 
 ## Pre-submission QA (test all flows)
 - [ ] New user: Welcome → Login/Signup → Questionnaire → Analysis → Trainer match → Payment
@@ -59,7 +59,7 @@
 
 ## Store compliance gates
 - [ ] No Expo packages (`grep -i expo package.json` → none)
-- [ ] Only INTERNET / POST_NOTIFICATIONS / VIBRATE permissions on Android
+- [ ] Only INTERNET / POST_NOTIFICATIONS / VIBRATE / CAMERA permissions on Android; camera access is requested only when adding a food photo
 - [ ] Privacy Policy + Terms links working in-app
 - [ ] Account deletion present in-app + web deletion URL for Play
 - [ ] Payment classification confirmed / documented (compliance §6)

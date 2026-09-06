@@ -1,5 +1,5 @@
-import { loadWorkoutPlanCached } from '../services/preloadService';
-import { loadDietDiaryEntries, type MealType } from '../store/dietDiaryStore';
+import { loadWorkoutPlanCached, peekWorkoutPlanCached } from '../services/preloadService';
+import { loadDietDiaryEntries, peekDietDiaryEntries, type MealType } from '../store/dietDiaryStore';
 import type { PlanDay, TodayPayload } from '../types/api';
 import { mealForCurrentTime } from './dietDiaryTime';
 
@@ -82,6 +82,18 @@ export function resolveTargetFromSnapshot(snapshot: Omit<ContextualSnapshot, 'ta
     detail: 'Progress',
     icon: 'smile',
   };
+}
+
+/**
+ * Builds the Action tab's first frame entirely from warmed synchronous data.
+ * A cached empty diary is valid data, so null is the only cold state.
+ */
+export function peekContextualSnapshot(): ContextualSnapshot | null {
+  const workoutData = peekWorkoutPlanCached();
+  const dietEntries = peekDietDiaryEntries();
+  if (!workoutData && dietEntries === null) return null;
+  const base = { workoutData, dietEntries: dietEntries ?? [] };
+  return { ...base, target: resolveTargetFromSnapshot(base) };
 }
 
 export async function resolveContextualSnapshot(): Promise<ContextualSnapshot> {

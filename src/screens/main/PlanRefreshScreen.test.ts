@@ -30,6 +30,7 @@ describe('resolvePlanRefreshPhase', () => {
 
   it('keeps active builds and newly completed builds in their dedicated flows', () => {
     expect(resolvePlanRefreshPhase(refreshState({ build: { status: 'building' } }))).toBe('building');
+    expect(resolvePlanRefreshPhase(refreshState({ due: false, build: { status: 'requested' } }))).toBe('building');
     expect(resolvePlanRefreshPhase(refreshState({
       due: false,
       build: { status: 'completed', newPlanId: 'new-plan' },

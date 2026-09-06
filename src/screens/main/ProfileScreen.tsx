@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Alert, Image, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
@@ -14,6 +15,7 @@ import { cancelMobileSubscription, fetchSettings, updateSettings, type MobileSet
 import { syncReminders } from '../../services/notificationService';
 import { CACHE_KEYS, loadProfileSettingsCached } from '../../services/preloadService';
 import { titleCase } from '../../utils/format';
+import { getBodyProfileArtwork, getPlanProfileArtwork } from '../../utils/profileArtwork';
 import { useAuthStore } from '../../store/authStore';
 import type { ProfileStackParamList, RootStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
@@ -45,7 +47,10 @@ function parseLanguages(raw?: string) {
     const parsed = JSON.parse(raw) as unknown;
     if (Array.isArray(parsed)) return parsed.map((entry) => String(entry).trim()).filter(Boolean);
   } catch {
-    return raw.split(',').map((entry) => entry.trim()).filter(Boolean);
+    return raw
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
   }
   return [];
 }
@@ -66,13 +71,11 @@ function formatAccessWindow(access: NonNullable<Awaited<ReturnType<typeof fetchS
   return 'No active paid access';
 }
 
-function compactValue(value?: string) {
-  const trimmed = String(value || '').trim();
-  return trimmed.length ? trimmed : 'Not set';
-}
-
 function isPlaceholderName(value?: string) {
-  const normalized = String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const normalized = String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
   return !normalized || normalized === 'trainee' || normalized === 'formbae trainee' || normalized === 'user' || normalized === 'formbae user';
 }
 
@@ -86,9 +89,11 @@ function firstRealName(...values: Array<string | undefined | null>) {
 
 export function ProfileScreen({ navigation }: Props) {
   const tabBarHeight = useBottomTabBarHeight();
+  const { width: viewportWidth, fontScale } = useWindowDimensions();
   const { logout, status } = useAuthStore();
   const cached = useMemo(() => peekCachedResource<MobileSettingsResponse>(CACHE_KEYS.profileSettings), []);
   const [cancelling, setCancelling] = useState(false);
+  const hasFocusedRef = useRef(false);
   const [notifications, setNotifications] = useState<NotificationPrefs>(
     cached?.notifications ?? {
       workoutReminders: true,
@@ -98,13 +103,23 @@ export function ProfileScreen({ navigation }: Props) {
   );
 
   const { data, loading, error, reload, refresh, refreshing } = useAsync<MobileSettingsResponse>(async (mode) => {
-    const settings = await loadProfileSettingsCached({ force: mode === 'refresh' });
+    const settings = await loadProfileSettingsCached({
+      force: mode === 'refresh',
+    });
     setNotifications(settings.notifications);
     syncReminders(settings.notifications).catch(() => undefined);
     return settings;
   });
 
   const current = data || cached;
+
+  useFocusEffect(useCallback(() => {
+    if (!hasFocusedRef.current) {
+      hasFocusedRef.current = true;
+      return;
+    }
+    reload().catch(() => undefined);
+  }, [reload]));
 
   const toggle = async (key: keyof NotificationPrefs, value: boolean) => {
     const previous = notifications;
@@ -149,55 +164,70 @@ export function ProfileScreen({ navigation }: Props) {
   const planName = typeof access.planName === 'string' ? access.planName : '';
   const displayName = firstRealName(current?.user?.name, profile.name, lifestyle.name, lifestyle.fullName, lifestyle.firstName, status?.name);
   const displayContact = current?.user?.mobile || status?.phone || status?.email || '';
+  const firstName = isPlaceholderName(displayName) ? 'you' : displayName.split(/\s+/)[0] || 'you';
+  const editProfile = () => navigation.navigate('EditProfile');
   const openRenewal = () => navigation.getParent()?.getParent<NativeStackNavigationProp<RootStackParamList>>()?.navigate('Renewal');
 
-  const planRows = [
-    { icon: 'target', label: 'Goal', value: titleCase(profile.fitnessGoal) },
-    { icon: 'calendar', label: 'Training', value: profile.trainingDays ? `${profile.trainingDays}/week` : '' },
-    { icon: 'map-pin', label: 'Workout', value: workoutSetting },
-    { icon: 'coffee', label: 'Diet', value: titleCase(profile.dietPref) },
-  ];
+  const bodyMetrics = [
+    { label: 'Age', value: profile.age ? `${profile.age} yrs` : '' },
+    { label: 'Height', value: profile.height ? `${profile.height} cm` : '' },
+    { label: 'Weight', value: profile.weight ? `${profile.weight} kg` : '' },
+    { label: 'Gender', value: titleCase(profile.gender) },
+  ].filter((item) => Boolean(item.value));
 
-  const bodyRows = [
-    { icon: 'user', label: 'Age', value: profile.age },
-    { icon: 'maximize-2', label: 'Height', value: profile.height ? `${profile.height} cm` : '' },
-    { icon: 'activity', label: 'Weight', value: profile.weight ? `${profile.weight} kg` : '' },
-    { icon: 'users', label: 'Gender', value: titleCase(profile.gender) },
-    ...(languages.length ? [{ icon: 'message-circle', label: 'Languages', value: languages.join(', ') }] : []),
-    ...(profile.allergies ? [{ icon: 'file-text', label: 'Notes', value: profile.allergies }] : []),
-  ];
+  const measurementMetrics = [
+    { label: 'Chest', value: profile.chest ? `${profile.chest} cm` : '' },
+    { label: 'Waist', value: profile.waist ? `${profile.waist} cm` : '' },
+    { label: 'Biceps', value: profile.biceps ? `${profile.biceps} cm` : '' },
+  ].filter((item) => Boolean(item.value));
+
+  const planGoal = titleCase(profile.fitnessGoal) || 'Set your direction';
+  const planFacts = [
+    {
+      label: 'Training',
+      value: profile.trainingDays ? `${profile.trainingDays} days / week` : '',
+    },
+    { label: 'Setting', value: workoutSetting },
+    { label: 'Food style', value: titleCase(profile.dietPref) },
+  ].filter((item) => Boolean(item.value));
+  const bodyArtwork = getBodyProfileArtwork(profile.gender);
+  const planArtwork = getPlanProfileArtwork(profile.gender);
+  const compactProfile = viewportWidth < 380 || fontScale >= 1.18;
+  const largeText = fontScale >= 1.18;
+  const availableArtworkWidth = Math.max(280, viewportWidth - spacing.lg * 2);
+  const artworkHeight = Math.round(
+    Math.max(184, Math.min(210, availableArtworkWidth / 1.9)) + (largeText ? 24 : 0),
+  );
 
   const confirmCancel = () => {
-    Alert.alert(
-      'Cancel subscription?',
-      'Cancelling removes app access immediately. Refund review is handled separately by email within the eligible 5-day window.',
-      [
-        { text: 'Keep access', style: 'cancel' },
-        {
-          text: 'Cancel subscription',
-          style: 'destructive',
-          onPress: async () => {
-            setCancelling(true);
-            try {
-              const result = await cancelMobileSubscription();
-              await loadProfileSettingsCached({ force: true }).catch(() => undefined);
-              await reload();
-              Alert.alert('Subscription cancelled', result.message);
-            } catch (e) {
-              Alert.alert('Could not cancel', e instanceof Error ? e.message : 'Please try again.');
-            } finally {
-              setCancelling(false);
-            }
-          },
+    Alert.alert('Cancel subscription?', 'Cancelling removes app access immediately. Refund review is handled separately by email within the eligible 5-day window.', [
+      { text: 'Keep access', style: 'cancel' },
+      {
+        text: 'Cancel subscription',
+        style: 'destructive',
+        onPress: async () => {
+          setCancelling(true);
+          try {
+            const result = await cancelMobileSubscription();
+            await loadProfileSettingsCached({ force: true }).catch(() => undefined);
+            await reload();
+            Alert.alert('Subscription cancelled', result.message);
+          } catch (e) {
+            Alert.alert('Could not cancel', e instanceof Error ? e.message : 'Please try again.');
+          } finally {
+            setCancelling(false);
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   return (
     <ScreenContainer>
       <ScrollView
+        style={styles.screenScroll}
         showsVerticalScrollIndicator={false}
+        scrollIndicatorInsets={{ bottom: tabBarHeight + spacing.md }}
         contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
       >
@@ -205,34 +235,113 @@ export function ProfileScreen({ navigation }: Props) {
         {loading && cached ? <Text style={styles.syncing}>Refreshing latest details...</Text> : null}
 
         <View style={styles.heroCard}>
-          <View style={styles.heroTop}>
-            <View style={styles.heroAvatarRing}>
-              <Avatar name={displayName} iconId={profile.avatarIcon} size={60} tone="neutral" />
+          <View style={styles.heroAvatarRing}>
+            <Avatar name={displayName} iconId={profile.avatarIcon} size={52} tone="neutral" />
+          </View>
+          <View style={styles.heroIdentity}>
+            <Text style={styles.name} numberOfLines={1}>
+              {displayName}
+            </Text>
+            {displayContact ? (
+              <Text style={styles.phone} numberOfLines={1}>
+                {displayContact}
+              </Text>
+            ) : null}
+            <View style={styles.heroStatus}>
+              <View style={[styles.statusDot, !accessActive && styles.statusDotWarn]} />
+              <Text style={[styles.heroBadgeText, !accessActive && styles.warnText]} numberOfLines={1}>
+                {accessLabel}
+                {planName ? ` · ${planName}` : ''}
+              </Text>
             </View>
-            <TouchableOpacity style={styles.iconAction} onPress={() => navigation.navigate('EditProfile')} accessibilityRole="button" accessibilityLabel="Edit profile">
-              <Feather name="edit-3" size={19} color={colors.inkMuted} />
-            </TouchableOpacity>
           </View>
-          <Text style={styles.name}>{displayName}</Text>
-          <Text style={styles.phone}>{displayContact}</Text>
-          <View style={styles.heroBadge}>
-            <Feather name={inGrace ? 'clock' : accessActive ? 'shield' : 'alert-circle'} size={16} color={accessActive ? colors.accentDark : colors.warn} />
-            <Text style={[styles.heroBadgeText, !accessActive && styles.warnText]}>{accessLabel}{planName ? ` · ${planName}` : ''}</Text>
-          </View>
+          <TouchableOpacity style={styles.iconAction} onPress={editProfile} accessibilityRole="button" accessibilityLabel="Edit profile">
+            <Feather name="edit-3" size={18} color={colors.inkMuted} />
+          </TouchableOpacity>
         </View>
 
-        <SectionHeading title="Plan" />
-        <View style={styles.listPanel}>
-          {planRows.map((item, index) => (
-            <ProfileRow key={item.label} icon={item.icon} label={item.label} value={compactValue(item.value)} isLast={index === planRows.length - 1} />
-          ))}
+        <SectionHeading title="Body profile" action="Edit" onAction={editProfile} />
+        <View style={styles.bodyProfileCard}>
+          <View style={[styles.bodyArtworkFrame, { height: artworkHeight }]}>
+            <Image source={bodyArtwork} style={styles.bodyArtwork} resizeMode="contain" accessible={false} accessibilityIgnoresInvertColors />
+            <View style={styles.bodyArtworkShade} />
+            <View style={styles.bodyArtworkCopy}>
+              <Text style={styles.artworkOverline}>YOUR STARTING POINT</Text>
+              <Text style={styles.artworkTitle} numberOfLines={2}>
+                Built around {firstName}
+              </Text>
+              {!largeText ? <Text style={styles.artworkCaption}>Your numbers, kept simple.</Text> : null}
+            </View>
+          </View>
+
+          {bodyMetrics.length ? (
+            <View style={[styles.bodyMetricRow, compactProfile && styles.bodyMetricRowCompact]}>
+              {bodyMetrics.map((item, index) => (
+                <View
+                  key={item.label}
+                  style={[
+                    styles.bodyMetric,
+                    compactProfile ? styles.bodyMetricCompact : styles.bodyMetricWide,
+                    !compactProfile && index < bodyMetrics.length - 1 && styles.bodyMetricBorder,
+                    compactProfile && index % 2 === 0 && index + 1 < bodyMetrics.length && styles.bodyMetricBorder,
+                    compactProfile && bodyMetrics.length > 2 && index < 2 && styles.bodyMetricBottomBorder,
+                  ]}
+                >
+                  <Text style={styles.bodyMetricLabel}>{item.label}</Text>
+                  <Text style={styles.bodyMetricValue} numberOfLines={compactProfile ? 2 : 1} adjustsFontSizeToFit={!compactProfile} minimumFontScale={0.72}>
+                    {item.value}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.profileEmpty}>Add your body details to personalise training and progress.</Text>
+          )}
+
+          {measurementMetrics.length ? (
+            <View style={styles.measurementRail}>
+              <Text style={styles.detailLabel}>MEASUREMENTS</Text>
+              <View style={styles.measurementValues}>
+                {measurementMetrics.map((item) => (
+                  <Text key={item.label} style={styles.measurementValue}>
+                    {item.label} <Text style={styles.measurementNumber}>{item.value}</Text>
+                  </Text>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {languages.length ? <ProfileDetail label="Languages" value={languages.join(', ')} /> : null}
+          {profile.allergies ? <ProfileDetail label="Notes" value={profile.allergies} /> : null}
         </View>
 
-        <SectionHeading title="Body Profile" />
-        <View style={styles.listPanel}>
-          {bodyRows.map((item, index) => (
-            <ProfileRow key={item.label} icon={item.icon} label={item.label} value={compactValue(item.value)} isLast={index === bodyRows.length - 1} />
-          ))}
+        <SectionHeading title="Plan" action="Edit" onAction={editProfile} />
+        <View style={styles.planCard}>
+          <View style={[styles.planArtworkFrame, { height: artworkHeight }]}>
+            <Image source={planArtwork} style={styles.planArtwork} resizeMode="contain" accessible={false} accessibilityIgnoresInvertColors />
+            <View style={styles.planArtworkShade} />
+            <View style={styles.planCopy}>
+              <Text style={styles.artworkOverline}>YOUR PLAN</Text>
+              <Text style={styles.planGoal} numberOfLines={compactProfile ? 3 : 2} adjustsFontSizeToFit={!compactProfile} minimumFontScale={0.82}>
+                {planGoal}
+              </Text>
+              {!largeText ? <Text style={styles.planCaption}>Your routine at a glance.</Text> : null}
+            </View>
+          </View>
+          {planFacts.length ? (
+            <View style={styles.planFacts}>
+              {planFacts.map((item, index) => (
+                <View key={item.label} style={[styles.planFact, index < planFacts.length - 1 && styles.planFactBorder]}>
+                  <Text style={styles.planFactLabel} numberOfLines={1}>{item.label}</Text>
+                  <Text style={styles.planFactValue} numberOfLines={compactProfile ? 2 : 1} adjustsFontSizeToFit={!compactProfile} minimumFontScale={0.72}>
+                    {item.value}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.planEmpty}>Add your goal and routine preferences.</Text>
+          )}
         </View>
 
         <SectionHeading title="Access" />
@@ -257,7 +366,13 @@ export function ProfileScreen({ navigation }: Props) {
               <View style={styles.manageCopy}>
                 <Text style={styles.manageTitle}>Manage subscription</Text>
                 <Text style={styles.manageText}>
-                  {inGrace ? <>Renew before the grace period ends to keep your access uninterrupted.</> : <>Refund requests: <Text style={styles.supportEmail}>team@formbae.in</Text>. Send your payment ID or mobile number within 5 days of payment for review.</>}
+                  {inGrace ? (
+                    <>Renew before the grace period ends to keep your access uninterrupted.</>
+                  ) : (
+                    <>
+                      Refund requests: <Text style={styles.supportEmail}>team@formbae.in</Text>. Send your payment ID or mobile number within 5 days of payment for review.
+                    </>
+                  )}
                 </Text>
               </View>
             </View>
@@ -293,20 +408,24 @@ export function ProfileScreen({ navigation }: Props) {
   );
 }
 
-function SectionHeading({ title }: { title: string }) {
-  return <Text style={styles.sectionHeading}>{title}</Text>;
+function SectionHeading({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
+  return (
+    <View style={styles.sectionHeadingRow}>
+      <Text style={styles.sectionHeading}>{title}</Text>
+      {action && onAction ? (
+        <TouchableOpacity onPress={onAction} accessibilityRole="button" accessibilityLabel={`${action} ${title}`} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={styles.sectionAction}>{action}</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
 }
 
-function ProfileRow({ icon, label, value, isLast }: { icon: string; label: string; value: string; isLast?: boolean }) {
+function ProfileDetail({ label, value }: { label: string; value: string }) {
   return (
-    <View style={[styles.profileRow, !isLast && styles.profileRowBorder]}>
-      <View style={styles.rowIcon}>
-        <Feather name={icon} size={17} color={colors.ink} />
-      </View>
-      <View style={styles.profileRowText}>
-        <Text style={styles.profileRowLabel}>{label}</Text>
-        <Text style={styles.profileRowValue}>{value}</Text>
-      </View>
+    <View style={styles.profileDetail}>
+      <Text style={styles.profileDetailLabel}>{label}</Text>
+      <Text style={styles.profileDetailValue}>{value}</Text>
     </View>
   );
 }
@@ -354,40 +473,248 @@ function ActionRow({ icon, label, value, tone, onPress, isLast }: { icon: string
 }
 
 const styles = StyleSheet.create({
+  screenScroll: { flex: 1 },
   scroll: {},
-  syncing: { ...typography.caption, color: colors.inkSubtle, marginTop: -spacing.sm, marginBottom: spacing.md },
+  syncing: {
+    ...typography.caption,
+    color: colors.inkSubtle,
+    marginTop: -spacing.sm,
+    marginBottom: spacing.md,
+  },
   heroCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + 4,
     borderRadius: radius.lg,
     backgroundColor: colors.panel,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
-    padding: spacing.md,
+    borderColor: colors.border,
+    padding: spacing.sm + 4,
     ...shadows.sm,
   },
-  heroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  iconAction: { width: 46, height: 46, borderRadius: radius.pill, backgroundColor: colors.panelRaised, alignItems: 'center', justifyContent: 'center' },
-  heroAvatarRing: { borderRadius: radius.pill, borderWidth: 1, borderColor: colors.borderStrong, padding: 3 },
-  name: { ...typography.hero, color: colors.ink, marginTop: spacing.md },
-  phone: { ...typography.body, color: colors.inkMuted, marginTop: 2 },
-  heroBadge: {
-    marginTop: spacing.md,
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
+  heroIdentity: { flex: 1, minWidth: 0 },
+  iconAction: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelRaised,
     alignItems: 'center',
-    gap: spacing.xs,
+    justifyContent: 'center',
+  },
+  heroAvatarRing: {
     borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
+    borderColor: colors.borderStrong,
+    padding: 3,
   },
-  heroBadgeText: { ...typography.caption, color: colors.gold, fontWeight: '800' },
+  name: { ...typography.title, color: colors.ink },
+  phone: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  heroStatus: {
+    marginTop: spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: radius.pill,
+    backgroundColor: colors.gold,
+  },
+  statusDotWarn: { backgroundColor: colors.warn },
+  heroBadgeText: { ...typography.caption, color: colors.gold, flexShrink: 1 },
   warnText: { color: colors.warn },
-  sectionHeading: {
-    ...typography.bodyBold,
-    color: colors.ink,
-    marginTop: spacing.xl,
+  sectionHeadingRow: {
+    marginTop: spacing.lg,
     marginBottom: spacing.sm,
+    minHeight: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionHeading: { ...typography.bodyBold, color: colors.ink },
+  sectionAction: {
+    ...typography.label,
+    color: colors.gold,
+    paddingVertical: spacing.xs,
+  },
+  bodyProfileCard: {
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panel,
+    overflow: 'hidden',
+  },
+  bodyArtworkFrame: {
+    height: 184,
+    backgroundColor: colors.bg,
+    overflow: 'hidden',
+  },
+  bodyArtwork: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    height: '100%',
+    aspectRatio: 1.5,
+  },
+  bodyArtworkShade: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '61%',
+    backgroundColor: 'rgba(5, 6, 10, 0.62)',
+  },
+  bodyArtworkCopy: {
+    position: 'absolute',
+    left: spacing.md,
+    top: spacing.md,
+    bottom: spacing.md,
+    width: '55%',
+    justifyContent: 'center',
+  },
+  artworkOverline: { ...typography.overline, color: colors.gold },
+  artworkTitle: {
+    ...typography.title,
+    color: colors.inkStrong,
+    marginTop: spacing.xs,
+  },
+  artworkCaption: {
+    ...typography.caption,
+    color: colors.inkMuted,
+    marginTop: spacing.xs,
+  },
+  bodyMetricRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  bodyMetricRowCompact: { flexWrap: 'wrap' },
+  bodyMetric: {
+    minWidth: 0,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm + 2,
+  },
+  bodyMetricWide: { flex: 1 },
+  bodyMetricCompact: { width: '50%' },
+  bodyMetricBorder: { borderRightWidth: 1, borderRightColor: colors.border },
+  bodyMetricBottomBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  bodyMetricLabel: {
+    ...typography.overline,
+    color: colors.inkSubtle,
+    fontSize: 9,
+    letterSpacing: 1,
+  },
+  bodyMetricValue: { ...typography.bodyBold, color: colors.ink, marginTop: 3 },
+  profileEmpty: {
+    ...typography.caption,
+    color: colors.inkMuted,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    padding: spacing.md,
+  },
+  measurementRail: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+  },
+  detailLabel: { ...typography.overline, color: colors.inkSubtle, fontSize: 9 },
+  measurementValues: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+    marginTop: spacing.xs,
+  },
+  measurementValue: { ...typography.caption, color: colors.inkMuted },
+  measurementNumber: { color: colors.ink, fontWeight: '700' },
+  profileDetail: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+  },
+  profileDetailLabel: {
+    ...typography.caption,
+    color: colors.inkSubtle,
+    width: 76,
+  },
+  profileDetailValue: {
+    ...typography.caption,
+    color: colors.ink,
+    flex: 1,
+    textAlign: 'right',
+  },
+  planCard: {
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.lg,
+    backgroundColor: colors.panel,
+    overflow: 'hidden',
+  },
+  planArtworkFrame: {
+    height: 184,
+    backgroundColor: colors.bg,
+    overflow: 'hidden',
+  },
+  planArtwork: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    height: '100%',
+    aspectRatio: 1.5,
+  },
+  planArtworkShade: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: '63%',
+    backgroundColor: 'rgba(5, 6, 10, 0.7)',
+  },
+  planCopy: {
+    position: 'absolute',
+    left: spacing.md,
+    top: spacing.md,
+    bottom: spacing.md,
+    width: '55%',
+    justifyContent: 'center',
+  },
+  planGoal: {
+    ...typography.title,
+    color: colors.inkStrong,
+    marginTop: spacing.xs,
+  },
+  planCaption: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.xs },
+  planFacts: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  planFact: {
+    flex: 1,
+    minWidth: 0,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm + 2,
+  },
+  planFactBorder: { borderRightWidth: 1, borderRightColor: colors.border },
+  planFactLabel: { ...typography.overline, color: colors.inkSubtle, fontSize: 9, letterSpacing: 1 },
+  planFactValue: {
+    ...typography.label,
+    color: colors.ink,
+    marginTop: 3,
+  },
+  planEmpty: {
+    ...typography.caption,
+    color: colors.inkMuted,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    padding: spacing.md,
   },
   listPanel: {
     borderWidth: 1,
@@ -396,19 +723,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.panel,
     overflow: 'hidden',
   },
-  profileRow: {
-    minHeight: 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
   profileRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
   noBorder: { borderBottomWidth: 0 },
-  profileRowText: { flex: 1 },
-  profileRowLabel: { ...typography.caption, color: colors.inkMuted, marginBottom: 2 },
-  profileRowValue: { ...typography.bodyBold, color: colors.ink },
   plainRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -418,20 +734,62 @@ const styles = StyleSheet.create({
     minHeight: 46,
   },
   plainLabel: { ...typography.caption, color: colors.inkMuted, flex: 0.7 },
-  plainValue: { ...typography.bodyBold, color: colors.ink, flex: 1, textAlign: 'right' },
-  accessCard: { borderRadius: radius.lg, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
+  plainValue: {
+    ...typography.bodyBold,
+    color: colors.ink,
+    flex: 1,
+    textAlign: 'right',
+  },
+  accessCard: {
+    borderRadius: radius.lg,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
   accessHeader: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
-  accessIcon: { width: 44, height: 44, borderRadius: radius.md, backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface, alignItems: 'center', justifyContent: 'center' },
+  accessIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   accessText: { flex: 1 },
   accessTitle: { ...typography.title, color: colors.ink },
   accessSubtitle: { ...typography.body, color: colors.inkMuted, marginTop: 2 },
-  accessRows: { marginTop: spacing.md, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border, paddingVertical: spacing.xs },
-  managePanel: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md, gap: spacing.md },
+  accessRows: {
+    marginTop: spacing.md,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.xs,
+  },
+  managePanel: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+    marginTop: spacing.md,
+    gap: spacing.md,
+  },
   manageHeader: { flexDirection: 'row', gap: spacing.sm },
-  manageIcon: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  manageIcon: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   manageCopy: { flex: 1 },
   manageTitle: { ...typography.bodyBold, color: colors.ink },
-  manageText: { ...typography.caption, color: colors.inkMuted, marginTop: 2, lineHeight: 20 },
+  manageText: {
+    ...typography.caption,
+    color: colors.inkMuted,
+    marginTop: 2,
+    lineHeight: 20,
+  },
   manageRenewButton: { marginTop: 0 },
   supportEmail: { color: colors.accentDark, fontWeight: '800' },
   cancelButton: {
@@ -444,7 +802,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
-  cancelButtonText: { ...typography.caption, color: colors.error, fontWeight: '800' },
+  cancelButtonText: {
+    ...typography.caption,
+    color: colors.error,
+    fontWeight: '800',
+  },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -455,7 +817,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  rowIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  rowIcon: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   dangerIcon: { backgroundColor: colors.errorLight },
   toggleLabel: { ...typography.bodyBold, color: colors.ink, flex: 1 },
   actionRow: {
@@ -473,5 +840,10 @@ const styles = StyleSheet.create({
   actionValue: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   dangerText: { color: colors.error },
   logout: { marginTop: spacing.lg },
-  version: { ...typography.caption, textAlign: 'center', color: colors.inkSubtle, marginTop: spacing.md },
-  });
+  version: {
+    ...typography.caption,
+    textAlign: 'center',
+    color: colors.inkSubtle,
+    marginTop: spacing.md,
+  },
+});

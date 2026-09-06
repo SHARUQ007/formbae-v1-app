@@ -24,9 +24,9 @@ import { changeCoach } from '../../services/trainerService';
 import { runNativeCheckout } from '../../services/paymentService';
 import { loadCoachBundleCached, peekCoachBundleCached } from '../../services/preloadService';
 import { useAuthStore } from '../../store/authStore';
-import { getSiteUrl } from '../../constants/config';
 import type { CoachOption, PaymentPlan } from '../../types/api';
 import type { CoachScreenParams } from '../../navigation/types';
+import { getCoachArtworkSource } from '../../utils/coachArtwork';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
@@ -35,14 +35,6 @@ import { typography } from '../../theme/typography';
 type CoachTab = 'about' | 'change' | 'detail';
 type CoachFilter = 'all' | 'ai' | 'personal';
 type CoachRoute = RouteProp<{ Coach: CoachScreenParams | undefined }, 'Coach'>;
-
-function photoUrl(value: string) {
-  const url = value.trim();
-  if (!url) return '';
-  if (/^https?:\/\//i.test(url)) return url;
-  if (url.startsWith('/')) return `${getSiteUrl()}${url}`;
-  return url;
-}
 
 function formatPrice(value: string) {
   const amount = Number(String(value || '').replace(/,/g, '').trim());
@@ -408,7 +400,10 @@ function CoachHeader({ title, onBack }: { title: string; onBack: () => void }) {
 }
 
 function CoachHero({ coach, ai }: { coach: CoachOption; ai: boolean }) {
-  const image = photoUrl(coach.photoUrl);
+  const image = useMemo(
+    () => getCoachArtworkSource({ name: coach.name, photoUrl: coach.photoUrl }),
+    [coach.name, coach.photoUrl],
+  );
   const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => setImageFailed(false), [image]);
@@ -417,7 +412,7 @@ function CoachHero({ coach, ai }: { coach: CoachOption; ai: boolean }) {
     <View style={styles.hero}>
       <View style={styles.heroTop}>
         {image && !imageFailed ? (
-          <Image source={{ uri: image }} style={styles.heroImage} resizeMode="cover" onError={() => setImageFailed(true)} accessible={false} />
+          <Image source={image} style={styles.heroImage} resizeMode="cover" onError={() => setImageFailed(true)} accessible={false} />
         ) : (
           <View style={styles.aiPhotoFallback}>
             <Feather name="user" size={28} color={colors.inkMuted} />
@@ -576,7 +571,10 @@ function CoachDetailPage({
   tabBarHeight: number;
   onContinue: () => void;
 }) {
-  const image = photoUrl(coach.photoUrl);
+  const image = useMemo(
+    () => getCoachArtworkSource({ name: coach.name, photoUrl: coach.photoUrl }),
+    [coach.name, coach.photoUrl],
+  );
   const [imageFailed, setImageFailed] = useState(false);
   const firstName = coach.name.trim().split(/\s+/)[0] || 'coach';
   const isAi = isAiCoach(coach);
@@ -623,7 +621,7 @@ function CoachDetailPage({
       <View style={styles.detailHero}>
         <View style={styles.detailHeroTop}>
           {image && !imageFailed ? (
-            <Image source={{ uri: image }} style={styles.detailImage} resizeMode="cover" onError={() => setImageFailed(true)} accessible={false} />
+            <Image source={image} style={styles.detailImage} resizeMode="cover" onError={() => setImageFailed(true)} accessible={false} />
           ) : (
             <Avatar name={coach.name} size={94} tone={current ? 'accent' : 'neutral'} />
           )}
@@ -761,7 +759,10 @@ function CoachOptionCard({
   fullWidth: boolean;
   onPress: () => void;
 }) {
-  const image = photoUrl(coach.photoUrl);
+  const image = useMemo(
+    () => getCoachArtworkSource({ name: coach.name, photoUrl: coach.photoUrl }),
+    [coach.name, coach.photoUrl],
+  );
   const [imageFailed, setImageFailed] = useState(false);
   const label = formatCoachLabel(coach);
   const disabled = changing;
@@ -788,7 +789,7 @@ function CoachOptionCard({
     >
       <View style={styles.optionVisual}>
         {image && !imageFailed ? (
-          <Image source={{ uri: image }} style={styles.optionImage} resizeMode="cover" onError={() => setImageFailed(true)} accessible={false} />
+          <Image source={image} style={styles.optionImage} resizeMode="cover" onError={() => setImageFailed(true)} accessible={false} />
         ) : (
           <View style={styles.optionFallback}>
             <View style={styles.optionFallbackDisc} />

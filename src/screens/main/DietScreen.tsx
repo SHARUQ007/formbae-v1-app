@@ -25,6 +25,7 @@ import {
 } from 'react-native-image-picker';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import LinearGradient from 'react-native-linear-gradient';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ScreenContainer, ScreenTitle } from '../../components/Card';
@@ -38,6 +39,7 @@ import {
   loadDietDiaryEntries,
   loadRememberedMealTimes,
   mergeRemoteDietDiaryEntries,
+  peekDietDiaryEntries,
   rememberMealTime,
   updateDietDiaryEntry,
   type DietDiaryEntry,
@@ -55,13 +57,15 @@ import {
   type DietCoachFeedback,
 } from '../../services/dietDiaryService';
 import { getAuthToken } from '../../services/apiClient';
-import { loadDietDiaryCached } from '../../services/preloadService';
+import { loadDietDiaryCached, peekDietDiaryCached } from '../../services/preloadService';
+import { useProfileBodyGender } from '../../hooks/useProfileBodyGender';
 import type { MainTabParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
 import { shadows } from '../../theme/shadows';
 import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
+import { getDietReportEmptyArtwork } from '../../utils/reportArtwork';
 import { isDateInCurrentWeek } from '../../utils/weeklyMuscles';
 import {
   isMealSlotInFuture,
@@ -594,15 +598,114 @@ export function DietReportPendingState({
   );
 }
 
+function DietReportLogMealButton({
+  onPress,
+  pending = false,
+  embedded = false,
+}: {
+  onPress: () => void;
+  pending?: boolean;
+  embedded?: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      style={[
+        styles.reportLogMealButton,
+        pending && styles.reportLogMealButtonPending,
+        embedded && styles.reportLogMealButtonEmbedded,
+      ]}
+      activeOpacity={0.82}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={pending ? 'Log a meal and add food details' : 'Log a meal'}
+    >
+      <View style={styles.reportLogMealButtonIcon} accessible={false}>
+        <Feather name={pending ? 'edit-3' : 'plus'} size={17} color={pending ? REPORT_ACCENT : REPORT_INK} />
+      </View>
+      <View style={styles.reportLogMealButtonCopy}>
+        <Text style={styles.reportLogMealButtonText}>Log a meal</Text>
+        {pending ? <Text style={styles.reportLogMealButtonHint}>Food names are enough</Text> : null}
+      </View>
+      <Feather name="arrow-right" size={19} color={REPORT_PAGE} />
+    </TouchableOpacity>
+  );
+}
+
 function DietReportNoEvidenceState({
   feedback,
   interactive,
+  artworkGender,
+  onLogMeal,
 }: {
   feedback: DietCoachFeedback;
   interactive: boolean;
+  artworkGender?: string;
+  onLogMeal?: () => void;
 }) {
+  const { width: viewportWidth, fontScale } = useWindowDimensions();
   const photoEntries = Math.max(0, Math.round(reportFiniteNumber(feedback.stats?.photoEntries) ?? 0));
   const hasDescribedEvidence = dietReportHasDescribedEvidence(feedback);
+  const expandedCopy = viewportWidth < 380 || fontScale >= 1.2;
+
+  if (interactive) {
+    const guidance = hasDescribedEvidence
+      ? 'Add a few more meal notes to make next week\u2019s review useful.'
+      : photoEntries
+        ? `${photoEntries} food photo${photoEntries === 1 ? '' : 's'} saved. Add food names and sides so ${photoEntries === 1 ? 'it counts' : 'they count'}.`
+        : 'Log a few meals with short notes to build next week\u2019s review.';
+
+    return (
+      <View style={[styles.paperDocument, styles.reportNoDataDocument]} testID="diet-report-no-evidence">
+        <View style={styles.reportNoDataHero}>
+          <Image
+            source={getDietReportEmptyArtwork(artworkGender)}
+            style={styles.reportNoDataArtwork}
+            resizeMode="cover"
+            accessible={false}
+            testID="diet-report-empty-art"
+          />
+          <View style={styles.reportNoDataArtworkWash} />
+          <LinearGradient
+            colors={expandedCopy
+              ? ['rgba(5, 6, 9, 0.94)', 'rgba(5, 6, 9, 0.84)', 'rgba(5, 6, 9, 0.5)']
+              : ['rgba(5, 6, 9, 0.96)', 'rgba(5, 6, 9, 0.82)', 'rgba(5, 6, 9, 0.08)']}
+            locations={expandedCopy ? [0, 0.68, 1] : [0, 0.48, 0.82]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={styles.reportNoDataArtworkShade}
+            pointerEvents="none"
+          />
+
+          <View style={styles.reportNoDataHeroContent}>
+            <View style={styles.paperMetaRow}>
+              <Text style={styles.paperEyebrow}>WEEKLY DIET REPORT</Text>
+              <View style={styles.reportNoDataPeriodChip}>
+                <Text style={styles.reportNoDataPeriod}>{formatReportPeriod(feedback.weekStartDate, feedback.weekEndDate)}</Text>
+              </View>
+            </View>
+
+            <View style={styles.reportNoDataHeroBottom}>
+              <View style={[styles.reportNoDataHeroCopy, expandedCopy && styles.reportNoDataHeroCopyExpanded]}>
+                <View style={styles.reportNoDataStatusRow}>
+                  <View style={styles.reportNoDataStatusDot} accessible={false} />
+                  <Text style={styles.reportNoDataStatus}>MORE DETAIL NEEDED</Text>
+                </View>
+                <Text
+                  style={styles.reportNoDataHeroTitle}
+                  accessibilityRole="header"
+                  accessibilityLabel="Diet report needs more meal detail"
+                >
+                  Build a clearer food picture
+                </Text>
+                <Text style={styles.reportNoDataHeroBody}>{guidance}</Text>
+              </View>
+              {onLogMeal ? <DietReportLogMealButton onPress={onLogMeal} pending embedded /> : null}
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.paperDocument} testID="diet-report-no-evidence">
@@ -639,7 +742,17 @@ function DietReportNoEvidenceState({
   );
 }
 
-export function DietReportStory({ feedback, interactive = true }: { feedback: DietCoachFeedback; interactive?: boolean }) {
+export function DietReportStory({
+  feedback,
+  interactive = true,
+  artworkGender,
+  onLogMeal,
+}: {
+  feedback: DietCoachFeedback;
+  interactive?: boolean;
+  artworkGender?: string;
+  onLogMeal?: () => void;
+}) {
   const { width: viewportWidth, fontScale } = useWindowDimensions();
   const stackReportGrid = viewportWidth < 380 || fontScale >= 1.2;
   const hasReportStats = Boolean(feedback.stats && typeof feedback.stats === 'object' && !Array.isArray(feedback.stats));
@@ -763,7 +876,14 @@ export function DietReportStory({ feedback, interactive = true }: { feedback: Di
     : 'More meal detail is needed.';
 
   if (!dietReportIsPresentable(feedback)) {
-    return <DietReportNoEvidenceState feedback={feedback} interactive={interactive} />;
+    return (
+      <DietReportNoEvidenceState
+        feedback={feedback}
+        interactive={interactive}
+        artworkGender={artworkGender}
+        onLogMeal={onLogMeal}
+      />
+    );
   }
 
   return (
@@ -1376,8 +1496,11 @@ export function DietScreen(props: Props) {
 
 function DietScreenContent({ route, navigation }: Props) {
   const tabBarHeight = useBottomTabBarHeight();
-  const [entries, setEntries] = useState<DietDiaryEntry[]>([]);
-  const [initialLoading, setInitialLoading] = useState(true);
+  const profileGender = useProfileBodyGender();
+  const [warmEntries] = useState(() => peekDietDiaryEntries());
+  const [warmDiary] = useState(() => peekDietDiaryCached());
+  const [entries, setEntries] = useState<DietDiaryEntry[]>(warmEntries ?? []);
+  const [initialLoading, setInitialLoading] = useState(warmEntries === null);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletingEntryId, setDeletingEntryId] = useState('');
@@ -1388,9 +1511,7 @@ function DietScreenContent({ route, navigation }: Props) {
       : mealForCurrentTime();
   });
   const [selectedDate, setSelectedDate] = useState(() => new Date());
-  const [dietFeedback, setDietFeedback] = useState<DietCoachFeedback | null>(
-    null,
-  );
+  const [dietFeedback, setDietFeedback] = useState<DietCoachFeedback | null>(warmDiary?.feedback ?? null);
   const [preview, setPreview] = useState<DietDiaryEntry | null>(null);
   const [editingEntry, setEditingEntry] = useState<DietDiaryEntry | null>(null);
   const [editDeleteConfirmOpen, setEditDeleteConfirmOpen] = useState(false);
@@ -1675,7 +1796,6 @@ function DietScreenContent({ route, navigation }: Props) {
   const reportDaysWithDetail = Math.max(0, Math.round(reportFiniteNumber(dietFeedback?.stats?.describedDaysLogged) ?? 0));
   const reportPayloadRejected = dietFeedback?.status === 'ready' && !dietReportIsPresentable(dietFeedback);
   const reportReady = dietFeedback?.status === 'ready' && dietReportIsPresentable(dietFeedback);
-  const reportPending = !reportPayloadRejected && !reportReady;
   const reportDays = reportDaysLeft(dietFeedback);
   const reportEnrichment = getDietReportEnrichmentState(dietFeedback);
   const reportEnrichmentHint = !reportEnrichment.available
@@ -1688,16 +1808,16 @@ function DietScreenContent({ route, navigation }: Props) {
           ? 'Minimum reached — keep logging naturally until the weekly review.'
           : 'Strong evidence coverage for a more detailed weekly review.';
   const reportCardMeta = reportPayloadRejected
-    ? 'No report generated · add new meal details'
+    ? 'Add meals to unlock'
     : reportReady
     ? reportEnrichment.available
-      ? `Ready to view · next update has ${reportEnrichment.score}% evidence`
+      ? `Ready · ${reportEnrichment.score}% evidence`
       : 'Ready to view'
     : !reportEnrichment.available
-      ? `${reportEnrichment.required}% enrichment required`
+      ? `${reportEnrichment.required}% needed`
       : reportEnrichment.requirementMet
-        ? `${reportEnrichment.score}% evidence · report in ${reportDays}d`
-        : `${reportEnrichment.score}% of ${reportEnrichment.required}% evidence needed`;
+        ? `${reportEnrichment.score}% · report in ${reportDays}d`
+        : `${reportEnrichment.score}% / ${reportEnrichment.required}% needed`;
   const previousReports = reportObjectArray(dietFeedback?.previousReports)
     .filter(dietReportIsPresentable);
   const canMoveMemoryForward = useMemo(
@@ -2712,10 +2832,19 @@ function DietScreenContent({ route, navigation }: Props) {
     </View>
   );
 
+  const openReportMealLogger = () => {
+    setActiveTab('log');
+    openMemoryGame();
+  };
+
   const renderReport = () => (
-    <View style={[styles.subpage, reportPending && styles.reportPendingViewport]}>
+    <View style={[styles.subpage, !reportReady && styles.reportPendingViewport]}>
       {reportPayloadRejected && dietFeedback ? (
-        <DietReportStory feedback={dietFeedback} />
+        <DietReportStory
+          feedback={dietFeedback}
+          artworkGender={profileGender}
+          onLogMeal={openReportMealLogger}
+        />
       ) : !reportReady ? (
         <DietReportPendingState
           feedback={dietFeedback}
@@ -2723,30 +2852,23 @@ function DietScreenContent({ route, navigation }: Props) {
           daysWithDetail={reportDaysWithDetail}
         />
       ) : (
-        <DietReportStory feedback={dietFeedback} />
+        <DietReportStory feedback={dietFeedback} artworkGender={profileGender} />
       )}
 
-      <View style={[styles.reportFooterAction, !reportReady && styles.reportFooterActionPending]}>
-        {reportReady ? (
-          <View style={styles.reportFooterCopy}>
-            <Text style={styles.reportFooterTitle}>Add context for next week</Text>
-            <Text style={styles.reportFooterText}>A short description is enough; calorie counting is not required.</Text>
-          </View>
-        ) : null}
-        <TouchableOpacity
-          style={[styles.reportLogMealButton, !reportReady && styles.reportLogMealButtonPending]}
-          activeOpacity={0.82}
-          onPress={() => {
-            setActiveTab('log');
-            openMemoryGame();
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={reportReady ? 'Log a meal' : 'Log a meal and add food details'}
-        >
-          <Feather name="plus" size={18} color={REPORT_PAGE} />
-          <Text style={styles.reportLogMealButtonText}>Log a meal</Text>
-        </TouchableOpacity>
-      </View>
+      {!reportPayloadRejected ? (
+        <View style={[styles.reportFooterAction, !reportReady && styles.reportFooterActionPending]}>
+          {reportReady ? (
+            <View style={styles.reportFooterCopy}>
+              <Text style={styles.reportFooterTitle}>Add context for next week</Text>
+              <Text style={styles.reportFooterText}>A short description is enough; calorie counting is not required.</Text>
+            </View>
+          ) : null}
+          <DietReportLogMealButton
+            onPress={openReportMealLogger}
+            pending={!reportReady}
+          />
+        </View>
+      ) : null}
     </View>
   );
 
@@ -2818,7 +2940,7 @@ function DietScreenContent({ route, navigation }: Props) {
   ) : renderReportHistory();
 
   const reportSurfaceActive = ['report', 'reportHistory', 'previousReport'].includes(activeTab);
-  const pendingReportViewportActive = activeTab === 'report' && reportPending && !initialLoading;
+  const unpublishedReportViewportActive = activeTab === 'report' && !reportReady && !initialLoading;
 
   return (
     <ScreenContainer style={reportSurfaceActive ? styles.reportScreenTheme : undefined}>
@@ -2830,7 +2952,7 @@ function DietScreenContent({ route, navigation }: Props) {
         keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
         contentContainerStyle={[
           styles.scroll,
-          pendingReportViewportActive && styles.reportViewportContent,
+          unpublishedReportViewportActive && styles.reportViewportContent,
           { paddingBottom: tabBarHeight + spacing.xl },
         ]}
         refreshControl={
@@ -5116,13 +5238,17 @@ const styles = StyleSheet.create({
   reportPendingTip: { width: '100%', flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, padding: spacing.sm, marginTop: spacing.md, borderRadius: radius.sm, backgroundColor: REPORT_PAGE },
   reportPendingTipText: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, flex: 1 },
   reportFooterAction: { paddingTop: spacing.lg, marginTop: spacing.xl, borderTopWidth: 1, borderTopColor: REPORT_BORDER, gap: spacing.lg },
-  reportFooterActionPending: { paddingTop: 0, marginTop: spacing.md, borderTopWidth: 0, gap: 0 },
+  reportFooterActionPending: { paddingTop: 0, marginTop: 0, borderTopWidth: 0, gap: 0 },
   reportFooterCopy: { gap: 3 },
   reportFooterTitle: { fontSize: 20, lineHeight: 27, fontWeight: '600', color: REPORT_INK },
   reportFooterText: { fontSize: 14, lineHeight: 22, color: REPORT_MUTED },
-  reportLogMealButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: REPORT_INK },
-  reportLogMealButtonPending: { backgroundColor: REPORT_ACCENT },
-  reportLogMealButtonText: { fontSize: 16, lineHeight: 22, fontWeight: '700', color: REPORT_PAGE },
+  reportLogMealButton: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm, borderRadius: radius.md, backgroundColor: REPORT_INK },
+  reportLogMealButtonPending: { minHeight: 64, backgroundColor: REPORT_ACCENT },
+  reportLogMealButtonEmbedded: { marginTop: spacing.lg, borderRadius: radius.lg },
+  reportLogMealButtonIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm, backgroundColor: REPORT_PAGE },
+  reportLogMealButtonCopy: { flex: 1, minWidth: 0 },
+  reportLogMealButtonText: { fontSize: 16, lineHeight: 21, fontWeight: '700', color: REPORT_PAGE },
+  reportLogMealButtonHint: { marginTop: 1, fontSize: 12, lineHeight: 17, fontWeight: '500', color: 'rgba(5, 6, 9, 0.66)' },
 
   // Weekly diet report — calm editorial presentation
   reportStatusTextRow: {
@@ -5928,6 +6054,107 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     fontSize: 12,
     lineHeight: 18,
+    color: REPORT_MUTED,
+  },
+  reportNoDataDocument: {
+    flexGrow: 1,
+    marginBottom: 0,
+  },
+  reportNoDataHero: {
+    flexGrow: 1,
+    minHeight: 480,
+    width: '100%',
+    overflow: 'hidden',
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: REPORT_BORDER_STRONG,
+    backgroundColor: REPORT_SURFACE,
+  },
+  reportNoDataArtwork: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+  },
+  reportNoDataArtworkWash: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(5, 6, 9, 0.06)',
+  },
+  reportNoDataArtworkShade: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    width: '100%',
+  },
+  reportNoDataHeroContent: {
+    flex: 1,
+    justifyContent: 'space-between',
+    padding: spacing.lg,
+  },
+  reportNoDataHeroBottom: {
+    width: '100%',
+  },
+  reportNoDataPeriodChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(5, 6, 9, 0.7)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  reportNoDataPeriod: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '600',
+    color: REPORT_MUTED,
+  },
+  reportNoDataHeroCopy: {
+    maxWidth: '53%',
+  },
+  reportNoDataHeroCopyExpanded: {
+    maxWidth: '100%',
+  },
+  reportNoDataStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  reportNoDataStatusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: radius.pill,
+    backgroundColor: REPORT_ACCENT,
+  },
+  reportNoDataStatus: {
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: REPORT_ACCENT,
+  },
+  reportNoDataHeroTitle: {
+    maxWidth: 440,
+    marginTop: spacing.md,
+    fontSize: 26,
+    lineHeight: 32,
+    fontWeight: '700',
+    letterSpacing: -0.4,
+    color: REPORT_INK,
+  },
+  reportNoDataHeroBody: {
+    maxWidth: 440,
+    marginTop: spacing.sm,
+    fontSize: 13,
+    lineHeight: 19,
     color: REPORT_MUTED,
   },
   reportOverviewBand: {

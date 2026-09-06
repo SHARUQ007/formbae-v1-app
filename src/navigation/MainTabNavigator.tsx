@@ -5,10 +5,6 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Icon from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { WorkoutsNavigator } from './WorkoutsNavigator';
-import { DietScreen } from '../screens/main/DietScreen';
-import { ActionHubScreen } from '../screens/main/ActionHubScreen';
-import { ProgressNavigator } from './ProgressNavigator';
-import { ProfileNavigator } from './ProfileNavigator';
 import type { MainTabParamList } from './types';
 import { appTabBarStyle, hiddenTabBarStyle } from './tabBarStyle';
 import { colors } from '../theme/colors';
@@ -16,6 +12,14 @@ import { radius } from '../theme/radius';
 import { shadows } from '../theme/shadows';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
+
+// Keep the first workout surface eager, but defer the large secondary tab
+// modules until the user actually opens them. React Navigation caches each
+// resolved component after the first visit.
+const getDietScreen = () => require('../screens/main/DietScreen').DietScreen;
+const getActionHubScreen = () => require('../screens/main/ActionHubScreen').ActionHubScreen;
+const getProgressNavigator = () => require('./ProgressNavigator').ProgressNavigator;
+const getProfileNavigator = () => require('./ProfileNavigator').ProfileNavigator;
 
 type TabIconProps = { color: string; focused: boolean };
 
@@ -85,10 +89,10 @@ export function MainTabNavigator() {
           };
         }}
       />
-      <Tab.Screen name="Diet" component={DietScreen} options={{ tabBarIcon: dietIcon }} />
+      <Tab.Screen name="Diet" getComponent={getDietScreen} options={{ tabBarIcon: dietIcon }} />
       <Tab.Screen
         name="Action"
-        component={ActionHubScreen}
+        getComponent={getActionHubScreen}
         options={{
           title: '',
           tabBarButton: renderContextualActionButton,
@@ -97,13 +101,20 @@ export function MainTabNavigator() {
       />
       <Tab.Screen
         name="Progress"
-        component={ProgressNavigator}
+        getComponent={getProgressNavigator}
         options={({ route }) => ({
           tabBarIcon: progressIcon,
           tabBarStyle: ['ProgressReport', 'ProgressReportHistory', 'TrophyDetails'].includes(getFocusedRouteNameFromRoute(route) || '') ? hiddenTabBarStyle : appTabBarStyle,
         })}
       />
-      <Tab.Screen name="Profile" component={ProfileNavigator} options={{ tabBarIcon: profileIcon }} />
+      <Tab.Screen
+        name="Profile"
+        getComponent={getProfileNavigator}
+        options={({ route }) => ({
+          tabBarIcon: profileIcon,
+          tabBarStyle: getFocusedRouteNameFromRoute(route) === 'EditProfile' ? hiddenTabBarStyle : appTabBarStyle,
+        })}
+      />
     </Tab.Navigator>
   );
 }

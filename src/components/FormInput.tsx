@@ -10,10 +10,13 @@ type Props = {
   value: string;
   onChangeText: (text: string) => void;
   placeholder?: string;
-  keyboardType?: 'default' | 'phone-pad' | 'email-address' | 'numeric';
+  keyboardType?: 'default' | 'phone-pad' | 'email-address' | 'numeric' | 'decimal-pad';
   maxLength?: number;
   label?: string;
   icon?: string;
+  suffix?: string;
+  helperText?: string;
+  error?: string;
   multiline?: boolean;
   autoCapitalize?: 'none' | 'sentences' | 'words';
   editable?: boolean;
@@ -27,6 +30,9 @@ export function FormInput({
   maxLength,
   label,
   icon,
+  suffix,
+  helperText,
+  error,
   multiline = false,
   autoCapitalize = 'none',
   editable = true,
@@ -40,6 +46,7 @@ export function FormInput({
           styles.inputWrap,
           multiline && styles.multilineWrap,
           focused && styles.focused,
+          error && styles.error,
           !editable && styles.disabled,
         ]}
       >
@@ -63,7 +70,9 @@ export function FormInput({
           textAlignVertical={multiline ? 'top' : 'center'}
           accessibilityLabel={label || placeholder}
         />
+        {suffix ? <Text style={styles.suffix}>{suffix}</Text> : null}
       </View>
+      {error ? <Text style={styles.errorText}>{error}</Text> : helperText ? <Text style={styles.helperText}>{helperText}</Text> : null}
     </View>
   );
 }
@@ -83,8 +92,12 @@ const styles = StyleSheet.create({
   },
   multilineWrap: { alignItems: 'flex-start', paddingVertical: 12 },
   focused: { borderColor: colors.goldMuted, backgroundColor: colors.panelRaised },
+  error: { borderColor: colors.error },
   disabled: { backgroundColor: colors.panelMuted },
   icon: { marginRight: 10 },
-  input: { flex: 1, ...typography.body, fontSize: 16, color: colors.ink, paddingVertical: 12 },
+  input: { flex: 1, minWidth: 0, ...typography.body, fontSize: 16, color: colors.ink, paddingVertical: 12 },
   multiline: { minHeight: 96 },
+  suffix: { ...typography.caption, color: colors.inkMuted, marginLeft: spacing.xs },
+  helperText: { ...typography.caption, color: colors.inkSubtle, marginTop: 5 },
+  errorText: { ...typography.caption, color: colors.error, marginTop: 5 },
 });

@@ -1,13 +1,13 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ProfileScreen } from '../screens/main/ProfileScreen';
-import { EditProfileScreen } from '../screens/profile/EditProfileScreen';
-import { TrainerScreen } from '../screens/main/TrainerScreen';
-import { LegalScreen } from '../screens/legal/LegalScreen';
-import { DeleteAccountScreen } from '../screens/profile/DeleteAccountScreen';
 import type { ProfileStackParamList } from './types';
 import { colors } from '../theme/colors';
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
+const getEditProfileScreen = () => require('../screens/profile/EditProfileScreen').EditProfileScreen;
+const getTrainerScreen = () => require('../screens/main/TrainerScreen').TrainerScreen;
+const getLegalScreen = () => require('../screens/legal/LegalScreen').LegalScreen;
+const getDeleteAccountScreen = () => require('../screens/profile/DeleteAccountScreen').DeleteAccountScreen;
 
 export function ProfileNavigator() {
   return (
@@ -23,10 +23,10 @@ export function ProfileNavigator() {
       }}
     >
       <Stack.Screen name="ProfileMain" component={ProfileScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="EditProfile" component={EditProfileScreen} />
-      <Stack.Screen name="Trainer" component={TrainerScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="Legal" component={LegalScreen} />
-      <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
+      <Stack.Screen name="EditProfile" getComponent={getEditProfileScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Trainer" getComponent={getTrainerScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="Legal" getComponent={getLegalScreen} />
+      <Stack.Screen name="DeleteAccount" getComponent={getDeleteAccountScreen} />
     </Stack.Navigator>
   );
 }

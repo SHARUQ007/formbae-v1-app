@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, ImageBackground, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image-picker';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
+import LinearGradient from 'react-native-linear-gradient';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ScreenContainer } from '../../components/Card';
@@ -19,6 +20,8 @@ import {
   startAccountabilityBaeMatch,
   updateAccountability,
   uploadAccountabilityBaeProof,
+  peekAccountability,
+  peekAccountabilityBae,
 } from '../../services/accountabilityService';
 import { cancelAccountabilityReminder, scheduleAccountabilityReminder } from '../../services/notificationService';
 import { loadProgressBundleCached, peekProgressBundleCached } from '../../services/preloadService';
@@ -29,10 +32,16 @@ import {
   isMealWindow,
   isToday,
   nextPlanDay,
+  peekContextualSnapshot,
   resolveContextualSnapshot,
   workoutTitle,
   type ContextualSnapshot,
 } from '../../utils/contextualAction';
+import {
+  canCreateAccountabilityCommitment,
+  getAccountabilityTaskArtwork,
+  getAccountabilityTaskLabel,
+} from '../../utils/accountabilityArtwork';
 import type { MainTabParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
@@ -45,7 +54,6 @@ type TodayTask = {
   key: string;
   kind: string;
   targetId: string;
-  icon: string;
   title: string;
   detail: string;
   action: string;
@@ -55,15 +63,16 @@ type TodayTask = {
 
 export function ActionHubScreen({ navigation }: Props) {
   const tabBarHeight = useBottomTabBarHeight();
-  const [snapshot, setSnapshot] = useState<ContextualSnapshot | null>(null);
-  const [accountability, setAccountability] = useState<AccountabilitySummary | null>(null);
+  const [warmSnapshot] = useState(() => peekContextualSnapshot());
+  const [snapshot, setSnapshot] = useState<ContextualSnapshot | null>(warmSnapshot);
+  const [accountability, setAccountability] = useState<AccountabilitySummary | null>(() => peekAccountability());
   const [trophies, setTrophies] = useState<TrophySummary | null>(
     () => peekProgressBundleCached()?.progress.trophies ?? null,
   );
-  const [accountabilityBae, setAccountabilityBae] = useState<AccountabilityBaeSummary | null>(null);
+  const [accountabilityBae, setAccountabilityBae] = useState<AccountabilityBaeSummary | null>(() => peekAccountabilityBae());
   const [baeBusy, setBaeBusy] = useState(false);
   const [friendCode, setFriendCode] = useState('');
-  const [initialLoading, setInitialLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(!warmSnapshot);
   const [refreshing, setRefreshing] = useState(false);
   const [savingCommitment, setSavingCommitment] = useState(false);
   const [startingTaskKey, setStartingTaskKey] = useState('');
@@ -199,13 +208,23 @@ export function ActionHubScreen({ navigation }: Props) {
         return;
       }
     }
+    if (commitment.targetKind === 'refresh') {
+      navigation.navigate('Workouts', { screen: 'PlanRefresh' });
+      return;
+    }
+    if (commitment.targetKind === 'progress') {
+      navigation.navigate('Progress');
+      return;
+    }
     openTarget();
   };
 
   const startTodayTask = async (task: TodayTask) => {
     if (startingTaskKey) return;
-    task.onOpen();
-    if (accountability?.today) return;
+    if (accountability?.today || !canCreateAccountabilityCommitment(task.kind)) {
+      task.onOpen();
+      return;
+    }
 
     setStartingTaskKey(task.key);
     try {
@@ -217,6 +236,9 @@ export function ActionHubScreen({ navigation }: Props) {
       setAccountabilityUnavailable(true);
     } finally {
       setStartingTaskKey('');
+      // The task itself is always available, even if the optional
+      // accountability commitment could not be saved while offline.
+      task.onOpen();
     }
   };
 
@@ -348,14 +370,18 @@ export function ActionHubScreen({ navigation }: Props) {
   const commitmentActive = commitment?.status === 'active';
   const nextWorkout = nextPlanDay(plan);
   const mealType = currentMealType();
-  const currentMealLogged = snapshot.dietEntries.some((entry) => isToday(entry.createdAt) && entry.mealType === mealType);
+  const currentMealLogged = snapshot.dietEntries.some(
+    (entry) => isToday(entry.createdAt)
+      && entry.mealType === mealType
+      && entry.kind !== 'skip'
+      && entry.status !== 'skipped',
+  );
   const todayTasks: TodayTask[] = [];
   if (commitmentActive) {
     todayTasks.push({
       key: `active:${commitment.targetKind}:${commitment.targetId}`,
       kind: commitment.targetKind,
       targetId: commitment.targetId,
-      icon: 'shield',
       title: commitment.title,
       detail: 'Active accountability task',
       action: 'Continue',
@@ -368,9 +394,8 @@ export function ActionHubScreen({ navigation }: Props) {
       key: `diet:${mealType}`,
       kind: 'diet',
       targetId: mealType,
-      icon: 'coffee',
-      title: 'Play food memory',
-      detail: `Recall your ${mealType.toLowerCase()} one item at a time`,
+      title: `Replay your ${mealType.toLowerCase()}`,
+      detail: 'Recall it one item at a time',
       action: 'Play',
       onOpen: openFoodMemory,
     });
@@ -380,7 +405,6 @@ export function ActionHubScreen({ navigation }: Props) {
       key: `workout:${nextWorkout.planDayId}`,
       kind: 'workout',
       targetId: nextWorkout.planDayId,
-      icon: 'activity',
       title: workoutTitle(nextWorkout),
       detail: `Day ${nextWorkout.dayNumber || '-'} · ${nextWorkout.exercises?.length || 0} exercises`,
       action: 'Start',
@@ -392,7 +416,6 @@ export function ActionHubScreen({ navigation }: Props) {
       key: 'refresh:plan',
       kind: 'refresh',
       targetId: 'refresh',
-      icon: 'refresh-cw',
       title: 'Build your next plan',
       detail: 'Plan check-in is ready',
       action: 'Check in',
@@ -405,7 +428,6 @@ export function ActionHubScreen({ navigation }: Props) {
       key: 'progress:review',
       kind: 'progress',
       targetId: 'progress',
-      icon: 'bar-chart-2',
       title: 'Review your progress',
       detail: 'Weekly report and body trends',
       action: 'Open',
@@ -458,15 +480,15 @@ export function ActionHubScreen({ navigation }: Props) {
         {activeView === 'today' ? (
           <View style={styles.todayDashboard}>
             <View style={styles.todayQueueHeader}>
-              <Text style={styles.todayQueueTitle}>Today</Text>
-              <Text style={styles.todayQueueCount}>{uniqueTodayTasks.length} task{uniqueTodayTasks.length === 1 ? '' : 's'}</Text>
+              <Text style={styles.todayQueueTitle}>Today’s focus</Text>
+              <Text style={styles.todayQueueCount}>{uniqueTodayTasks.length} move{uniqueTodayTasks.length === 1 ? '' : 's'}</Text>
             </View>
             <View style={styles.todayTaskList}>
-              {uniqueTodayTasks.map((task, index) => (
-                <TodayTaskRow
+              {uniqueTodayTasks.map((task) => (
+                <TodayTaskCard
                   key={task.key}
                   task={task}
-                  last={index === uniqueTodayTasks.length - 1}
+                  featured={uniqueTodayTasks.length === 1}
                   loading={startingTaskKey === task.key}
                   onPress={() => startTodayTask(task)}
                 />
@@ -713,12 +735,12 @@ function ProofTile({ label, submitted, imageUrl, locked }: { label: string; subm
 
 function commitmentMet(kind: string, targetId: string, snapshot: ContextualSnapshot) {
   if (kind === 'diet') {
-    const loggedMeals = new Set(
-      snapshot.dietEntries
-        .filter((entry) => isToday(entry.createdAt) && entry.kind !== 'skip' && entry.status !== 'skipped')
-        .map((entry) => entry.mealType),
+    return snapshot.dietEntries.some(
+      (entry) => isToday(entry.createdAt)
+        && entry.mealType === targetId
+        && entry.kind !== 'skip'
+        && entry.status !== 'skipped',
     );
-    return loggedMeals.size >= 3;
   }
   if (kind === 'workout') {
     const plan = snapshot.workoutData?.plan || snapshot.workoutData?.today?.plan;
@@ -727,27 +749,66 @@ function commitmentMet(kind: string, targetId: string, snapshot: ContextualSnaps
   return false;
 }
 
-function TodayTaskRow({ task, last, loading, onPress }: { task: TodayTask; last: boolean; loading: boolean; onPress: () => void }) {
+function TodayTaskCard({ task, featured, loading, onPress }: { task: TodayTask; featured: boolean; loading: boolean; onPress: () => void }) {
+  const title = String(task.title || '').trim() || 'Open today\'s task';
+  const detail = String(task.detail || '').trim() || 'Ready when you are';
+  const action = String(task.action || '').trim() || 'Open';
   return (
     <TouchableOpacity
       activeOpacity={0.84}
       onPress={onPress}
       disabled={loading}
-      style={[styles.todayTaskRow, !last && styles.todayTaskRowDivider, task.active && styles.todayTaskRowActive]}
+      style={[styles.todayTaskCard, task.active && styles.todayTaskCardActive]}
       accessibilityRole="button"
-      accessibilityLabel={`${task.title}. ${task.detail}. ${task.action}`}
+      accessibilityLabel={`${title}. ${detail}. ${action}`}
       accessibilityState={{ busy: loading }}
     >
-      <View style={styles.todayTaskLead}>
-        <View style={[styles.todayTaskRowIcon, task.active && styles.todayTaskRowIconActive]}>
-          {loading ? <ActivityIndicator size="small" color={colors.gold} /> : <Feather name={task.icon} size={19} color={colors.gold} />}
+      <ImageBackground
+        source={getAccountabilityTaskArtwork(task.kind)}
+        style={[styles.todayTaskArtwork, featured && styles.todayTaskArtworkFeatured]}
+        resizeMode="cover"
+        accessible={false}
+      >
+        <LinearGradient
+          colors={['rgba(4,5,8,0.98)', 'rgba(4,5,8,0.88)', 'rgba(4,5,8,0.18)']}
+          locations={[0, 0.56, 1]}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+        <View style={styles.todayTaskCardContent}>
+          <View style={styles.todayTaskCardTop}>
+            <View style={styles.todayTaskCategory}>
+              <View style={styles.todayTaskCategoryDot} />
+              <Text style={styles.todayTaskCategoryText} numberOfLines={1}>{getAccountabilityTaskLabel(task.kind, task.active)}</Text>
+            </View>
+            {task.active ? (
+              <View style={styles.todayTaskActiveBadge}>
+                <Feather name="check" size={12} color={colors.onPrimary} />
+                <Text style={styles.todayTaskActiveBadgeText}>Set</Text>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.todayTaskCardBottom}>
+            <View style={styles.todayTaskCardCopy}>
+              <Text style={styles.todayTaskCardTitle} numberOfLines={2} ellipsizeMode="tail">{title}</Text>
+              <Text style={styles.todayTaskCardDetail} numberOfLines={1} ellipsizeMode="tail">{detail}</Text>
+            </View>
+            <View style={styles.todayTaskCardAction}>
+              {loading ? (
+                <ActivityIndicator size="small" color={colors.onPrimary} />
+              ) : (
+                <>
+                  <Text style={styles.todayTaskCardActionText} numberOfLines={1}>{action}</Text>
+                  <Feather name="arrow-right" size={16} color={colors.onPrimary} />
+                </>
+              )}
+            </View>
+          </View>
         </View>
-      </View>
-      <View style={styles.todayTaskRowCopy}>
-        <Text style={styles.todayTaskRowTitle}>{task.title}</Text>
-        <Text style={styles.todayTaskRowDetail}>{task.detail}</Text>
-      </View>
-      <View style={styles.todayTaskRowAction}><Text style={styles.todayTaskRowActionText}>{task.action}</Text><Feather name="chevron-right" size={17} color={colors.inkMuted} /></View>
+      </ImageBackground>
     </TouchableOpacity>
   );
 }
@@ -787,22 +848,27 @@ const styles = StyleSheet.create({
   todayHeroRule: { height: 5, flexDirection: 'row', gap: 5, marginTop: spacing.md },
   todayHeroSegment: { flex: 1, borderRadius: radius.pill, backgroundColor: colors.borderStrong },
   todayHeroSegmentActive: { backgroundColor: colors.gold },
-  todayQueueHeader: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.xs, marginTop: spacing.lg },
+  todayQueueHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.xs, marginTop: spacing.md },
   todayQueueTitle: { ...typography.bodyBold, color: colors.ink },
   todayQueueCount: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
-  todayTaskList: { overflow: 'hidden', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
-  todayTaskRow: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.panel, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
-  todayTaskRowDivider: { borderBottomWidth: 1, borderBottomColor: colors.border },
-  todayTaskRowActive: { backgroundColor: colors.panelMuted },
-  todayTaskLead: { width: 40, alignItems: 'center' },
-  todayTaskIndex: { fontSize: 9, lineHeight: 11, color: colors.inkSubtle, fontWeight: '900', letterSpacing: 1 },
-  todayTaskRowIcon: { width: 40, height: 40, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
-  todayTaskRowIconActive: { backgroundColor: colors.panelRaised },
-  todayTaskRowCopy: { flex: 1, minWidth: 0 },
-  todayTaskRowTitle: { ...typography.bodyBold, color: colors.ink },
-  todayTaskRowDetail: { ...typography.caption, color: colors.inkMuted, lineHeight: 17, marginTop: 2 },
-  todayTaskRowAction: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: spacing.xs },
-  todayTaskRowActionText: { ...typography.caption, color: colors.ink, fontWeight: '800' },
+  todayTaskList: { gap: spacing.sm },
+  todayTaskCard: { overflow: 'hidden', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panel },
+  todayTaskCardActive: { borderColor: colors.gold },
+  todayTaskArtwork: { minHeight: 204 },
+  todayTaskArtworkFeatured: { minHeight: 292 },
+  todayTaskCardContent: { flex: 1, minHeight: 204, justifyContent: 'space-between', padding: spacing.md },
+  todayTaskCardTop: { minHeight: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  todayTaskCategory: { maxWidth: '76%', flexDirection: 'row', alignItems: 'center', gap: 7 },
+  todayTaskCategoryDot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: colors.gold },
+  todayTaskCategoryText: { ...typography.overline, flexShrink: 1, color: colors.gold },
+  todayTaskActiveBadge: { minHeight: 26, flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: radius.pill, backgroundColor: colors.gold, paddingHorizontal: spacing.sm },
+  todayTaskActiveBadgeText: { fontSize: 10, lineHeight: 13, color: colors.onPrimary, fontWeight: '900' },
+  todayTaskCardBottom: { alignItems: 'flex-start', marginTop: spacing.lg },
+  todayTaskCardCopy: { width: '72%', minWidth: 0 },
+  todayTaskCardTitle: { fontSize: 22, lineHeight: 26, color: colors.inkStrong, fontWeight: '800', letterSpacing: -0.3 },
+  todayTaskCardDetail: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.xs },
+  todayTaskCardAction: { minWidth: 88, minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, borderRadius: radius.pill, backgroundColor: colors.gold, paddingHorizontal: spacing.md, marginTop: spacing.md },
+  todayTaskCardActionText: { ...typography.label, color: colors.onPrimary, fontWeight: '900' },
   partnerSection: { paddingBottom: spacing.sm, marginTop: spacing.xl },
   baeHeader: { minHeight: 46, flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, marginBottom: spacing.md },
   baeHeaderCopy: { flex: 1, minWidth: 0 },

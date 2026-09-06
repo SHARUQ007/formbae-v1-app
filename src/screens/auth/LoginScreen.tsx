@@ -41,7 +41,9 @@ export function LoginScreen({ navigation, route }: Props) {
         rootNav?.replace('PaidTransition', { screen: resolvePaidInitialRoute(response.status.recommendedNextScreen) });
         return;
       }
-      rootNav?.replace(root);
+      // Returning users enter through the bounded startup warm-up so their
+      // first Main frame is hydrated instead of immediately showing loaders.
+      rootNav?.replace(root === 'Main' ? 'Splash' : root);
     } catch {
       // error shown below
     }

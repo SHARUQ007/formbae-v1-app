@@ -1,6 +1,6 @@
 import type { Asset } from 'react-native-image-picker';
 import { apiRequest, getApiUrl, getAuthToken } from './apiClient';
-import { getCachedResource, setCachedResource } from './appCache';
+import { getCachedResource, peekCachedResource, setCachedResource } from './appCache';
 import type { AccountabilityBaeSummary, AccountabilitySummary } from '../types/api';
 
 const ACCOUNTABILITY_CACHE_KEY = 'accountability:summary:v1';
@@ -12,6 +12,10 @@ export function fetchAccountability(options?: { force?: boolean }) {
     () => apiRequest<AccountabilitySummary>('/accountability'),
     { force: options?.force },
   );
+}
+
+export function peekAccountability() {
+  return peekCachedResource<AccountabilitySummary>(ACCOUNTABILITY_CACHE_KEY);
 }
 
 export function updateAccountability(body: {
@@ -32,6 +36,10 @@ export function fetchAccountabilityBae(options?: { force?: boolean }) {
     () => apiRequest<AccountabilityBaeSummary>('/accountability/bae'),
     { force: options?.force },
   );
+}
+
+export function peekAccountabilityBae() {
+  return peekCachedResource<AccountabilityBaeSummary>(ACCOUNTABILITY_BAE_CACHE_KEY);
 }
 
 function cacheBae(summary: AccountabilityBaeSummary) {

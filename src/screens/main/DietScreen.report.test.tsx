@@ -298,17 +298,18 @@ describe('DietReportStory', () => {
     report.stats.memoryEntries = 0;
     report.stats.photoEntries = 3;
     report.enrichmentScore = 5;
+    const onLogMeal = jest.fn();
 
     let renderer!: ReactTestRenderer.ReactTestRenderer;
     await ReactTestRenderer.act(() => {
-      renderer = ReactTestRenderer.create(<DietReportStory feedback={report} />);
+      renderer = ReactTestRenderer.create(<DietReportStory feedback={report} onLogMeal={onLogMeal} />);
     });
 
     const text = renderedText(renderer);
     expect(renderer.root.findAll(node => node.props.testID === 'diet-report-no-evidence').length).toBeGreaterThan(0);
-    expect(renderer.root.findAll(node => node.props.accessibilityLabel === 'No diet report generated').length).toBeGreaterThan(0);
-    expect(text).toContain('No report generated');
-    expect(text).toContain('3 food photos were saved, but no meal descriptions were available for a useful review.');
+    expect(renderer.root.findAll(node => node.props.accessibilityLabel === 'Diet report needs more meal detail').length).toBeGreaterThan(0);
+    expect(text).toContain('Build a clearer food picture');
+    expect(text).toContain('3 food photos saved. Add food names and sides so they count.');
 
     [
       'Lunch became more balanced',
@@ -336,6 +337,34 @@ describe('DietReportStory', () => {
     expect(renderer.root.findAllByType(TextInput)).toHaveLength(0);
     expect(renderer.root.findAll(node => node.props.accessibilityRole === 'progressbar')).toHaveLength(0);
     expect(renderer.root.findAll(node => node.props.testID === 'weekly-nutrition-art')).toHaveLength(0);
+    expect(renderer.root.findAll(node => node.props.testID === 'diet-report-empty-art').length).toBeGreaterThan(0);
+    const mealActions = renderer.root.findAll(node => node.props.accessibilityLabel === 'Log a meal and add food details');
+    expect(mealActions.length).toBeGreaterThan(0);
+    const mealAction = mealActions.find(node => node.props.onPress === onLogMeal);
+    expect(mealAction).toBeDefined();
+    await ReactTestRenderer.act(() => mealAction?.props.onPress());
+    expect(onLogMeal).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['male', 'diet-report-empty-hero-male.jpg'],
+    ['female', 'diet-report-empty-hero.jpg'],
+    ['other', 'diet-report-empty-hero-neutral.jpg'],
+  ])('matches the empty-report artwork to a %s profile', async (artworkGender, filename) => {
+    const report = completeReport();
+    report.stats.describedEntries = 0;
+    report.stats.describedDaysLogged = 0;
+    report.stats.memoryEntries = 0;
+
+    let renderer!: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(
+        <DietReportStory feedback={report} artworkGender={artworkGender} />,
+      );
+    });
+
+    const artwork = renderer.root.findByProps({ testID: 'diet-report-empty-art' });
+    expect(String(artwork.props.source?.testUri || '')).toContain(filename);
   });
 
   it('keeps an archived report with no described meals concise and read-only', async () => {
@@ -363,6 +392,7 @@ describe('DietReportStory', () => {
     expect(renderer.root.findAll(node => node.props.accessibilityRole === 'progressbar')).toHaveLength(0);
     expect(renderer.root.findAll(node => node.props.accessibilityRole === 'link')).toHaveLength(0);
     expect(renderer.root.findAllByType(TextInput)).toHaveLength(0);
+    expect(renderer.root.findAll(node => node.props.testID === 'diet-report-empty-art')).toHaveLength(0);
   });
 
   it('suppresses generated report content when an available overall score is explicitly zero', async () => {

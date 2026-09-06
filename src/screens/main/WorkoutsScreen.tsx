@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, Easing, Image, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, BackHandler, Easing, Image, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { ScreenContainer, Card } from '../../components/Card';
+import { ScreenContainer, Card, SectionTitle } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { ErrorState, EmptyState, LoadingState } from '../../components/States';
 import { SkeletonBlock } from '../../components/Skeleton';
@@ -14,11 +14,9 @@ import { ProgressBar } from '../../components/ProgressBar';
 import { MotionAnimation } from '../../components/MotionAnimation';
 import { WeeklyBodyMap } from '../../components/WeeklyBodyMap';
 import {
-  loadCoachBundleCached,
   loadProfileSettingsCached,
   loadWorkoutDayCached,
   loadWorkoutPlanCached,
-  peekCoachBundleCached,
   peekProfileSettingsCached,
   peekWorkoutDayCached,
   peekWorkoutPlanCached,
@@ -26,8 +24,7 @@ import {
 import { fetchUserPlans, PENDING_AI_PLAN_BUILD_KEY, selectWorkoutPlan } from '../../services/workoutService';
 import { hasSeenReadyPlan, markReadyPlanSeen } from '../../services/planRevealService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
-import { getSiteUrl } from '../../constants/config';
-import type { AiPlanRefresh, CoachHubPayload, CoachOption, PlanDay, ProgressSummary, TrainerInfo, UserPlanSummary } from '../../types/api';
+import type { AiPlanRefresh, PlanDay, ProgressSummary, TrainerInfo, UserPlanSummary } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
 import { appTabBarStyle, hiddenTabBarStyle } from '../../navigation/tabBarStyle';
 import { colors } from '../../theme/colors';
@@ -35,6 +32,7 @@ import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
 import { deriveCurrentWeekStreak, deriveWorkoutMuscles, resolveBodyGender } from '../../utils/weeklyMuscles';
+import { getCoachArtworkSource } from '../../utils/coachArtwork';
 
 type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutList'>;
 
@@ -78,6 +76,27 @@ const STREAK_EMBERS = [
   { left: 18, delay: 0.28, size: 3, drift: 7 },
 ];
 
+export function resolvePlanBuildPresentation({
+  due,
+  buildStatus,
+  hasPendingBuild,
+  buildId,
+  dismissedBuildId,
+}: {
+  due?: boolean;
+  buildStatus?: NonNullable<AiPlanRefresh['build']>['status'];
+  hasPendingBuild: boolean;
+  buildId: string;
+  dismissedBuildId: string | null;
+}) {
+  const building = buildStatus === 'building' || buildStatus === 'requested' || hasPendingBuild;
+  return {
+    building,
+    takeoverVisible: building && dismissedBuildId !== buildId,
+    checkInPromptVisible: Boolean(due) && !building,
+  };
+}
+
 function parsePendingCompletion(raw: string | null) {
   if (!raw) return { planDayId: '', completedAt: 0 };
   try {
@@ -104,154 +123,36 @@ function formatPlanDate(plan: UserPlanSummary) {
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-function resolveTrainerPhotoUrl(value?: string, trainerName?: string) {
-  const url = String(value || '').trim();
-  if (!url) {
-    return String(trainerName || '').trim().toLowerCase() === 'ava'
-      ? `${getSiteUrl()}/ai-questionnaire/goal-baseline.webp`
-      : '';
-  }
-  if (/^https?:\/\//i.test(url)) return url;
-  if (url.startsWith('/')) return `${getSiteUrl()}${url}`;
-  return url;
-}
-
-function coachOptionIsAi(coach: CoachOption) {
-  const kind = String(coach.trainerKind || '').trim().toLowerCase();
-  if (kind === 'ai') return true;
-  if (kind === 'human') return false;
-  return ['female_ai', 'male_ai'].includes(String(coach.trainerPersona || '').trim().toLowerCase());
-}
-
-function coachOptionLabel(coach: CoachOption) {
-  const expertise = String(coach.expertise || '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
-  if (expertise && !['female ai', 'male ai'].includes(expertise.toLowerCase())) return expertise;
-  return coachOptionIsAi(coach) ? 'Adaptive AI trainer' : 'Personal trainer';
-}
-
-function coachOptionPrice(coach: CoachOption) {
-  const upgradePaise = Math.round(Number(coach.upgradeAmountPaise || 0));
-  if (coach.requiresUpgrade && Number.isFinite(upgradePaise) && upgradePaise >= 100) {
-    return `₹${Math.round(upgradePaise / 100).toLocaleString('en-IN')} to unlock`;
-  }
-  if (coach.requiresUpgrade) return 'Upgrade required';
-  if (coach.canSelect) return 'Included';
-  return 'View availability';
-}
-
-type CoachPreview = {
-  id: string;
-  name: string;
-  photoUrl: string;
-  label: string;
-  price: string;
-  current: boolean;
-  option: boolean;
-};
-
-function CoachPreviewCard({
-  coach,
-  width,
-  fullWidth,
-  onPress,
-}: {
-  coach: CoachPreview;
-  width: number;
-  fullWidth: boolean;
-  onPress: () => void;
-}) {
-  const [imageFailed, setImageFailed] = useState(false);
-
-  useEffect(() => setImageFailed(false), [coach.photoUrl]);
-
-  return (
-    <TouchableOpacity
-      activeOpacity={0.88}
-      onPress={onPress}
-      style={[styles.coachPreviewCard, { width }, fullWidth && styles.coachPreviewCardWide]}
-      accessibilityRole="button"
-      accessibilityLabel={`${coach.name}, ${coach.label}, ${coach.current ? 'your current coach' : coach.price}`}
-      accessibilityHint="Opens coach profile"
-      accessibilityState={{ selected: coach.current }}
-    >
-      <View style={[styles.coachPreviewVisual, fullWidth && styles.coachPreviewVisualWide]}>
-        {coach.photoUrl && !imageFailed ? (
-          <Image
-            source={{ uri: coach.photoUrl }}
-            style={styles.coachPreviewImage}
-            resizeMode="cover"
-            onError={() => setImageFailed(true)}
-            accessible={false}
-          />
-        ) : (
-          <View style={styles.coachPreviewFallback}>
-            <View style={styles.coachPreviewFallbackDisc} />
-            <Text style={styles.coachPreviewInitial}>{coach.name.slice(0, 1).toUpperCase()}</Text>
-          </View>
-        )}
-        <View style={[styles.coachPreviewTag, coach.current && styles.coachPreviewTagCurrent]}>
-          <Text style={[styles.coachPreviewTagText, coach.current && styles.coachPreviewTagTextCurrent]}>
-            {coach.current ? 'YOUR COACH' : coach.price === 'Included' ? 'INCLUDED' : 'EXPLORE'}
-          </Text>
-        </View>
-        <View style={styles.coachPreviewCaption}>
-          <Text style={styles.coachPreviewName} numberOfLines={1}>{coach.name}</Text>
-          <Text style={styles.coachPreviewRole} numberOfLines={1}>{coach.label}</Text>
-        </View>
-      </View>
-      <View style={styles.coachPreviewFooter}>
-        <Text style={styles.coachPreviewPrice}>{coach.current ? 'View coach' : coach.price}</Text>
-        <Feather name="arrow-up-right" size={17} color={colors.ink} />
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-function CoachDiscoverySection({
-  coaches,
-  viewportWidth,
-  fontScale,
-  onBrowse,
-  onOpenCoach,
-}: {
-  coaches: CoachPreview[];
-  viewportWidth: number;
-  fontScale: number;
-  onBrowse: () => void;
-  onOpenCoach: (coach: CoachPreview) => void;
-}) {
+function CoachingFeature({ onPress }: { onPress: () => void }) {
+  const { width: viewportWidth, fontScale } = useWindowDimensions();
   const largeText = fontScale >= 1.2;
   const expandedHero = viewportWidth < 380;
-  const fullWidth = coaches.length === 1 || largeText;
-  const cardWidth = fullWidth
-    ? Math.min(560, Math.max(260, viewportWidth - (spacing.lg * 2)))
-    : Math.min(220, Math.max(196, viewportWidth * 0.6));
 
   return (
-    <View style={styles.coachDiscoverySection}>
-      <View style={[styles.coachDiscoveryHeader, largeText && styles.coachDiscoveryHeaderLargeText]}>
-        <View style={[styles.coachDiscoveryHeaderCopy, largeText && styles.coachDiscoveryHeaderCopyLargeText]}>
-          <Text style={styles.coachDiscoveryTitle} accessibilityRole="header">Coaching</Text>
-          <Text style={styles.coachDiscoverySubtitle}>Guidance that fits how you train</Text>
+    <View style={styles.coachingFeatureSection}>
+      <View style={[styles.coachingFeatureHeader, largeText && styles.coachingFeatureHeaderLargeText]}>
+        <View style={styles.coachingFeatureHeaderCopy}>
+          <Text style={styles.coachingFeatureTitle} accessibilityRole="header">Coaching</Text>
+          <Text style={styles.coachingFeatureSubtitle}>Guidance that fits how you train</Text>
         </View>
         <TouchableOpacity
-          onPress={onBrowse}
-          style={styles.coachDiscoverySeeAll}
+          onPress={onPress}
+          style={styles.coachingFeatureSeeAll}
           accessibilityRole="button"
           accessibilityLabel="See all coaches"
         >
-          <Text style={styles.coachDiscoverySeeAllText}>See all</Text>
+          <Text style={styles.coachingFeatureSeeAllText}>See all</Text>
           <Feather name="chevron-right" size={17} color={colors.ink} />
         </TouchableOpacity>
       </View>
 
       <TouchableOpacity
         activeOpacity={0.9}
-        onPress={onBrowse}
+        onPress={onPress}
         style={[
-          styles.coachDiscoveryHero,
-          expandedHero && styles.coachDiscoveryHeroExpanded,
-          largeText && styles.coachDiscoveryHeroLargeText,
+          styles.coachingFeatureHero,
+          expandedHero && styles.coachingFeatureHeroExpanded,
+          largeText && styles.coachingFeatureHeroLargeText,
         ]}
         accessibilityRole="button"
         accessibilityLabel="Explore coaching options"
@@ -259,52 +160,33 @@ function CoachDiscoverySection({
       >
         {largeText ? (
           <>
-            <View style={styles.coachDiscoveryImageStage}>
-              <Image source={COACH_DISCOVERY_ART} style={styles.coachDiscoveryImageFlow} resizeMode="cover" accessible={false} />
+            <View style={styles.coachingFeatureImageStage}>
+              <Image source={COACH_DISCOVERY_ART} style={styles.coachingFeatureImageFlow} resizeMode="cover" accessible={false} />
             </View>
-            <View style={styles.coachDiscoveryCopyFlow}>
-              <Text style={styles.coachDiscoveryKicker}>MEET YOUR MATCH</Text>
-              <Text style={styles.coachDiscoveryHeroTitle}>Train with the right support</Text>
-              <View style={styles.coachDiscoveryAction}>
-                <Text style={styles.coachDiscoveryActionText}>Explore coaches</Text>
+            <View style={styles.coachingFeatureCopyFlow}>
+              <Text style={styles.coachingFeatureKicker}>Meet your match</Text>
+              <Text style={styles.coachingFeatureHeroTitle}>Train with the right support</Text>
+              <View style={styles.coachingFeatureAction}>
+                <Text style={styles.coachingFeatureActionText}>Explore coaches</Text>
                 <Feather name="arrow-right" size={16} color={colors.onPrimary} />
               </View>
             </View>
           </>
         ) : (
           <>
-            <Image source={COACH_DISCOVERY_ART} style={styles.coachDiscoveryImage} resizeMode="cover" accessible={false} />
-            <View style={[styles.coachDiscoveryShade, expandedHero && styles.coachDiscoveryShadeExpanded]} />
-            <View style={[styles.coachDiscoveryCopy, expandedHero && styles.coachDiscoveryCopyExpanded]}>
-              <Text style={styles.coachDiscoveryKicker}>MEET YOUR MATCH</Text>
-              <Text style={styles.coachDiscoveryHeroTitle}>Train with the right support</Text>
-              <View style={styles.coachDiscoveryAction}>
-                <Text style={styles.coachDiscoveryActionText}>Explore coaches</Text>
+            <Image source={COACH_DISCOVERY_ART} style={styles.coachingFeatureImage} resizeMode="cover" accessible={false} />
+            <View style={[styles.coachingFeatureShade, expandedHero && styles.coachingFeatureShadeExpanded]} />
+            <View style={[styles.coachingFeatureCopy, expandedHero && styles.coachingFeatureCopyExpanded]}>
+              <Text style={styles.coachingFeatureKicker}>Meet your match</Text>
+              <Text style={styles.coachingFeatureHeroTitle}>Train with the right support</Text>
+              <View style={styles.coachingFeatureAction}>
+                <Text style={styles.coachingFeatureActionText}>Explore coaches</Text>
                 <Feather name="arrow-right" size={16} color={colors.onPrimary} />
               </View>
             </View>
           </>
         )}
       </TouchableOpacity>
-
-      {coaches.length ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.coachPreviewRail}
-          decelerationRate="fast"
-        >
-          {coaches.map(coach => (
-            <CoachPreviewCard
-              key={coach.id}
-              coach={coach}
-              width={cardWidth}
-              fullWidth={fullWidth}
-              onPress={() => onOpenCoach(coach)}
-            />
-          ))}
-        </ScrollView>
-      ) : null}
     </View>
   );
 }
@@ -444,15 +326,14 @@ function GoldenStreakBadge({ streak, celebrationNonce }: { streak: number; celeb
   );
 }
 
-function WorkoutDashboardScreen({ navigation }: Props) {
+function WorkoutDashboardScreen({ navigation, route }: Props) {
   const tabBarHeight = useBottomTabBarHeight();
-  const { width: viewportWidth, fontScale } = useWindowDimensions();
+  const { width: viewportWidth } = useWindowDimensions();
   const warmData = peekWorkoutPlanCached();
   const warmPlan = (warmData?.plan || warmData?.today?.plan) as { planId?: string; days?: PlanDay[]; title?: string } | undefined;
   const warmDays = warmPlan?.days || [];
   const initialWarmDay = warmDays.find((day) => !day.completed) || warmDays[0];
   const warmSettings = peekProfileSettingsCached();
-  const warmCoachHub = peekCoachBundleCached()?.coachHub ?? null;
   const [days, setDays] = useState<PlanDay[]>(warmDays);
   const [title, setTitle] = useState(warmPlan?.title || 'My workout plan');
   const [planId, setPlanId] = useState(warmPlan?.planId || warmData?.today?.plan?.planId || '');
@@ -460,9 +341,9 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [focusedPlanDayId, setFocusedPlanDayId] = useState(initialWarmDay?.planDayId || '');
   const [planDaySelectionTouched, setPlanDaySelectionTouched] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [trainerPhotoFailed, setTrainerPhotoFailed] = useState(false);
   const [progress, setProgress] = useState<ProgressSummary | null>(warmData?.today?.progress || null);
   const [trainer, setTrainer] = useState<TrainerInfo | null>(warmData?.today?.assignedTrainer || null);
-  const [coachHub, setCoachHub] = useState<CoachHubPayload | null>(warmCoachHub);
   const [aiPlanRefresh, setAiPlanRefresh] = useState<AiPlanRefresh | null>(warmData?.aiPlanRefresh || null);
   const [loading, setLoading] = useState(!warmData);
   const [error, setError] = useState<string | null>(null);
@@ -475,23 +356,21 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [plansError, setPlansError] = useState<string | null>(null);
   const [switchingPlanId, setSwitchingPlanId] = useState('');
   const [readyPlanAcknowledged, setReadyPlanAcknowledged] = useState<boolean | null>(null);
-  const [pendingPlanBuild, setPendingPlanBuild] = useState<{ planId: string; trainerName: string; requestedAt: number } | null>(null);
+  const [pendingPlanBuild, setPendingPlanBuild] = useState<{ planId: string; trainerName: string; requestedAt: number } | null>(
+    route.params?.pendingPlanBuild || null,
+  );
+  const [dismissedPlanBuildId, setDismissedPlanBuildId] = useState<string | null>(null);
   const [planBuildSyncedAt, setPlanBuildSyncedAt] = useState<number | null>(null);
   const [bodyGender, setBodyGender] = useState<ReturnType<typeof resolveBodyGender>>(
     resolveBodyGender(warmSettings?.profile?.gender),
   );
 
   useEffect(() => {
-    let active = true;
-    loadCoachBundleCached()
-      .then(bundle => {
-        if (active) setCoachHub(bundle.coachHub);
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, []);
+    const incomingBuild = route.params?.pendingPlanBuild;
+    if (!incomingBuild) return;
+    setPendingPlanBuild(incomingBuild);
+    setDismissedPlanBuildId(null);
+  }, [route.params?.pendingPlanBuild]);
 
   const load = useCallback(async (options?: { force?: boolean }) => {
     setError(null);
@@ -518,6 +397,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
       setTitle(plan?.title || 'My workout plan');
       setProgress(data.today?.progress || null);
       setTrainer(data.today?.assignedTrainer || null);
+      setTrainerPhotoFailed(false);
       setAiPlanRefresh(data.aiPlanRefresh || null);
       const buildStatus = data.aiPlanRefresh?.build?.status;
       if (buildStatus === 'building' || buildStatus === 'requested') {
@@ -528,7 +408,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         try {
           const parsed = JSON.parse(pendingBuildRaw) as { planId?: string; trainerName?: string; requestedAt?: number };
           const requestedAt = Number(parsed.requestedAt || 0);
-          if (parsed.planId && requestedAt > 0 && Date.now() - requestedAt <= PENDING_PLAN_BUILD_MAX_AGE_MS) {
+          if (parsed.planId === loadedPlanId && requestedAt > 0 && Date.now() - requestedAt <= PENDING_PLAN_BUILD_MAX_AGE_MS) {
             localPendingBuild = { planId: parsed.planId, trainerName: parsed.trainerName || 'Ava', requestedAt };
           } else {
             await AsyncStorage.removeItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => undefined);
@@ -540,6 +420,10 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         await AsyncStorage.removeItem(PENDING_AI_PLAN_BUILD_KEY).catch(() => undefined);
       }
       setPendingPlanBuild(localPendingBuild);
+      if (buildStatus === 'completed' || buildStatus === 'failed') {
+        setDismissedPlanBuildId(null);
+        navigation.setParams({ pendingPlanBuild: undefined });
+      }
       const readyPlanId = data.aiPlanRefresh?.build?.newPlanId || '';
       setReadyPlanAcknowledged(await hasSeenReadyPlan(readyPlanId));
       setBodyGender(resolveBodyGender(settings?.profile?.gender));
@@ -552,11 +436,20 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [navigation]);
 
   const planBuildStatus = aiPlanRefresh?.build?.status;
   const builtPlanId = aiPlanRefresh?.build?.newPlanId || '';
-  const planBuilding = planBuildStatus === 'building' || planBuildStatus === 'requested' || Boolean(pendingPlanBuild);
+  const planBuildId = aiPlanRefresh?.build?.planId || pendingPlanBuild?.planId || planId;
+  const planBuildPresentation = resolvePlanBuildPresentation({
+    due: aiPlanRefresh?.due,
+    buildStatus: planBuildStatus,
+    hasPendingBuild: Boolean(pendingPlanBuild),
+    buildId: planBuildId,
+    dismissedBuildId: dismissedPlanBuildId,
+  });
+  const planBuilding = planBuildPresentation.building;
+  const planBuildTakeoverVisible = planBuildPresentation.takeoverVisible;
   const backendBuildStartedAt = Date.parse(aiPlanRefresh?.build?.requestedAt || '');
   const planBuildStartedAt = Number.isFinite(backendBuildStartedAt) ? backendBuildStartedAt : pendingPlanBuild?.requestedAt;
   const planReadyToReveal = planBuildStatus === 'completed'
@@ -574,9 +467,9 @@ function WorkoutDashboardScreen({ navigation }: Props) {
 
   useEffect(() => {
     navigation.getParent()?.setOptions({
-      tabBarStyle: planBuilding || planReadyToReveal ? hiddenTabBarStyle : appTabBarStyle,
+      tabBarStyle: planBuildTakeoverVisible || planReadyToReveal ? hiddenTabBarStyle : appTabBarStyle,
     });
-  }, [navigation, planBuilding, planReadyToReveal]);
+  }, [navigation, planBuildTakeoverVisible, planReadyToReveal]);
 
   useEffect(() => {
     if (!planBuilding) return undefined;
@@ -587,17 +480,12 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
       navigation.getParent()?.setOptions({
-        tabBarStyle: planBuilding || planReadyToReveal ? hiddenTabBarStyle : appTabBarStyle,
+        tabBarStyle: planBuildTakeoverVisible || planReadyToReveal ? hiddenTabBarStyle : appTabBarStyle,
       });
       (async () => {
         const pending = await AsyncStorage.getItem(PENDING_STREAK_CELEBRATION_KEY).catch(() => null);
         const pendingCompletion = parsePendingCompletion(pending);
-        await Promise.all([
-          load({ force: Boolean(pending) }),
-          loadCoachBundleCached()
-            .then(bundle => setCoachHub(bundle.coachHub))
-            .catch(() => undefined),
-        ]);
+        await load({ force: Boolean(pending) });
         if (pending) {
           await AsyncStorage.removeItem(PENDING_STREAK_CELEBRATION_KEY).catch(() => undefined);
           if (pendingCompletion.planDayId) {
@@ -608,16 +496,11 @@ function WorkoutDashboardScreen({ navigation }: Props) {
       })().catch(() => undefined);
     });
     return unsub;
-  }, [navigation, load, planBuilding, planReadyToReveal]);
+  }, [navigation, load, planBuildTakeoverVisible, planReadyToReveal]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([
-      load({ force: true }),
-      loadCoachBundleCached({ force: true })
-        .then(bundle => setCoachHub(bundle.coachHub))
-        .catch(() => undefined),
-    ]);
+    await load({ force: true });
     setRefreshing(false);
   };
 
@@ -637,42 +520,6 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     }
   }, [focusedPlanDayId, planDaySelectionTouched, todayDay?.planDayId]);
   const focusedMuscles = useMemo(() => deriveWorkoutMuscles(focusedDay), [focusedDay]);
-  const coachPreviews = useMemo<CoachPreview[]>(() => {
-    const currentId = coachHub?.currentTrainer?.trainerId || trainer?.userId || '';
-    const options = coachHub?.trainers || [];
-    const ordered = [
-      ...(coachHub?.currentTrainer ? [coachHub.currentTrainer] : []),
-      ...options,
-    ];
-    const seen = new Set<string>();
-    const previews = ordered.flatMap(coach => {
-      if (!coach.trainerId || seen.has(coach.trainerId)) return [];
-      seen.add(coach.trainerId);
-      return [{
-        id: coach.trainerId,
-        name: coach.name || 'FormBae coach',
-        photoUrl: resolveTrainerPhotoUrl(coach.photoUrl, coach.name),
-        label: coachOptionLabel(coach),
-        price: coachOptionPrice(coach),
-        current: Boolean(currentId && coach.trainerId === currentId),
-        option: true,
-      }];
-    });
-    if (trainer && !previews.some(preview => preview.id === currentId)) {
-      previews.unshift({
-        id: trainer.userId || trainer.name,
-        name: trainer.name || 'FormBae coach',
-        photoUrl: resolveTrainerPhotoUrl(trainer.trainerPhotoUrl, trainer.name),
-        label: trainer.trainerDescription || 'Personal trainer',
-        price: 'Included',
-        current: true,
-        option: false,
-      });
-    }
-    return previews
-      .sort((a, b) => Number(b.current) - Number(a.current))
-      .slice(0, 3);
-  }, [coachHub, trainer]);
   const onSwitchTodayWorkout = async (day: PlanDay) => {
     setSelectedTodayPlanDayId(day.planDayId);
     setFocusedPlanDayId(day.planDayId);
@@ -759,8 +606,16 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     );
   }
 
-  if (planBuilding) {
-    return <AvaPlanTakeover mode="building" trainerName={aiPlanRefresh?.trainerName || pendingPlanBuild?.trainerName || 'Ava'} requestedAt={planBuildStartedAt} lastSyncedAt={planBuildSyncedAt || undefined} />;
+  if (planBuildTakeoverVisible) {
+    return (
+      <AvaPlanTakeover
+        mode="building"
+        trainerName={aiPlanRefresh?.trainerName || pendingPlanBuild?.trainerName || 'Ava'}
+        requestedAt={planBuildStartedAt}
+        lastSyncedAt={planBuildSyncedAt || undefined}
+        onExit={() => setDismissedPlanBuildId(planBuildId)}
+      />
+    );
   }
 
   if (planReadyToReveal) {
@@ -783,6 +638,10 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const currentStreak = progress?.completionHistory
     ? deriveCurrentWeekStreak(progress.completionHistory)
     : Math.min(7, progress?.currentStreak ?? 0);
+  const trainerPhoto = getCoachArtworkSource({
+    name: trainer?.name,
+    photoUrl: trainer?.trainerPhotoUrl,
+  });
   const planHeading = planHeadingParts(title);
   const planTitleFontSize = viewportWidth < 380 || planHeading.title.length > 34
     ? 27
@@ -790,6 +649,8 @@ function WorkoutDashboardScreen({ navigation }: Props) {
       ? 29
       : 32;
   const alignRefreshContentToCopy = viewportWidth >= 600;
+  const refreshBuildFailed = aiPlanRefresh?.build?.status === 'failed';
+  const refreshTrainerName = aiPlanRefresh?.trainerName || pendingPlanBuild?.trainerName || 'Ava';
 
   return (
     <ScreenContainer>
@@ -802,19 +663,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         {error ? (
           <ErrorState message={error} onRetry={load} />
         ) : days.length === 0 ? (
-          <>
-            <EmptyState icon="calendar" title="No plan yet" message="Your workout plan will appear here once your trainer publishes it." />
-            <CoachDiscoverySection
-              coaches={coachPreviews}
-              viewportWidth={viewportWidth}
-              fontScale={fontScale}
-              onBrowse={() => navigation.navigate('Coach', { initialView: 'browse' })}
-              onOpenCoach={coach => navigation.navigate('Coach', {
-                initialView: coach.current || !coach.option ? 'about' : 'detail',
-                ...(coach.option ? { trainerId: coach.id } : {}),
-              })}
-            />
-          </>
+          <EmptyState icon="calendar" title="No plan yet" message="Your workout plan will appear here once your trainer publishes it." />
         ) : (
           <>
             <View style={styles.headerRow}>
@@ -866,37 +715,56 @@ function WorkoutDashboardScreen({ navigation }: Props) {
               </View>
             </Card>
 
-            {aiPlanRefresh?.due ? (
-              <View style={[styles.aiRefreshCard, aiPlanRefresh.build?.status === 'failed' && styles.aiRefreshCardFailed]}>
+            {planBuildPresentation.checkInPromptVisible || planBuilding ? (
+              <View style={[styles.aiRefreshCard, refreshBuildFailed && styles.aiRefreshCardFailed]}>
                 <View style={styles.aiRefreshHead}>
                   <View style={styles.aiRefreshIcon}>
-                    <Feather name={aiPlanRefresh.build?.status === 'failed' ? 'refresh-cw' : 'sliders'} size={19} color={colors.gold} />
+                    {planBuilding ? (
+                      <ActivityIndicator size="small" color={colors.gold} />
+                    ) : (
+                      <Feather name={refreshBuildFailed ? 'refresh-cw' : 'sliders'} size={19} color={colors.gold} />
+                    )}
                   </View>
                   <View style={styles.aiRefreshCopy}>
-                    <Text style={styles.aiRefreshKicker}>{aiPlanRefresh.build?.status === 'failed' ? 'CHECK-IN NEEDS ATTENTION' : 'NEXT TRAINING BLOCK'}</Text>
-                    <Text style={styles.aiRefreshTitle}>{aiPlanRefresh.build?.status === 'failed' ? 'Finish your next plan' : 'Shape what comes next'}</Text>
+                    <Text style={styles.aiRefreshKicker}>{planBuilding ? 'CHECK-IN SAVED' : refreshBuildFailed ? 'CHECK-IN NEEDS ATTENTION' : 'NEXT TRAINING BLOCK'}</Text>
+                    <Text style={styles.aiRefreshTitle}>{planBuilding ? `${refreshTrainerName} is building your plan` : refreshBuildFailed ? 'Finish your next plan' : 'Shape what comes next'}</Text>
                     <Text style={styles.aiRefreshText}>
-                      {aiPlanRefresh.build?.status === 'failed'
+                      {planBuilding
+                        ? 'You can keep training while your next block takes shape.'
+                        : refreshBuildFailed
                         ? 'The previous build paused. Reopen your check-in to review and try again.'
-                        : `Tell ${aiPlanRefresh.trainerName || 'Ava'} what worked, what changed and what should feel different.`}
+                        : `Tell ${refreshTrainerName} what worked, what changed and what should feel different.`}
                     </Text>
                   </View>
                 </View>
                 <View style={[styles.aiRefreshMetaRow, alignRefreshContentToCopy && styles.aiRefreshContentAligned]}>
-                  <View style={styles.aiRefreshMetaItem}><Feather name="clock" size={14} color={colors.inkSubtle} /><Text style={styles.aiRefreshMetaText}>About 2 min</Text></View>
+                  <View style={styles.aiRefreshMetaItem}><Feather name="clock" size={14} color={colors.inkSubtle} /><Text style={styles.aiRefreshMetaText}>{planBuilding ? 'Usually about 2 min' : 'About 2 min'}</Text></View>
                   <View style={styles.aiRefreshMetaDot} />
-                  <View style={styles.aiRefreshMetaItem}><Feather name="calendar" size={14} color={colors.inkSubtle} /><Text style={styles.aiRefreshMetaText}>{aiPlanRefresh.planAgeDays} day{aiPlanRefresh.planAgeDays === 1 ? '' : 's'} on this plan</Text></View>
+                  <View style={styles.aiRefreshMetaItem}>
+                    <Feather name={planBuilding ? 'check-circle' : 'calendar'} size={14} color={colors.inkSubtle} />
+                    <Text style={styles.aiRefreshMetaText}>
+                      {planBuilding
+                        ? 'Runs in the background'
+                        : `${aiPlanRefresh?.planAgeDays || 0} day${aiPlanRefresh?.planAgeDays === 1 ? '' : 's'} on this plan`}
+                    </Text>
+                  </View>
                 </View>
-                {aiPlanRefresh.allowance?.allowed === false ? (
+                {!planBuilding && aiPlanRefresh?.allowance?.allowed === false ? (
                   <View style={[styles.aiRefreshUnavailable, alignRefreshContentToCopy && styles.aiRefreshContentAligned]}>
                     <Feather name="lock" size={15} color={colors.inkMuted} />
                     <Text style={styles.aiRefreshUnavailableText}>Check-in is unavailable right now. Your current plan stays active.</Text>
                   </View>
                 ) : (
                   <PrimaryButton
-                    title={aiPlanRefresh.build?.status === 'failed' ? 'Try building again' : 'Start check-in'}
-                    icon={aiPlanRefresh.build?.status === 'failed' ? 'refresh-cw' : 'arrow-right'}
-                    onPress={() => navigation.navigate('PlanRefresh', aiPlanRefresh.build?.status === 'failed' ? { retryFailedBuild: true } : undefined)}
+                    title={planBuilding ? 'View build progress' : refreshBuildFailed ? 'Try building again' : 'Start check-in'}
+                    icon={planBuilding ? 'activity' : refreshBuildFailed ? 'refresh-cw' : 'arrow-right'}
+                    onPress={() => {
+                      if (planBuilding) {
+                        setDismissedPlanBuildId(null);
+                        return;
+                      }
+                      navigation.navigate('PlanRefresh', refreshBuildFailed ? { retryFailedBuild: true } : undefined);
+                    }}
                     style={alignRefreshContentToCopy
                       ? { ...styles.aiRefreshButton, ...styles.aiRefreshContentAligned }
                       : styles.aiRefreshButton}
@@ -904,6 +772,61 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                 )}
               </View>
             ) : null}
+
+            <SectionTitle>Your coach</SectionTitle>
+            {trainer ? (
+              <Card
+                variant="outline"
+                style={styles.trainerCard}
+                onPress={() => navigation.navigate('Coach', { initialView: 'about' })}
+              >
+                <View style={styles.trainerPhotoWrap}>
+                  {trainerPhoto && !trainerPhotoFailed ? (
+                    <Image
+                      source={trainerPhoto}
+                      style={styles.trainerPhoto}
+                      resizeMode="cover"
+                      onError={() => setTrainerPhotoFailed(true)}
+                      accessible={false}
+                    />
+                  ) : (
+                    <View style={styles.trainerFallback}>
+                      <Text style={styles.trainerInitial}>{(trainer.name || 'T').slice(0, 1).toUpperCase()}</Text>
+                    </View>
+                  )}
+                </View>
+                <View style={styles.trainerInfo}>
+                  <Text style={styles.trainerLabel}>Your coach</Text>
+                  <Text style={styles.trainerName}>{trainer.name || 'FormBae Trainer'}</Text>
+                  <Text style={styles.trainerDescription} numberOfLines={2}>
+                    {trainer.trainerDescription || 'Guiding your workout plan, check-ins and weekly progress.'}
+                  </Text>
+                </View>
+                <View style={styles.trainerBadge}>
+                  <Feather name="chevron-right" size={20} color={colors.accent} />
+                </View>
+              </Card>
+            ) : (
+              <Card
+                variant="outline"
+                style={styles.trainerCard}
+                onPress={() => navigation.navigate('Coach', { initialView: 'browse' })}
+              >
+                <View style={styles.trainerPhotoWrap}>
+                  <View style={styles.trainerFallback}>
+                    <Feather name="user-plus" size={22} color={colors.accentDark} />
+                  </View>
+                </View>
+                <View style={styles.trainerInfo}>
+                  <Text style={styles.trainerLabel}>Your coach</Text>
+                  <Text style={styles.trainerName}>Coach not assigned yet</Text>
+                  <Text style={styles.trainerDescription} numberOfLines={2}>Choose a coach to guide your workouts and progress.</Text>
+                </View>
+                <View style={styles.trainerBadge}>
+                  <Feather name="chevron-right" size={20} color={colors.accent} />
+                </View>
+              </Card>
+            )}
 
             <View style={styles.weekSection}>
               <View style={styles.weekHeader}>
@@ -1024,6 +947,8 @@ function WorkoutDashboardScreen({ navigation }: Props) {
               ) : null}
             </View>
 
+            <CoachingFeature onPress={() => navigation.navigate('Coach', { initialView: 'browse' })} />
+
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={openPlanSwitcher}
@@ -1041,16 +966,6 @@ function WorkoutDashboardScreen({ navigation }: Props) {
               <Feather name="chevron-right" size={20} color={colors.inkSubtle} />
             </TouchableOpacity>
 
-            <CoachDiscoverySection
-              coaches={coachPreviews}
-              viewportWidth={viewportWidth}
-              fontScale={fontScale}
-              onBrowse={() => navigation.navigate('Coach', { initialView: 'browse' })}
-              onOpenCoach={coach => navigation.navigate('Coach', {
-                initialView: coach.current || !coach.option ? 'about' : 'detail',
-                ...(coach.option ? { trainerId: coach.id } : {}),
-              })}
-            />
           </>
         )}
       </ScrollView>
@@ -1114,12 +1029,14 @@ function AvaPlanTakeover({
   requestedAt,
   lastSyncedAt,
   onContinue,
+  onExit,
 }: {
   mode: 'building' | 'ready';
   trainerName: string;
   requestedAt?: number;
   lastSyncedAt?: number;
   onContinue?: () => void;
+  onExit?: () => void;
 }) {
   const fallbackStartedAt = useRef(Date.now());
   const [buildProgress, setBuildProgress] = useState(6);
@@ -1151,6 +1068,15 @@ function AvaPlanTakeover({
       clearInterval(interval);
     };
   }, [mode, pulse, requestedAt]);
+
+  useEffect(() => {
+    if (mode !== 'building' || !onExit) return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      onExit();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [mode, onExit]);
 
   if (mode === 'ready') {
     return (
@@ -1188,6 +1114,19 @@ function AvaPlanTakeover({
   const updateLabel = syncAgeSeconds === null ? 'Reviewing your notes' : syncAgeSeconds < 5 ? 'Coach notes updated' : 'Thoughtfully taking shape';
   return (
     <ScreenContainer withBottomInset style={styles.avaTakeover}>
+      <View style={styles.avaBuildHeader}>
+        <TouchableOpacity
+          style={styles.avaBuildBackButton}
+          onPress={onExit}
+          accessibilityRole="button"
+          accessibilityLabel="Back to workouts"
+          hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+        >
+          <Feather name="chevron-left" size={24} color={colors.ink} />
+        </TouchableOpacity>
+        <Text style={styles.avaBuildHeaderTitle}>Building your plan</Text>
+        <View style={styles.avaBuildHeaderSpacer} />
+      </View>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.avaBuildBody}
@@ -1434,7 +1373,11 @@ function PlanSwitcherModal({
 
 const styles = StyleSheet.create({
   avaTakeover: { backgroundColor: colors.bg, paddingHorizontal: spacing.lg },
-  avaBuildBody: { flexGrow: 1, paddingTop: spacing.md, paddingBottom: spacing.lg },
+  avaBuildHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  avaBuildBackButton: { width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  avaBuildHeaderTitle: { ...typography.bodyBold, color: colors.ink },
+  avaBuildHeaderSpacer: { width: 44, height: 44 },
+  avaBuildBody: { flexGrow: 1, paddingTop: spacing.sm, paddingBottom: spacing.lg },
   avaReadyBody: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', paddingTop: spacing.lg, paddingBottom: spacing.xl },
   avaKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', textAlign: 'center', marginTop: spacing.lg },
   avaTitle: { ...typography.display, color: colors.ink, textAlign: 'center', marginTop: spacing.sm },
@@ -1605,138 +1548,54 @@ const styles = StyleSheet.create({
   aiRefreshButton: { marginTop: spacing.sm },
   aiRefreshUnavailable: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, marginTop: spacing.sm, paddingTop: spacing.sm },
   aiRefreshUnavailableText: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 18 },
-  coachDiscoverySection: { marginTop: spacing.xl + spacing.sm },
-  coachDiscoveryHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    marginBottom: spacing.md,
-  },
-  coachDiscoveryHeaderLargeText: { flexDirection: 'column', alignItems: 'stretch' },
-  coachDiscoveryHeaderCopy: { flex: 1, minWidth: 0 },
-  coachDiscoveryHeaderCopyLargeText: { flex: 0 },
-  coachDiscoveryTitle: { ...typography.title, color: colors.ink },
-  coachDiscoverySubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  coachDiscoverySeeAll: {
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingLeft: spacing.sm,
-  },
-  coachDiscoverySeeAllText: { ...typography.caption, color: colors.ink, fontWeight: '800' },
-  coachDiscoveryHero: {
-    height: 218,
+  coachingFeatureSection: { marginTop: spacing.xl + spacing.sm },
+  coachingFeatureHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.md },
+  coachingFeatureHeaderLargeText: { flexDirection: 'column', alignItems: 'stretch' },
+  coachingFeatureHeaderCopy: { flex: 1, minWidth: 0 },
+  coachingFeatureTitle: { ...typography.title, color: colors.ink },
+  coachingFeatureSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  coachingFeatureSeeAll: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 2, paddingLeft: spacing.sm },
+  coachingFeatureSeeAllText: { ...typography.caption, color: colors.ink, fontWeight: '800' },
+  coachingFeatureHero: { height: 218, overflow: 'hidden', borderRadius: radius.xl, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panel },
+  coachingFeatureHeroExpanded: { height: 260 },
+  coachingFeatureHeroLargeText: { height: 'auto' },
+  coachingFeatureImage: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, width: '100%', height: '100%' },
+  coachingFeatureImageStage: { height: 180, overflow: 'hidden', backgroundColor: colors.panelMuted },
+  coachingFeatureImageFlow: { width: '100%', height: '100%' },
+  coachingFeatureShade: { position: 'absolute', top: 0, left: 0, bottom: 0, width: '61%', backgroundColor: 'rgba(5,6,10,0.78)' },
+  coachingFeatureShadeExpanded: { width: '78%' },
+  coachingFeatureCopy: { width: '58%', height: '100%', justifyContent: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.md },
+  coachingFeatureCopyExpanded: { width: '76%', paddingHorizontal: spacing.lg },
+  coachingFeatureCopyFlow: { padding: spacing.lg, backgroundColor: colors.panel },
+  coachingFeatureKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
+  coachingFeatureHeroTitle: { fontSize: 25, lineHeight: 30, fontWeight: '900', letterSpacing: -0.45, color: colors.inkStrong, marginTop: spacing.xs },
+  coachingFeatureAction: { minHeight: 40, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderRadius: radius.pill, backgroundColor: colors.primaryAction, paddingHorizontal: spacing.md, marginTop: spacing.md },
+  coachingFeatureActionText: { ...typography.caption, color: colors.onPrimary, fontWeight: '900' },
+  trainerCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md, padding: spacing.md },
+  trainerPhotoWrap: {
+    width: 58,
+    height: 58,
+    borderRadius: 22,
     overflow: 'hidden',
-    borderRadius: radius.xl,
+    backgroundColor: colors.accentLight,
     borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.panel,
+    borderColor: colors.accentSurface,
   },
-  coachDiscoveryHeroExpanded: { height: 260 },
-  coachDiscoveryHeroLargeText: { height: 'auto' },
-  coachDiscoveryImage: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, width: '100%', height: '100%' },
-  coachDiscoveryImageStage: { height: 180, overflow: 'hidden', backgroundColor: colors.panelMuted },
-  coachDiscoveryImageFlow: { width: '100%', height: '100%' },
-  coachDiscoveryShade: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    bottom: 0,
-    width: '61%',
-    backgroundColor: 'rgba(5,6,10,0.78)',
-  },
-  coachDiscoveryShadeExpanded: { width: '78%' },
-  coachDiscoveryCopy: {
-    width: '58%',
-    height: '100%',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-  },
-  coachDiscoveryCopyExpanded: { width: '76%', paddingHorizontal: spacing.lg },
-  coachDiscoveryCopyFlow: { padding: spacing.lg, backgroundColor: colors.panel },
-  coachDiscoveryKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
-  coachDiscoveryHeroTitle: {
-    fontSize: 25,
-    lineHeight: 30,
-    fontWeight: '900',
-    letterSpacing: -0.45,
-    color: colors.inkStrong,
-    marginTop: spacing.xs,
-  },
-  coachDiscoveryAction: {
-    minHeight: 40,
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
+  trainerPhoto: { width: '100%', height: '100%' },
+  trainerFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight },
+  trainerInitial: { ...typography.title, color: colors.accentDark },
+  trainerInfo: { flex: 1, minWidth: 0 },
+  trainerLabel: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase', marginBottom: 2 },
+  trainerName: { ...typography.subtitle, color: colors.ink },
+  trainerDescription: { ...typography.caption, color: colors.inkMuted, marginTop: 2, lineHeight: 17 },
+  trainerBadge: {
+    width: 34,
+    height: 34,
     borderRadius: radius.pill,
-    backgroundColor: colors.primaryAction,
-    paddingHorizontal: spacing.md,
-    marginTop: spacing.md,
-  },
-  coachDiscoveryActionText: { ...typography.caption, color: colors.onPrimary, fontWeight: '900' },
-  coachPreviewRail: { gap: spacing.md, paddingTop: spacing.md, paddingRight: spacing.lg },
-  coachPreviewCard: {
-    overflow: 'hidden',
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panel,
-  },
-  coachPreviewCardWide: { alignSelf: 'stretch' },
-  coachPreviewVisual: { aspectRatio: 4 / 5, overflow: 'hidden', backgroundColor: colors.panelMuted },
-  coachPreviewVisualWide: { aspectRatio: 1.55 },
-  coachPreviewImage: { width: '100%', height: '100%' },
-  coachPreviewFallback: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
-    backgroundColor: colors.panelMuted,
+    backgroundColor: colors.accentLight,
   },
-  coachPreviewFallbackDisc: {
-    position: 'absolute',
-    width: 170,
-    height: 170,
-    borderRadius: 85,
-    backgroundColor: colors.panelWarm,
-  },
-  coachPreviewInitial: { fontSize: 64, lineHeight: 72, color: colors.goldMuted, fontWeight: '900' },
-  coachPreviewTag: {
-    position: 'absolute',
-    top: spacing.sm,
-    left: spacing.sm,
-    minHeight: 27,
-    justifyContent: 'center',
-    borderRadius: radius.pill,
-    backgroundColor: 'rgba(5,6,10,0.82)',
-    paddingHorizontal: spacing.sm,
-  },
-  coachPreviewTagCurrent: { backgroundColor: colors.gold },
-  coachPreviewTagText: { fontSize: 9, lineHeight: 12, fontWeight: '900', letterSpacing: 0.7, color: colors.ink },
-  coachPreviewTagTextCurrent: { color: colors.onPrimary },
-  coachPreviewCaption: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: 'rgba(5,6,10,0.82)',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  coachPreviewName: { ...typography.subtitle, color: colors.inkStrong },
-  coachPreviewRole: { ...typography.caption, color: colors.onAccentMuted, marginTop: 1 },
-  coachPreviewFooter: {
-    minHeight: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-  },
-  coachPreviewPrice: { ...typography.caption, color: colors.ink, fontWeight: '800' },
   weekSection: { marginTop: spacing.xl },
   weekHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
   weekHeaderCopy: { flex: 1, minWidth: 0 },

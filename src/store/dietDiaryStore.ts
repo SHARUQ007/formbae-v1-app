@@ -1,11 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNFS from 'react-native-fs';
 import type { Asset } from 'react-native-image-picker';
+import { getActiveCacheSessionId } from '../services/appCache';
 import { timestampValue, validTimestamp } from '../utils/dietDiaryTime';
 
 const KEY = 'formbae_diet_diary_entries_v1';
 const MEAL_TIME_KEY = 'formbae_food_memory_times_v1';
 const DIR = `${RNFS.DocumentDirectoryPath}/diet-diary`;
+let memoryEntries: DietDiaryEntry[] | null = null;
+let memoryEntriesSession = '';
 
 export type DietDiaryEntry = {
   id: string;
@@ -29,8 +32,31 @@ export type DietDiaryEntry = {
 export type MealType = 'Breakfast' | 'Lunch' | 'Evening' | 'Dinner';
 export type RememberedMealTimes = Partial<Record<MealType, { hour: number; minute: number }>>;
 
+function scopedStorageKey(baseKey: string) {
+  return `${baseKey}:${getActiveCacheSessionId()}`;
+}
+
+async function readScopedStorage(baseKey: string) {
+  const scopedKey = scopedStorageKey(baseKey);
+  const scopedValue = await AsyncStorage.getItem(scopedKey);
+  if (scopedValue !== null) return scopedValue;
+
+  // Migrate the pre-namespaced value once for existing installations. Removing
+  // the legacy key prevents it from being inherited by a later account.
+  const legacyValue = await AsyncStorage.getItem(baseKey);
+  if (legacyValue === null) return null;
+  await AsyncStorage.setItem(scopedKey, legacyValue);
+  await AsyncStorage.removeItem(baseKey);
+  return legacyValue;
+}
+
+function setMemoryEntries(entries: DietDiaryEntry[]) {
+  memoryEntriesSession = getActiveCacheSessionId();
+  memoryEntries = entries;
+}
+
 export async function loadRememberedMealTimes(): Promise<RememberedMealTimes> {
-  const raw = await AsyncStorage.getItem(MEAL_TIME_KEY);
+  const raw = await readScopedStorage(MEAL_TIME_KEY);
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw) as RememberedMealTimes;
@@ -54,7 +80,7 @@ export async function rememberMealTime(mealType: MealType, value: Date | string)
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return loadRememberedMealTimes();
   await AsyncStorage.mergeItem(
-    MEAL_TIME_KEY,
+    scopedStorageKey(MEAL_TIME_KEY),
     JSON.stringify({
       [mealType]: { hour: date.getHours(), minute: date.getMinutes() },
     }),
@@ -82,26 +108,38 @@ function extensionFor(asset: Asset) {
 }
 
 async function readEntries(): Promise<DietDiaryEntry[]> {
-  const raw = await AsyncStorage.getItem(KEY);
-  if (!raw) return [];
+  const raw = await readScopedStorage(KEY);
+  if (!raw) {
+    setMemoryEntries([]);
+    return [];
+  }
   try {
     const parsed = JSON.parse(raw) as DietDiaryEntry[];
-    if (!Array.isArray(parsed)) return [];
-    return parsed
+    if (!Array.isArray(parsed)) {
+      setMemoryEntries([]);
+      return [];
+    }
+    const entries = parsed
       .filter((entry) => entry && typeof entry.id === 'string')
       .map((entry) => ({
         ...entry,
         mealType: normalizeMealType(entry.mealType),
         createdAt: validTimestamp(entry.createdAt) || validTimestamp(entry.loggedAt) || new Date(0).toISOString(),
         loggedAt: validTimestamp(entry.loggedAt),
-      }));
+      }))
+      .sort(compareEntriesNewestFirst);
+    setMemoryEntries(entries);
+    return entries;
   } catch {
+    setMemoryEntries([]);
     return [];
   }
 }
 
 async function writeEntries(entries: DietDiaryEntry[]) {
-  await AsyncStorage.setItem(KEY, JSON.stringify(entries));
+  const sortedEntries = [...entries].sort(compareEntriesNewestFirst);
+  setMemoryEntries(sortedEntries);
+  await AsyncStorage.setItem(scopedStorageKey(KEY), JSON.stringify(sortedEntries));
 }
 
 function compareEntriesNewestFirst(a: DietDiaryEntry, b: DietDiaryEntry) {
@@ -112,9 +150,9 @@ function compareEntriesNewestFirst(a: DietDiaryEntry, b: DietDiaryEntry) {
   return b.id.localeCompare(a.id);
 }
 
-async function ensureDir() {
-  const exists = await RNFS.exists(DIR);
-  if (!exists) await RNFS.mkdir(DIR);
+async function ensureDir(directory: string) {
+  const exists = await RNFS.exists(directory);
+  if (!exists) await RNFS.mkdir(directory);
 }
 
 async function persistAsset(asset: Asset, id: string): Promise<{ uri: string; storedLocally: boolean }> {
@@ -122,8 +160,9 @@ async function persistAsset(asset: Asset, id: string): Promise<{ uri: string; st
   if (!sourceUri) throw new Error('No image selected');
 
   try {
-    await ensureDir();
-    const destination = `${DIR}/${id}.${extensionFor(asset)}`;
+    const directory = `${DIR}/${getActiveCacheSessionId()}`;
+    await ensureDir(directory);
+    const destination = `${directory}/${id}.${extensionFor(asset)}`;
     if (asset.base64) {
       await RNFS.writeFile(destination, asset.base64, 'base64');
       return { uri: `file://${destination}`, storedLocally: true };
@@ -141,11 +180,17 @@ async function persistAsset(asset: Asset, id: string): Promise<{ uri: string; st
 
 export async function loadDietDiaryEntries() {
   const entries = await readEntries();
-  return entries.sort(compareEntriesNewestFirst);
+  return [...entries];
+}
+
+/** Synchronous first-paint data populated by the startup warm-up. */
+export function peekDietDiaryEntries() {
+  if (memoryEntriesSession !== getActiveCacheSessionId()) return null;
+  return memoryEntries ? [...memoryEntries] : null;
 }
 
 export async function saveDietDiaryEntries(entries: DietDiaryEntry[]) {
-  await writeEntries([...entries].sort(compareEntriesNewestFirst));
+  await writeEntries(entries);
 }
 
 export async function addDietDiaryEntry(asset: Asset, mealType: MealType, note?: string, createdAt = new Date().toISOString()) {

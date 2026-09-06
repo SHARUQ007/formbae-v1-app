@@ -22,6 +22,7 @@ import { fetchAnalysis } from '../../services/questionnaireService';
 import { useAuthStore } from '../../store/authStore';
 import type { OnboardingStackParamList } from '../../navigation/types';
 import type { AnalysisReport } from '../../types/api';
+import { getCoachArtworkSource } from '../../utils/coachArtwork';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'AnalysisReport'>;
 
@@ -369,14 +370,15 @@ function TrainerMatchCard({
   onBrowse: () => void;
 }) {
   const trainer = report.recommendedTrainer;
+  const trainerPhoto = getCoachArtworkSource({ name: trainer.name, photoUrl: trainer.photoUrl });
   const avatarSize = compact ? 56 : 64;
   return (
     <View style={styles.trainerCard}>
       <Text style={styles.eyebrowGold}>{trainer.badge || 'Recommended personal trainer'}</Text>
       <View style={styles.trainerRow}>
         <View style={[styles.trainerAvatar, { width: avatarSize, height: avatarSize }]}>
-          {trainer.photoUrl ? (
-            <Image source={{ uri: trainer.photoUrl }} style={styles.trainerPhoto} />
+          {trainerPhoto ? (
+            <Image source={trainerPhoto} style={styles.trainerPhoto} />
           ) : (
             <Text style={styles.trainerInitial}>{trainer.name.slice(0, 1).toUpperCase()}</Text>
           )}
