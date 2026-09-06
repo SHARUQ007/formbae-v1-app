@@ -15,6 +15,7 @@ describe('weekly body map', () => {
     expect(resolveBodyGender('Female')).toBe('female');
     expect(resolveBodyGender('male')).toBe('male');
     expect(resolveBodyGender('non-binary')).toBe('neutral');
+    expect(resolveBodyGender('human')).toBe('neutral');
     expect(resolveBodyGender()).toBe('neutral');
   });
 

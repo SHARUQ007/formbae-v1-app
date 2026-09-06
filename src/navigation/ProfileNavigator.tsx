@@ -5,6 +5,7 @@ import { colors } from '../theme/colors';
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
 const getEditProfileScreen = () => require('../screens/profile/EditProfileScreen').EditProfileScreen;
+const getGymPickerScreen = () => require('../screens/profile/GymPickerScreen').GymPickerScreen;
 const getTrainerScreen = () => require('../screens/main/TrainerScreen').TrainerScreen;
 const getLegalScreen = () => require('../screens/legal/LegalScreen').LegalScreen;
 const getDeleteAccountScreen = () => require('../screens/profile/DeleteAccountScreen').DeleteAccountScreen;
@@ -24,6 +25,7 @@ export function ProfileNavigator() {
     >
       <Stack.Screen name="ProfileMain" component={ProfileScreen} options={{ headerShown: false }} />
       <Stack.Screen name="EditProfile" getComponent={getEditProfileScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="GymPicker" getComponent={getGymPickerScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Trainer" getComponent={getTrainerScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Legal" getComponent={getLegalScreen} />
       <Stack.Screen name="DeleteAccount" getComponent={getDeleteAccountScreen} />

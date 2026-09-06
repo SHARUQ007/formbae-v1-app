@@ -1,5 +1,5 @@
 import type { ImageSourcePropType } from 'react-native';
-import { getSiteUrl } from '../constants/config';
+import { getBackendApiBaseUrl, getSiteUrl } from '../constants/config';
 
 const AVA_COACH_ARTWORK = require('../assets/editorial/ava-coach-gold.jpg') as ImageSourcePropType;
 
@@ -20,6 +20,13 @@ export function getCoachArtworkSource(input: CoachArtworkInput): ImageSourceProp
   const photoUrl = String(input.photoUrl || '').trim();
   if (!photoUrl) return null;
   if (/^https?:\/\//i.test(photoUrl)) return { uri: photoUrl };
+  if (/^data:image\/(?:jpeg|jpg|png|webp);base64,/i.test(photoUrl)) {
+    return { uri: photoUrl };
+  }
+  if (photoUrl.startsWith('/api/mobile/')) {
+    return { uri: `${getBackendApiBaseUrl()}${photoUrl}` };
+  }
   if (photoUrl.startsWith('/')) return { uri: `${getSiteUrl()}${photoUrl}` };
-  return { uri: photoUrl };
+  if (/^(?:file|content):\/\//i.test(photoUrl)) return { uri: photoUrl };
+  return null;
 }

@@ -68,6 +68,7 @@ jest.mock('react-native-fs', () => ({
   mkdir: jest.fn(() => Promise.resolve()),
   writeFile: jest.fn(() => Promise.resolve()),
   copyFile: jest.fn(() => Promise.resolve()),
+  readDir: jest.fn(() => Promise.resolve([])),
   unlink: jest.fn(() => Promise.resolve()),
 }));
 jest.mock('react-native-webview', () => {

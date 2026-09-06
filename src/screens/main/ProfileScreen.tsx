@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { Alert, Image, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Image, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import LinearGradient from 'react-native-linear-gradient';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenTitle } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
@@ -12,10 +13,11 @@ import { LoadingState, ErrorState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { peekCachedResource } from '../../services/appCache';
 import { cancelMobileSubscription, fetchSettings, updateSettings, type MobileSettingsResponse } from '../../services/settingsService';
+import { fetchGym, type GymPlace } from '../../services/gymService';
 import { syncReminders } from '../../services/notificationService';
 import { CACHE_KEYS, loadProfileSettingsCached } from '../../services/preloadService';
 import { titleCase } from '../../utils/format';
-import { getBodyProfileArtwork, getPlanProfileArtwork } from '../../utils/profileArtwork';
+import { getBodyProfileArtwork, getGymProfileArtwork, getPlanProfileArtwork } from '../../utils/profileArtwork';
 import { useAuthStore } from '../../store/authStore';
 import type { ProfileStackParamList, RootStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
@@ -93,6 +95,10 @@ export function ProfileScreen({ navigation }: Props) {
   const { logout, status } = useAuthStore();
   const cached = useMemo(() => peekCachedResource<MobileSettingsResponse>(CACHE_KEYS.profileSettings), []);
   const [cancelling, setCancelling] = useState(false);
+  const [manageAccessOpen, setManageAccessOpen] = useState(false);
+  const [selectedGym, setSelectedGym] = useState<GymPlace | null>(null);
+  const [gymLoading, setGymLoading] = useState(false);
+  const [gymUnavailable, setGymUnavailable] = useState(false);
   const hasFocusedRef = useRef(false);
   const [notifications, setNotifications] = useState<NotificationPrefs>(
     cached?.notifications ?? {
@@ -102,9 +108,11 @@ export function ProfileScreen({ navigation }: Props) {
     },
   );
 
-  const { data, loading, error, reload, refresh, refreshing } = useAsync<MobileSettingsResponse>(async (mode) => {
+  const { data, loading, error, reload, refresh, refreshing } = useAsync<MobileSettingsResponse>(async () => {
     const settings = await loadProfileSettingsCached({
-      force: mode === 'refresh',
+      // Keep cached content on screen, but always revalidate profile metrics.
+      // Body measurements can change from Progress or another device.
+      force: true,
     });
     setNotifications(settings.notifications);
     syncReminders(settings.notifications).catch(() => undefined);
@@ -112,6 +120,9 @@ export function ProfileScreen({ navigation }: Props) {
   });
 
   const current = data || cached;
+  const profile = (current?.profile ?? {}) as Record<string, string>;
+  const lifestyle = parseJsonRecord(profile.lifestyleJson);
+  const selectedGymPlaceId = lifestyle.selectedGymPlaceId || '';
 
   useFocusEffect(useCallback(() => {
     if (!hasFocusedRef.current) {
@@ -120,6 +131,30 @@ export function ProfileScreen({ navigation }: Props) {
     }
     reload().catch(() => undefined);
   }, [reload]));
+
+  useEffect(() => {
+    if (!selectedGymPlaceId) {
+      setSelectedGym(null);
+      setGymLoading(false);
+      setGymUnavailable(false);
+      return;
+    }
+    const controller = new AbortController();
+    setGymLoading(true);
+    setGymUnavailable(false);
+    fetchGym(selectedGymPlaceId, controller.signal)
+      .then((place) => setSelectedGym(place))
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setSelectedGym(null);
+          setGymUnavailable(true);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setGymLoading(false);
+      });
+    return () => controller.abort();
+  }, [selectedGymPlaceId]);
 
   const toggle = async (key: keyof NotificationPrefs, value: boolean) => {
     const previous = notifications;
@@ -152,9 +187,7 @@ export function ProfileScreen({ navigation }: Props) {
     );
   }
 
-  const profile = (current?.profile ?? {}) as Record<string, string>;
   const access = current?.access ?? {};
-  const lifestyle = parseJsonRecord(profile.lifestyleJson);
   const languages = parseLanguages(profile.languagePreferencesJson);
   const workoutSetting = lifestyle.workoutSetting === 'home' ? 'Home' : lifestyle.workoutSetting === 'gym' ? 'Gym' : '';
   const accessActive = access.tier === 'premium' || status?.hasPaid;
@@ -164,7 +197,6 @@ export function ProfileScreen({ navigation }: Props) {
   const planName = typeof access.planName === 'string' ? access.planName : '';
   const displayName = firstRealName(current?.user?.name, profile.name, lifestyle.name, lifestyle.fullName, lifestyle.firstName, status?.name);
   const displayContact = current?.user?.mobile || status?.phone || status?.email || '';
-  const firstName = isPlaceholderName(displayName) ? 'you' : displayName.split(/\s+/)[0] || 'you';
   const editProfile = () => navigation.navigate('EditProfile');
   const openRenewal = () => navigation.getParent()?.getParent<NativeStackNavigationProp<RootStackParamList>>()?.navigate('Renewal');
 
@@ -192,6 +224,7 @@ export function ProfileScreen({ navigation }: Props) {
   ].filter((item) => Boolean(item.value));
   const bodyArtwork = getBodyProfileArtwork(profile.gender);
   const planArtwork = getPlanProfileArtwork(profile.gender);
+  const gymArtwork = getGymProfileArtwork(profile.gender);
   const compactProfile = viewportWidth < 380 || fontScale >= 1.18;
   const largeText = fontScale >= 1.18;
   const availableArtworkWidth = Math.max(280, viewportWidth - spacing.lg * 2);
@@ -263,12 +296,26 @@ export function ProfileScreen({ navigation }: Props) {
         <SectionHeading title="Body profile" action="Edit" onAction={editProfile} />
         <View style={styles.bodyProfileCard}>
           <View style={[styles.bodyArtworkFrame, { height: artworkHeight }]}>
-            <Image source={bodyArtwork} style={styles.bodyArtwork} resizeMode="contain" accessible={false} accessibilityIgnoresInvertColors />
-            <View style={styles.bodyArtworkShade} />
+            <Image
+              source={bodyArtwork}
+              style={styles.bodyArtwork}
+              resizeMode="cover"
+              accessible={false}
+              accessibilityIgnoresInvertColors
+              testID="body-profile-artwork"
+            />
+            <LinearGradient
+              colors={['rgba(5,6,10,0.94)', 'rgba(5,6,10,0.58)', 'rgba(5,6,10,0.08)']}
+              locations={[0, 0.48, 0.82]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.bodyArtworkShade}
+              pointerEvents="none"
+            />
             <View style={styles.bodyArtworkCopy}>
-              <Text style={styles.artworkOverline}>YOUR STARTING POINT</Text>
+              <Text style={styles.artworkOverline}>AT A GLANCE</Text>
               <Text style={styles.artworkTitle} numberOfLines={2}>
-                Built around {firstName}
+                Your baseline
               </Text>
               {!largeText ? <Text style={styles.artworkCaption}>Your numbers, kept simple.</Text> : null}
             </View>
@@ -318,8 +365,22 @@ export function ProfileScreen({ navigation }: Props) {
         <SectionHeading title="Plan" action="Edit" onAction={editProfile} />
         <View style={styles.planCard}>
           <View style={[styles.planArtworkFrame, { height: artworkHeight }]}>
-            <Image source={planArtwork} style={styles.planArtwork} resizeMode="contain" accessible={false} accessibilityIgnoresInvertColors />
-            <View style={styles.planArtworkShade} />
+            <Image
+              source={planArtwork}
+              style={styles.planArtwork}
+              resizeMode="cover"
+              accessible={false}
+              accessibilityIgnoresInvertColors
+              testID="plan-profile-artwork"
+            />
+            <LinearGradient
+              colors={['rgba(5,6,10,0.95)', 'rgba(5,6,10,0.62)', 'rgba(5,6,10,0.08)']}
+              locations={[0, 0.5, 0.84]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={styles.planArtworkShade}
+              pointerEvents="none"
+            />
             <View style={styles.planCopy}>
               <Text style={styles.artworkOverline}>YOUR PLAN</Text>
               <Text style={styles.planGoal} numberOfLines={compactProfile ? 3 : 2} adjustsFontSizeToFit={!compactProfile} minimumFontScale={0.82}>
@@ -344,6 +405,52 @@ export function ProfileScreen({ navigation }: Props) {
           )}
         </View>
 
+        {workoutSetting === 'Gym' ? (
+          <>
+            <SectionHeading title="Your gym" />
+            <TouchableOpacity
+              activeOpacity={0.9}
+              style={styles.gymCard}
+              onPress={() => navigation.navigate('GymPicker')}
+              accessibilityRole="button"
+              accessibilityLabel={selectedGymPlaceId ? 'Change your gym' : 'Choose your gym'}
+            >
+              <Image source={gymArtwork} style={styles.gymArtwork} resizeMode="cover" accessible={false} accessibilityIgnoresInvertColors />
+              <LinearGradient
+                colors={['rgba(5,6,10,0.96)', 'rgba(5,6,10,0.70)', 'rgba(5,6,10,0.10)']}
+                locations={[0, 0.52, 0.9]}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={styles.gymShade}
+                pointerEvents="none"
+              />
+              <View style={styles.gymCopy}>
+                <Text style={styles.artworkOverline}>TRAINING HOME</Text>
+                {gymLoading ? (
+                  <View style={styles.gymLoadingRow}>
+                    <ActivityIndicator size="small" color={colors.gold} />
+                    <Text style={styles.gymLoadingText}>Loading your gym…</Text>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={styles.gymTitle} numberOfLines={2}>
+                      {selectedGym?.name || (selectedGymPlaceId ? 'Your gym is saved' : 'Choose your gym')}
+                    </Text>
+                    <Text style={styles.gymCaption} numberOfLines={2}>
+                      {selectedGym?.address || (gymUnavailable ? 'Tap to refresh or choose another gym.' : 'Keep your usual training place with your plan.')}
+                    </Text>
+                    {selectedGym ? <Text style={styles.gymAttribution}>Google Maps</Text> : null}
+                  </>
+                )}
+                <View style={styles.gymAction}>
+                  <Text style={styles.gymActionText}>{selectedGymPlaceId ? 'Change gym' : 'Find a gym'}</Text>
+                  <Feather name="arrow-right" size={17} color={colors.onPrimary} />
+                </View>
+              </View>
+            </TouchableOpacity>
+          </>
+        ) : null}
+
         <SectionHeading title="Access" />
         <View style={styles.accessCard}>
           <View style={styles.accessHeader}>
@@ -358,33 +465,44 @@ export function ProfileScreen({ navigation }: Props) {
           <View style={styles.accessRows}>
             <PlainRow label="Access window" value={formatAccessWindow(access)} isLast />
           </View>
-          <View style={styles.managePanel}>
-            <View style={styles.manageHeader}>
-              <View style={styles.manageIcon}>
-                <Feather name="settings" size={20} color={colors.accentDark} />
-              </View>
-              <View style={styles.manageCopy}>
-                <Text style={styles.manageTitle}>Manage subscription</Text>
-                <Text style={styles.manageText}>
-                  {inGrace ? (
-                    <>Renew before the grace period ends to keep your access uninterrupted.</>
-                  ) : (
-                    <>
-                      Refund requests: <Text style={styles.supportEmail}>team@formbae.in</Text>. Send your payment ID or mobile number within 5 days of payment for review.
-                    </>
-                  )}
-                </Text>
-              </View>
+          <TouchableOpacity
+            activeOpacity={0.82}
+            style={styles.manageDisclosure}
+            onPress={() => setManageAccessOpen((open) => !open)}
+            accessibilityRole="button"
+            accessibilityLabel="Manage subscription"
+            accessibilityState={{ expanded: manageAccessOpen }}
+          >
+            <View style={styles.manageIcon}>
+              <Feather name="settings" size={19} color={colors.accentDark} />
             </View>
-            {inGrace ? (
-              <PrimaryButton title="Renew subscription" icon="arrow-right" onPress={openRenewal} style={styles.manageRenewButton} />
-            ) : accessActive ? (
-              <TouchableOpacity activeOpacity={0.8} style={styles.cancelButton} onPress={confirmCancel} disabled={cancelling}>
-                <Feather name="x-circle" size={16} color={colors.error} />
-                <Text style={styles.cancelButtonText}>{cancelling ? 'Cancelling...' : 'Cancel subscription'}</Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
+            <View style={styles.manageCopy}>
+              <Text style={styles.manageTitle}>Manage subscription</Text>
+              <Text style={styles.manageSummary}>{inGrace ? 'Renewal and access options' : 'Refund and cancellation options'}</Text>
+            </View>
+            <Feather name={manageAccessOpen ? 'chevron-up' : 'chevron-down'} size={20} color={colors.inkSubtle} />
+          </TouchableOpacity>
+          {manageAccessOpen ? (
+            <View style={styles.managePanel}>
+              <Text style={styles.manageText}>
+                {inGrace ? (
+                  <>Renew before the grace period ends to keep your access uninterrupted.</>
+                ) : (
+                  <>
+                    Refund requests: <Text style={styles.supportEmail}>team@formbae.in</Text>. Send your payment ID or mobile number within 5 days of payment for review.
+                  </>
+                )}
+              </Text>
+              {inGrace ? (
+                <PrimaryButton title="Renew subscription" icon="arrow-right" onPress={openRenewal} style={styles.manageRenewButton} />
+              ) : accessActive ? (
+                <TouchableOpacity activeOpacity={0.8} style={styles.cancelButton} onPress={confirmCancel} disabled={cancelling}>
+                  <Feather name="x-circle" size={16} color={colors.error} />
+                  <Text style={styles.cancelButtonText}>{cancelling ? 'Cancelling...' : 'Cancel subscription'}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
         </View>
 
         <SectionHeading title="Notifications" />
@@ -552,26 +670,24 @@ const styles = StyleSheet.create({
   },
   bodyArtwork: {
     position: 'absolute',
-    right: 0,
     top: 0,
-    bottom: 0,
+    left: 0,
+    width: '100%',
     height: '100%',
-    aspectRatio: 1.5,
   },
   bodyArtworkShade: {
     position: 'absolute',
-    left: 0,
     top: 0,
+    right: 0,
     bottom: 0,
-    width: '61%',
-    backgroundColor: 'rgba(5, 6, 10, 0.62)',
+    left: 0,
   },
   bodyArtworkCopy: {
     position: 'absolute',
     left: spacing.md,
     top: spacing.md,
     bottom: spacing.md,
-    width: '55%',
+    width: '48%',
     justifyContent: 'center',
   },
   artworkOverline: { ...typography.overline, color: colors.gold },
@@ -579,6 +695,7 @@ const styles = StyleSheet.create({
     ...typography.title,
     color: colors.inkStrong,
     marginTop: spacing.xs,
+    flexShrink: 1,
   },
   artworkCaption: {
     ...typography.caption,
@@ -663,32 +780,31 @@ const styles = StyleSheet.create({
   },
   planArtwork: {
     position: 'absolute',
-    right: 0,
     top: 0,
-    bottom: 0,
+    left: 0,
+    width: '100%',
     height: '100%',
-    aspectRatio: 1.5,
   },
   planArtworkShade: {
     position: 'absolute',
-    left: 0,
     top: 0,
+    right: 0,
     bottom: 0,
-    width: '63%',
-    backgroundColor: 'rgba(5, 6, 10, 0.7)',
+    left: 0,
   },
   planCopy: {
     position: 'absolute',
     left: spacing.md,
     top: spacing.md,
     bottom: spacing.md,
-    width: '55%',
+    width: '48%',
     justifyContent: 'center',
   },
   planGoal: {
     ...typography.title,
     color: colors.inkStrong,
     marginTop: spacing.xs,
+    flexShrink: 1,
   },
   planCaption: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.xs },
   planFacts: {
@@ -716,6 +832,51 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     padding: spacing.md,
   },
+  gymCard: {
+    height: 190,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.panel,
+    overflow: 'hidden',
+  },
+  gymArtwork: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+  },
+  gymShade: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
+  gymCopy: {
+    flex: 1,
+    width: '62%',
+    padding: spacing.md,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+  },
+  gymTitle: { ...typography.title, color: colors.inkStrong, marginTop: spacing.xs },
+  gymCaption: { ...typography.caption, color: colors.inkMuted, marginTop: 3 },
+  gymAttribution: { fontSize: 12, lineHeight: 16, fontWeight: '400', color: colors.inkMuted, marginTop: 3 },
+  gymLoadingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm },
+  gymLoadingText: { ...typography.caption, color: colors.inkMuted },
+  gymAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: spacing.xs + 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primaryAction,
+  },
+  gymActionText: { ...typography.label, color: colors.onPrimary },
   listPanel: {
     borderWidth: 1,
     borderColor: colors.border,
@@ -768,6 +929,13 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     paddingVertical: spacing.xs,
   },
+  manageDisclosure: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 58,
+    marginTop: spacing.sm,
+  },
   managePanel: {
     borderTopWidth: 1,
     borderTopColor: colors.border,
@@ -784,6 +952,7 @@ const styles = StyleSheet.create({
   },
   manageCopy: { flex: 1 },
   manageTitle: { ...typography.bodyBold, color: colors.ink },
+  manageSummary: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
   manageText: {
     ...typography.caption,
     color: colors.inkMuted,

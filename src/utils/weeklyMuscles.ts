@@ -53,8 +53,8 @@ function normalizeMuscleLabels(values: string[]) {
 
 export function resolveBodyGender(value?: string): BodyGender {
   const normalized = String(value || '').trim().toLowerCase();
-  if (/female|woman|girl/.test(normalized)) return 'female';
-  if (/male|man|boy/.test(normalized)) return 'male';
+  if (/\b(?:female|woman|women|girl)\b/.test(normalized)) return 'female';
+  if (/\b(?:male|man|men|boy)\b/.test(normalized)) return 'male';
   return 'neutral';
 }
 

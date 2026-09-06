@@ -10,7 +10,8 @@
     "start": "react-native start",
     "test": "jest",
     "typecheck": "tsc --noEmit",
-    "check": "npm run lint && npm run typecheck && npm test -- --runInBand",
+    "assets:check": "node scripts/check-asset-budget.js",
+    "check": "npm run assets:check && npm run lint && npm run typecheck && npm test -- --runInBand",
     "audit:exercise-knowledge": "npm --prefix ../frontend run audit:exercise-knowledge --"
   },
   "dependencies": {

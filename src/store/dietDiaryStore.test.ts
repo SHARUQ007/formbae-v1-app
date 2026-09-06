@@ -1,16 +1,20 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import RNFS from 'react-native-fs';
 import { setCacheSession } from '../services/appCache';
 import {
+  addDietDiaryEntry,
   addTextDietDiaryEntry,
   addSkippedDietDiaryEntry,
   loadDietDiaryEntries,
   loadRememberedMealTimes,
   mergeRemoteDietDiaryEntries,
   rememberMealTime,
+  updateDietDiaryEntry,
 } from './dietDiaryStore';
 
 describe('diet diary persistence', () => {
   beforeEach(async () => {
+    jest.clearAllMocks();
     setCacheSession(null);
     await AsyncStorage.clear();
   });
@@ -111,5 +115,52 @@ describe('diet diary persistence', () => {
     await expect(loadRememberedMealTimes()).resolves.toEqual({
       Breakfast: { hour: 8, minute: 15 },
     });
+  });
+
+  it('removes its managed photo after a confirmed remote upload', async () => {
+    const entry = await addDietDiaryEntry(
+      { uri: 'file:///camera/meal.jpg', fileName: 'meal.jpg', type: 'image/jpeg' },
+      'Dinner',
+    );
+    const localPath = entry.uri?.replace(/^file:\/\//, '');
+
+    await updateDietDiaryEntry(entry.id, {
+      remoteId: 'remote-meal',
+      remoteImageUrl: 'https://formbae.example/meals/remote-meal.jpg',
+    });
+
+    await expect(loadDietDiaryEntries()).resolves.toEqual([
+      expect.objectContaining({
+        id: entry.id,
+        uri: 'https://formbae.example/meals/remote-meal.jpg',
+        storedLocally: false,
+      }),
+    ]);
+    expect(RNFS.unlink).toHaveBeenCalledWith(localPath);
+  });
+
+  it('releases a local photo when a remote merge confirms the image', async () => {
+    const entry = await addDietDiaryEntry(
+      { uri: 'file:///camera/lunch.jpg', fileName: 'lunch.jpg', type: 'image/jpeg' },
+      'Lunch',
+    );
+    const localPath = entry.uri?.replace(/^file:\/\//, '');
+
+    const merged = await mergeRemoteDietDiaryEntries([
+      {
+        entryId: 'remote-lunch',
+        clientId: entry.id,
+        imageUrl: 'https://formbae.example/meals/remote-lunch.jpg',
+        mealType: 'Lunch',
+        createdAt: entry.createdAt,
+      },
+    ]);
+
+    expect(merged[0]).toMatchObject({
+      id: entry.id,
+      uri: 'https://formbae.example/meals/remote-lunch.jpg',
+      storedLocally: false,
+    });
+    expect(RNFS.unlink).toHaveBeenCalledWith(localPath);
   });
 });

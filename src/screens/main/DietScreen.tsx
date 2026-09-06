@@ -49,6 +49,7 @@ import {
 import {
   deleteRemoteDietDiaryEntry,
   resolveDietDiaryImageUrl,
+  shouldAuthenticateDietDiaryImage,
   submitDietReportResponses,
   updateRemoteDietDiaryEntry,
   uploadDietDiaryEntry,
@@ -1477,7 +1478,7 @@ function FoodPointsBadge({ points }: { points: number }) {
 function imageSource(entry: DietDiaryEntry) {
   const uri = resolveDietDiaryImageUrl(entry.remoteImageUrl || entry.uri || '');
   const token = getAuthToken();
-  if (uri.startsWith('http') && token) {
+  if (shouldAuthenticateDietDiaryImage(uri) && token) {
     return { uri, headers: { Authorization: `Bearer ${token}` } };
   }
   return { uri };

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ImageBackground, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, ImageBackground, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View, type ImageSourcePropType } from 'react-native';
 import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image-picker';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -8,7 +8,6 @@ import LinearGradient from 'react-native-linear-gradient';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { ScreenContainer } from '../../components/Card';
-import { Badge } from '../../components/Badge';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState } from '../../components/States';
 import {
@@ -42,6 +41,7 @@ import {
   getAccountabilityTaskArtwork,
   getAccountabilityTaskLabel,
 } from '../../utils/accountabilityArtwork';
+import { getAccountabilityBaeArtwork, getAccountabilityBaeModeCaption } from '../../utils/accountabilityBaeArtwork';
 import type { MainTabParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
@@ -63,13 +63,17 @@ type TodayTask = {
 
 export function ActionHubScreen({ navigation }: Props) {
   const tabBarHeight = useBottomTabBarHeight();
+  const { width, fontScale } = useWindowDimensions();
+  const compactLayout = width < 360 || fontScale > 1.15;
   const [warmSnapshot] = useState(() => peekContextualSnapshot());
   const [snapshot, setSnapshot] = useState<ContextualSnapshot | null>(warmSnapshot);
   const [accountability, setAccountability] = useState<AccountabilitySummary | null>(() => peekAccountability());
   const [trophies, setTrophies] = useState<TrophySummary | null>(
     () => peekProgressBundleCached()?.progress.trophies ?? null,
   );
-  const [accountabilityBae, setAccountabilityBae] = useState<AccountabilityBaeSummary | null>(() => peekAccountabilityBae());
+  const [warmBae] = useState<AccountabilityBaeSummary | null>(() => peekAccountabilityBae());
+  const [accountabilityBae, setAccountabilityBae] = useState<AccountabilityBaeSummary | null>(warmBae);
+  const [baeLoading, setBaeLoading] = useState(!warmBae);
   const [baeBusy, setBaeBusy] = useState(false);
   const [friendCode, setFriendCode] = useState('');
   const [initialLoading, setInitialLoading] = useState(!warmSnapshot);
@@ -85,15 +89,17 @@ export function ActionHubScreen({ navigation }: Props) {
 
   const applyBaeSummary = useCallback((next: AccountabilityBaeSummary) => {
     setAccountabilityBae(next);
+    setBaeLoading(false);
     setBaeUnavailable(false);
   }, []);
   const partnerStatus = accountabilityBae?.status;
 
   const load = useCallback(async (force = false) => {
     if (force) autoCompletedDate.current = '';
+    setBaeLoading(true);
     // Apply each resource as soon as it arrives. The previous all-at-once
     // update kept the entire tab behind whichever optional service was slowest.
-    const [, nextAccountability, nextBae] = await Promise.allSettled([
+    const [, nextAccountability] = await Promise.allSettled([
       resolveContextualSnapshot().then((value) => {
         setSnapshot(value);
         setInitialLoading(false);
@@ -103,17 +109,23 @@ export function ActionHubScreen({ navigation }: Props) {
         setAccountability(value);
         return value;
       }),
-      fetchAccountabilityBae({ force }).then((value) => {
-        setAccountabilityBae(value);
-        return value;
-      }),
+      fetchAccountabilityBae({ force: true })
+        .then((value) => {
+          setAccountabilityBae(value);
+          setBaeUnavailable(false);
+          return value;
+        })
+        .catch((error) => {
+          setBaeUnavailable(true);
+          throw error;
+        })
+        .finally(() => setBaeLoading(false)),
       loadProgressBundleCached({ force }).then((value) => {
         setTrophies(value.progress.trophies ?? null);
         return value;
       }),
     ]);
     setAccountabilityUnavailable(nextAccountability.status === 'rejected');
-    setBaeUnavailable(nextBae.status === 'rejected');
     setInitialLoading(false);
   }, []);
 
@@ -325,6 +337,7 @@ export function ActionHubScreen({ navigation }: Props) {
   };
 
   const leaveBae = () => {
+    if (baeBusy) return;
     Alert.alert('Leave this match?', 'Both people will be disconnected and the shared proof photos stored for this match will be deleted. This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -467,16 +480,15 @@ export function ActionHubScreen({ navigation }: Props) {
           />
         ) : null}
 
-        <View style={styles.accountabilityTabs} accessibilityRole="tablist">
-          <TouchableOpacity style={[styles.accountabilityTab, activeView === 'today' && styles.accountabilityTabActive]} onPress={() => setActiveView('today')} accessibilityRole="tab" accessibilityState={{ selected: activeView === 'today' }}>
-            <Feather name="check-square" size={17} color={activeView === 'today' ? colors.gold : colors.inkMuted} />
-            <Text style={[styles.accountabilityTabText, activeView === 'today' && styles.accountabilityTabTextActive]}>Today</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.accountabilityTab, activeView === 'bae' && styles.accountabilityTabActive]} onPress={() => setActiveView('bae')} accessibilityRole="tab" accessibilityState={{ selected: activeView === 'bae' }}>
-            <Feather name={accountabilityBae?.status === 'locked' ? 'lock' : 'users'} size={17} color={activeView === 'bae' ? colors.gold : colors.inkMuted} />
-            <Text style={[styles.accountabilityTabText, activeView === 'bae' && styles.accountabilityTabTextActive]}>Bae</Text>
-          </TouchableOpacity>
-        </View>
+        <AccountabilityModeSwitch
+          activeView={activeView}
+          partnerStatus={accountabilityBae?.status}
+          partnerLoading={baeLoading && !accountabilityBae}
+          partnerUnavailable={baeUnavailable && !accountabilityBae}
+          compact={compactLayout}
+          todayArtwork={getAccountabilityTaskArtwork(uniqueTodayTasks[0]?.kind || 'progress')}
+          onChange={setActiveView}
+        />
         {activeView === 'today' ? (
           <View style={styles.todayDashboard}>
             <View style={styles.todayQueueHeader}>
@@ -503,6 +515,8 @@ export function ActionHubScreen({ navigation }: Props) {
 
             <AccountabilityBaeCard
               data={accountabilityBae}
+              loading={baeLoading}
+              compact={compactLayout}
               busy={baeBusy}
               friendCode={friendCode}
               onFriendCodeChange={setFriendCode}
@@ -522,8 +536,107 @@ export function ActionHubScreen({ navigation }: Props) {
   );
 }
 
+type AccountabilityView = 'today' | 'bae';
+
+export function AccountabilityModeSwitch({ activeView, partnerStatus, partnerLoading, partnerUnavailable, compact, todayArtwork, onChange }: {
+  activeView: AccountabilityView;
+  partnerStatus?: AccountabilityBaeSummary['status'];
+  partnerLoading: boolean;
+  partnerUnavailable: boolean;
+  compact: boolean;
+  todayArtwork: ImageSourcePropType;
+  onChange: (view: AccountabilityView) => void;
+}) {
+  const partnerCaption = partnerUnavailable ? 'Unavailable' : partnerLoading ? 'Loading' : getAccountabilityBaeModeCaption(partnerStatus);
+  return (
+    <View style={styles.accountabilityTabs} accessibilityRole="tablist" accessibilityLabel="Accountability views">
+      <AccountabilityModeOption
+        active={activeView === 'today'}
+        artwork={todayArtwork}
+        label="My day"
+        caption="Your focus"
+        compact={compact}
+        onPress={() => onChange('today')}
+      />
+      <AccountabilityModeOption
+        active={activeView === 'bae'}
+        artwork={getAccountabilityBaeArtwork(partnerStatus)}
+        label="Partner"
+        caption={partnerCaption}
+        compact={compact}
+        onPress={() => onChange('bae')}
+      />
+    </View>
+  );
+}
+
+function AccountabilityModeOption({ active, artwork, label, caption, compact, onPress }: {
+  active: boolean;
+  artwork: ImageSourcePropType;
+  label: string;
+  caption: string;
+  compact: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.84}
+      style={[styles.accountabilityTab, active && styles.accountabilityTabActive]}
+      onPress={onPress}
+      accessibilityRole="tab"
+      accessibilityLabel={`${label}. ${caption}`}
+      accessibilityState={{ selected: active }}
+    >
+      <Image source={artwork} style={[styles.accountabilityTabArtwork, compact && styles.accountabilityTabArtworkCompact, active && styles.accountabilityTabArtworkActive]} resizeMode="cover" accessible={false} />
+      <View style={styles.accountabilityTabCopy}>
+        <Text style={[styles.accountabilityTabText, active && styles.accountabilityTabTextActive]} numberOfLines={1}>{label}</Text>
+        {!compact ? <Text style={[styles.accountabilityTabCaption, active && styles.accountabilityTabCaptionActive]} numberOfLines={1}>{caption}</Text> : null}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function BaeLoadingState() {
+  return (
+    <View style={styles.partnerSection} accessibilityLiveRegion="polite">
+      <View style={styles.baeHeader}>
+        <View style={styles.baeHeaderCopy}>
+          <Text style={styles.baeTitle}>Partner check-in</Text>
+          <Text style={styles.baeHeaderCaption}>Getting your shared space ready</Text>
+        </View>
+      </View>
+      <BaeArtworkHero eyebrow="OPENING PARTNER MODE" title="Getting things ready" body="One moment." loading />
+    </View>
+  );
+}
+
+function BaeArtworkHero({ eyebrow, title, body, loading = false }: {
+  eyebrow: string;
+  title: string;
+  body: string;
+  loading?: boolean;
+}) {
+  return (
+    <ImageBackground source={getAccountabilityBaeArtwork('inactive')} style={styles.baeArtworkHero} imageStyle={styles.baeArtworkImage} resizeMode="cover">
+      <LinearGradient colors={['rgba(4,5,8,0.98)', 'rgba(4,5,8,0.82)', 'rgba(4,5,8,0.08)']} locations={[0, 0.58, 1]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
+      <View style={styles.baeArtworkContent}>
+        <View style={styles.baeArtworkEyebrowRow}>
+          {loading ? <ActivityIndicator size="small" color={colors.gold} /> : <View style={styles.baeArtworkDot} />}
+          <Text style={styles.baeArtworkEyebrow}>{eyebrow}</Text>
+        </View>
+        <View>
+          <Text style={styles.baeArtworkTitle}>{title}</Text>
+          <Text style={styles.baeArtworkBody}>{body}</Text>
+        </View>
+      </View>
+    </ImageBackground>
+  );
+}
+
 type AccountabilityBaeCardProps = {
   data: AccountabilityBaeSummary | null;
+  loading: boolean;
+  compact: boolean;
   busy: boolean;
   friendCode: string;
   onFriendCodeChange: (value: string) => void;
@@ -536,18 +649,27 @@ type AccountabilityBaeCardProps = {
   onViewTrophies: () => void;
 };
 
-function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onStart, onJoinFriend, onShareFriendCode, onSubmitProof, onLeave, onRetry, onViewTrophies }: AccountabilityBaeCardProps) {
+export function AccountabilityBaeCard({ data, loading, compact, busy, friendCode, onFriendCodeChange, onStart, onJoinFriend, onShareFriendCode, onSubmitProof, onLeave, onRetry, onViewTrophies }: AccountabilityBaeCardProps) {
+  if (loading && !data) {
+    return <BaeLoadingState />;
+  }
   if (!data) {
     return <InlineNotice icon="wifi-off" title="Partner accountability is unavailable" body="Your match has not been changed. Check your connection and try again." action="Try again" onPress={onRetry} />;
   }
 
+  const headerCaption = data.status === 'matched'
+    ? 'One shared challenge each day'
+    : data.status === 'waiting'
+      ? 'We’ll keep matching in the background'
+      : data.status === 'locked'
+        ? 'Unlock shared daily challenges'
+        : 'Small promises, kept together';
   const header = (
     <View style={styles.baeHeader}>
       <View style={styles.baeHeaderCopy}>
-        <Text style={styles.baeTitle}>Accountability Bae</Text>
-        <Text style={styles.baeHeaderCaption}>A daily check-in with a partner</Text>
+        <Text style={styles.baeTitle}>Partner check-in</Text>
+        <Text style={styles.baeHeaderCaption}>{headerCaption}</Text>
       </View>
-      {data.status === 'matched' ? <Badge label="Active" tone="gold" icon="check" style={styles.activeBadge} /> : null}
     </View>
   );
 
@@ -560,14 +682,22 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
     return (
       <View style={styles.partnerSection}>
         {header}
-        <View style={styles.baeLockHero}>
-          <View style={styles.baeLockIcon}><MaterialCommunityIcon name="trophy-outline" size={30} color={colors.gold} /></View>
-          <Text style={styles.baeLockEyebrow}>{forceLocked ? 'ACCESS PAUSED' : 'UNLOCK AT 50 TROPHIES'}</Text>
-          <Text style={styles.baeLockTitle}>{forceLocked ? 'Accountability Bae is unavailable' : 'Earn your way in'}</Text>
-          <Text style={styles.baeLockText}>{forceLocked ? 'Your access is currently managed by FormBae support.' : `Earn ${remaining} more ${remaining === 1 ? 'trophy' : 'trophies'} to unlock partner challenges.`}</Text>
-          <View style={styles.baeTrophyProgressHead}><Text style={styles.baeTrophyProgressValue}>{score} trophies</Text><Text style={styles.baeTrophyProgressTarget}>{threshold}</Text></View>
-          <View style={styles.baeTrophyTrack}><View style={[styles.baeTrophyFill, { width: progress }]} /></View>
-          <PrimaryButton title="View trophy progress" icon="award" variant="secondary" onPress={onViewTrophies} style={styles.baeTrophyButton} />
+        <BaeArtworkHero
+          eyebrow={forceLocked ? 'ACCESS PAUSED' : 'UNLOCK PARTNER MODE'}
+          title={forceLocked ? 'Partner mode is paused' : 'Consistency opens the door'}
+          body={forceLocked ? 'FormBae support manages this access.' : `${remaining} more ${remaining === 1 ? 'trophy' : 'trophies'} to start shared challenges.`}
+        />
+        <View style={styles.baeAccessCard}>
+          {!forceLocked ? (
+            <>
+              <View style={styles.baeTrophyProgressHead}>
+                <Text style={styles.baeTrophyProgressValue}>{score} trophies</Text>
+                <Text style={styles.baeTrophyProgressTarget}>Unlocks at {threshold}</Text>
+              </View>
+              <View style={styles.baeTrophyTrack}><View style={[styles.baeTrophyFill, { width: progress }]} /></View>
+            </>
+          ) : null}
+          <PrimaryButton title="View trophy progress" variant="secondary" onPress={onViewTrophies} style={styles.baeTrophyButton} />
         </View>
       </View>
     );
@@ -577,17 +707,15 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
     return (
       <View style={styles.partnerSection}>
         {header}
-        <View style={styles.baeIntroHero}>
-          <Text style={styles.baeIntroTitle}>Choose your partner</Text>
-          <Text style={styles.baeIntro}>Complete one shared daily challenge. Proof stays private and unlocks only after both people check in.</Text>
-        </View>
-        <View style={styles.baePreferenceRow}>
-          <BaePreference icon="gender-male" label="Male" onPress={() => onStart('male')} disabled={busy} />
-          <BaePreference icon="gender-female" label="Female" onPress={() => onStart('female')} disabled={busy} />
-          <BaePreference icon="account-multiple-plus-outline" label="Friend" onPress={() => onStart('friend')} disabled={busy} />
+        <BaeArtworkHero eyebrow="PARTNER MODE" title="Better together" body="Choose how you’d like to connect." />
+        <Text style={styles.baeChoicePrompt}>Match with</Text>
+        <View style={[styles.baePreferenceRow, compact && styles.baePreferenceRowCompact]}>
+          <BaePreference kind="male" label="Male" detail="Auto-match" compact={compact} onPress={() => onStart('male')} disabled={busy} />
+          <BaePreference kind="female" label="Female" detail="Auto-match" compact={compact} onPress={() => onStart('female')} disabled={busy} />
+          <BaePreference kind="friend" label="Friend" detail="Use a code" compact={compact} onPress={() => onStart('friend')} disabled={busy} />
         </View>
         {busy ? <ActivityIndicator color={colors.gold} /> : null}
-        <View style={styles.baeSafety}><Feather name="lock" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>First names only. No face photo required.</Text></View>
+        <View style={styles.baeSafety}><Feather name="lock" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>First name + initial · photos unlock together · no face required</Text></View>
       </View>
     );
   }
@@ -597,18 +725,16 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
     return (
       <View style={styles.partnerSection}>
         {header}
-        <View style={styles.baeWaitingHero}>
-          <View style={styles.baeWaitingIcon}>{busy ? <ActivityIndicator color={colors.gold} /> : <MaterialCommunityIcon name={friendMode ? 'account-multiple-plus-outline' : 'radar'} size={28} color={colors.gold} />}</View>
-          <View style={styles.baeWaitingCopy}>
-            <Text style={styles.baeWaitingKicker}>{friendMode ? 'INVITE READY' : 'MATCHING IN PROGRESS'}</Text>
-            <Text style={styles.baeWaitingTitle}>{friendMode ? 'Bring your partner in' : 'Finding the right partner'}</Text>
-            <Text style={styles.baeWaitingDescription}>{friendMode ? 'Share your code. You’ll connect when your friend enters it.' : `We’re finding a compatible ${data.preference} partner. You can leave this screen.`}</Text>
-          </View>
-        </View>
+        <BaeArtworkHero
+          eyebrow={friendMode ? 'INVITE READY' : 'MATCHING NOW'}
+          title={friendMode ? 'Bring a friend along' : 'Finding your person'}
+          body={friendMode ? 'Share your private code to connect.' : `Looking for a compatible ${data.preference} partner.`}
+          loading={!friendMode || busy}
+        />
         {friendMode ? (
           <>
             <View style={styles.friendInviteBox}>
-              <View><Text style={styles.friendCodeLabel}>PARTNER CODE</Text><Text style={styles.friendCodeValue}>{data.inviteCode}</Text></View>
+              <View style={styles.friendCodeCopy}><Text style={styles.friendCodeLabel}>PARTNER CODE</Text><Text style={styles.friendCodeValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{data.inviteCode}</Text></View>
               <PrimaryButton title="Invite" icon="share-2" size="sm" onPress={onShareFriendCode} style={styles.friendShareButton} />
             </View>
             <Text style={styles.friendJoinLabel}>Already have their code?</Text>
@@ -644,11 +770,20 @@ function AccountabilityBaeCard({ data, busy, friendCode, onFriendCodeChange, onS
   return (
     <View style={styles.partnerSection}>
       {header}
-      <View style={styles.baePartnerRow}>
-        <View style={styles.baePartnerAvatar}><Text style={styles.baePartnerInitial}>{partnerName.charAt(0).toUpperCase()}</Text></View>
-        <View style={styles.baePartnerCopy}><Text style={styles.baePartnerLabel}>YOUR PARTNER</Text><Text style={styles.baePartnerName}>{partnerName}</Text></View>
-        <TouchableOpacity onPress={onLeave} style={styles.baeMoreButton} accessibilityRole="button" accessibilityLabel="Leave Accountability Bae match"><Feather name="more-horizontal" size={20} color={colors.inkMuted} /></TouchableOpacity>
-      </View>
+      <ImageBackground source={getAccountabilityBaeArtwork('matched')} style={styles.baeConnectedHero} imageStyle={styles.baeArtworkImage} resizeMode="cover">
+        <LinearGradient colors={['rgba(4,5,8,0.98)', 'rgba(4,5,8,0.74)', 'rgba(4,5,8,0.06)']} locations={[0, 0.52, 1]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
+        <View style={styles.baeConnectedContent}>
+          <View style={styles.baeConnectedTop}>
+            <View style={styles.baeConnectedStatus}><View style={styles.baeConnectedDot} /><Text style={styles.baeConnectedStatusText}>CONNECTED</Text></View>
+            <TouchableOpacity onPress={onLeave} disabled={busy} style={[styles.baeMoreButton, busy && styles.baeDisabled]} accessibilityRole="button" accessibilityLabel="Leave Accountability Bae match" accessibilityState={{ disabled: busy }}><Feather name="more-horizontal" size={20} color={colors.ink} /></TouchableOpacity>
+          </View>
+          <View style={styles.baeConnectedCopy}>
+            <Text style={styles.baePartnerLabel}>YOUR PARTNER</Text>
+            <Text style={styles.baePartnerName} numberOfLines={1} ellipsizeMode="tail">{partnerName}</Text>
+            <Text style={styles.baeConnectedCaption}>Show up. Check in. Unlock together.</Text>
+          </View>
+        </View>
+      </ImageBackground>
       {challenge ? (
         <View style={styles.baeChallenge}>
           <View style={styles.baeChallengeTop}>
@@ -703,26 +838,52 @@ function InlineNotice({ icon, title, body, action, onPress, standalone = false }
   );
 }
 
-function BaePreference({ icon, label, onPress, disabled }: { icon: string; label: string; onPress: () => void; disabled: boolean }) {
-  const detail = label === 'Friend' ? 'Invite someone with a private code' : `Find a ${label.toLowerCase()} accountability partner`;
+function BaePreference({ kind, label, detail, compact, onPress, disabled }: {
+  kind: 'male' | 'female' | 'friend';
+  label: string;
+  detail: string;
+  compact: boolean;
+  onPress: () => void;
+  disabled: boolean;
+}) {
   return (
-    <TouchableOpacity activeOpacity={0.78} style={[styles.baePreference, disabled && styles.baeDisabled]} onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityLabel={`Match with a ${label.toLowerCase()} accountability partner`}>
-      <View style={styles.baePreferenceIcon}><MaterialCommunityIcon name={icon} size={22} color={colors.gold} /></View>
-      <View style={styles.baePreferenceCopy}>
+    <TouchableOpacity activeOpacity={0.78} style={[styles.baePreference, compact && styles.baePreferenceCompact, disabled && styles.baeDisabled]} onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityLabel={`${label}. ${detail}`} accessibilityState={{ disabled }}>
+      <PartnerChoiceMark kind={kind} />
+      <View style={[styles.baePreferenceCopy, compact && styles.baePreferenceCopyCompact]}>
         <Text style={styles.baePreferenceText}>{label}</Text>
         <Text style={styles.baePreferenceDetail}>{detail}</Text>
       </View>
-      <Feather name="chevron-right" size={19} color={colors.gold} />
     </TouchableOpacity>
   );
 }
 
-function ProofTile({ label, submitted, imageUrl, locked }: { label: string; submitted: boolean; imageUrl?: string; locked: boolean }) {
-  const source = accountabilityBaeProofSource(imageUrl);
+function PartnerChoiceMark({ kind }: { kind: 'male' | 'female' | 'friend' }) {
+  const double = kind === 'friend';
   return (
-    <View style={styles.proofTile}>
+    <View style={styles.partnerChoiceMark} accessible={false}>
+      <View style={[styles.partnerChoiceFigure, double && styles.partnerChoiceFigureBack]}>
+        <View style={styles.partnerChoiceHead} />
+        <View style={styles.partnerChoiceBody} />
+      </View>
+      {double ? (
+        <View style={[styles.partnerChoiceFigure, styles.partnerChoiceFigureFront]}>
+          <View style={[styles.partnerChoiceHead, styles.partnerChoiceHeadGold]} />
+          <View style={[styles.partnerChoiceBody, styles.partnerChoiceBodyGold]} />
+        </View>
+      ) : (
+        <View style={[styles.partnerChoiceOrbit, kind === 'female' && styles.partnerChoiceOrbitOffset]} />
+      )}
+    </View>
+  );
+}
+
+function ProofTile({ label, submitted, imageUrl, locked }: { label: string; submitted: boolean; imageUrl?: string; locked: boolean }) {
+  const source = locked ? undefined : accountabilityBaeProofSource(imageUrl);
+  const stateLabel = locked ? 'locked until both people check in' : submitted ? 'submitted' : 'waiting';
+  return (
+    <View style={styles.proofTile} accessible accessibilityRole="image" accessibilityLabel={`${label}, ${stateLabel}`}>
       <View style={styles.proofImageWrap}>
-        {source && !locked ? <Image source={source} style={styles.proofImage} resizeMode="cover" /> : <View style={styles.proofPlaceholder}><Feather name={locked ? 'lock' : submitted ? 'check' : 'camera'} size={23} color={submitted ? colors.gold : colors.inkSubtle} /></View>}
+        {source && !locked ? <Image source={source} style={styles.proofImage} resizeMode="cover" accessible={false} /> : <View style={styles.proofPlaceholder}><Feather name={locked ? 'lock' : submitted ? 'check' : 'camera'} size={23} color={submitted ? colors.ink : colors.inkSubtle} /></View>}
         <View style={[styles.proofStatusDot, submitted && styles.proofStatusDotDone]} />
       </View>
       <View style={styles.proofMeta}>
@@ -823,7 +984,6 @@ const styles = StyleSheet.create({
   trophyButtonCopy: { minWidth: 24 },
   trophyButtonValue: { fontSize: 17, lineHeight: 19, color: colors.ink, fontWeight: '900' },
   trophyButtonLabel: { fontSize: 9, lineHeight: 11, color: colors.inkMuted, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
-  activeBadge: { backgroundColor: colors.panelRaised, borderColor: colors.borderStrong },
   inlineNotice: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.sm, marginTop: spacing.md },
   inlineNoticeStandalone: { marginTop: spacing.xl },
   inlineNoticeIcon: { width: 36, height: 36, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
@@ -832,11 +992,17 @@ const styles = StyleSheet.create({
   inlineNoticeBody: { ...typography.caption, color: colors.inkMuted, lineHeight: 17, marginTop: 1 },
   inlineNoticeAction: { minHeight: 36, justifyContent: 'center', paddingHorizontal: spacing.sm },
   inlineNoticeActionText: { ...typography.caption, color: colors.gold, fontWeight: '900' },
-  accountabilityTabs: { flexDirection: 'row', gap: spacing.xs, borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg, backgroundColor: colors.panel, padding: spacing.xs, marginTop: spacing.lg },
-  accountabilityTab: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, borderWidth: 1, borderColor: 'transparent', borderRadius: radius.md },
-  accountabilityTabActive: { borderColor: colors.borderStrong, backgroundColor: colors.panelRaised },
-  accountabilityTabText: { ...typography.bodyBold, color: colors.inkMuted },
-  accountabilityTabTextActive: { color: colors.ink },
+  accountabilityTabs: { flexDirection: 'row', gap: spacing.xs, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.lg, backgroundColor: colors.bg, padding: spacing.xs, marginTop: spacing.lg },
+  accountabilityTab: { flex: 1, minWidth: 0, minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: 'transparent', borderRadius: radius.md, padding: 5 },
+  accountabilityTabActive: { borderColor: colors.gold, backgroundColor: colors.gold },
+  accountabilityTabArtwork: { width: 72, height: 48, flexShrink: 0, borderRadius: 9, borderWidth: 1, borderColor: colors.border },
+  accountabilityTabArtworkCompact: { width: 60, height: 40 },
+  accountabilityTabArtworkActive: { borderColor: 'rgba(0,0,0,0.32)' },
+  accountabilityTabCopy: { flex: 1, minWidth: 0 },
+  accountabilityTabText: { ...typography.label, color: colors.ink, fontWeight: '800' },
+  accountabilityTabTextActive: { color: colors.onPrimary },
+  accountabilityTabCaption: { fontSize: 10, lineHeight: 14, color: colors.inkMuted, fontWeight: '600', marginTop: 1 },
+  accountabilityTabCaptionActive: { color: 'rgba(8,9,12,0.68)' },
   todayDashboard: { flex: 1 },
   todayHero: { marginTop: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.md },
   todayHeroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
@@ -869,41 +1035,49 @@ const styles = StyleSheet.create({
   todayTaskCardDetail: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.xs },
   todayTaskCardAction: { minWidth: 88, minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, borderRadius: radius.pill, backgroundColor: colors.gold, paddingHorizontal: spacing.md, marginTop: spacing.md },
   todayTaskCardActionText: { ...typography.label, color: colors.onPrimary, fontWeight: '900' },
-  partnerSection: { paddingBottom: spacing.sm, marginTop: spacing.xl },
-  baeHeader: { minHeight: 46, flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, marginBottom: spacing.md },
+  partnerSection: { paddingBottom: spacing.sm, marginTop: spacing.lg },
+  baeHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, marginBottom: spacing.sm, paddingHorizontal: 2 },
   baeHeaderCopy: { flex: 1, minWidth: 0 },
-  baeTitle: { ...typography.title, color: colors.ink },
+  baeTitle: { ...typography.subtitle, color: colors.ink, fontWeight: '700' },
   baeHeaderCaption: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  baeLockHero: { alignItems: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.panel, padding: spacing.lg },
-  baeLockIcon: { width: 66, height: 66, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
-  baeLockEyebrow: { ...typography.overline, color: colors.gold, marginTop: spacing.md },
-  baeLockTitle: { ...typography.title, color: colors.ink, textAlign: 'center', marginTop: spacing.xs },
-  baeLockText: { ...typography.body, color: colors.inkMuted, textAlign: 'center', lineHeight: 22, maxWidth: 320, marginTop: spacing.xs },
-  baeTrophyProgressHead: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.xl },
+  baeArtworkHero: { minHeight: 226, overflow: 'hidden', borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.lg, backgroundColor: colors.panel },
+  baeArtworkImage: { borderRadius: radius.lg },
+  baeArtworkContent: { flex: 1, minHeight: 226, justifyContent: 'space-between', padding: spacing.md },
+  baeArtworkEyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  baeArtworkDot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: colors.gold },
+  baeArtworkEyebrow: { ...typography.overline, color: colors.gold },
+  baeArtworkTitle: { ...typography.hero, color: colors.inkStrong, maxWidth: '58%' },
+  baeArtworkBody: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, maxWidth: '58%', marginTop: spacing.xs },
+  baeAccessCard: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.panel, padding: spacing.md, marginTop: spacing.sm },
+  baeTrophyProgressHead: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   baeTrophyProgressValue: { ...typography.bodyBold, color: colors.ink },
-  baeTrophyProgressTarget: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
+  baeTrophyProgressTarget: { ...typography.caption, color: colors.inkMuted },
   baeTrophyTrack: { width: '100%', height: 7, borderRadius: radius.pill, overflow: 'hidden', backgroundColor: colors.panelRaised, marginTop: spacing.xs },
   baeTrophyFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
-  baeTrophyButton: { width: '100%', marginTop: spacing.lg },
-  baeIntroHero: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.panel, padding: spacing.md },
-  baeIntroTitle: { ...typography.title, color: colors.ink },
-  baeIntro: { ...typography.body, color: colors.inkMuted, lineHeight: 22, marginTop: spacing.xs, maxWidth: 330 },
-  baePreferenceRow: { gap: spacing.sm, marginTop: spacing.sm },
-  baePreference: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, paddingHorizontal: spacing.md },
-  baePreferenceIcon: { width: 38, height: 38, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentDarker },
-  baePreferenceCopy: { flex: 1, minWidth: 0 },
-  baePreferenceText: { ...typography.bodyBold, color: colors.ink },
-  baePreferenceDetail: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  baeTrophyButton: { width: '100%', marginTop: spacing.md },
+  baeChoicePrompt: { ...typography.label, color: colors.ink, marginTop: spacing.md, marginLeft: 2 },
+  baePreferenceRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  baePreferenceRowCompact: { flexDirection: 'column' },
+  baePreference: { flex: 1, minWidth: 0, minHeight: 112, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, paddingHorizontal: spacing.xs, paddingVertical: spacing.sm },
+  baePreferenceCompact: { flex: 0, width: '100%', minHeight: 74, flexDirection: 'row', justifyContent: 'flex-start', gap: spacing.sm, paddingHorizontal: spacing.md },
+  baePreferenceCopy: { alignItems: 'center' },
+  baePreferenceCopyCompact: { flex: 1, minWidth: 0, alignItems: 'flex-start' },
+  baePreferenceText: { ...typography.label, color: colors.ink, fontWeight: '800' },
+  baePreferenceDetail: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '600', marginTop: 1 },
+  partnerChoiceMark: { width: 52, height: 36, alignItems: 'center', justifyContent: 'center' },
+  partnerChoiceFigure: { position: 'absolute', width: 24, height: 32, alignItems: 'center', justifyContent: 'flex-end', zIndex: 2 },
+  partnerChoiceFigureBack: { left: 4, opacity: 0.68, zIndex: 1 },
+  partnerChoiceFigureFront: { right: 4 },
+  partnerChoiceHead: { width: 10, height: 10, borderRadius: radius.pill, backgroundColor: colors.ink },
+  partnerChoiceHeadGold: { backgroundColor: colors.gold },
+  partnerChoiceBody: { width: 22, height: 14, borderTopLeftRadius: 11, borderTopRightRadius: 11, backgroundColor: colors.ink, marginTop: 3 },
+  partnerChoiceBodyGold: { backgroundColor: colors.gold },
+  partnerChoiceOrbit: { position: 'absolute', width: 34, height: 34, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.goldMuted, opacity: 0.7 },
+  partnerChoiceOrbitOffset: { width: 40, height: 28, transform: [{ rotate: '-18deg' }] },
   baeSafety: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.md },
   baeSafetyText: { ...typography.caption, color: colors.inkMuted, flexShrink: 1 },
-  baeMuted: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, textAlign: 'center' },
-  baeWaitingHero: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.panel, padding: spacing.md },
-  baeWaitingIcon: { width: 58, height: 58, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.borderStrong },
-  baeWaitingCopy: { flex: 1, minWidth: 0 },
-  baeWaitingKicker: { ...typography.overline, color: colors.gold },
-  baeWaitingTitle: { ...typography.title, color: colors.ink, marginTop: spacing.xs },
-  baeWaitingDescription: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: spacing.xs },
   friendInviteBox: { minHeight: 74, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, paddingHorizontal: spacing.md, marginTop: spacing.sm },
+  friendCodeCopy: { flex: 1, minWidth: 0 },
   friendCodeLabel: { ...typography.overline, color: colors.inkMuted },
   friendCodeValue: { fontSize: 22, lineHeight: 27, color: colors.ink, fontWeight: '900', letterSpacing: 2, marginTop: 2 },
   friendShareButton: { minWidth: 92 },
@@ -913,19 +1087,23 @@ const styles = StyleSheet.create({
   friendJoinButton: { minWidth: 92, minHeight: 48 },
   baeTextButton: { alignSelf: 'center', marginTop: spacing.sm },
   baeDisabled: { opacity: 0.45 },
-  baePartnerRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.panel, paddingHorizontal: spacing.md },
-  baePartnerAvatar: { width: 46, height: 46, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
-  baePartnerInitial: { ...typography.subtitle, color: colors.ink, fontWeight: '900' },
-  baePartnerCopy: { flex: 1, minWidth: 0 },
-  baePartnerLabel: { ...typography.overline, color: colors.inkMuted },
-  baePartnerName: { ...typography.bodyBold, color: colors.ink, marginTop: 1 },
-  baeMoreButton: { width: 40, height: 40, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
+  baeConnectedHero: { minHeight: 238, overflow: 'hidden', borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.lg, backgroundColor: colors.panel },
+  baeConnectedContent: { flex: 1, minHeight: 238, justifyContent: 'space-between', padding: spacing.md },
+  baeConnectedTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  baeConnectedStatus: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: radius.pill, borderWidth: 1, borderColor: 'rgba(240,206,120,0.35)', backgroundColor: 'rgba(5,6,10,0.78)', paddingHorizontal: spacing.sm },
+  baeConnectedDot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: colors.gold },
+  baeConnectedStatusText: { fontSize: 10, lineHeight: 13, color: colors.gold, fontWeight: '800', letterSpacing: 1.2 },
+  baeConnectedCopy: { maxWidth: '60%' },
+  baePartnerLabel: { ...typography.overline, color: colors.gold },
+  baePartnerName: { ...typography.hero, color: colors.inkStrong, marginTop: 2 },
+  baeConnectedCaption: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: spacing.xs },
+  baeMoreButton: { width: 48, height: 48, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(5,6,10,0.78)', borderWidth: 1, borderColor: colors.borderStrong },
   baeChallenge: { padding: spacing.md, marginTop: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
   baeChallengeTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
   baeChallengeIcon: { width: 42, height: 42, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
   baeDuePill: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.sm, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelRaised },
   baeChallengeCopy: {},
-  baeChallengeTitle: { fontSize: 20, lineHeight: 25, color: colors.ink, fontWeight: '900' },
+  baeChallengeTitle: { fontSize: 19, lineHeight: 24, color: colors.ink, fontWeight: '700' },
   baeChallengePrompt: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: 3 },
   baeDue: { fontSize: 10, lineHeight: 13, color: colors.gold, fontWeight: '800' },
   proofCard: { borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.panel, padding: spacing.md, marginTop: spacing.sm },
@@ -940,17 +1118,17 @@ const styles = StyleSheet.create({
   proofImageWrap: { width: '100%', aspectRatio: 1.08, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.panelMuted, borderWidth: 1, borderColor: colors.border },
   proofImage: { width: '100%', height: '100%' },
   proofPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  proofStatusDot: { position: 'absolute', right: 8, top: 8, width: 9, height: 9, borderRadius: radius.pill, backgroundColor: colors.inkSubtle, borderWidth: 2, borderColor: colors.panel },
+  proofStatusDot: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 3, backgroundColor: 'transparent' },
   proofStatusDotDone: { backgroundColor: colors.gold },
   proofMeta: { paddingTop: spacing.xs, paddingHorizontal: 2 },
-  proofLabel: { ...typography.caption, color: colors.ink, fontWeight: '900' },
+  proofLabel: { ...typography.caption, color: colors.ink, fontWeight: '700' },
   proofStatus: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', marginTop: 1 },
-  proofStatusDone: { color: colors.gold },
+  proofStatusDone: { color: colors.inkMuted },
   proofGuidance: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: spacing.md },
-  baeProofButton: { marginTop: spacing.md },
-  baeCompleteBanner: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, marginTop: spacing.md },
-  baeCompleteIcon: { width: 34, height: 34, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.gold },
+  baeProofButton: { marginTop: spacing.md, backgroundColor: colors.gold, borderColor: colors.gold },
+  baeCompleteBanner: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, backgroundColor: colors.gold, borderWidth: 1, borderColor: colors.gold, paddingHorizontal: spacing.md, marginTop: spacing.md },
+  baeCompleteIcon: { width: 34, height: 34, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(8,9,12,0.10)' },
   baeCompleteCopy: { flex: 1 },
-  baeCompleteTitle: { ...typography.bodyBold, color: colors.ink },
-  baeCompleteText: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  baeCompleteTitle: { ...typography.bodyBold, color: colors.onPrimary },
+  baeCompleteText: { ...typography.caption, color: 'rgba(8,9,12,0.68)', marginTop: 1 },
 });

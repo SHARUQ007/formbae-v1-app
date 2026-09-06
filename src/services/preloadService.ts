@@ -168,12 +168,6 @@ function trackPreloadTask<T>(runId: number, label: string, critical: boolean, pr
   });
 }
 
-async function prefetchRemoteImageSource(source: ImageSourcePropType | string) {
-  const uri = typeof source === 'string' ? source : Image.resolveAssetSource(source)?.uri;
-  if (!uri || !/^https?:\/\//i.test(uri)) return false;
-  return Image.prefetch(uri).catch(() => false);
-}
-
 async function warmRemoteCoachArtwork(
   workout: Awaited<ReturnType<typeof loadWorkoutPlanCached>> | null,
   coach: Awaited<ReturnType<typeof loadCoachBundleCached>> | null,
@@ -184,7 +178,12 @@ async function warmRemoteCoachArtwork(
     getCoachArtworkSource({ name: assignedTrainer?.name, photoUrl: assignedTrainer?.trainerPhotoUrl }),
     getCoachArtworkSource({ name: currentCoach?.name, photoUrl: currentCoach?.photoUrl }),
   ].filter((source): source is ImageSourcePropType => Boolean(source));
-  await Promise.allSettled(sources.map(prefetchRemoteImageSource));
+  const remoteUris = [...new Set(
+    sources
+      .map(source => Image.resolveAssetSource(source)?.uri)
+      .filter((uri): uri is string => Boolean(uri && /^https?:\/\//i.test(uri))),
+  )];
+  await Promise.allSettled(remoteUris.map(uri => Image.prefetch(uri)));
 }
 
 function startMainAppPreload(): PreloadRun {

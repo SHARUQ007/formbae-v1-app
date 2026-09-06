@@ -1,10 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiRequest } from './apiClient';
 import { ApiError } from './apiClient';
-import { invalidateCachedResource } from './appCache';
+import {
+  getActiveCacheSessionId,
+  invalidateCachedResource,
+  peekCachedResource,
+  setCachedResource,
+} from './appCache';
 import type { ProgressSummary, TrophyInvite, TrophyLeaderboard } from '../types/api';
 
-const PENDING_BODY_LOGS_KEY = 'formbae_pending_body_logs_v1';
+const LEGACY_PENDING_BODY_LOGS_KEY = 'formbae_pending_body_logs_v1';
+const PENDING_BODY_LOGS_PREFIX = 'formbae_pending_body_logs_v2:';
+const PROFILE_SETTINGS_CACHE_KEY = 'profileSettings';
 
 type BodyMeasurementInput = {
   weight?: string;
@@ -17,6 +24,7 @@ type BodyMeasurementInput = {
 type PendingBodyLog = BodyMeasurementInput & {
   clientId: string;
   date: string;
+  createdAt: string;
 };
 
 export type SavedBodyLog = {
@@ -67,10 +75,13 @@ function normalizeMeasurements(body: BodyMeasurementInput): BodyMeasurementInput
   return normalized;
 }
 
-async function readPendingBodyLogs(): Promise<PendingBodyLog[]> {
+function pendingBodyLogsKey(sessionId: string) {
+  return `${PENDING_BODY_LOGS_PREFIX}${sessionId}`;
+}
+
+function parsePendingBodyLogs(raw: string | null): PendingBodyLog[] {
+  if (!raw) return [];
   try {
-    const raw = await AsyncStorage.getItem(PENDING_BODY_LOGS_KEY);
-    if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     return Array.isArray(parsed) ? parsed.filter((item): item is PendingBodyLog => Boolean(item && typeof item === 'object' && 'clientId' in item)) : [];
   } catch {
@@ -78,8 +89,24 @@ async function readPendingBodyLogs(): Promise<PendingBodyLog[]> {
   }
 }
 
-async function writePendingBodyLogs(logs: PendingBodyLog[]) {
-  await AsyncStorage.setItem(PENDING_BODY_LOGS_KEY, JSON.stringify(logs));
+async function readPendingBodyLogs(sessionId: string): Promise<PendingBodyLog[]> {
+  const scopedKey = pendingBodyLogsKey(sessionId);
+  const scoped = await AsyncStorage.getItem(scopedKey);
+  if (scoped !== null) return parsePendingBodyLogs(scoped);
+
+  // Older builds did not record ownership. Migrate once into the account that
+  // is active during the upgrade, then remove the unsafe global queue.
+  if (sessionId !== 'signed-out') {
+    const legacy = parsePendingBodyLogs(await AsyncStorage.getItem(LEGACY_PENDING_BODY_LOGS_KEY));
+    if (legacy.length) await AsyncStorage.setItem(scopedKey, JSON.stringify(legacy));
+    await AsyncStorage.removeItem(LEGACY_PENDING_BODY_LOGS_KEY);
+    return legacy;
+  }
+  return [];
+}
+
+async function writePendingBodyLogs(logs: PendingBodyLog[], sessionId: string) {
+  await AsyncStorage.setItem(pendingBodyLogsKey(sessionId), JSON.stringify(logs));
 }
 
 async function postBodyLog(log: PendingBodyLog) {
@@ -89,17 +116,44 @@ async function postBodyLog(log: PendingBodyLog) {
   });
 }
 
-let flushPromise: Promise<{ synced: number; remaining: number }> | null = null;
+type CachedProfileSettings = {
+  profile?: Record<string, string> | null;
+  [key: string]: unknown;
+};
+
+function updateCachedProfileMeasurements(measurements: BodyMeasurementInput, sessionId: string) {
+  if (getActiveCacheSessionId() !== sessionId) return;
+  const updates = Object.fromEntries(
+    Object.entries(measurements).filter(([key, value]) => key !== 'notes' && Boolean(value)),
+  ) as Record<string, string>;
+  if (!Object.keys(updates).length) return;
+  const cached = peekCachedResource<CachedProfileSettings>(PROFILE_SETTINGS_CACHE_KEY);
+  if (!cached) return;
+  setCachedResource(PROFILE_SETTINGS_CACHE_KEY, {
+    ...cached,
+    profile: { ...(cached.profile || {}), ...updates },
+  });
+}
+
+const flushPromises = new Map<string, Promise<{ synced: number; remaining: number }>>();
 
 export function flushPendingProgressLogs() {
-  if (flushPromise) return flushPromise;
-  flushPromise = (async () => {
-    const pending = await readPendingBodyLogs();
+  const sessionId = getActiveCacheSessionId();
+  const existingFlush = flushPromises.get(sessionId);
+  if (existingFlush) return existingFlush;
+
+  const flushPromise = (async () => {
+    const pending = await readPendingBodyLogs(sessionId);
     if (!pending.length) return { synced: 0, remaining: 0 };
 
     const remaining: PendingBodyLog[] = [];
     let synced = 0;
-    for (const log of pending) {
+    for (let index = 0; index < pending.length; index += 1) {
+      const log = pending[index];
+      if (getActiveCacheSessionId() !== sessionId) {
+        remaining.push(...pending.slice(index));
+        break;
+      }
       try {
         await postBodyLog(log);
         synced += 1;
@@ -113,14 +167,18 @@ export function flushPendingProgressLogs() {
     }
     const processedIds = new Set(pending.map((item) => item.clientId));
     const retainedIds = new Set(remaining.map((item) => item.clientId));
-    const latestQueue = await readPendingBodyLogs();
+    const latestQueue = await readPendingBodyLogs(sessionId);
     const nextQueue = latestQueue.filter((item) => !processedIds.has(item.clientId) || retainedIds.has(item.clientId));
-    await writePendingBodyLogs(nextQueue);
-    if (synced) invalidateCachedResource('progressBundle');
+    await writePendingBodyLogs(nextQueue, sessionId);
+    if (synced && getActiveCacheSessionId() === sessionId) {
+      invalidateCachedResource('progressBundle');
+      invalidateCachedResource(PROFILE_SETTINGS_CACHE_KEY);
+    }
     return { synced, remaining: nextQueue.length };
   })().finally(() => {
-    flushPromise = null;
+    if (flushPromises.get(sessionId) === flushPromise) flushPromises.delete(sessionId);
   });
+  flushPromises.set(sessionId, flushPromise);
   return flushPromise;
 }
 
@@ -163,28 +221,40 @@ export async function fetchProgress() {
 }
 
 export async function logProgress(body: BodyMeasurementInput) {
+  const sessionId = getActiveCacheSessionId();
   const normalized = normalizeMeasurements(body);
   const pending: PendingBodyLog = {
     ...normalized,
     clientId: makeClientId(),
     date: localDateKey(),
+    createdAt: new Date().toISOString(),
   };
 
   // Write locally first. A terminated app or dropped request cannot discard
   // measurements the user already submitted.
-  const queue = await readPendingBodyLogs();
-  await writePendingBodyLogs([...queue, pending]);
+  const queue = await readPendingBodyLogs(sessionId);
+  await writePendingBodyLogs([...queue, pending], sessionId);
+  updateCachedProfileMeasurements(normalized, sessionId);
+
+  // Never send an old account's durable entry with a newly active session.
+  if (getActiveCacheSessionId() !== sessionId) {
+    return { ok: true as const, synced: false as const };
+  }
 
   try {
     const response = await postBodyLog(pending);
-    const latestQueue = await readPendingBodyLogs();
-    await writePendingBodyLogs(latestQueue.filter((item) => item.clientId !== pending.clientId));
-    invalidateCachedResource('progressBundle');
+    const latestQueue = await readPendingBodyLogs(sessionId);
+    await writePendingBodyLogs(latestQueue.filter((item) => item.clientId !== pending.clientId), sessionId);
+    if (getActiveCacheSessionId() === sessionId) invalidateCachedResource('progressBundle');
     return { ...response, synced: true as const };
   } catch (error) {
     if (error instanceof ApiError && !error.isNetwork && error.status < 500) {
-      const latestQueue = await readPendingBodyLogs();
-      await writePendingBodyLogs(latestQueue.filter((item) => item.clientId !== pending.clientId));
+      const latestQueue = await readPendingBodyLogs(sessionId);
+      await writePendingBodyLogs(latestQueue.filter((item) => item.clientId !== pending.clientId), sessionId);
+      if (getActiveCacheSessionId() === sessionId) {
+        // Remove the optimistic view if the server definitively rejects it.
+        invalidateCachedResource(PROFILE_SETTINGS_CACHE_KEY);
+      }
       throw error;
     }
     return { ok: true as const, synced: false as const };

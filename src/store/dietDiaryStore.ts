@@ -9,6 +9,7 @@ const MEAL_TIME_KEY = 'formbae_food_memory_times_v1';
 const DIR = `${RNFS.DocumentDirectoryPath}/diet-diary`;
 let memoryEntries: DietDiaryEntry[] | null = null;
 let memoryEntriesSession = '';
+const reclaimedAssetSessions = new Set<string>();
 
 export type DietDiaryEntry = {
   id: string;
@@ -155,6 +156,47 @@ async function ensureDir(directory: string) {
   if (!exists) await RNFS.mkdir(directory);
 }
 
+function managedLocalAssetPath(entry?: Pick<DietDiaryEntry, 'storedLocally' | 'uri'>) {
+  if (!entry?.storedLocally || !entry.uri?.startsWith('file://')) return null;
+  const path = entry.uri.replace(/^file:\/\//, '');
+  const sessionDirectory = `${DIR}/${getActiveCacheSessionId()}/`;
+  return path.startsWith(sessionDirectory) ? path : null;
+}
+
+async function unlinkManagedAssets(paths: Iterable<string>) {
+  await Promise.all(
+    [...new Set(paths)].map(async path => {
+      const exists = await RNFS.exists(path).catch(() => false);
+      if (exists) await RNFS.unlink(path).catch(() => undefined);
+    }),
+  );
+}
+
+/**
+ * Older app versions could replace a synced entry's local URI without deleting
+ * the copied photo. Reclaim only files whose entry now has a confirmed remote
+ * image; pending/offline photos are never touched.
+ */
+async function reclaimPreviouslySyncedAssets(entries: DietDiaryEntry[]) {
+  const sessionId = getActiveCacheSessionId();
+  if (reclaimedAssetSessions.has(sessionId) || typeof RNFS.readDir !== 'function') return;
+  reclaimedAssetSessions.add(sessionId);
+
+  const syncedEntryIds = entries
+    .filter(entry => Boolean(entry.remoteImageUrl?.trim()))
+    .map(entry => `${entry.id}.`);
+  if (!syncedEntryIds.length) return;
+
+  const directory = `${DIR}/${sessionId}`;
+  const exists = await RNFS.exists(directory).catch(() => false);
+  if (!exists) return;
+  const files = await RNFS.readDir(directory).catch(() => []);
+  const stalePaths = files
+    .filter(file => syncedEntryIds.some(prefix => file.name.startsWith(prefix)))
+    .map(file => file.path);
+  await unlinkManagedAssets(stalePaths);
+}
+
 async function persistAsset(asset: Asset, id: string): Promise<{ uri: string; storedLocally: boolean }> {
   const sourceUri = asset.uri;
   if (!sourceUri) throw new Error('No image selected');
@@ -180,6 +222,8 @@ async function persistAsset(asset: Asset, id: string): Promise<{ uri: string; st
 
 export async function loadDietDiaryEntries() {
   const entries = await readEntries();
+  // Keep first paint fast; cleanup is best-effort and runs once per account.
+  reclaimPreviouslySyncedAssets(entries).catch(() => undefined);
   return [...entries];
 }
 
@@ -248,8 +292,24 @@ export async function addSkippedDietDiaryEntry(mealType: MealType, createdAt = n
 
 export async function updateDietDiaryEntry(entryId: string, patch: Partial<DietDiaryEntry>) {
   const entries = await readEntries();
-  const next = entries.map((entry) => (entry.id === entryId ? { ...entry, ...patch } : entry));
+  const localPath = managedLocalAssetPath(entries.find(entry => entry.id === entryId));
+  const remoteImageUrl = patch.remoteImageUrl?.trim();
+  const next = entries.map(entry => {
+    if (entry.id !== entryId) return entry;
+    return {
+      ...entry,
+      ...patch,
+      ...(remoteImageUrl
+        ? {
+            uri: remoteImageUrl,
+            originalUri: undefined,
+            storedLocally: false,
+          }
+        : null),
+    };
+  });
   await writeEntries(next);
+  if (remoteImageUrl && localPath) await unlinkManagedAssets([localPath]);
 }
 
 export async function mergeRemoteDietDiaryEntries(
@@ -269,15 +329,22 @@ export async function mergeRemoteDietDiaryEntries(
   const byRemoteId = new Map(local.filter((entry) => entry.remoteId).map((entry) => [entry.remoteId, entry]));
 
   const merged = [...local];
+  const syncedLocalPaths: string[] = [];
   for (const remote of remoteEntries) {
     const existing = byRemoteId.get(remote.entryId) || (remote.clientId ? byLocalId.get(remote.clientId) : undefined);
     if (existing) {
+      const remoteImageUrl = remote.imageUrl.trim();
+      const localPath = remoteImageUrl ? managedLocalAssetPath(existing) : null;
+      if (localPath) syncedLocalPaths.push(localPath);
       Object.assign(existing, {
-        kind: remote.status === 'skipped' ? 'skip' : remote.imageUrl ? 'photo' : existing.kind || 'text',
+        kind: remote.status === 'skipped' ? 'skip' : remoteImageUrl ? 'photo' : existing.kind || 'text',
         status: remote.status || existing.status || 'logged',
         remoteId: remote.entryId,
-        remoteImageUrl: remote.imageUrl,
-        uri: remote.imageUrl || existing.uri,
+        remoteImageUrl,
+        uri: remoteImageUrl || existing.uri,
+        ...(remoteImageUrl
+          ? { originalUri: undefined, storedLocally: false }
+          : null),
         mealType: normalizeMealType(remote.mealType),
         note: remote.note,
         createdAt: validTimestamp(remote.createdAt) || existing.createdAt,
@@ -304,6 +371,7 @@ export async function mergeRemoteDietDiaryEntries(
   }
 
   await writeEntries(merged);
+  await unlinkManagedAssets(syncedLocalPaths);
   return loadDietDiaryEntries();
 }
 
@@ -313,9 +381,6 @@ export async function deleteDietDiaryEntry(entryId: string) {
   const next = entries.filter((item) => item.id !== entryId);
   await writeEntries(next);
 
-  if (entry?.storedLocally && entry.uri?.startsWith('file://')) {
-    const path = entry.uri.replace(/^file:\/\//, '');
-    const exists = await RNFS.exists(path).catch(() => false);
-    if (exists) await RNFS.unlink(path).catch(() => undefined);
-  }
+  const path = managedLocalAssetPath(entry);
+  if (path) await unlinkManagedAssets([path]);
 }

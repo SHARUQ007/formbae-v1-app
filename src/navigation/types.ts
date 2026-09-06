@@ -78,6 +78,7 @@ export type WorkoutStackParamList = {
 export type ProfileStackParamList = {
   ProfileMain: undefined;
   EditProfile: undefined;
+  GymPicker: undefined;
   Trainer: CoachScreenParams | undefined;
   Legal: undefined;
   DeleteAccount: undefined;

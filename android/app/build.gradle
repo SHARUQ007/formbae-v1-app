@@ -5,6 +5,11 @@ apply plugin: "com.facebook.react"
 // Populate BuildConfig from ENVFILE (defaults to the repository's ignored .env).
 // Keep this before the Android block so every variant receives the correct URLs.
 apply from: project(':react-native-config').projectDir.getPath() + "/dotenv.gradle"
+// The app only imports these two icon families. Without this allowlist the
+// vector-icons script copies all 19 bundled fonts into every APK/AAB.
+project.ext.vectoricons = [
+    iconFontNames: ["Feather.ttf", "MaterialCommunityIcons.ttf"]
+]
 apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"
 
 /**

@@ -1,0 +1,13 @@
+diff --git a/node_modules/react-native-vector-icons/RNVectorIcons.podspec b/node_modules/react-native-vector-icons/RNVectorIcons.podspec
+--- a/node_modules/react-native-vector-icons/RNVectorIcons.podspec
++++ b/node_modules/react-native-vector-icons/RNVectorIcons.podspec
+@@ -18,6 +18,9 @@ Pod::Spec.new do |s|
+   s.source_files   = 'RNVectorIconsManager/**/*.{h,m,mm,swift}'
+-  s.resources      = "Fonts/*.ttf"
++  s.resources      = [
++    "Fonts/Feather.ttf",
++    "Fonts/MaterialCommunityIcons.ttf",
++  ]
+   s.preserve_paths = "**/*.js"
+   # React Native Core dependency
+   if defined? install_modules_dependencies

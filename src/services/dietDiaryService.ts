@@ -5,6 +5,7 @@ import { invalidateCachedResource } from './appCache';
 import { publishOrRefreshTrophySummary } from './trophyRealtime';
 import type { MealType } from '../store/dietDiaryStore';
 import type { TrophySummary } from '../types/api';
+import { getBackendApiBaseUrl } from '../constants/config';
 
 export type RemoteDietDiaryEntry = {
   entryId: string;
@@ -294,8 +295,14 @@ export async function deleteRemoteDietDiaryEntry(entryId: string) {
 }
 
 export function resolveDietDiaryImageUrl(imageUrl: string) {
-  if (!imageUrl || imageUrl.startsWith('file:') || imageUrl.startsWith('content:') || imageUrl.startsWith('data:') || imageUrl.startsWith('http')) {
+  if (!imageUrl || imageUrl.startsWith('file:') || imageUrl.startsWith('content:') || imageUrl.startsWith('data:') || /^https?:\/\//i.test(imageUrl)) {
     return imageUrl;
   }
   return getDirectApiUrl(imageUrl.replace(/^\/api\/mobile/, ''));
+}
+
+/** Prevents an API token from ever being forwarded to third-party image hosts. */
+export function shouldAuthenticateDietDiaryImage(imageUrl: string) {
+  const backend = getBackendApiBaseUrl().replace(/\/$/, '');
+  return imageUrl === backend || imageUrl.startsWith(`${backend}/`);
 }

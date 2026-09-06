@@ -234,7 +234,7 @@ export type ProgressSummary = {
     planDayId: string;
     workoutMode: 'standard' | 'quick' | string;
   }>;
-  bodyTrend?: Array<{ entryId?: string; date: string; weight: number; chest?: number; waist?: number; biceps?: number }>;
+  bodyTrend?: Array<{ entryId?: string; date: string; createdAt?: string; weight: number; chest?: number; waist?: number; biceps?: number }>;
   weeklyReview?: WeeklyProgressReview;
   trophies?: TrophySummary;
   bodyForecast?: BodyForecast;
