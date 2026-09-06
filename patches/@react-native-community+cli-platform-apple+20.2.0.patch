@@ -2,23 +2,31 @@ diff --git a/node_modules/@react-native-community/cli-platform-apple/build/comma
 index c23d9ed..07f690e 100644
 --- a/node_modules/@react-native-community/cli-platform-apple/build/commands/runCommand/installApp.js
 +++ b/node_modules/@react-native-community/cli-platform-apple/build/commands/runCommand/installApp.js
-@@ -72,10 +72,17 @@ async function installApp({
+@@ -72,10 +72,25 @@ async function installApp({
    }
    _cliTools().logger.info(`Installing "${_picocolors().default.bold(appPath)}`);
    if (udid && appPath) {
 -    const installParameters = isSimulator ? ['simctl', 'install', udid, appPath] : ['devicectl', 'device', 'install', 'app', '--device', udid, appPath];
 -    _child_process().default.spawnSync('xcrun', installParameters, {
 -      stdio: 'inherit'
-+    // Xcode 26's devicectl can hang before transferring an app to a physical
-+    // device. ios-deploy uses the stable MobileDevice install path; the CLI's
-+    // existing devicectl launch step still handles launching on modern iOS.
-+    const installCommand = isSimulator ? 'xcrun' : 'ios-deploy';
-+    const installParameters = isSimulator ? ['simctl', 'install', udid, appPath] : ['--bundle', appPath, '--id', udid, '--no-wifi', '--timeout', '30'];
-+    const installResult = _child_process().default.spawnSync(installCommand, installParameters, {
-+      stdio: isSimulator ? 'inherit' : 'ignore'
++    const installParameters = isSimulator ? ['simctl', 'install', udid, appPath] : ['devicectl', 'device', 'install', 'app', '--device', udid, appPath];
++    const installResult = _child_process().default.spawnSync('xcrun', installParameters, {
++      stdio: 'inherit',
++      timeout: isSimulator ? undefined : 60000
      });
-+    if (installResult.status !== 0) {
-+      throw new (_cliTools().CLIError)(`Failed to install the app with ${installCommand}`);
++    if (installResult.status !== 0 && !isSimulator) {
++      // Some Xcode 26/device combinations can leave devicectl waiting before
++      // transfer. Keep ios-deploy as a fallback, while preferring Apple's
++      // installer because it handles repeated installs on current iOS.
++      _cliTools().logger.warn('devicectl could not install the app; retrying with ios-deploy');
++      const fallbackResult = _child_process().default.spawnSync('ios-deploy', ['--bundle', appPath, '--id', udid, '--no-wifi', '--timeout', '30'], {
++        stdio: 'inherit'
++      });
++      if (fallbackResult.status !== 0) {
++        throw new (_cliTools().CLIError)('Failed to install the app with devicectl and ios-deploy');
++      }
++    } else if (installResult.status !== 0) {
++      throw new (_cliTools().CLIError)('Failed to install the app on the simulator');
 +    }
    }
    const bundleID = _child_process().default.execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print:CFBundleIdentifier', plistPath], {

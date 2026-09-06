@@ -16,6 +16,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import {
@@ -46,12 +47,12 @@ import {
 import {
   deleteRemoteDietDiaryEntry,
   resolveDietDiaryImageUrl,
+  submitDietReportResponses,
   updateRemoteDietDiaryEntry,
   uploadDietDiaryEntry,
   uploadSkippedDietMeal,
   uploadTextDietDiaryEntry,
   type DietCoachFeedback,
-  type DietReportChart,
 } from '../../services/dietDiaryService';
 import { getAuthToken } from '../../services/apiClient';
 import { loadDietDiaryCached } from '../../services/preloadService';
@@ -180,21 +181,29 @@ function memorySlotDraftKey(date: Date, mealType: MealType) {
 
 /** Ava regenerates the diet report on a fixed weekly cadence (backend: FEEDBACK_INTERVAL_DAYS). */
 const REPORT_CYCLE_DAYS = 7;
+const DEFAULT_REPORT_ENRICHMENT_REQUIREMENT = 50;
+const SUPPORTED_DIET_REPORT_SCHEMA_VERSION = 8;
+const REPORT_SAGE = '#A8BFB2';
+const REPORT_SAGE_SURFACE = 'rgba(168,191,178,0.12)';
+const REPORT_BLUE_SURFACE = 'rgba(145,189,248,0.10)';
+const REPORT_PAGE = '#050609';
+const REPORT_SURFACE = '#111217';
+const REPORT_INK = '#FFFFFF';
+const REPORT_MUTED = '#C2C3CA';
+const REPORT_SUBTLE = '#8C8D96';
+const REPORT_BORDER = '#292A31';
+const REPORT_BORDER_STRONG = '#43444D';
+const REPORT_ACCENT = '#F0CE78';
+const REPORT_ACCENT_SURFACE = '#242016';
+const REPORT_INFO = '#F0CE78';
+const REPORT_INFO_SURFACE = '#242016';
+const REPORT_WARNING = '#F0CE78';
+const REPORT_DANGER = '#FF818C';
+const WEEKLY_NUTRITION_ART = require('../../assets/editorial/weekly-nutrition-rhythm.jpg');
 
 function reportDaysLeft(feedback?: DietCoachFeedback | null) {
   const days = feedback?.nextInDays ?? REPORT_CYCLE_DAYS;
   return Math.max(1, Math.round(days));
-}
-
-function reportCycleProgress(feedback?: DietCoachFeedback | null) {
-  const remaining = reportDaysLeft(feedback);
-  const elapsed = (REPORT_CYCLE_DAYS - remaining) / REPORT_CYCLE_DAYS;
-  return Math.max(0, Math.min(1, elapsed));
-}
-
-function reportCountdownText(feedback?: DietCoachFeedback | null) {
-  const days = reportDaysLeft(feedback);
-  return `Next diet report generated in ${days} day${days === 1 ? '' : 's'}`;
 }
 
 function formatReportPeriod(start?: string, end?: string) {
@@ -207,187 +216,1029 @@ function formatReportPeriod(start?: string, end?: string) {
   return `${startLabel} – ${endLabel}`;
 }
 
-function DietReportBarChart({ chart }: { chart: DietReportChart }) {
-  const points = chart.points || [];
-  const maxValue = Math.max(1, chart.maxValue || 1, ...points.map(point => point.value));
-  const total = points.reduce((sum, point) => sum + point.value, 0);
-  const strongest = points.reduce<(typeof points)[number] | undefined>(
-    (best, point) => (!best || point.value > best.value ? point : best),
-    undefined,
+function formatReportGeneratedAt(value?: string) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return `Generated ${date.toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit',
+  })}`;
+}
+
+function reportSourceDomain(value?: string) {
+  const match = /^https?:\/\/([^/?#]+)/i.exec(value || '');
+  return match?.[1]?.replace(/^www\./i, '') || '';
+}
+
+async function openReportLink(url: string, failureMessage: string) {
+  try {
+    const supported = await Linking.canOpenURL(url);
+    if (!supported) throw new Error('Unsupported link');
+    await Linking.openURL(url);
+  } catch {
+    Alert.alert('Could not open link', failureMessage);
+  }
+}
+
+function reportStringArray(value: string[] | null | undefined) {
+  return Array.isArray(value) ? value.filter(item => typeof item === 'string' && item.trim()) : [];
+}
+
+function reportText(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function reportFiniteNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function dietReportHasDescribedEvidence(feedback?: DietCoachFeedback | null) {
+  const stats = feedback?.stats;
+  if (!stats || typeof stats !== 'object' || Array.isArray(stats)) return true;
+  const describedEntries = reportFiniteNumber(stats.describedEntries ?? stats.memoryEntries);
+  return describedEntries === null || describedEntries > 0;
+}
+
+function dietReportIsPresentable(feedback?: DietCoachFeedback | null) {
+  if (!feedback || !dietReportHasDescribedEvidence(feedback)) return false;
+  const score = feedback.score;
+  if (!score) return true;
+  if (score.availability === 'insufficientEvidence') return false;
+  if ((score.availability === undefined || score.availability === 'available') && Object.prototype.hasOwnProperty.call(score, 'overall')) {
+    const overall = reportFiniteNumber(score.overall);
+    return overall !== null && overall > 0;
+  }
+  return true;
+}
+
+export function getDietReportEnrichmentState(feedback?: Pick<DietCoachFeedback, 'enrichmentScore' | 'requirements'> | null) {
+  const rawScore = reportFiniteNumber(feedback?.enrichmentScore);
+  const rawRequired = reportFiniteNumber(feedback?.requirements?.enrichment) ?? DEFAULT_REPORT_ENRICHMENT_REQUIREMENT;
+  const score = Math.max(0, Math.min(100, Math.round(rawScore ?? 0)));
+  const required = Math.max(1, Math.min(100, Math.round(rawRequired)));
+  return {
+    available: rawScore !== null,
+    score,
+    required,
+    remaining: Math.max(0, required - score),
+    requirementMet: score >= required,
+    progress: score / 100,
+  };
+}
+
+function reportObjectArray<T extends object>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is T => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+    : [];
+}
+
+function humanizeReportStatus(value?: unknown) {
+  if (typeof value !== 'string' || !value.trim()) return 'Not rated';
+  return value
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/^./, letter => letter.toUpperCase());
+}
+
+type ReportStatusKind = 'evidence' | 'pattern' | 'presence' | 'logging';
+
+function reportStatusLabel(value: string | undefined, kind: ReportStatusKind) {
+  if (kind === 'evidence') {
+    if (value === 'high') return 'Broader diary evidence';
+    if (value === 'medium') return 'Some diary evidence';
+    return 'Limited diary evidence';
+  }
+  if (kind === 'presence') {
+    if (value === 'strong') return 'Seen often';
+    if (value === 'present') return 'Seen in diary';
+    if (value === 'notSeen') return 'Not seen in diary';
+    return 'Seen less often';
+  }
+  if (kind === 'logging') {
+    if (value === 'observed') return 'Logged with detail';
+    if (value === 'loggedWithoutDescription') return 'Logged without detail';
+    if (value === 'notLogged') return 'Not logged';
+    return 'Limited diary data';
+  }
+  if (value === 'strong') return 'Consistent pattern';
+  if (value === 'building') return 'Developing pattern';
+  if (value === 'attention') return 'Opportunity';
+  if (value === 'limited') return 'Limited evidence';
+  return humanizeReportStatus(value);
+}
+
+function ReportStatusText({ value, kind }: { value?: string; kind: ReportStatusKind }) {
+  const safeValue = typeof value === 'string' ? value : undefined;
+  const observed = safeValue === 'strong' || safeValue === 'present' || safeValue === 'high' || safeValue === 'observed';
+  const attention = safeValue === 'attention';
+  const label = reportStatusLabel(safeValue, kind);
+  return (
+    <View style={styles.paperStatusRow} accessible accessibilityLabel={label}>
+      <View style={[styles.paperStatusDot, observed && styles.paperStatusDotPositive, attention && styles.paperStatusDotAttention]} />
+      <Text style={styles.paperStatusText}>{label}</Text>
+    </View>
   );
+}
+
+function ReportPaperSection({
+  title,
+  meta,
+  children,
+  icon,
+}: {
+  title: string;
+  meta?: string;
+  children: React.ReactNode;
+  icon?: string;
+}) {
+  return (
+    <View style={styles.paperSection}>
+      <View style={styles.paperSectionHeader}>
+        {icon ? (
+          <View style={styles.paperSectionIcon} accessible={false}>
+            <Feather name={icon} size={17} color={REPORT_ACCENT} />
+          </View>
+        ) : null}
+        <View style={styles.paperSectionHeading}>
+          <Text style={styles.paperSectionTitle} accessibilityRole="header">{title}</Text>
+          {meta ? <Text style={styles.paperSectionMeta}>{meta}</Text> : null}
+        </View>
+      </View>
+      {children}
+    </View>
+  );
+}
+
+function ReportEvidenceLine({ items }: { items?: string[] }) {
+  const evidence = reportStringArray(items);
+  if (!evidence.length) return null;
+  return (
+    <View style={styles.paperEvidenceLine}>
+      <Feather name="database" size={13} color={REPORT_SUBTLE} />
+      <Text style={styles.paperEvidenceText}>{evidence.join(' · ')}</Text>
+    </View>
+  );
+}
+
+function ReportSafetyNotices({ notices }: { notices: NonNullable<DietCoachFeedback['safetyNotices']> }) {
+  if (!notices.length) return null;
+  return (
+    <View style={styles.paperSafetyList}>
+      {notices.map((notice, index) => {
+        const severity = notice.severity || 'info';
+        return (
+          <View
+            key={notice.id || `${notice.title || 'notice'}-${index}`}
+            style={[
+              styles.paperSafetyNotice,
+              severity === 'warning' && styles.paperSafetyNoticeWarning,
+              severity === 'urgent' && styles.paperSafetyNoticeUrgent,
+            ]}
+            accessibilityLiveRegion={severity === 'urgent' ? 'assertive' : 'none'}
+          >
+            <View style={styles.paperSafetyTitleRow}>
+              <Feather
+                name={severity === 'urgent' ? 'alert-circle' : 'info'}
+                size={19}
+                color={severity === 'urgent' ? REPORT_DANGER : severity === 'warning' ? REPORT_WARNING : REPORT_INFO}
+              />
+              <Text style={styles.paperSafetyTitle}>{reportText(notice.title) || (severity === 'urgent' ? 'Important health note' : 'Important context')}</Text>
+            </View>
+            <Text style={styles.paperSafetyBody}>{reportText(notice.body)}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function ReportQuestionsForm({
+  questions,
+  initialResponses,
+  reportGeneratedAt,
+}: {
+  questions: string[];
+  initialResponses: Array<{ questionIndex?: number; question: string; answer: string }>;
+  reportGeneratedAt: string;
+}) {
+  const initialByQuestion = new Map(initialResponses.map(item => [item.question, item.answer]));
+  const initialAnswers = questions.map((question, index) => {
+    const indexedAnswer = initialResponses.find(item => item.questionIndex === index)?.answer;
+    return indexedAnswer || initialByQuestion.get(question) || '';
+  });
+  const [answers, setAnswers] = useState(initialAnswers);
+  const [savedAnswers, setSavedAnswers] = useState(initialAnswers);
+  const [savingAnswers, setSavingAnswers] = useState(false);
+  const answeredCount = answers.filter(answer => answer.trim()).length;
+  const hasSavedAnswers = savedAnswers.some(answer => answer.trim());
+  const hasUnsavedChanges = answers.some((answer, index) => answer.trim() !== (savedAnswers[index] || '').trim());
+
+  const saveAnswers = async () => {
+    if (savingAnswers || !hasUnsavedChanges) return;
+    const completedAnswers = questions.flatMap((_question, index) => {
+      const answer = answers[index]?.trim();
+      return answer ? [{ questionIndex: index, answer }] : [];
+    });
+    setSavingAnswers(true);
+    try {
+      await submitDietReportResponses({ reportGeneratedAt, answers: completedAnswers });
+      Keyboard.dismiss();
+      setSavedAnswers([...answers]);
+    } catch (error) {
+      Alert.alert(
+        'Could not save your answers',
+        error instanceof Error ? error.message : 'Please try again in a moment.',
+      );
+    } finally {
+      setSavingAnswers(false);
+    }
+  };
 
   return (
-    <View style={styles.reportChartCard} accessibilityLabel={`${chart.title}. ${total} ${chart.unit} in total.`}>
-      <View style={styles.reportChartHeader}>
-        <View style={styles.reportChartTitleBlock}>
-          <Text style={styles.reportSectionEyebrow}>YOUR RHYTHM</Text>
-          <Text style={styles.reportChartTitle}>{chart.title}</Text>
-          <Text style={styles.reportChartSubtitle}>{chart.subtitle}</Text>
+    <View style={styles.paperQuestionPanel}>
+      <View style={styles.paperQuestionHeader}>
+        <View style={styles.paperQuestionIcon} accessible={false}>
+          <Feather name="message-square" size={17} color={REPORT_INFO} />
         </View>
-        <View style={styles.reportChartTotal}>
-          <Text style={styles.reportChartTotalValue}>{total}</Text>
-          <Text style={styles.reportChartTotalLabel}>this week</Text>
+        <View style={styles.paperQuestionHeading}>
+          <Text style={styles.paperQuestionTitle} accessibilityRole="header">Personalize the next report</Text>
+          <Text style={styles.paperQuestionIntro}>Optional context helps Ava interpret next week without guessing.</Text>
         </View>
       </View>
 
-      <View style={styles.reportChartPlot}>
-        {points.map(point => {
-          const barHeight = point.value ? Math.max(12, Math.round((point.value / maxValue) * 84)) : 4;
-          return (
-            <View key={point.key} style={styles.reportChartColumn}>
-              <Text style={[styles.reportChartValue, !point.value && styles.reportChartValueMuted]}>{point.value || '·'}</Text>
-              <View style={styles.reportChartBarTrack}>
-                <View style={[styles.reportChartBar, !point.value && styles.reportChartBarEmpty, { height: barHeight }]} />
-              </View>
-              <Text style={styles.reportChartLabel}>{point.label}</Text>
-            </View>
-          );
-        })}
+      <View style={styles.paperQuestionList}>
+        {questions.map((question, index) => (
+          <View key={`${question}-${index}`} style={styles.paperQuestionItem}>
+            <Text style={styles.paperQuestionLabel}><Text style={styles.paperQuestionNumber}>{index + 1}. </Text>{question}</Text>
+            <TextInput
+              value={answers[index] || ''}
+              onChangeText={value => setAnswers(current => current.map((answer, answerIndex) => answerIndex === index ? value : answer))}
+              placeholder="Short answer (optional)"
+              placeholderTextColor={REPORT_SUBTLE}
+              multiline
+              maxLength={600}
+              textAlignVertical="top"
+              style={styles.paperQuestionInput}
+              accessibilityLabel={`Answer to: ${question}`}
+            />
+          </View>
+        ))}
       </View>
 
-      <View style={styles.reportChartFooter}>
-        <Feather name="info" size={14} color={colors.inkSubtle} />
-        <Text style={styles.reportChartFooterText}>
-          {strongest?.value ? `${strongest.label} was your most complete logging day.` : 'Log meals across the week to reveal your rhythm.'}
+      <View style={styles.paperQuestionFooter}>
+        <Text style={styles.paperQuestionStatus} accessibilityLiveRegion="polite">
+          {hasUnsavedChanges
+            ? `${answeredCount} of ${questions.length} answered · not saved`
+            : hasSavedAnswers
+              ? `${answeredCount} of ${questions.length} saved`
+              : 'Answer only what feels useful.'}
         </Text>
+        <TouchableOpacity
+          style={[styles.paperQuestionSaveButton, (!hasUnsavedChanges || savingAnswers) && styles.paperQuestionSaveButtonDisabled]}
+          onPress={() => saveAnswers().catch(() => undefined)}
+          disabled={!hasUnsavedChanges || savingAnswers}
+          accessibilityRole="button"
+          accessibilityLabel="Save answers for the next diet report"
+          accessibilityState={{ disabled: !hasUnsavedChanges || savingAnswers, busy: savingAnswers }}
+        >
+          {savingAnswers ? <ActivityIndicator size="small" color={REPORT_PAGE} /> : <Feather name="check" size={17} color={REPORT_PAGE} />}
+          <Text style={styles.paperQuestionSaveText}>{savingAnswers ? 'Saving' : 'Save context'}</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
 }
 
-function DietReportStory({ feedback }: { feedback: DietCoachFeedback }) {
-  const stats = feedback.stats;
-  const actions = (feedback.nextWeek?.actions?.length ? feedback.nextWeek.actions : feedback.highlights || []).slice(0, 3);
-  const priorities = (feedback.priorityInsights || []).slice(0, 3);
-  const mealsForStory = (feedback.mealGuidance || []).slice(0, 4);
-  const implementation = feedback.nextWeek?.implementationPlan;
+export function DietReportPendingState({
+  feedback,
+  foodDetails,
+  daysWithDetail,
+}: {
+  feedback?: DietCoachFeedback | null;
+  foodDetails: number;
+  daysWithDetail: number;
+}) {
+  const enrichment = getDietReportEnrichmentState(feedback);
+  const reportDays = reportDaysLeft(feedback);
+  const waitingForEvidence = !enrichment.available || !enrichment.requirementMet;
+  const detailSummary = [
+    foodDetails ? `${foodDetails} food detail${foodDetails === 1 ? '' : 's'}` : '',
+    daysWithDetail ? `${daysWithDetail} day${daysWithDetail === 1 ? '' : 's'} with detail` : '',
+  ].filter(Boolean).join(' · ');
+  const progressStatus = !enrichment.available
+    ? 'Updates after meal details sync'
+    : waitingForEvidence
+      ? `${enrichment.remaining} point${enrichment.remaining === 1 ? '' : 's'} to go`
+      : 'Minimum reached';
+  const progressAccessibilityText = !enrichment.available
+    ? undefined
+    : waitingForEvidence
+      ? `${enrichment.score} percent. Minimum ${enrichment.required} percent. ${enrichment.remaining} percentage point${enrichment.remaining === 1 ? '' : 's'} remaining.`
+      : `${enrichment.score} percent. Minimum ${enrichment.required} percent reached. Next review in ${reportDays} day${reportDays === 1 ? '' : 's'}.`;
 
   return (
-    <View style={styles.reportDocument}>
-      <View style={styles.reportCover}>
-        <View style={styles.reportCoverHeader}>
-          <View style={styles.reportCoverHeaderCopy}>
-            <Text style={styles.reportCoverEyebrow}>WEEKLY NUTRITION REPORT</Text>
-            <Text style={styles.reportCoverPeriod}>{formatReportPeriod(feedback.weekStartDate, feedback.weekEndDate)}</Text>
+    <View style={styles.reportPendingHero}>
+      <View style={styles.reportPendingMetaRow}>
+        <Text style={styles.reportPendingEyebrow}>WEEKLY DIET REPORT</Text>
+        <Text style={styles.reportPendingCadence}>Next review in {reportDays} day{reportDays === 1 ? '' : 's'}</Text>
+      </View>
+      <Text style={styles.reportPendingTitle} accessibilityRole="header">
+        {!enrichment.available
+          ? 'Your report is getting ready'
+          : waitingForEvidence
+            ? 'Build a clearer food picture'
+            : 'Your report is queued'}
+      </Text>
+      <Text style={styles.reportPendingBody}>
+        {!enrichment.available
+          ? 'Meal details are syncing. Your evidence score will appear shortly.'
+          : waitingForEvidence
+            ? 'Add short meal notes across a few days so the report can identify useful patterns.'
+            : 'You have enough diary evidence. Your report will generate on its weekly schedule.'}
+      </Text>
+
+      <View style={styles.reportPendingProgressCard}>
+        <View style={styles.reportPendingProgressHead}>
+          <Text style={styles.reportCountdownLabel}>REPORT EVIDENCE</Text>
+          <View style={styles.reportPendingScoreRow}>
+            <Text style={styles.reportPendingProgressValue}>{enrichment.available ? `${enrichment.score}%` : '—'}</Text>
+            <Text style={styles.reportPendingProgressRequirement}>Minimum {enrichment.required}%</Text>
           </View>
         </View>
-
-        <View style={styles.reportCoverScoreRow}>
-          <View style={styles.reportCoverScore}>
-            <Text style={styles.reportCoverScoreValue}>{feedback.score?.overall ?? '—'}</Text>
-            <Text style={styles.reportCoverScoreMax}>/100</Text>
+        {enrichment.available ? (
+          <View
+            style={[styles.reportTrack, styles.reportTrackTheme]}
+            accessible
+            accessibilityRole="progressbar"
+            accessibilityLabel="Evidence for next diet report"
+            accessibilityValue={{ min: 0, max: 100, now: enrichment.score, text: progressAccessibilityText }}
+          >
+            <View style={[styles.reportTrackFill, styles.reportTrackFillTheme, { width: `${enrichment.progress * 100}%` }]} />
+            <View style={[styles.reportEnrichmentThresholdMarker, { left: `${enrichment.required}%` }]} />
           </View>
-          <View style={styles.reportCoverScoreCopy}>
-            <Text style={styles.reportCoverScoreLabel}>{feedback.score?.label || 'Food-pattern review'}</Text>
-            <Text style={styles.reportCoverTrend}>
-              {typeof feedback.score?.trend === 'number'
-                ? `${feedback.score.trend >= 0 ? '+' : ''}${feedback.score.trend} from your last report`
-                : 'Your first weekly baseline'}
-            </Text>
-          </View>
-        </View>
-
-        <Text style={styles.reportCoverHeadline}>{feedback.headline || 'Your week at a glance'}</Text>
-        <Text style={styles.reportCoverSummary}>{feedback.summary}</Text>
-
-        <View style={styles.reportCoverStats}>
-          {[
-            { value: stats.mealMoments ?? stats.loggedItems ?? 0, label: 'Meals logged' },
-            { value: stats.daysLogged ?? 0, label: 'Days covered' },
-            { value: stats.workoutsCompleted ?? 0, label: 'Workouts' },
-          ].map((item, index) => (
-            <View key={item.label} style={[styles.reportCoverStat, index > 0 && styles.reportCoverStatDivided]}>
-              <Text style={styles.reportCoverStatValue}>{item.value}</Text>
-              <Text style={styles.reportCoverStatLabel}>{item.label}</Text>
-            </View>
-          ))}
+        ) : <View style={[styles.reportTrack, styles.reportTrackTheme]} />}
+        <Text style={styles.reportEnrichmentResultText} accessibilityLiveRegion="polite">{progressStatus}</Text>
+        {detailSummary ? <Text style={styles.reportPendingEvidenceFacts}>{detailSummary}</Text> : null}
+        <View style={styles.reportPendingTip}>
+          <Feather name="edit-3" size={15} color={REPORT_ACCENT} />
+          <Text style={styles.reportPendingTipText}>
+            {waitingForEvidence
+              ? 'Main foods and sides are enough—calorie counting is optional.'
+              : 'Keep logging naturally while your next review approaches.'}
+          </Text>
         </View>
       </View>
+    </View>
+  );
+}
 
-      <View style={styles.reportChapterHeader}>
-        <Text style={styles.reportChapterIndex}>01</Text>
-        <View style={styles.reportChapterCopy}>
-          <Text style={styles.reportChapterEyebrow}>NEXT WEEK</Text>
-          <Text style={styles.reportChapterHeading}>One focus, three actions</Text>
-        </View>
-      </View>
+function DietReportNoEvidenceState({
+  feedback,
+  interactive,
+}: {
+  feedback: DietCoachFeedback;
+  interactive: boolean;
+}) {
+  const photoEntries = Math.max(0, Math.round(reportFiniteNumber(feedback.stats?.photoEntries) ?? 0));
+  const hasDescribedEvidence = dietReportHasDescribedEvidence(feedback);
 
-      <View style={styles.reportFocusPanel}>
-        <Text style={styles.reportFocusLabel}>YOUR FOCUS</Text>
-        <Text style={styles.reportFocusTitle}>{feedback.nextWeek?.primaryFocus || feedback.nextFocus}</Text>
-        {feedback.nextWeek?.whyItMatters ? <Text style={styles.reportFocusWhy}>{feedback.nextWeek.whyItMatters}</Text> : null}
-        <View style={styles.reportFocusSteps}>
-          {actions.map((action, index) => (
-            <View key={`${action}-${index}`} style={styles.reportFocusStep}>
-              <View style={styles.reportFocusStepNumber}><Text style={styles.reportFocusStepNumberText}>{index + 1}</Text></View>
-              <Text style={styles.reportFocusStepText}>{action}</Text>
-            </View>
-          ))}
+  return (
+    <View style={styles.paperDocument} testID="diet-report-no-evidence">
+      <View style={styles.reportNoDataHeader}>
+        <View style={styles.paperMetaRow}>
+          <Text style={styles.paperEyebrow}>WEEKLY DIET REPORT</Text>
+          <Text style={styles.paperPeriod}>{formatReportPeriod(feedback.weekStartDate, feedback.weekEndDate)}</Text>
         </View>
-        {implementation?.action ? (
-          <View style={styles.reportImplementation}>
-            <Text style={styles.reportImplementationLabel}>START HERE</Text>
-            <Text style={styles.reportImplementationAction}>{implementation.action}</Text>
-            {implementation.fallback ? <Text style={styles.reportImplementationDetail}>Backup plan: {implementation.fallback}</Text> : null}
-          </View>
+
+        <View style={styles.reportNoDataIcon} accessible={false}>
+          <Feather name="edit-3" size={22} color={REPORT_ACCENT} />
+        </View>
+        <Text
+          style={styles.reportNoDataTitle}
+          accessibilityRole="header"
+          accessibilityLabel="No diet report generated"
+        >
+          No report generated
+        </Text>
+        <Text style={styles.reportNoDataBody}>
+          {hasDescribedEvidence
+            ? 'This review did not produce a reliable score, so it was not published.'
+            : photoEntries
+              ? `${photoEntries} food photo${photoEntries === 1 ? ' was' : 's were'} saved, but no meal descriptions were available for a useful review.`
+              : interactive
+                ? 'No described meals were available. Add meal details to build the next weekly report.'
+                : 'No described meals were available for this period.'}
+        </Text>
+        {interactive && hasDescribedEvidence ? (
+          <Text style={styles.reportNoDataProgressHint}>Add new meal details to build the next weekly report.</Text>
         ) : null}
       </View>
+    </View>
+  );
+}
 
-      <View style={styles.reportChapterHeader}>
-        <Text style={styles.reportChapterIndex}>02</Text>
-        <View style={styles.reportChapterCopy}>
-          <Text style={styles.reportChapterEyebrow}>KEY FINDINGS</Text>
-          <Text style={styles.reportChapterHeading}>What your week suggests</Text>
+export function DietReportStory({ feedback, interactive = true }: { feedback: DietCoachFeedback; interactive?: boolean }) {
+  const { width: viewportWidth, fontScale } = useWindowDimensions();
+  const stackReportGrid = viewportWidth < 380 || fontScale >= 1.2;
+  const hasReportStats = Boolean(feedback.stats && typeof feedback.stats === 'object' && !Array.isArray(feedback.stats));
+  const stats = hasReportStats ? feedback.stats : {
+    loggedItems: 0,
+    daysLogged: 0,
+    memoryEntries: 0,
+    photoEntries: 0,
+    mealCounts: {},
+    recentFoods: [],
+  };
+  const actions = reportStringArray(feedback.nextWeek?.actions);
+  const priorities = reportObjectArray(feedback.priorityInsights)
+    .filter(item => reportText(item.title) && reportText(item.observation));
+  const reportMeals = reportObjectArray(feedback.mealGuidance)
+    .filter(item => reportText(item.mealType) && (
+      reportText(item.pattern) ||
+      reportText(item.advice) ||
+      reportFiniteNumber(item.observedCount) !== null
+    ));
+  const questions = reportStringArray(feedback.questionsForNextWeek);
+  const questionResponses = reportObjectArray(feedback.questionResponses)
+    .filter(item => typeof item.question === 'string' && typeof item.answer === 'string');
+  const safetyNotices = reportObjectArray(feedback.safetyNotices)
+    .filter(notice => typeof notice.body === 'string' && notice.body.trim());
+  const genericSections = reportObjectArray(feedback.sections)
+    .filter(section => reportText(section.title) && (
+      reportText(section.summary) ||
+      reportStringArray(section.paragraphs).length ||
+      reportStringArray(section.items).length
+    ));
+  const implementation = feedback.nextWeek?.implementationPlan && typeof feedback.nextWeek.implementationPlan === 'object'
+    ? feedback.nextWeek.implementationPlan
+    : undefined;
+  const reportWins = reportObjectArray(feedback.wins).filter(item => reportText(item.title));
+  const wins = reportWins.length
+    ? reportWins
+    : reportStringArray(feedback.highlights).map(title => ({ title, detail: '', evidence: '' }));
+  const focus = reportText(feedback.nextWeek?.primaryFocus) || reportText(feedback.nextFocus);
+  const mealBuilder = feedback.nextWeek?.mealBuilder && typeof feedback.nextWeek.mealBuilder === 'object' && !Array.isArray(feedback.nextWeek.mealBuilder)
+    ? feedback.nextWeek.mealBuilder
+    : undefined;
+  const patterns = reportObjectArray(feedback.patterns)
+    .filter(item => reportText(item.title) && reportText(item.summary));
+  const foodGroups = reportObjectArray(feedback.foodGroups)
+    .filter(item => reportText(item.label));
+  const smartSwaps = reportObjectArray(feedback.nextWeek?.smartSwaps)
+    .filter(item => reportText(item.from) && reportText(item.to));
+  const scoreIsAvailable = !feedback.score?.availability || feedback.score.availability === 'available';
+  const scoreComponents = (scoreIsAvailable ? reportObjectArray(feedback.score?.components) : [])
+    .filter(item => reportText(item.label) && reportFiniteNumber(item.score) !== null && (reportFiniteNumber(item.maxScore) || 0) > 0);
+  const facts = reportObjectArray(feedback.facts)
+    .filter(item => reportText(item.title) && (reportText(item.body) || reportText(item.sourceLabel)))
+    .filter((item, index, list) => {
+      const identity = reportText(item.sourceUrl) || reportText(item.id) || reportText(item.title).toLocaleLowerCase();
+      return list.findIndex(candidate => (
+        reportText(candidate.sourceUrl) || reportText(candidate.id) || reportText(candidate.title).toLocaleLowerCase()
+      ) === identity) === index;
+    });
+  const limitations = reportStringArray(feedback.limitations);
+  const goalSupports = reportStringArray(feedback.goalAlignment?.supports);
+  const goalGaps = reportStringArray(feedback.goalAlignment?.gaps);
+  const describedEntriesValue = reportFiniteNumber(stats.describedEntries ?? stats.memoryEntries);
+  const scoreHasDiaryEvidence = describedEntriesValue === null || describedEntriesValue > 0;
+  const score = scoreIsAvailable && scoreHasDiaryEvidence && reportFiniteNumber(feedback.score?.overall) !== null
+    ? Math.max(0, Math.min(100, Math.round(feedback.score!.overall)))
+    : null;
+  const scoreChangeValue = reportFiniteNumber(feedback.score?.trend);
+  const scoreChange = scoreChangeValue !== null ? Math.round(scoreChangeValue) : null;
+  const describedEntries = hasReportStats ? describedEntriesValue : null;
+  const daysLogged = hasReportStats
+    ? reportFiniteNumber(stats.describedDaysLogged ?? stats.daysLogged)
+    : null;
+  const mealMoments = hasReportStats
+    ? reportFiniteNumber(stats.mealMoments ?? stats.loggedItems)
+    : null;
+  const workoutsCompleted = hasReportStats ? reportFiniteNumber(stats.workoutsCompleted) : null;
+  const generatedAt = formatReportGeneratedAt(feedback.generatedAt);
+  const newerSchema = typeof feedback.schemaVersion === 'number' && feedback.schemaVersion > SUPPORTED_DIET_REPORT_SCHEMA_VERSION;
+  const reportHeadline = reportText(feedback.headline) || reportText(feedback.title) || 'Your week at a glance';
+  const reportSummary = reportText(feedback.summary) || 'Your diary has a useful next step for the coming week.';
+  const headlineMetrics = [
+    daysLogged !== null ? { value: daysLogged, label: daysLogged === 1 ? 'day with detail' : 'days with detail', icon: 'calendar' } : null,
+    describedEntries !== null ? { value: describedEntries, label: describedEntries === 1 ? 'described meal' : 'described meals', icon: 'edit-3' } : null,
+    mealMoments !== null ? { value: mealMoments, label: mealMoments === 1 ? 'meal moment' : 'meal moments', icon: 'clock' } : null,
+  ].filter((item): item is { value: number; label: string; icon: string } => Boolean(item));
+  const implementationRows = [
+    { label: 'When', value: reportText(implementation?.cue) },
+    { label: 'Do', value: reportText(implementation?.action), strong: true },
+    { label: 'Backup', value: reportText(implementation?.fallback) },
+    { label: 'Target', value: reportText(implementation?.successMeasure) },
+  ].filter(item => item.value);
+  const mealBuilderRows = [
+    { label: 'Plants', value: reportText(mealBuilder?.plants), icon: 'sun' },
+    { label: 'Protein', value: reportText(mealBuilder?.protein), icon: 'hexagon' },
+    { label: 'Carbs', value: reportText(mealBuilder?.carbs), icon: 'circle' },
+    { label: 'Extras', value: reportText(mealBuilder?.extras), icon: 'plus' },
+  ].filter(item => item.value);
+  const hasPlan = Boolean(focus || actions.length || implementationRows.length || reportText(feedback.nextWeek?.trackingFocus));
+  const hasFindings = Boolean(wins.length || priorities.length || patterns.length);
+  const hasMealData = Boolean(
+    reportMeals.length ||
+    foodGroups.length ||
+    reportText(feedback.mealRhythm?.summary) ||
+    reportText(feedback.mealRhythm?.strongestWindow) ||
+    reportText(feedback.mealRhythm?.opportunityWindow)
+  );
+  const hasGoalContext = Boolean(reportText(feedback.goalAlignment?.summary) || goalSupports.length || goalGaps.length);
+  const hasTrainingContext = Boolean(
+    reportText(feedback.trainingNutrition?.summary) ||
+    reportText(feedback.trainingNutrition?.trainingDayAction) ||
+    reportText(feedback.trainingNutrition?.restDayAction)
+  );
+  const hasPracticalContext = Boolean(mealBuilderRows.length || smartSwaps.length || hasGoalContext || hasTrainingContext);
+
+  const scoreUnavailableText = feedback.score?.availability === 'temporarilyUnavailable'
+    ? 'Score unavailable'
+    : 'Not scored';
+  const scoreUnavailableNote = feedback.score?.availability === 'temporarilyUnavailable'
+    ? 'Insights are still available.'
+    : 'More meal detail is needed.';
+
+  if (!dietReportIsPresentable(feedback)) {
+    return <DietReportNoEvidenceState feedback={feedback} interactive={interactive} />;
+  }
+
+  return (
+    <View style={styles.paperDocument}>
+      <View style={styles.paperHeader}>
+        <View style={styles.paperMetaRow}>
+          <Text style={styles.paperEyebrow}>WEEKLY DIET REPORT</Text>
+          <Text style={styles.paperPeriod}>{formatReportPeriod(feedback.weekStartDate, feedback.weekEndDate)}</Text>
         </View>
-      </View>
 
-      <View style={styles.reportFindingsPanel}>
-        {priorities.length ? priorities.map((insight, index) => (
-          <View key={`${insight.title}-${index}`} style={[styles.reportFinding, index > 0 && styles.reportFindingDivided]}>
-            <Text style={styles.reportFindingIndex}>{String(index + 1).padStart(2, '0')}</Text>
-            <View style={styles.reportFindingCopy}>
-              <View style={styles.reportFindingTitleRow}>
-                <Text style={styles.reportFindingTitle}>{insight.title}</Text>
-                <Text style={styles.reportFindingConfidence}>{insight.confidence}</Text>
-              </View>
-              <Text style={styles.reportFindingObservation}>{insight.observation}</Text>
-              {insight.whyItMatters ? <Text style={styles.reportFindingWhy}>{insight.whyItMatters}</Text> : null}
-              <View style={styles.reportFindingActionRow}>
-                <Feather name="arrow-right" size={14} color={colors.gold} />
-                <Text style={styles.reportFindingAction}>{insight.nextStep}</Text>
-              </View>
-            </View>
-          </View>
-        )) : <Text style={styles.reportEmpty}>Keep logging meals to reveal your strongest patterns.</Text>}
-      </View>
+        <Text style={styles.paperHeadline} accessibilityRole="header">{reportHeadline}</Text>
+        <Text style={styles.paperSummary}>{reportSummary}</Text>
 
-      <View style={styles.reportChapterHeader}>
-        <Text style={styles.reportChapterIndex}>03</Text>
-        <View style={styles.reportChapterCopy}>
-          <Text style={styles.reportChapterEyebrow}>MEAL BY MEAL</Text>
-          <Text style={styles.reportChapterHeading}>Guidance you can use</Text>
-        </View>
-      </View>
+        {interactive ? (
+          <Image
+            source={WEEKLY_NUTRITION_ART}
+            style={styles.paperEditorialArt}
+            resizeMode="cover"
+            accessible={false}
+            testID="weekly-nutrition-art"
+          />
+        ) : null}
 
-      <View style={styles.reportMealGuidePanel}>
-        {mealsForStory.length ? mealsForStory.map((guidance, index) => {
-          const appearance = mealAppearance[guidance.mealType];
-          return (
-            <View key={guidance.mealType} style={[styles.reportMealGuideRow, index > 0 && styles.reportMealGuideRowDivided]}>
-              <View style={styles.reportMealGuideIcon}>
-                <Feather name={appearance.icon} size={16} color={colors.inkMuted} />
-              </View>
-              <View style={styles.reportMealGuideCopy}>
-                <View style={styles.reportMealGuideTitleRow}>
-                  <Text style={styles.reportMealGuideTitle}>{guidance.mealType}</Text>
-                  <Text style={styles.reportMealGuideCount}>{guidance.observedCount || 0} logged</Text>
+        <View
+          style={[styles.reportOverviewBand, stackReportGrid && styles.reportOverviewBandStack]}
+          accessibilityLabel="Weekly report summary"
+        >
+          <View style={styles.reportOverviewScore}>
+            <Text style={styles.reportOverviewLabel}>PATTERN SCORE</Text>
+            {score !== null ? (
+              <>
+                <View style={styles.reportOverviewScoreRow}>
+                  <Text style={styles.reportOverviewScoreValue}>{score}</Text>
+                  <Text style={styles.reportOverviewScoreMax}>/100</Text>
                 </View>
-                {guidance.pattern ? <Text style={styles.reportMealGuidePattern}>{guidance.pattern}</Text> : null}
-                <Text style={styles.reportMealGuideAdvice}>{guidance.advice}</Text>
+                <View style={styles.reportOverviewScoreMeta}>
+                  {reportText(feedback.score?.label) ? <Text style={styles.reportOverviewScoreName}>{reportText(feedback.score?.label)}</Text> : null}
+                  <Text style={styles.reportOverviewTrend}>
+                    {scoreChange === null ? 'Baseline' : scoreChange === 0 ? 'No change' : `${scoreChange > 0 ? '+' : ''}${scoreChange} vs last report`}
+                  </Text>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.reportOverviewUnavailable}>{scoreUnavailableText}</Text>
+                <Text style={styles.reportOverviewUnavailableNote}>{scoreUnavailableNote}</Text>
+              </>
+            )}
+          </View>
+
+          {headlineMetrics.length ? (
+            <View style={styles.reportOverviewStats}>
+              {headlineMetrics.map(metric => (
+                <View key={metric.label} style={styles.reportOverviewStat} accessible accessibilityLabel={`${metric.value} ${metric.label}`}>
+                  <Text style={styles.reportOverviewStatValue}>{metric.value}</Text>
+                  <Text style={styles.reportOverviewStatLabel}>{metric.label}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </View>
+
+        {score !== null && reportText(feedback.score?.confidenceNote) ? (
+          <View style={styles.reportConfidenceCompact}>
+            <Feather name="database" size={13} color={REPORT_ACCENT} />
+            <Text style={styles.reportConfidenceCompactText}>
+              <Text style={styles.reportConfidenceCompactLabel}>{reportStatusLabel(feedback.score?.confidence, 'evidence')}: </Text>
+              {reportText(feedback.score?.confidenceNote)}
+            </Text>
+          </View>
+        ) : null}
+        {newerSchema ? <Text style={styles.paperSchemaNotice}>Some newer report fields are shown as additional notes below.</Text> : null}
+      </View>
+
+      <ReportSafetyNotices notices={safetyNotices} />
+
+      {hasPlan ? (
+        <ReportPaperSection
+          title={interactive ? 'Your plan for the next 7 days' : 'Plan suggested after this report'}
+          meta="One focus with a simple way to follow through"
+        >
+          <View style={styles.paperFocusPanel}>
+            {focus ? (
+              <View style={styles.paperFocusHeader}>
+                <View style={styles.paperFocusMarker}><Feather name="arrow-up-right" size={18} color={REPORT_PAGE} /></View>
+                <View style={styles.paperFocusCopy}>
+                  <Text style={styles.paperFocusLabel}>{interactive ? 'PRIMARY FOCUS' : 'SUGGESTED FOCUS'}</Text>
+                  <Text style={styles.paperFocusTitle}>{focus}</Text>
+                </View>
+              </View>
+            ) : null}
+            {reportText(feedback.nextWeek?.whyItMatters) ? <Text style={styles.paperFocusWhy}>{reportText(feedback.nextWeek?.whyItMatters)}</Text> : null}
+
+            {actions.length ? (
+              <View style={styles.paperActionList}>
+                {actions.map((action, index) => (
+                  <View key={`${action}-${index}`} style={styles.paperActionRow}>
+                    <View style={styles.paperActionNumber}><Text style={styles.paperActionNumberText}>{index + 1}</Text></View>
+                    <Text style={styles.paperActionText}>{action}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            {implementationRows.length ? (
+              <View style={styles.paperDefinitionGrid}>
+                {implementationRows.map(item => (
+                  <View key={item.label} style={[styles.paperDefinitionCell, stackReportGrid && styles.paperGridItemFull]}>
+                    <Text style={styles.paperDefinitionLabel}>{item.label}</Text>
+                    <Text style={[styles.paperDefinitionValue, item.strong && styles.paperDefinitionValueStrong]}>{item.value}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            {reportText(feedback.nextWeek?.trackingFocus) ? (
+              <View style={styles.paperTrackingRow}>
+                <Feather name="eye" size={15} color={REPORT_ACCENT} />
+                <Text style={styles.paperTrackingText}><Text style={styles.paperTrackingLabel}>Notice: </Text>{reportText(feedback.nextWeek?.trackingFocus)}</Text>
+              </View>
+            ) : null}
+          </View>
+        </ReportPaperSection>
+      ) : null}
+
+      {hasFindings ? (
+        <ReportPaperSection title="Key findings" meta="The strongest signals from the diary data" icon="search">
+          {wins.length ? (
+            <View style={styles.paperSubsection}>
+              <Text style={styles.paperSubsectionTitle}>Working well</Text>
+              <View style={styles.paperRows}>
+                {wins.map((win, index) => (
+                  <View key={`${win.title}-${index}`} style={styles.paperWinRow}>
+                    <View style={styles.paperCheckIcon}><Feather name="check" size={14} color={REPORT_ACCENT} /></View>
+                    <View style={styles.paperRowCopy}>
+                      <Text style={styles.paperRowTitle}>{reportText(win.title)}</Text>
+                      {reportText(win.detail) ? <Text style={styles.paperRowBody}>{reportText(win.detail)}</Text> : null}
+                      {reportText(win.evidence) ? <Text style={styles.paperRowEvidence}>{reportText(win.evidence)}</Text> : null}
+                    </View>
+                  </View>
+                ))}
               </View>
             </View>
-          );
-        }) : <Text style={styles.reportEmpty}>Add meals across the day to unlock meal-by-meal guidance.</Text>}
+          ) : null}
+
+          {priorities.length ? (
+            <View style={styles.paperSubsection}>
+              <Text style={styles.paperSubsectionTitle}>Top opportunities</Text>
+              <View style={styles.paperRows}>
+                {priorities.map((insight, index) => (
+                  <View key={`${insight.title}-${index}`} style={styles.paperInsightRow}>
+                    <View style={styles.paperInsightNumber}><Text style={styles.paperInsightNumberText}>{insight.rank || index + 1}</Text></View>
+                    <View style={styles.paperRowCopy}>
+                      <View style={styles.paperFindingTitleRow}>
+                        <Text style={styles.paperRowTitle}>{reportText(insight.title)}</Text>
+                        <Text style={styles.paperConfidenceSmall}>{reportStatusLabel(insight.confidence, 'evidence')}</Text>
+                      </View>
+                      <Text style={styles.paperRowBody}>{reportText(insight.observation)}</Text>
+                      {reportText(insight.whyItMatters) ? <Text style={styles.paperWhyLine}><Text style={styles.paperInlineLabel}>Why: </Text>{reportText(insight.whyItMatters)}</Text> : null}
+                      <ReportEvidenceLine items={reportStringArray(insight.evidence)} />
+                      {reportText(insight.nextStep) ? (
+                        <View style={styles.paperNextStep}>
+                          <Feather name="arrow-right" size={15} color={REPORT_ACCENT} />
+                          <Text style={styles.paperNextStepText}>{reportText(insight.nextStep)}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {patterns.length ? (
+            <View style={styles.paperSubsection}>
+              <Text style={styles.paperSubsectionTitle}>Weekly patterns</Text>
+              <View style={styles.paperRows}>
+                {patterns.map((pattern, index) => (
+                  <View key={`${pattern.key || pattern.title}-${index}`} style={styles.paperPatternRow}>
+                    <View style={styles.paperPatternTop}>
+                      <Text style={styles.paperRowTitle}>{reportText(pattern.title)}</Text>
+                      <ReportStatusText value={pattern.status} kind="pattern" />
+                    </View>
+                    <Text style={styles.paperRowBody}>{reportText(pattern.summary)}</Text>
+                    <ReportEvidenceLine items={reportStringArray(pattern.evidence)} />
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+        </ReportPaperSection>
+      ) : null}
+
+      {hasMealData ? (
+        <ReportPaperSection title="Meals & food coverage" meta="What was observed, without calorie estimates" icon="pie-chart">
+          {reportText(feedback.mealRhythm?.summary) || reportText(feedback.mealRhythm?.strongestWindow) || reportText(feedback.mealRhythm?.opportunityWindow) ? (
+            <View style={styles.paperRhythmBlock}>
+              <Text style={styles.paperRhythmTitle}>Meal rhythm</Text>
+              {reportText(feedback.mealRhythm?.summary) ? <Text style={styles.paperRowBody}>{reportText(feedback.mealRhythm?.summary)}</Text> : null}
+              <View style={styles.paperRhythmFacts}>
+                {reportText(feedback.mealRhythm?.strongestWindow) ? (
+                  <Text style={styles.paperRhythmFact}><Text style={styles.paperInlineLabel}>Most consistent: </Text>{reportText(feedback.mealRhythm?.strongestWindow)}</Text>
+                ) : null}
+                {reportText(feedback.mealRhythm?.opportunityWindow) ? (
+                  <Text style={styles.paperRhythmFact}><Text style={styles.paperInlineLabel}>Opportunity: </Text>{reportText(feedback.mealRhythm?.opportunityWindow)}</Text>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
+
+          {reportMeals.length ? (
+            <View style={styles.paperSubsection}>
+              <Text style={styles.paperSubsectionTitle}>Meal-by-meal</Text>
+              <View style={styles.paperMealList}>
+                {reportMeals.map((guidance, index) => {
+                  const observedCount = reportFiniteNumber(guidance.observedCount);
+                  const mealType = reportText(guidance.mealType);
+                  const mealIcon = mealType === 'Breakfast' ? 'sunrise' : mealType === 'Lunch' ? 'sun' : mealType === 'Evening' ? 'sunset' : 'moon';
+                  return (
+                    <View key={`${mealType}-${index}`} style={styles.paperMealRow}>
+                      <View style={styles.paperMealIcon}><Feather name={mealIcon} size={17} color={REPORT_ACCENT} /></View>
+                      <View style={styles.paperRowCopy}>
+                        <View style={styles.paperMealTop}>
+                          <Text style={styles.paperRowTitle}>{mealType}</Text>
+                          <Text style={styles.paperMealCount}>{observedCount === null ? 'Count unavailable' : `${observedCount} logged`}</Text>
+                        </View>
+                        <ReportStatusText value={guidance.status || (observedCount && observedCount > 0 ? 'observed' : 'limited')} kind="logging" />
+                        {reportText(guidance.pattern) ? <Text style={styles.paperRowBody}>{reportText(guidance.pattern)}</Text> : null}
+                        {reportText(guidance.advice) ? (
+                          <Text style={styles.paperMealAdvice}><Text style={styles.paperInlineLabel}>Try: </Text>{reportText(guidance.advice)}</Text>
+                        ) : null}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+
+          {foodGroups.length ? (
+            <View style={styles.paperSubsection}>
+              <Text style={styles.paperSubsectionTitle}>Food-group coverage</Text>
+              <View style={styles.paperCoverageGrid}>
+                {foodGroups.map((group, index) => {
+                  const status = typeof group.status === 'string' ? group.status : 'limited';
+                  const observedFoods = reportStringArray(group.observedFoods);
+                  const positive = status === 'strong' || status === 'present';
+                  return (
+                    <View
+                      key={`${group.key || group.label}-${index}`}
+                      style={[styles.paperCoverageCell, stackReportGrid && styles.paperGridItemFull]}
+                      accessible
+                      accessibilityLabel={`${reportText(group.label)}: ${reportStatusLabel(status, 'presence')}${observedFoods.length ? `. ${observedFoods.join(', ')}` : ''}`}
+                    >
+                      <View style={styles.paperCoverageTop}>
+                        <Text style={styles.paperCoverageLabel}>{reportText(group.label)}</Text>
+                        <Text style={[styles.paperCoverageStatus, positive && styles.paperCoverageStatusPositive]}>{reportStatusLabel(status, 'presence')}</Text>
+                      </View>
+                      {observedFoods.length ? <Text style={styles.paperCoverageFoods}>{observedFoods.join(' · ')}</Text> : null}
+                      {reportText(group.insight) ? <Text style={styles.paperCoverageInsight}>{reportText(group.insight)}</Text> : null}
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+        </ReportPaperSection>
+      ) : null}
+
+      {hasPracticalContext ? (
+        <ReportPaperSection title="Make it practical" meta="A reusable meal formula and context for your goals" icon="compass">
+          {mealBuilderRows.length ? (
+            <View style={styles.paperSubsection}>
+              <Text style={styles.paperSubsectionTitle}>{reportText(mealBuilder?.title) || 'Balanced meal formula'}</Text>
+              <View style={styles.paperBuilderGrid}>
+                {mealBuilderRows.map(item => (
+                  <View key={item.label} style={[styles.paperBuilderCell, stackReportGrid && styles.paperGridItemFull]}>
+                    <View style={styles.paperBuilderIcon}><Feather name={item.icon} size={15} color={REPORT_ACCENT} /></View>
+                    <View style={styles.paperRowCopy}>
+                      <Text style={styles.paperDefinitionLabel}>{item.label}</Text>
+                      <Text style={styles.paperBuilderValue}>{item.value}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {smartSwaps.length ? (
+            <View style={styles.paperSubsection}>
+              <Text style={styles.paperSubsectionTitle}>Easy swaps</Text>
+              <View style={styles.paperRows}>
+                {smartSwaps.map((swap, index) => (
+                  <View key={`${swap.from}-${swap.to}-${index}`} style={styles.paperSwapRow}>
+                    <View style={styles.paperSwapMain}>
+                      <Text style={styles.paperSwapFrom}>{reportText(swap.from)}</Text>
+                      <Feather name="arrow-right" size={15} color={REPORT_ACCENT} />
+                      <Text style={styles.paperSwapTo}>{reportText(swap.to)}</Text>
+                    </View>
+                    {reportText(swap.why) ? <Text style={styles.paperRowBody}>{reportText(swap.why)}</Text> : null}
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {hasGoalContext ? (
+            <View style={styles.paperContextBlock}>
+              <View style={styles.paperContextTitleRow}>
+                <Text style={styles.paperContextTitle}>Goal alignment</Text>
+              </View>
+              {reportText(feedback.goalAlignment?.summary) ? <Text style={styles.paperRowBody}>{reportText(feedback.goalAlignment?.summary)}</Text> : null}
+              {goalSupports.length ? <Text style={styles.paperContextLine}><Text style={styles.paperInlineLabel}>Supports: </Text>{goalSupports.join(' · ')}</Text> : null}
+              {goalGaps.length ? <Text style={styles.paperContextLine}><Text style={styles.paperInlineLabel}>Work on: </Text>{goalGaps.join(' · ')}</Text> : null}
+            </View>
+          ) : null}
+
+          {hasTrainingContext ? (
+            <View style={styles.paperContextBlock}>
+              <View style={styles.paperContextTitleRow}>
+                <Feather name="activity" size={16} color={REPORT_INFO} />
+                <Text style={styles.paperContextTitle}>Training nutrition</Text>
+                {workoutsCompleted !== null ? <Text style={styles.paperContextBadge}>{workoutsCompleted} workout{workoutsCompleted === 1 ? '' : 's'}</Text> : null}
+              </View>
+              {reportText(feedback.trainingNutrition?.summary) ? <Text style={styles.paperRowBody}>{reportText(feedback.trainingNutrition?.summary)}</Text> : null}
+              {reportText(feedback.trainingNutrition?.trainingDayAction) ? <Text style={styles.paperContextLine}><Text style={styles.paperInlineLabel}>Training day: </Text>{reportText(feedback.trainingNutrition?.trainingDayAction)}</Text> : null}
+              {reportText(feedback.trainingNutrition?.restDayAction) ? <Text style={styles.paperContextLine}><Text style={styles.paperInlineLabel}>Rest day: </Text>{reportText(feedback.trainingNutrition?.restDayAction)}</Text> : null}
+            </View>
+          ) : null}
+        </ReportPaperSection>
+      ) : null}
+
+      {score !== null && scoreComponents.length ? (
+        <ReportPaperSection title="Score breakdown" meta="How the diary-based score was composed" icon="bar-chart-2">
+          <View style={styles.paperComponentList}>
+            {scoreComponents.map((component, index) => {
+              const componentScore = reportFiniteNumber(component.score) || 0;
+              const componentMaximum = reportFiniteNumber(component.maxScore) || 1;
+              const percentage = Math.max(0, Math.min(100, (componentScore / componentMaximum) * 100));
+              return (
+                <View key={`${component.key}-${index}`} style={styles.paperComponentRow}>
+                  <View style={styles.paperComponentTop}>
+                    <Text style={styles.paperComponentLabel}>{reportText(component.label)}</Text>
+                    <Text style={styles.paperComponentValue}>{componentScore}<Text style={styles.paperComponentMax}>/{componentMaximum}</Text></Text>
+                  </View>
+                  <View
+                    style={styles.paperComponentTrack}
+                    accessible
+                    accessibilityRole="progressbar"
+                    accessibilityLabel={`${reportText(component.label)}: ${componentScore} out of ${componentMaximum}`}
+                    accessibilityValue={{ min: 0, max: componentMaximum, now: componentScore }}
+                  >
+                    <View style={[styles.paperComponentFill, { width: `${percentage}%` }]} />
+                  </View>
+                  {reportText(component.insight) ? <Text style={styles.paperComponentInsight}>{reportText(component.insight)}</Text> : null}
+                </View>
+              );
+            })}
+          </View>
+        </ReportPaperSection>
+      ) : null}
+
+      {reportText(feedback.coachNote) ? (
+        <ReportPaperSection title="Coach note" icon="message-circle">
+          <View style={styles.paperCoachNote}>
+            <View style={styles.paperCoachRule} />
+            <Text style={styles.paperCoachText}>{reportText(feedback.coachNote)}</Text>
+          </View>
+        </ReportPaperSection>
+      ) : null}
+
+      {genericSections.length ? (
+        <ReportPaperSection title="Additional notes" meta="Useful details included by this report format" icon="file-text">
+          <View style={styles.paperRows}>
+            {genericSections.map((section, sectionIndex) => {
+              const paragraphs = reportStringArray(section.paragraphs);
+              const items = reportStringArray(section.items);
+              return (
+                <View key={section.id || `${section.title}-${sectionIndex}`} style={styles.paperGenericSection}>
+                  <Text style={styles.paperRowTitle}>{reportText(section.title)}</Text>
+                  {reportText(section.summary) ? <Text style={styles.paperRowBody}>{reportText(section.summary)}</Text> : null}
+                  {paragraphs.map((paragraph, index) => <Text key={`${paragraph}-${index}`} style={styles.paperGenericParagraph}>{paragraph}</Text>)}
+                  {items.map((item, index) => (
+                    <View key={`${item}-${index}`} style={styles.paperGenericItem}>
+                      <View style={styles.paperGenericDot} />
+                      <Text style={styles.paperGenericItemText}>{item}</Text>
+                    </View>
+                  ))}
+                </View>
+              );
+            })}
+          </View>
+        </ReportPaperSection>
+      ) : null}
+
+      <ReportPaperSection
+        title={facts.length ? 'Sources & report notes' : 'About this report'}
+        meta={facts.length ? 'Evidence-based guides behind the recommendations' : undefined}
+        icon="book-open"
+      >
+        {facts.length ? (
+          <View style={styles.paperSourceList}>
+            {facts.map((fact, index) => {
+              const sourceUrl = reportText(fact.sourceUrl);
+              const canOpen = /^https:\/\//i.test(sourceUrl);
+              const sourceName = reportText(fact.sourceLabel) || reportSourceDomain(sourceUrl) || 'Original source';
+              const factTitle = reportText(fact.title);
+              return (
+                <TouchableOpacity
+                  key={`${fact.id}-${index}`}
+                  style={styles.paperSourceRow}
+                  activeOpacity={canOpen ? 0.72 : 1}
+                  disabled={!canOpen}
+                  onPress={canOpen ? () => openReportLink(sourceUrl, 'Please try again, or search for the publisher shown in the report.').catch(() => undefined) : undefined}
+                  accessibilityRole={canOpen ? 'link' : undefined}
+                  accessibilityLabel={canOpen ? `Open ${factTitle} from ${sourceName}` : `${factTitle}, attributed to ${sourceName}`}
+                >
+                  <View style={styles.paperSourceIcon}><Feather name="book-open" size={16} color={REPORT_INFO} /></View>
+                  <View style={styles.paperSourceCopy}>
+                    <Text style={styles.paperSourceTitle}>{factTitle}</Text>
+                    {reportText(fact.body) ? <Text style={styles.paperSourceBody}>{reportText(fact.body)}</Text> : null}
+                    <Text style={styles.paperSourceMeta}>{sourceName}</Text>
+                  </View>
+                  {canOpen ? <Feather name="external-link" size={17} color={REPORT_INFO} /> : null}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : null}
+
+        <View style={styles.paperAboutBox}>
+          <View style={styles.paperAboutTitleRow}>
+            <Feather name="info" size={16} color={REPORT_INFO} />
+            <Text style={styles.paperAboutTitle}>How to read this report</Text>
+          </View>
+          <Text style={styles.paperAboutText}>AI-assisted patterns from your food diary. General wellness guidance only—not medical advice.</Text>
+          {limitations.map((item, index) => (
+            <View key={`${item}-${index}`} style={styles.paperLimitationRow}>
+              <View style={styles.paperGenericDot} />
+              <Text style={styles.paperLimitationText}>{item}</Text>
+            </View>
+          ))}
+        </View>
+      </ReportPaperSection>
+
+      {interactive && questions.length ? (
+        <View style={styles.paperSection}>
+          <ReportQuestionsForm
+            key={`${feedback.generatedAt}-${questions.join('|')}`}
+            questions={questions}
+            initialResponses={questionResponses}
+            reportGeneratedAt={feedback.generatedAt}
+          />
+        </View>
+      ) : null}
+
+      <View style={styles.paperFooter}>
+        <View style={styles.paperFooterCopy}>
+          {generatedAt ? <Text style={styles.paperGenerated}>{generatedAt}</Text> : null}
+          <Text style={styles.paperFooterNote}>See something inaccurate, missing, or unsafe?</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.paperIssueButton}
+          activeOpacity={0.72}
+          onPress={() => {
+            const subject = encodeURIComponent('Diet report feedback');
+            const body = encodeURIComponent(`Report generated: ${feedback.generatedAt}\n\nWhat seems inaccurate, missing, or unsafe?\n`);
+            openReportLink(`mailto:team@formbae.in?subject=${subject}&body=${body}`, 'Email team@formbae.in to report an issue.').catch(() => undefined);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Report an issue with this diet report"
+        >
+          <Feather name="flag" size={16} color={REPORT_MUTED} />
+          <Text style={styles.paperIssueButtonText}>Report issue</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -555,8 +1406,9 @@ function DietScreenContent({ route, navigation }: Props) {
     mealType: MealType;
     note: string;
   } | null>(null);
-  const [activeTab, setActiveTab] = useState<'log' | 'diary' | 'report'>('log');
+  const [activeTab, setActiveTab] = useState<'log' | 'diary' | 'report' | 'reportHistory' | 'previousReport'>('log');
   const [reportReturnTab, setReportReturnTab] = useState<'log' | 'diary'>('log');
+  const [selectedPreviousReport, setSelectedPreviousReport] = useState<DietCoachFeedback | null>(null);
   const saveToastOpacity = useRef(new Animated.Value(0)).current;
   const saveToastScale = useRef(new Animated.Value(0.86)).current;
   const handledCameraRequestRef = useRef<number | null>(null);
@@ -766,37 +1618,6 @@ function DietScreenContent({ route, navigation }: Props) {
     [entries],
   );
   const weeklyPeak = Math.max(4, ...weeklyPattern.map(day => day.points));
-  const reportEnrichmentScore = useMemo(() => {
-    const reportGeneratedAt = timestampValue(dietFeedback?.generatedAt);
-    const generatedAt = dietFeedback?.status === 'ready' && reportGeneratedAt > 0
-      ? reportGeneratedAt
-      : Date.now() - REPORT_CYCLE_DAYS * 24 * 60 * 60 * 1000;
-    const cycleEntries = entries.filter(
-      entry =>
-        !isSkippedEntry(entry) &&
-        // Use the time the memory was logged to make backfilled meals count
-        // toward the new report cycle without changing their diary date.
-        timestampValue(entry.loggedAt || entry.createdAt) > generatedAt,
-    );
-    const cycleDays = new Set(
-      cycleEntries.map(entry => new Date(entry.createdAt).toDateString()),
-    ).size;
-    const cycleMealMoments = new Set(
-      cycleEntries.map(
-        entry => `${new Date(entry.createdAt).toDateString()}:${entry.mealType}`,
-      ),
-    ).size;
-    const cycleItems = uniqueRewardEntries(cycleEntries).length;
-    return Math.min(
-      100,
-      Math.round(
-        5 +
-          (Math.min(cycleDays, 7) / 7) * 30 +
-          (Math.min(cycleMealMoments, 14) / 14) * 40 +
-          (Math.min(cycleItems, 21) / 21) * 25,
-      ),
-    );
-  }, [dietFeedback?.generatedAt, dietFeedback?.status, entries]);
   const diaryEntryCount = useMemo(
     () => entries.filter(entry => !isSkippedEntry(entry)).length,
     [entries],
@@ -850,13 +1671,35 @@ function DietScreenContent({ route, navigation }: Props) {
     () => entries.filter(entry => Boolean(entry.syncError)).length,
     [entries],
   );
-  const reportReady = dietFeedback?.status === 'ready';
+  const reportFoodDetails = Math.max(0, Math.round(reportFiniteNumber(dietFeedback?.stats?.describedEntries) ?? 0));
+  const reportDaysWithDetail = Math.max(0, Math.round(reportFiniteNumber(dietFeedback?.stats?.describedDaysLogged) ?? 0));
+  const reportPayloadRejected = dietFeedback?.status === 'ready' && !dietReportIsPresentable(dietFeedback);
+  const reportReady = dietFeedback?.status === 'ready' && dietReportIsPresentable(dietFeedback);
+  const reportPending = !reportPayloadRejected && !reportReady;
   const reportDays = reportDaysLeft(dietFeedback);
-  const reportProgress = reportCycleProgress(dietFeedback);
-  const reportCountdown = reportCountdownText(dietFeedback);
-  const supportsDetailedReport =
-    dietFeedback?.template?.id === 'weekly-diet-report' ||
-    (dietFeedback?.schemaVersion ?? 0) >= 2;
+  const reportEnrichment = getDietReportEnrichmentState(dietFeedback);
+  const reportEnrichmentHint = !reportEnrichment.available
+    ? 'Evidence updates after your synced meal details are reviewed.'
+    : reportEnrichment.score < reportEnrichment.required / 2
+      ? 'Early — describe a few meals to help useful patterns emerge.'
+      : reportEnrichment.score < reportEnrichment.required
+        ? `Building — ${reportEnrichment.remaining}% more is needed before report generation.`
+        : reportEnrichment.score < 75
+          ? 'Minimum reached — keep logging naturally until the weekly review.'
+          : 'Strong evidence coverage for a more detailed weekly review.';
+  const reportCardMeta = reportPayloadRejected
+    ? 'No report generated · add new meal details'
+    : reportReady
+    ? reportEnrichment.available
+      ? `Ready to view · next update has ${reportEnrichment.score}% evidence`
+      : 'Ready to view'
+    : !reportEnrichment.available
+      ? `${reportEnrichment.required}% enrichment required`
+      : reportEnrichment.requirementMet
+        ? `${reportEnrichment.score}% evidence · report in ${reportDays}d`
+        : `${reportEnrichment.score}% of ${reportEnrichment.required}% evidence needed`;
+  const previousReports = reportObjectArray(dietFeedback?.previousReports)
+    .filter(dietReportIsPresentable);
   const canMoveMemoryForward = useMemo(
     () => Boolean(nextMemorySlot(selectedDate, selectedMeal)),
     [selectedDate, selectedMeal],
@@ -1525,15 +2368,15 @@ function DietScreenContent({ route, navigation }: Props) {
         setActiveTab('report');
       }}
       accessibilityRole="button"
-      accessibilityLabel={`Open diet report. ${reportCountdown}`}
+      accessibilityLabel={`Open diet report. ${reportCardMeta}`}
     >
       <View style={styles.secondaryCardIcon}>
         <Feather name="file-text" size={20} color={colors.gold} />
       </View>
       <View style={styles.secondaryCardCopy}>
-        <Text style={styles.secondaryCardTitle}>Weekly Diet Report</Text>
+        <Text style={styles.secondaryCardTitle}>{reportPayloadRejected ? 'Build your diet report' : 'Weekly Diet Report'}</Text>
         <Text style={styles.secondaryCardMeta} numberOfLines={1}>
-          Next report in {reportDays} day{reportDays === 1 ? '' : 's'}
+          {reportCardMeta}
         </Text>
       </View>
       <Feather
@@ -1706,19 +2549,31 @@ function DietScreenContent({ route, navigation }: Props) {
           </View>
           <View style={styles.reportEnrichment}>
             <View style={styles.reportEnrichmentHead}>
-              <Text style={styles.reportEnrichmentLabel}>Report enrichment</Text>
-              <Text style={styles.reportEnrichmentValue}>{reportEnrichmentScore}%</Text>
+              <Text style={styles.reportEnrichmentLabel}>Diet report enrichment</Text>
+              <Text style={styles.reportEnrichmentValue}>
+                {reportEnrichment.available ? `${reportEnrichment.score}%` : '—'}
+                <Text style={styles.reportEnrichmentRequirementInline}> / {reportEnrichment.required}% required</Text>
+              </Text>
             </View>
-            <View style={styles.reportEnrichmentTrack}>
+            {reportEnrichment.available ? (
               <View
-                style={[
-                  styles.reportEnrichmentFill,
-                  { width: `${reportEnrichmentScore}%` },
-                ]}
-              />
-            </View>
+                style={styles.reportEnrichmentTrack}
+                accessible
+                accessibilityRole="progressbar"
+                accessibilityLabel="Evidence for next diet report"
+                accessibilityValue={{
+                  min: 0,
+                  max: 100,
+                  now: reportEnrichment.score,
+                  text: `${reportEnrichment.score} percent; ${reportEnrichment.required} percent required`,
+                }}
+              >
+                <View style={[styles.reportEnrichmentFill, { width: `${reportEnrichment.progress * 100}%` }]} />
+                <View style={[styles.reportEnrichmentThresholdMarker, { left: `${reportEnrichment.required}%` }]} />
+              </View>
+            ) : <View style={styles.reportEnrichmentTrack} />}
             <Text style={styles.reportEnrichmentHint}>
-              Log more meals to enrich your next report.
+              {reportEnrichmentHint}{unsyncedCount ? ' Updates after meals sync.' : ''}
             </Text>
           </View>
         </View>
@@ -1785,23 +2640,21 @@ function DietScreenContent({ route, navigation }: Props) {
               setActiveTab('report');
             }}
             accessibilityRole="button"
-            accessibilityLabel={`Open diet report. ${reportCountdown}`}
+            accessibilityLabel={`Open diet report. ${reportCardMeta}`}
           >
             <View style={styles.diaryReportIcon}>
-              <Feather name={reportReady ? 'check' : 'clock'} size={16} color={colors.gold} />
+              <Feather name={reportReady ? 'check' : reportPayloadRejected ? 'edit-3' : 'clock'} size={16} color={colors.gold} />
             </View>
             <View style={styles.diaryReportCopy}>
               <Text style={styles.diaryReportTitle}>
-                {reportReady ? 'Weekly report ready' : 'Weekly report in progress'}
+                {reportReady ? 'Weekly report ready' : reportPayloadRejected ? 'Build your weekly report' : 'Weekly report in progress'}
               </Text>
               <Text style={styles.diaryReportMeta}>
-                {reportReady
-                  ? 'See patterns and coaching insights'
-                  : `Ready in ${reportDays} day${reportDays === 1 ? '' : 's'}`}
+                {reportCardMeta}
               </Text>
             </View>
             <View style={styles.diaryReportAction}>
-              <Text style={styles.diaryReportActionText}>{reportReady ? 'View' : 'Preview'}</Text>
+              <Text style={styles.diaryReportActionText}>{reportReady ? 'View' : reportPayloadRejected ? 'Start' : 'Preview'}</Text>
               <Feather name="chevron-right" size={15} color={colors.gold} />
             </View>
           </TouchableOpacity>
@@ -1860,285 +2713,131 @@ function DietScreenContent({ route, navigation }: Props) {
   );
 
   const renderReport = () => (
-    <View style={styles.subpage}>
-      {!dietFeedback || dietFeedback.status === 'pending' ? (
-        <>
-          <View style={styles.reportPendingHero}>
-            <View style={styles.reportPendingIcon}>
-              <Feather name="pie-chart" size={22} color={colors.gold} />
-            </View>
-            <Text style={styles.reportPendingEyebrow}>WEEKLY REPORT</Text>
-            <Text style={styles.reportPendingTitle}>Your report is building</Text>
-            <Text style={styles.reportPendingBody}>Keep logging meals to build your weekly score.</Text>
-            <View style={styles.reportCountdownRow}>
-              <Text style={styles.reportCountdownLabel}>Ready in</Text>
-              <Text style={styles.reportCountdownDays}>{reportDays} day{reportDays === 1 ? '' : 's'}</Text>
-            </View>
-            <View style={styles.reportTrack}>
-              <View style={[styles.reportTrackFill, { width: `${reportProgress * 100}%` }]} />
-            </View>
-          </View>
-        </>
+    <View style={[styles.subpage, reportPending && styles.reportPendingViewport]}>
+      {reportPayloadRejected && dietFeedback ? (
+        <DietReportStory feedback={dietFeedback} />
+      ) : !reportReady ? (
+        <DietReportPendingState
+          feedback={dietFeedback}
+          foodDetails={reportFoodDetails}
+          daysWithDetail={reportDaysWithDetail}
+        />
       ) : (
-        <>
-          <DietReportStory feedback={dietFeedback} />
-
-          {supportsDetailedReport ? (
-            <View style={styles.reportChapterHeader}>
-              <Text style={styles.reportChapterIndex}>04</Text>
-              <View style={styles.reportChapterCopy}>
-                <Text style={styles.reportChapterEyebrow}>DEEPER REVIEW</Text>
-                <Text style={styles.reportChapterHeading}>The detail behind your week</Text>
-              </View>
-            </View>
-          ) : null}
-
-          {supportsDetailedReport ? (
-            <>
-              {dietFeedback.scoreHistory && dietFeedback.scoreHistory.length > 1 ? (
-                <View style={styles.reportSectionCard}>
-                  <Text style={styles.reportSectionEyebrow}>WEEKLY TREND</Text>
-                  <Text style={styles.reportSectionTitle}>Score history</Text>
-                  <View style={styles.reportHistoryList}>
-                    {dietFeedback.scoreHistory.slice(0, 6).map((week, index) => (
-                      <View key={`${week.generatedAt}-${index}`} style={styles.reportHistoryRow}>
-                        <View style={styles.reportHistoryCopy}>
-                          <Text style={styles.reportHistoryPeriod}>{formatReportPeriod(week.weekStartDate, week.weekEndDate)}</Text>
-                          <Text style={styles.reportHistoryLabel}>{index === 0 ? 'Latest · ' : ''}{week.label}</Text>
-                        </View>
-                        <View style={styles.reportHistoryTrack}><View style={[styles.reportHistoryFill, { width: `${week.overall}%` }]} /></View>
-                        <Text style={styles.reportHistoryScore}>{week.overall}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              ) : null}
-
-              {dietFeedback.score?.components?.length ? (
-                <View style={styles.reportSectionCard}>
-                  <Text style={styles.reportSectionEyebrow}>SCORE BREAKDOWN</Text>
-                  <Text style={styles.reportSectionTitle}>What shaped the score</Text>
-                  <View style={styles.reportComponentList}>
-                    {dietFeedback.score.components.map(component => (
-                      <View key={component.key} style={styles.reportComponent}>
-                        <View style={styles.reportComponentHead}>
-                          <Text style={styles.reportComponentLabel}>{component.label}</Text>
-                          <Text style={styles.reportComponentValue}>{component.score}<Text style={styles.reportComponentMax}>/{component.maxScore}</Text></Text>
-                        </View>
-                        <View style={styles.reportComponentTrack}><View style={[styles.reportComponentFill, { width: `${component.maxScore ? (component.score / component.maxScore) * 100 : 0}%` }]} /></View>
-                        {component.insight ? <Text style={styles.reportComponentInsight}>{component.insight}</Text> : null}
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              ) : null}
-
-              {dietFeedback.wins?.length ? (
-                <View style={styles.reportSectionCard}>
-                  <Text style={styles.reportSectionEyebrow}>WORKING WELL</Text>
-                  <Text style={styles.reportSectionTitle}>Keep these</Text>
-                  <View style={styles.reportWinList}>
-                    {dietFeedback.wins.map((win, index) => (
-                        <View key={`${win.title}-${index}`} style={styles.reportWin}>
-                          <View style={styles.reportWinIcon}><Feather name="check" size={16} color={colors.inkMuted} /></View>
-                          <View style={styles.reportWinCopy}>
-                            <Text style={styles.reportWinTitle}>{win.title}</Text>
-                            {win.detail ? <Text style={styles.reportWinDetail}>{win.detail}</Text> : null}
-                            {win.evidence ? <Text style={styles.reportEvidence}>{win.evidence}</Text> : null}
-                          </View>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              ) : null}
-
-              {dietFeedback.patterns?.length ? (
-                <View style={styles.reportSectionCard}>
-                  <Text style={styles.reportSectionEyebrow}>PATTERNS</Text>
-                  <Text style={styles.reportSectionTitle}>Worth noticing</Text>
-                  <View style={styles.reportPatternList}>
-                    {dietFeedback.patterns.map(pattern => (
-                      <View key={pattern.key || pattern.title} style={styles.reportPattern}>
-                        <View style={[styles.reportPatternDot, pattern.status === 'strong' && styles.reportPatternDotStrong, pattern.status === 'attention' && styles.reportPatternDotAttention]} />
-                        <View style={styles.reportPatternCopy}>
-                          <Text style={styles.reportPatternTitle}>{pattern.title}</Text>
-                          <Text style={styles.reportPatternBody}>{pattern.summary}</Text>
-                          {pattern.evidence?.[0] ? <Text style={styles.reportPatternEvidence}>{pattern.evidence[0]}</Text> : null}
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              ) : null}
-
-              {dietFeedback.foodGroups?.length ? (
-                <View style={styles.reportSectionCard}>
-                  <Text style={styles.reportSectionEyebrow}>FOOD GROUPS</Text>
-                  <Text style={styles.reportSectionTitle}>Coverage this week</Text>
-                  <View style={styles.reportFoodGroupList}>
-                    {dietFeedback.foodGroups.map(group => (
-                      <View key={group.key || group.label} style={styles.reportFoodGroup}>
-                        <View style={styles.reportFoodGroupHead}>
-                          <Text style={styles.reportFoodGroupLabel}>{group.label}</Text>
-                          <Text style={[styles.reportFoodGroupStatus, group.status === 'strong' && styles.reportFoodGroupStatusStrong]}>{group.status === 'notSeen' ? 'Not seen' : group.status}</Text>
-                        </View>
-                        {group.observedFoods?.length ? <Text style={styles.reportObservedFoods}>{group.observedFoods.join(' · ')}</Text> : null}
-                        {group.insight ? <Text style={styles.reportFoodGroupInsight}>{group.insight}</Text> : null}
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              ) : null}
-
-              {dietFeedback.mealRhythm?.strongestWindow || dietFeedback.mealRhythm?.opportunityWindow || dietFeedback.goalAlignment?.supports?.length || dietFeedback.goalAlignment?.gaps?.length ? (
-                <View style={styles.reportInsightGrid}>
-                  {dietFeedback.mealRhythm?.strongestWindow || dietFeedback.mealRhythm?.opportunityWindow ? (
-                    <View style={styles.reportInsightCard}>
-                      <View style={styles.reportInsightIcon}><Feather name="clock" size={17} color={colors.gold} /></View>
-                      <Text style={styles.reportInsightTitle}>Meal rhythm</Text>
-                      {dietFeedback.mealRhythm?.summary ? <Text style={styles.reportInsightSummary}>{dietFeedback.mealRhythm.summary}</Text> : null}
-                      {dietFeedback.mealRhythm?.strongestWindow ? <Text style={styles.reportInsightBody}>Strongest · {dietFeedback.mealRhythm.strongestWindow}</Text> : null}
-                      {dietFeedback.mealRhythm?.opportunityWindow ? <Text style={styles.reportInsightBody}>Opportunity · {dietFeedback.mealRhythm.opportunityWindow}</Text> : null}
-                    </View>
-                  ) : null}
-                  {dietFeedback.goalAlignment?.supports?.length || dietFeedback.goalAlignment?.gaps?.length ? (
-                    <View style={styles.reportInsightCard}>
-                      <View style={styles.reportInsightIcon}><Feather name="target" size={17} color={colors.gold} /></View>
-                      <Text style={styles.reportInsightTitle}>Goal fit</Text>
-                      {dietFeedback.goalAlignment?.summary ? <Text style={styles.reportInsightSummary}>{dietFeedback.goalAlignment.summary}</Text> : null}
-                      {dietFeedback.goalAlignment?.supports?.slice(0, 1).map(item => <Text key={`support-${item}`} style={styles.reportInsightBody}>Supports · {item}</Text>)}
-                      {dietFeedback.goalAlignment?.gaps?.slice(0, 1).map(item => <Text key={`gap-${item}`} style={styles.reportInsightBody}>Improve · {item}</Text>)}
-                    </View>
-                  ) : null}
-                </View>
-              ) : null}
-
-              {dietFeedback.coachNote || dietFeedback.questionsForNextWeek?.length ? (
-                <View style={styles.reportSectionCard}>
-                  <Text style={styles.reportSectionEyebrow}>COACH NOTE</Text>
-                  <Text style={styles.reportSectionTitle}>Carry this forward</Text>
-                  {dietFeedback.coachNote ? <Text style={styles.reportCoachText}>{dietFeedback.coachNote}</Text> : null}
-                  {dietFeedback.questionsForNextWeek?.length ? (
-                    <View style={styles.reportQuestionList}>
-                      {dietFeedback.questionsForNextWeek.slice(0, 3).map((question, index) => (
-                        <View key={`${question}-${index}`} style={styles.reportQuestion}>
-                          <Text style={styles.reportQuestionNumber}>{index + 1}</Text>
-                          <Text style={styles.reportQuestionText}>{question}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
-                </View>
-              ) : null}
-
-              {dietFeedback.trainingNutrition?.summary ? (
-                <View style={styles.reportSectionCard}>
-                  <Text style={styles.reportSectionEyebrow}>TRAINING NUTRITION</Text>
-                  <Text style={styles.reportSectionTitle}>Food around your workouts</Text>
-                  <Text style={styles.reportSectionIntro}>{dietFeedback.trainingNutrition.summary}</Text>
-                  {dietFeedback.trainingNutrition.trainingDayAction ? <Text style={styles.reportTrainingAction}>Training day · {dietFeedback.trainingNutrition.trainingDayAction}</Text> : null}
-                  {dietFeedback.trainingNutrition.restDayAction ? <Text style={styles.reportTrainingAction}>Rest day · {dietFeedback.trainingNutrition.restDayAction}</Text> : null}
-                </View>
-              ) : null}
-
-              {dietFeedback.nextWeek?.mealBuilder && Object.entries(dietFeedback.nextWeek.mealBuilder).some(([key, value]) => key !== 'title' && Boolean(value)) ? (
-                <View style={styles.reportSectionCard}>
-                  <Text style={styles.reportSectionEyebrow}>MEAL BUILDER</Text>
-                  <Text style={styles.reportSectionTitle}>{dietFeedback.nextWeek.mealBuilder.title}</Text>
-                  <View style={styles.reportMealBuilder}>
-                    {(['plants', 'protein', 'carbs', 'extras'] as const).map(key => dietFeedback.nextWeek?.mealBuilder[key] ? (
-                      <View key={key} style={styles.reportMealBuilderRow}>
-                        <Text style={styles.reportMealBuilderLabel}>{key}</Text>
-                        <Text style={styles.reportMealBuilderValue}>{dietFeedback.nextWeek.mealBuilder[key]}</Text>
-                      </View>
-                    ) : null)}
-                  </View>
-                  {dietFeedback.nextWeek.smartSwaps?.length ? (
-                    <View style={styles.reportSwapList}>
-                      <Text style={styles.reportSwapHeading}>Easy upgrades</Text>
-                      {dietFeedback.nextWeek.smartSwaps.map((swap, index) => (
-                        <View key={`${swap.to}-${index}`} style={styles.reportSwap}>
-                          <Text style={styles.reportSwapFrom}>{swap.from}</Text>
-                          <Feather name="arrow-right" size={15} color={colors.gold} />
-                          <View style={styles.reportSwapCopy}>
-                            <Text style={styles.reportSwapTo}>{swap.to}</Text>
-                            {swap.why ? <Text style={styles.reportSwapWhy}>{swap.why}</Text> : null}
-                          </View>
-                        </View>
-                      ))}
-                    </View>
-                  ) : null}
-                </View>
-              ) : null}
-
-              {dietFeedback.charts?.mealLogging?.points?.length ? (
-                <DietReportBarChart chart={dietFeedback.charts.mealLogging} />
-              ) : null}
-
-              <View style={styles.reportChapterHeader}>
-                <Text style={styles.reportChapterIndex}>05</Text>
-                <View style={styles.reportChapterCopy}>
-                  <Text style={styles.reportChapterEyebrow}>METHOD &amp; SOURCES</Text>
-                  <Text style={styles.reportChapterHeading}>How this report was built</Text>
-                </View>
-              </View>
-
-              {dietFeedback.facts?.length ? (
-                <View style={styles.reportSectionCard}>
-                  <Text style={styles.reportSectionEyebrow}>EVIDENCE</Text>
-                  <Text style={styles.reportSectionTitle}>Useful context</Text>
-                  <View style={styles.reportFactList}>
-                    {dietFeedback.facts.map(fact => (
-                      <TouchableOpacity key={fact.id} style={styles.reportFact} activeOpacity={0.8} onPress={() => Linking.openURL(fact.sourceUrl).catch(() => undefined)} accessibilityRole="link" accessibilityLabel={`Read source: ${fact.sourceLabel}`}>
-                        <View style={styles.reportFactIcon}><Feather name="book-open" size={16} color={colors.gold} /></View>
-                        <View style={styles.reportFactCopy}>
-                          <Text style={styles.reportFactTitle}>{fact.title}</Text>
-                          {fact.body ? <Text style={styles.reportFactBody}>{fact.body}</Text> : null}
-                          <Text style={styles.reportFactSource}>{fact.sourceLabel}</Text>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              ) : null}
-
-              <View style={styles.reportMethodNote}>
-                <Feather name="shield" size={16} color={colors.inkSubtle} />
-                <Text style={styles.reportMethodText}>
-                  {[dietFeedback.score?.confidenceNote, ...(dietFeedback.limitations || [])].filter(Boolean).slice(0, 3).join(' ') ||
-                    'Based on described meals. It is not a calorie, nutrient or medical assessment.'}
-                </Text>
-              </View>
-            </>
-          ) : null}
-        </>
+        <DietReportStory feedback={dietFeedback} />
       )}
 
-      <PrimaryButton
-        title="Log more meals"
-        icon="plus"
-        onPress={() => {
-          setActiveTab('log');
-          openMemoryGame();
-        }}
-      />
+      <View style={[styles.reportFooterAction, !reportReady && styles.reportFooterActionPending]}>
+        {reportReady ? (
+          <View style={styles.reportFooterCopy}>
+            <Text style={styles.reportFooterTitle}>Add context for next week</Text>
+            <Text style={styles.reportFooterText}>A short description is enough; calorie counting is not required.</Text>
+          </View>
+        ) : null}
+        <TouchableOpacity
+          style={[styles.reportLogMealButton, !reportReady && styles.reportLogMealButtonPending]}
+          activeOpacity={0.82}
+          onPress={() => {
+            setActiveTab('log');
+            openMemoryGame();
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={reportReady ? 'Log a meal' : 'Log a meal and add food details'}
+        >
+          <Feather name="plus" size={18} color={REPORT_PAGE} />
+          <Text style={styles.reportLogMealButtonText}>Log a meal</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
+  const renderReportHistory = () => (
+    <View style={[styles.subpage, styles.reportArchive]}>
+      <View style={styles.reportArchiveIntro}>
+        <Text style={styles.reportArchiveEyebrow}>WEEKLY NUTRITION REVIEWS</Text>
+        <Text style={styles.reportArchiveTitle}>Previous diet reports</Text>
+        <Text style={styles.reportArchiveText}>
+          Revisit the patterns, coaching notes and next steps saved from earlier weeks.
+        </Text>
+      </View>
+      {previousReports.length ? (
+        <View style={styles.reportArchiveList}>
+          {previousReports.map((report, index) => {
+            const score = (!report.score?.availability || report.score.availability === 'available') && reportFiniteNumber(report.score?.overall) !== null
+              ? Math.round(report.score!.overall)
+              : null;
+            return (
+              <TouchableOpacity
+                key={report.generatedAt || `${report.weekStartDate}-${index}`}
+                activeOpacity={0.82}
+                style={styles.reportArchiveCard}
+                onPress={() => {
+                  setSelectedPreviousReport(report);
+                  setActiveTab('previousReport');
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Open diet report for ${formatReportPeriod(report.weekStartDate, report.weekEndDate)}`}
+              >
+                <View style={styles.reportArchiveCardTop}>
+                  <View style={styles.reportArchiveCardCopy}>
+                    <Text style={styles.reportArchivePeriod}>{formatReportPeriod(report.weekStartDate, report.weekEndDate)}</Text>
+                    <Text style={styles.reportArchiveGenerated}>{formatReportGeneratedAt(report.generatedAt)}</Text>
+                  </View>
+                  {score !== null ? (
+                    <View style={styles.reportArchiveScore}>
+                      <Text style={styles.reportArchiveScoreValue}>{score}</Text>
+                      <Text style={styles.reportArchiveScoreMax}>/100</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text style={styles.reportArchiveHeadline} numberOfLines={2}>
+                  {report.headline || report.title || 'Weekly diet report'}
+                </Text>
+                {report.summary ? <Text style={styles.reportArchiveSummary} numberOfLines={2}>{report.summary}</Text> : null}
+                <View style={styles.reportArchiveOpenRow}>
+                  <Text style={styles.reportArchiveOpenText}>View full report</Text>
+                  <Feather name="arrow-right" size={16} color={REPORT_ACCENT} />
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ) : (
+        <View style={styles.reportArchiveEmpty}>
+          <View style={styles.reportArchiveEmptyIcon}><Feather name="archive" size={22} color={REPORT_ACCENT} /></View>
+          <Text style={styles.reportArchiveEmptyTitle}>No previous reports yet</Text>
+          <Text style={styles.reportArchiveEmptyText}>After your next weekly report is generated, the current one will be saved here.</Text>
+        </View>
+      )}
+    </View>
+  );
+
+  const renderPreviousReport = () => selectedPreviousReport ? (
+    <View style={styles.subpage}>
+      <DietReportStory feedback={selectedPreviousReport} interactive={false} />
+    </View>
+  ) : renderReportHistory();
+
+  const reportSurfaceActive = ['report', 'reportHistory', 'previousReport'].includes(activeTab);
+  const pendingReportViewportActive = activeTab === 'report' && reportPending && !initialLoading;
+
   return (
-    <ScreenContainer>
+    <ScreenContainer style={reportSurfaceActive ? styles.reportScreenTheme : undefined}>
       <ScrollView
+        style={reportSurfaceActive ? styles.reportScrollTheme : undefined}
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="never"
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
         contentContainerStyle={[
           styles.scroll,
+          pendingReportViewportActive && styles.reportViewportContent,
           { paddingBottom: tabBarHeight + spacing.xl },
         ]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={colors.accent}
+            tintColor={reportSurfaceActive ? REPORT_ACCENT : colors.accent}
           />
         }
       >
@@ -2150,22 +2849,33 @@ function DietScreenContent({ route, navigation }: Props) {
             <FoodPointsBadge points={weeklyMemoryPoints} />
           </View>
         ) : (
-          <View style={[styles.screenHeader, styles.subpageHeader]}>
+          <View style={[styles.screenHeader, styles.subpageHeader, reportSurfaceActive && styles.reportSubpageHeader, reportSurfaceActive && styles.reportHeaderTheme]}>
             <TouchableOpacity
               activeOpacity={0.8}
-              onPress={() =>
-                setActiveTab(
-                  activeTab === 'report' ? reportReturnTab : 'log',
-                )
-              }
-              style={styles.headerIconButton}
+              onPress={() => {
+                if (activeTab === 'previousReport') {
+                  setSelectedPreviousReport(null);
+                  setActiveTab('reportHistory');
+                } else if (activeTab === 'reportHistory') {
+                  setActiveTab('report');
+                } else {
+                  setActiveTab(activeTab === 'report' ? reportReturnTab : 'log');
+                }
+              }}
+              style={[styles.headerIconButton, reportSurfaceActive && styles.reportHeaderIconButton]}
               accessibilityRole="button"
               accessibilityLabel="Back to diet"
             >
-              <Feather name="arrow-left" size={19} color={colors.ink} />
+              <Feather name="arrow-left" size={19} color={reportSurfaceActive ? REPORT_INK : colors.ink} />
             </TouchableOpacity>
-            <Text style={styles.subpageTitle} numberOfLines={1}>
-              {activeTab === 'diary' ? 'Food diary' : 'Diet report'}
+            <Text style={[styles.subpageTitle, reportSurfaceActive && styles.reportSubpageTitle]}>
+              {activeTab === 'diary'
+                ? 'Food diary'
+                : activeTab === 'reportHistory'
+                  ? 'Report history'
+                  : activeTab === 'previousReport'
+                    ? 'Previous report'
+                    : 'Diet report'}
             </Text>
             {activeTab === 'diary' ? (
               <View style={styles.diaryCountChip}>
@@ -2173,20 +2883,39 @@ function DietScreenContent({ route, navigation }: Props) {
                   {diaryEntryCount}
                 </Text>
               </View>
+            ) : activeTab === 'report' ? (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={[styles.reportHistoryAction, styles.reportHistoryActionTheme]}
+                onPress={() => setActiveTab('reportHistory')}
+                accessibilityRole="button"
+                accessibilityLabel="See previous diet reports"
+              >
+                <Feather name="archive" size={16} color={REPORT_INK} />
+                <Text style={[styles.reportHistoryActionText, styles.reportHistoryActionTextTheme]}>History</Text>
+              </TouchableOpacity>
+            ) : activeTab === 'reportHistory' && previousReports.length ? (
+              <View style={[styles.diaryCountChip, styles.reportCountChipTheme]}>
+                <Text style={[styles.diaryCountText, styles.reportCountTextTheme]}>{previousReports.length}</Text>
+              </View>
             ) : null}
           </View>
         )}
 
         {initialLoading ? (
           <View style={styles.initialLoading}>
-            <View style={styles.loadingCard} />
-            <View style={styles.loadingCardTall} />
-            <Text style={styles.loadingText}>Loading your food log…</Text>
+            <View style={[styles.loadingCard, reportSurfaceActive && styles.reportLoadingCardTheme]} />
+            <View style={[styles.loadingCardTall, reportSurfaceActive && styles.reportLoadingCardTheme]} />
+            <Text style={[styles.loadingText, reportSurfaceActive && styles.reportLoadingTextTheme]}>Loading your food log…</Text>
           </View>
         ) : activeTab === 'diary' ? (
           renderDiaryFeed()
         ) : activeTab === 'report' ? (
           renderReport()
+        ) : activeTab === 'reportHistory' ? (
+          renderReportHistory()
+        ) : activeTab === 'previousReport' ? (
+          renderPreviousReport()
         ) : (
           renderLog()
         )}
@@ -2710,6 +3439,9 @@ function DietScreenContent({ route, navigation }: Props) {
 
 const styles = StyleSheet.create({
   scroll: {},
+  reportScreenTheme: { paddingBottom: 0, backgroundColor: REPORT_PAGE },
+  reportScrollTheme: { flex: 1, backgroundColor: REPORT_PAGE },
+  reportViewportContent: { flexGrow: 1 },
 
   // Header
   screenHeader: {
@@ -2723,6 +3455,8 @@ const styles = StyleSheet.create({
     minHeight: 48,
     alignItems: 'center',
   },
+  reportSubpageHeader: { width: '100%', maxWidth: 640, alignSelf: 'center' },
+  reportHeaderTheme: { paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: REPORT_BORDER },
   screenTitleWrap: { flex: 1, minWidth: 0 },
   subpageTitle: {
     ...typography.title,
@@ -2732,6 +3466,7 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
     textAlignVertical: 'center',
   },
+  reportSubpageTitle: { color: REPORT_INK },
   headerIconButton: {
     width: 48,
     height: 48,
@@ -2742,6 +3477,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  reportHeaderIconButton: { backgroundColor: REPORT_PAGE, borderColor: REPORT_BORDER },
+  reportHistoryAction: {
+    height: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  reportHistoryActionText: {
+    ...typography.label,
+    color: colors.ink,
+    fontWeight: '700',
+  },
+  reportHistoryActionTheme: { backgroundColor: REPORT_PAGE, borderColor: REPORT_BORDER_STRONG },
+  reportHistoryActionTextTheme: { color: REPORT_INK },
+  reportCountChipTheme: { backgroundColor: REPORT_SURFACE, borderColor: REPORT_BORDER },
+  reportCountTextTheme: { color: REPORT_MUTED },
   diaryCountChip: {
     minWidth: 36,
     height: 28,
@@ -2810,6 +3566,8 @@ const styles = StyleSheet.create({
     color: colors.inkMuted,
     textAlign: 'center',
   },
+  reportLoadingCardTheme: { backgroundColor: REPORT_SURFACE },
+  reportLoadingTextTheme: { color: REPORT_MUTED },
 
   // Diet report countdown
   reportCard: {
@@ -2836,8 +3594,10 @@ const styles = StyleSheet.create({
   reportTrackFill: {
     height: '100%',
     borderRadius: radius.pill,
-    backgroundColor: colors.gold,
+    backgroundColor: REPORT_SAGE,
   },
+  reportTrackTheme: { backgroundColor: REPORT_BORDER },
+  reportTrackFillTheme: { backgroundColor: REPORT_ACCENT },
 
   // Offline strip
   syncNotice: {
@@ -3058,7 +3818,8 @@ const styles = StyleSheet.create({
   },
   reportEnrichmentHead: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: spacing.md,
   },
@@ -3072,8 +3833,14 @@ const styles = StyleSheet.create({
     color: colors.gold,
     fontWeight: '900',
   },
+  reportEnrichmentRequirementInline: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.inkSubtle,
+    fontWeight: '600',
+  },
   reportEnrichmentTrack: {
-    height: 5,
+    height: 7,
     borderRadius: radius.pill,
     backgroundColor: colors.panelRaised,
     overflow: 'hidden',
@@ -3083,6 +3850,14 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: radius.pill,
     backgroundColor: colors.gold,
+  },
+  reportEnrichmentThresholdMarker: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 2,
+    marginLeft: -1,
+    backgroundColor: REPORT_INK,
   },
   reportEnrichmentHint: {
     ...typography.caption,
@@ -3151,7 +3926,77 @@ const styles = StyleSheet.create({
   },
 
   // Sections and entry rows
-  subpage: {},
+  subpage: {
+    width: '100%',
+    maxWidth: 640,
+    alignSelf: 'center',
+  },
+  reportPendingViewport: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  reportArchive: { paddingTop: spacing.sm },
+  reportArchiveIntro: {
+    paddingBottom: spacing.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: REPORT_BORDER,
+  },
+  reportArchiveEyebrow: {
+    ...typography.overline,
+    color: REPORT_ACCENT,
+    letterSpacing: 1,
+  },
+  reportArchiveTitle: {
+    fontSize: 27,
+    lineHeight: 34,
+    fontWeight: '700',
+    color: REPORT_INK,
+    marginTop: spacing.xs,
+  },
+  reportArchiveText: {
+    fontSize: 15,
+    lineHeight: 23,
+    color: REPORT_MUTED,
+    marginTop: spacing.sm,
+    maxWidth: 520,
+  },
+  reportArchiveList: { paddingTop: spacing.md, gap: spacing.md },
+  reportArchiveCard: {
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: REPORT_BORDER,
+    backgroundColor: REPORT_PAGE,
+  },
+  reportArchiveCardTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  reportArchiveCardCopy: { flex: 1, minWidth: 0 },
+  reportArchivePeriod: { fontSize: 15, lineHeight: 22, fontWeight: '700', color: REPORT_INK },
+  reportArchiveGenerated: { fontSize: 13, lineHeight: 19, color: REPORT_SUBTLE, marginTop: 2 },
+  reportArchiveScore: { flexDirection: 'row', alignItems: 'baseline' },
+  reportArchiveScoreValue: { fontSize: 24, lineHeight: 29, fontWeight: '800', color: REPORT_INK },
+  reportArchiveScoreMax: { fontSize: 13, lineHeight: 19, color: REPORT_SUBTLE },
+  reportArchiveHeadline: { fontSize: 20, lineHeight: 27, fontWeight: '700', color: REPORT_INK, marginTop: spacing.lg },
+  reportArchiveSummary: { fontSize: 15, lineHeight: 23, color: REPORT_MUTED, marginTop: spacing.xs },
+  reportArchiveOpenRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingTop: spacing.md,
+    marginTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: REPORT_BORDER,
+  },
+  reportArchiveOpenText: { fontSize: 14, lineHeight: 20, fontWeight: '700', color: REPORT_ACCENT },
+  reportArchiveEmpty: { alignItems: 'center', paddingVertical: 56, paddingHorizontal: spacing.lg },
+  reportArchiveEmptyIcon: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, backgroundColor: REPORT_ACCENT_SURFACE },
+  reportArchiveEmptyTitle: { fontSize: 19, lineHeight: 26, fontWeight: '700', color: REPORT_INK, marginTop: spacing.md },
+  reportArchiveEmptyText: { maxWidth: 360, fontSize: 14, lineHeight: 22, color: REPORT_MUTED, textAlign: 'center', marginTop: spacing.xs },
   diarySummary: {
     borderWidth: 1,
     borderColor: colors.border,
@@ -3486,50 +4331,51 @@ const styles = StyleSheet.create({
   reportListText: { ...typography.body, color: colors.ink, flex: 1 },
 
   // Weekly report v2
-  reportDocument: { marginBottom: spacing.lg },
+  reportDocument: { marginBottom: spacing.xl },
   reportCover: {
-    paddingHorizontal: spacing.xs,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xl,
+    padding: 20,
     marginBottom: spacing.xl,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.panel,
+    ...shadows.card,
   },
-  reportCoverHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.sm },
+  reportCoverHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   reportCoverHeaderCopy: { flex: 1, minWidth: 0 },
-  reportCoverEyebrow: { ...typography.overline, color: colors.inkMuted, letterSpacing: 1.25 },
+  reportCoverEyebrow: { ...typography.overline, color: colors.gold, letterSpacing: 1.15 },
   reportCoverPeriod: { ...typography.caption, color: colors.inkMuted, marginTop: 3 },
-  reportCoverScoreRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.lg, marginTop: spacing.xl },
+  reportCoverScoreRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.xl },
   reportCoverScore: { flexDirection: 'row', alignItems: 'baseline', minWidth: 88 },
   reportCoverScoreValue: { fontSize: 44, lineHeight: 48, fontWeight: '800', letterSpacing: -1.5, color: colors.ink },
   reportCoverScoreMax: { ...typography.caption, color: colors.inkMuted, marginLeft: 2 },
   reportCoverScoreCopy: { flex: 1, minWidth: 0 },
-  reportCoverScoreLabel: { fontSize: 16, lineHeight: 21, fontWeight: '700', color: colors.ink },
+  reportCoverScoreLabel: { fontSize: 18, lineHeight: 23, fontWeight: '800', color: colors.ink },
   reportCoverTrend: { ...typography.caption, color: colors.inkMuted, marginTop: 3 },
-  reportCoverHeadline: { fontSize: 23, lineHeight: 29, fontWeight: '800', letterSpacing: -0.35, color: colors.ink, marginTop: spacing.xl },
-  reportCoverSummary: { fontSize: 14, lineHeight: 21, color: colors.inkMuted, marginTop: spacing.sm },
-  reportCoverStats: { flexDirection: 'row', marginTop: spacing.xl, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
-  reportCoverStat: { flex: 1, minWidth: 0, paddingHorizontal: spacing.xs },
+  reportCoverHeadline: { fontSize: 25, lineHeight: 31, fontWeight: '900', letterSpacing: -0.45, color: colors.ink, marginTop: spacing.xl },
+  reportCoverSummary: { fontSize: 15, lineHeight: 23, color: colors.inkMuted, marginTop: spacing.sm },
+  reportCoverStats: { flexDirection: 'row', marginTop: spacing.xl, paddingVertical: spacing.md, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
+  reportCoverStat: { flex: 1, minWidth: 0, paddingHorizontal: spacing.sm },
   reportCoverStatDivided: { borderLeftWidth: 1, borderLeftColor: colors.border },
-  reportCoverStatValue: { fontSize: 18, lineHeight: 23, fontWeight: '800', color: colors.ink },
+  reportCoverStatValue: { fontSize: 20, lineHeight: 25, fontWeight: '900', color: colors.ink },
   reportCoverStatLabel: { fontSize: 10, lineHeight: 14, color: colors.inkMuted, marginTop: 2 },
   reportChapterHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.lg, marginBottom: spacing.md, paddingHorizontal: spacing.xs },
   reportChapterIndex: { width: 26, paddingTop: 1, fontSize: 11, lineHeight: 15, fontWeight: '800', color: colors.gold, letterSpacing: 0.7 },
   reportChapterCopy: { flex: 1, minWidth: 0 },
   reportChapterEyebrow: { ...typography.overline, color: colors.inkSubtle, letterSpacing: 1.05 },
   reportChapterHeading: { fontSize: 20, lineHeight: 25, fontWeight: '700', letterSpacing: -0.2, color: colors.ink, marginTop: 1 },
-  reportFocusPanel: { padding: spacing.lg, marginBottom: spacing.xl, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  reportFocusPanel: { padding: 20, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panelWarm, ...shadows.sm },
   reportFocusIcon: { width: 0, height: 0 },
-  reportFocusLabel: { ...typography.overline, color: colors.inkSubtle },
+  reportFocusLabel: { ...typography.overline, color: colors.gold },
   reportFocusTitle: { fontSize: 22, lineHeight: 28, fontWeight: '800', letterSpacing: -0.3, color: colors.ink, marginTop: spacing.xs },
   reportFocusWhy: { fontSize: 14, lineHeight: 21, color: colors.inkMuted, marginTop: spacing.sm },
   reportFocusSteps: { marginTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border },
-  reportFocusStep: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingTop: spacing.sm },
-  reportFocusStepNumber: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center', marginTop: 1, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.borderStrong },
-  reportFocusStepNumberText: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '800' },
-  reportFocusStepText: { flex: 1, fontSize: 14, lineHeight: 20, color: colors.ink, paddingBottom: spacing.sm },
-  reportImplementation: { marginTop: spacing.lg, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
-  reportImplementationLabel: { ...typography.overline, color: colors.inkSubtle },
+  reportFocusStep: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingTop: spacing.md },
+  reportFocusStepNumber: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.primaryAction },
+  reportFocusStepNumberText: { fontSize: 11, lineHeight: 14, color: colors.onPrimary, fontWeight: '900' },
+  reportFocusStepText: { flex: 1, fontSize: 14, lineHeight: 21, color: colors.ink, paddingBottom: spacing.xs },
+  reportImplementation: { marginTop: spacing.lg, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bgTint },
+  reportImplementationLabel: { ...typography.overline, color: colors.gold },
   reportImplementationCue: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.sm },
   reportImplementationAction: { ...typography.bodyBold, color: colors.ink, marginTop: 3 },
   reportImplementationDetails: { gap: spacing.xs, marginTop: spacing.sm },
@@ -3546,53 +4392,33 @@ const styles = StyleSheet.create({
   reportFindingWhy: { ...typography.caption, color: colors.inkSubtle, marginTop: spacing.xs },
   reportFindingActionRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: spacing.sm },
   reportFindingAction: { ...typography.label, color: colors.ink, flex: 1 },
-  reportMealGuidePanel: { paddingHorizontal: spacing.xs, marginBottom: spacing.xl, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
-  reportMealGuideRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, paddingVertical: spacing.lg },
+  reportMealGuidePanel: { paddingHorizontal: spacing.md, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  reportMealGuideRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, paddingVertical: spacing.md },
   reportMealGuideRowDivided: { borderTopWidth: 1, borderTopColor: colors.border },
   reportMealGuideIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, borderWidth: 1, borderColor: colors.border },
   reportMealGuideCopy: { flex: 1, minWidth: 0 },
   reportMealGuideTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   reportMealGuideTitle: { ...typography.bodyBold, color: colors.ink },
-  reportMealGuideCount: { ...typography.caption, color: colors.inkSubtle },
-  reportMealGuidePattern: { fontSize: 13, lineHeight: 18, color: colors.ink, marginTop: spacing.xs },
-  reportMealGuideAdvice: { fontSize: 13, lineHeight: 19, color: colors.inkMuted, marginTop: 3 },
+  reportMealGuideCount: { ...typography.caption, color: colors.inkSubtle, marginTop: 2 },
+  reportMealGuidePattern: { fontSize: 15, lineHeight: 23, color: colors.ink, marginTop: spacing.sm },
+  reportMealGuideAdvice: { fontSize: 13, lineHeight: 19, color: colors.inkMuted, flex: 1 },
   reportEmpty: { fontSize: 14, lineHeight: 21, color: colors.inkMuted, paddingVertical: spacing.lg },
   reportPendingHero: {
     alignItems: 'flex-start',
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panel,
-  },
-  reportPendingIcon: {
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.lg,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.panelRaised,
+    paddingTop: spacing.md,
+    paddingBottom: 0,
+    marginBottom: 0,
   },
   reportPendingEyebrow: {
-    ...typography.overline,
-    color: colors.gold,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '800',
+    letterSpacing: 1,
+    color: REPORT_ACCENT,
   },
-  reportPendingTitle: { fontSize: 27, lineHeight: 33, fontWeight: '800', color: colors.ink, marginTop: spacing.sm },
-  reportPendingBody: { fontSize: 14, lineHeight: 20, color: colors.inkMuted, marginTop: spacing.sm },
-  reportCountdownRow: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  reportCountdownLabel: { ...typography.label, color: colors.inkMuted },
-  reportCountdownDays: { ...typography.label, color: colors.gold, fontWeight: '800' },
+  reportPendingTitle: { maxWidth: 520, fontSize: 28, lineHeight: 35, fontWeight: '700', letterSpacing: -0.45, color: REPORT_INK, marginTop: spacing.md },
+  reportPendingBody: { maxWidth: 520, fontSize: 15, lineHeight: 23, color: REPORT_MUTED, marginTop: spacing.xs },
+  reportCountdownLabel: { fontSize: 11, lineHeight: 16, fontWeight: '800', letterSpacing: 0.9, color: REPORT_SUBTLE },
   reportMasthead: {
     paddingHorizontal: spacing.xs,
     paddingTop: spacing.sm,
@@ -3658,16 +4484,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
   },
   reportSectionCard: {
-    paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.xl,
-    marginBottom: 0,
-    borderRadius: 0,
-    borderTopWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: 'transparent',
+    backgroundColor: colors.panel,
   },
   reportSectionEyebrow: {
-    ...typography.overline,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '700',
+    letterSpacing: 1.1,
     color: colors.inkSubtle,
     textTransform: 'uppercase',
   },
@@ -3771,26 +4599,25 @@ const styles = StyleSheet.create({
   reportHeadline: { fontSize: 20, lineHeight: 26, fontWeight: '800', color: colors.ink, marginTop: spacing.md },
   reportSummary: { ...typography.body, color: colors.inkMuted, marginTop: spacing.xs, lineHeight: 21 },
   reportChartCard: {
-    paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.xl,
+    padding: 0,
     marginBottom: 0,
-    borderRadius: 0,
-    borderTopWidth: 1,
-    borderColor: colors.border,
+    borderWidth: 0,
     backgroundColor: 'transparent',
   },
   reportChartHeader: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: spacing.md,
   },
+  reportChartHeaderStacked: { flexDirection: 'column', alignItems: 'stretch' },
   reportChartTitleBlock: { flex: 1, minWidth: 0 },
-  reportChartTitle: { fontSize: 18, lineHeight: 23, fontWeight: '800', color: colors.ink, marginTop: 2 },
-  reportChartSubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  reportChartTitle: { fontSize: 19, lineHeight: 25, fontWeight: '600', color: colors.ink, marginTop: 2 },
+  reportChartSubtitle: { fontSize: 14, lineHeight: 21, color: colors.inkMuted, marginTop: 3 },
   reportChartTotal: { alignItems: 'flex-end' },
   reportChartTotalValue: { fontSize: 26, lineHeight: 30, fontWeight: '900', color: colors.ink },
-  reportChartTotalLabel: { ...typography.caption, color: colors.inkSubtle },
+  reportChartTotalLabel: { fontSize: 14, lineHeight: 20, color: colors.inkSubtle },
   reportChartPlot: {
     height: 132,
     flexDirection: 'row',
@@ -3801,8 +4628,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  reportChartColumn: { flex: 1, height: '100%', alignItems: 'center', justifyContent: 'flex-end' },
-  reportChartValue: { ...typography.caption, color: colors.inkMuted, fontWeight: '800', marginBottom: 5 },
+  reportChartColumn: { flex: 1, minWidth: 36, height: '100%', alignItems: 'center', justifyContent: 'flex-end' },
+  reportChartValue: { fontSize: 14, lineHeight: 20, color: colors.inkMuted, fontWeight: '700', marginBottom: 5 },
   reportChartValueMuted: { color: colors.inkSubtle },
   reportChartBarTrack: { flex: 1, width: '58%', justifyContent: 'flex-end' },
   reportChartBar: {
@@ -3813,9 +4640,26 @@ const styles = StyleSheet.create({
     backgroundColor: colors.gold,
   },
   reportChartBarEmpty: { backgroundColor: colors.panelRaised },
-  reportChartLabel: { ...typography.caption, color: colors.inkSubtle, fontWeight: '700', marginTop: 7, marginBottom: 7 },
-  reportChartFooter: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingTop: spacing.sm },
-  reportChartFooterText: { ...typography.caption, color: colors.inkMuted, flex: 1 },
+  reportChartBarMissing: { borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: 'transparent' },
+  reportChartLabel: { fontSize: 14, lineHeight: 20, color: colors.inkSubtle, fontWeight: '600', marginTop: 7, marginBottom: 7 },
+  reportChartFooter: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, paddingTop: spacing.sm },
+  reportChartFooterText: { fontSize: 14, lineHeight: 21, color: colors.inkMuted, flex: 1 },
+  reportChartDataList: { marginTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border },
+  reportChartDataHeading: { fontSize: 14, lineHeight: 20, fontWeight: '700', color: colors.ink, paddingVertical: spacing.sm },
+  reportChartDataRow: {
+    minHeight: 44,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  reportChartDataLabel: { flex: 1, minWidth: 120, fontSize: 14, lineHeight: 21, color: colors.inkMuted },
+  reportChartDataValue: { fontSize: 14, lineHeight: 21, fontWeight: '700', color: colors.ink },
+  reportChartDataValueMissing: { color: colors.inkSubtle, fontStyle: 'italic' },
   reportComponentList: { marginTop: spacing.md },
   reportHistoryList: { marginTop: spacing.md },
   reportHistoryRow: {
@@ -3826,9 +4670,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  reportHistoryCopy: { width: 108 },
-  reportHistoryPeriod: { ...typography.label, color: colors.ink },
-  reportHistoryLabel: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
+  reportHistoryCopy: { flex: 1, minWidth: 0 },
+  reportHistoryPeriod: { fontSize: 15, lineHeight: 22, fontWeight: '600', color: colors.ink },
+  reportHistoryLabel: { fontSize: 14, lineHeight: 20, color: colors.inkMuted, marginTop: 1 },
   reportHistoryTrack: {
     flex: 1,
     height: 5,
@@ -3849,9 +4693,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  reportComponentLabel: { ...typography.bodyBold, color: colors.ink, flex: 1 },
-  reportComponentValue: { ...typography.bodyBold, color: colors.ink },
-  reportComponentMax: { ...typography.caption, color: colors.inkSubtle },
+  reportComponentLabel: { fontSize: 16, lineHeight: 23, fontWeight: '600', color: colors.ink, flex: 1 },
+  reportComponentValue: { fontSize: 16, lineHeight: 23, fontWeight: '600', color: colors.ink },
+  reportComponentMax: { fontSize: 14, lineHeight: 20, color: colors.inkSubtle },
   reportComponentTrack: {
     height: 5,
     overflow: 'hidden',
@@ -3864,7 +4708,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: colors.primaryAction,
   },
-  reportComponentInsight: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.sm },
+  reportComponentInsight: { fontSize: 14, lineHeight: 22, color: colors.inkMuted, marginTop: spacing.sm },
   reportWinList: { marginTop: spacing.md, gap: spacing.md },
   reportWin: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   reportWinIcon: {
@@ -3877,9 +4721,9 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   reportWinCopy: { flex: 1, minWidth: 0 },
-  reportWinTitle: { ...typography.bodyBold, color: colors.ink },
-  reportWinDetail: { ...typography.body, color: colors.inkMuted, marginTop: 2 },
-  reportEvidence: { ...typography.caption, color: colors.inkSubtle, marginTop: spacing.xs },
+  reportWinTitle: { fontSize: 16, lineHeight: 24, fontWeight: '600', color: colors.ink },
+  reportWinDetail: { fontSize: 16, lineHeight: 24, color: colors.inkMuted, marginTop: 2 },
+  reportEvidence: { fontSize: 14, lineHeight: 22, color: colors.inkSubtle, marginTop: spacing.xs },
   reportPatternList: { marginTop: spacing.md },
   reportPattern: {
     flexDirection: 'row',
@@ -3926,11 +4770,12 @@ const styles = StyleSheet.create({
   reportFoodGroupInsight: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.xs },
   reportInsightGrid: { marginBottom: 0, borderTopWidth: 1, borderTopColor: colors.border },
   reportInsightCard: {
-    paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.xl,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: 'transparent',
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panel,
   },
   reportInsightIcon: {
     width: 36,
@@ -3944,7 +4789,7 @@ const styles = StyleSheet.create({
   },
   reportInsightTitle: { fontSize: 18, lineHeight: 23, fontWeight: '800', color: colors.ink },
   reportInsightSummary: { fontSize: 13, lineHeight: 18, color: colors.inkMuted, marginTop: spacing.xs, marginBottom: spacing.xs },
-  reportInsightBody: { fontSize: 13, lineHeight: 18, color: colors.inkMuted, marginTop: spacing.xs },
+  reportInsightBody: { fontSize: 13, lineHeight: 19, color: colors.inkMuted, flex: 1 },
   reportInsightSignal: { ...typography.caption, color: colors.gold, marginTop: spacing.sm },
   reportActionPlan: {
     padding: spacing.lg,
@@ -4089,8 +4934,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.panelRaised,
   },
   reportFactCopy: { flex: 1, minWidth: 0 },
-  reportFactTitle: { ...typography.bodyBold, color: colors.ink },
-  reportFactBody: { ...typography.body, color: colors.inkMuted, marginTop: 2 },
+  reportFactTitle: { fontSize: 16, lineHeight: 24, fontWeight: '600', color: colors.ink },
+  reportFactBody: { fontSize: 14, lineHeight: 21, color: colors.inkMuted, marginTop: 4 },
   reportFactSource: { ...typography.caption, color: colors.inkMuted, textDecorationLine: 'underline', marginTop: spacing.sm },
   reportCoachNote: {
     flexDirection: 'row',
@@ -4123,10 +4968,1388 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.sm,
-    paddingHorizontal: spacing.sm,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panelMuted,
+  },
+  reportMethodText: { ...typography.caption, color: colors.inkMuted, lineHeight: 18 },
+
+  // Diet report editorial system
+  reportGroup: { marginBottom: spacing.xl },
+  reportGroupHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.xs,
+  },
+  reportGroupIcon: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    backgroundColor: colors.accentLight,
+  },
+  reportGroupCopy: { flex: 1, minWidth: 0 },
+  reportGroupEyebrow: { ...typography.overline, color: colors.gold, letterSpacing: 1.1 },
+  reportGroupTitle: { fontSize: 21, lineHeight: 27, fontWeight: '900', letterSpacing: -0.28, color: colors.ink, marginTop: 1 },
+  reportGroupDetail: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: 3 },
+  reportCoverMark: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.accentSurface,
+    backgroundColor: colors.accentLight,
+  },
+  reportLatestBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panelRaised,
+  },
+  reportLatestDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.success },
+  reportLatestText: { fontSize: 10, lineHeight: 13, fontWeight: '800', color: colors.inkMuted },
+  reportScoreRingV2: { width: 110, height: 110, alignItems: 'center', justifyContent: 'center' },
+  reportScoreRingCenter: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+  reportScoreRingValue: { fontSize: 29, lineHeight: 32, fontWeight: '900', letterSpacing: -0.8, color: colors.ink },
+  reportScoreRingMax: { fontSize: 10, lineHeight: 13, fontWeight: '700', color: colors.inkSubtle },
+  reportScoreMetaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm },
+  reportScoreTrendPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: colors.successLight },
+  reportScoreTrendPillDown: { backgroundColor: colors.errorLight },
+  reportScoreTrendText: { fontSize: 10, lineHeight: 13, fontWeight: '800', color: colors.success },
+  reportScoreTrendTextDown: { color: colors.error },
+  reportConfidenceRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: spacing.sm },
+  reportConfidenceText: { ...typography.caption, color: colors.inkSubtle, textTransform: 'capitalize' },
+  reportDataQuality: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.md },
+  reportDataQualityText: { ...typography.caption, color: colors.inkSubtle, lineHeight: 18, flex: 1 },
+  reportStatusPill: {
+    flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.infoLight,
+  },
+  reportStatusPillPositive: { backgroundColor: colors.successLight },
+  reportStatusPillAttention: { backgroundColor: colors.warnLight },
+  reportStatusDot: { width: 5, height: 5, borderRadius: radius.pill, backgroundColor: colors.info },
+  reportStatusDotPositive: { backgroundColor: colors.success },
+  reportStatusDotAttention: { backgroundColor: colors.gold },
+  reportStatusPillText: { fontSize: 9, lineHeight: 12, fontWeight: '900', color: colors.info, textTransform: 'capitalize' },
+  reportStatusPillTextPositive: { color: colors.success },
+  reportImplementationHeading: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.sm },
+  reportImplementationRow: { minWidth: 128, flexBasis: 138, flexGrow: 1, alignItems: 'flex-start', gap: 2, padding: spacing.sm, borderRadius: radius.md, backgroundColor: colors.panelMuted },
+  reportImplementationKey: { fontSize: 14, lineHeight: 21, fontWeight: '600', color: colors.inkSubtle, paddingTop: 1 },
+  reportImplementationValue: { width: '100%', fontSize: 15, lineHeight: 23, color: colors.inkMuted },
+  reportImplementationValueStrong: { width: '100%', fontSize: 15, lineHeight: 23, color: colors.ink, fontWeight: '700' },
+  reportTrackingFocus: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingTop: spacing.md, marginTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  reportTrackingFocusText: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 18 },
+  reportPriorityCards: { gap: spacing.sm },
+  reportPriorityCard: { padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  reportPriorityTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  reportPriorityNumber: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.panelRaised },
+  reportPriorityNumberText: { fontSize: 10, lineHeight: 13, fontWeight: '900', color: colors.gold, letterSpacing: 0.5 },
+  reportPriorityCardTitle: { ...typography.bodyBold, color: colors.ink, flex: 1, minWidth: 0 },
+  reportPriorityCardObservation: { fontSize: 14, lineHeight: 21, color: colors.inkMuted, marginTop: spacing.md },
+  reportWhyBox: { paddingLeft: spacing.sm, marginTop: spacing.sm, borderLeftWidth: 2, borderLeftColor: colors.borderStrong },
+  reportWhyLabel: { ...typography.overline, color: colors.inkSubtle },
+  reportWhyText: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: 2 },
+  reportNextStep: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, padding: spacing.sm, marginTop: spacing.md, borderRadius: radius.md, backgroundColor: colors.accentLight },
+  reportNextStepText: { ...typography.label, color: colors.ink, flex: 1, lineHeight: 19, fontWeight: '800' },
+  reportEvidenceList: { gap: 5, marginTop: spacing.sm },
+  reportEvidenceRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  reportEvidenceDot: { width: 4, height: 4, marginTop: 7, borderRadius: radius.pill, backgroundColor: colors.inkSubtle },
+  reportEvidenceText: { fontSize: 14, lineHeight: 22, color: colors.inkSubtle, flex: 1 },
+  reportWinsPanel: { padding: spacing.md, marginTop: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted, gap: spacing.md },
+  reportSubsectionLabel: { ...typography.overline, color: colors.gold, letterSpacing: 1 },
+  reportMealAdvice: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, padding: spacing.sm, marginTop: spacing.sm, borderRadius: radius.md, backgroundColor: colors.panelMuted },
+  reportFoodChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: spacing.sm },
+  reportFoodChip: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: colors.panelRaised },
+  reportFoodChipText: { ...typography.caption, color: colors.ink, fontWeight: '700' },
+  reportSignalRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.sm },
+  reportSignalLabel: { color: colors.ink, fontWeight: '800' },
+  reportTrainingRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingTop: spacing.md, marginTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  reportTrainingIcon: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm, backgroundColor: colors.panelRaised },
+  reportTrainingCopy: { flex: 1, minWidth: 0 },
+  reportTrainingLabel: { ...typography.overline, color: colors.inkSubtle },
+  reportTrainingText: { ...typography.label, color: colors.ink, lineHeight: 19, marginTop: 2 },
+  reportMealBuilderKey: { width: 66 },
+  reportCoachCard: { padding: spacing.lg, marginBottom: spacing.md, borderRadius: radius.xl, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panelWarm },
+  reportCoachTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  reportCoachTitle: { ...typography.bodyBold, color: colors.ink, marginTop: 1 },
+  reportFactSourceRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: spacing.sm },
+  reportMethodCopy: { flex: 1, minWidth: 0, gap: 5 },
+  reportMethodTitle: { ...typography.label, color: colors.ink, fontWeight: '800', marginBottom: 2 },
+  reportChartScroll: { flexGrow: 1 },
+  reportTrendChange: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4 },
+  reportTrendChangeDown: {},
+  reportTrendChangeText: { fontSize: 14, lineHeight: 20, color: colors.success, fontWeight: '700' },
+  reportTrendChangeTextDown: { color: colors.error },
+  reportTrendChangeTextNeutral: { color: colors.inkMuted },
+  reportLineViewport: { minHeight: 194, marginTop: spacing.md },
+  reportLineLabels: { flexDirection: 'row', paddingHorizontal: spacing.xs },
+  reportLineLabel: { flex: 1, minWidth: 56, fontSize: 14, lineHeight: 20, color: colors.inkSubtle, textAlign: 'center' },
+  reportLineValue: { color: colors.ink, fontWeight: '700' },
+  reportPendingProgressCard: { width: '100%', padding: spacing.md, marginTop: spacing.lg, borderWidth: 1, borderColor: REPORT_BORDER, borderRadius: radius.lg, backgroundColor: REPORT_SURFACE },
+  reportPendingProgressHead: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.sm },
+  reportPendingScoreRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'flex-end', gap: spacing.sm },
+  reportPendingProgressValue: { fontSize: 28, lineHeight: 34, fontWeight: '800', color: REPORT_ACCENT },
+  reportPendingProgressRequirement: { fontSize: 12, lineHeight: 18, fontWeight: '600', color: REPORT_MUTED },
+  reportPendingMetaRow: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  reportPendingCadence: { fontSize: 12, lineHeight: 18, color: REPORT_SUBTLE },
+  reportEnrichmentResultText: { fontSize: 13, lineHeight: 20, fontWeight: '700', color: REPORT_INK, marginTop: spacing.xs },
+  reportPendingEvidenceFacts: { fontSize: 12, lineHeight: 18, color: REPORT_SUBTLE, marginTop: 2 },
+  reportPendingTip: { width: '100%', flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, padding: spacing.sm, marginTop: spacing.md, borderRadius: radius.sm, backgroundColor: REPORT_PAGE },
+  reportPendingTipText: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, flex: 1 },
+  reportFooterAction: { paddingTop: spacing.lg, marginTop: spacing.xl, borderTopWidth: 1, borderTopColor: REPORT_BORDER, gap: spacing.lg },
+  reportFooterActionPending: { paddingTop: 0, marginTop: spacing.md, borderTopWidth: 0, gap: 0 },
+  reportFooterCopy: { gap: 3 },
+  reportFooterTitle: { fontSize: 20, lineHeight: 27, fontWeight: '600', color: REPORT_INK },
+  reportFooterText: { fontSize: 14, lineHeight: 22, color: REPORT_MUTED },
+  reportLogMealButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.md, backgroundColor: REPORT_INK },
+  reportLogMealButtonPending: { backgroundColor: REPORT_ACCENT },
+  reportLogMealButtonText: { fontSize: 16, lineHeight: 22, fontWeight: '700', color: REPORT_PAGE },
+
+  // Weekly diet report — calm editorial presentation
+  reportStatusTextRow: {
+    flexShrink: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 7,
+  },
+  reportStatusTextDot: {
+    width: 7,
+    height: 7,
+    borderRadius: radius.pill,
+    backgroundColor: colors.info,
+  },
+  reportStatusTextDotPositive: { backgroundColor: REPORT_SAGE },
+  reportStatusTextDotAttention: { backgroundColor: colors.info },
+  reportStatusText: {
+    flexShrink: 1,
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: '600',
+    color: colors.inkMuted,
+  },
+  reportEditorialHeading: { marginBottom: spacing.lg },
+  reportEditorialEyebrow: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    color: colors.inkSubtle,
+  },
+  reportEditorialTitle: {
+    fontSize: 24,
+    lineHeight: 31,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    color: colors.ink,
+    marginTop: 4,
+  },
+  reportEditorialDetail: {
+    maxWidth: 560,
+    fontSize: 15,
+    lineHeight: 23,
+    color: colors.inkMuted,
+    marginTop: 5,
+  },
+  reportDisclosure: {
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panel,
+  },
+  reportDisclosureButton: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  reportDisclosureIcon: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: REPORT_SAGE_SURFACE,
+  },
+  reportDisclosureCopy: { flex: 1, minWidth: 0 },
+  reportDisclosureTitle: {
+    fontSize: 16,
+    lineHeight: 23,
+    fontWeight: '600',
+    color: colors.ink,
+  },
+  reportDisclosureMeta: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  reportDisclosureContent: { marginTop: spacing.md },
+  reportDisclosureList: { borderBottomWidth: 1, borderBottomColor: colors.border },
+  reportEditorialHero: {
+    overflow: 'hidden',
+    padding: spacing.lg,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panel,
+  },
+  reportEditorialMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  reportHeroBadge: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  reportHeroBadgeDot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: REPORT_SAGE },
+  reportHeroBadgeText: { fontSize: 12, lineHeight: 17, fontWeight: '800', letterSpacing: 1, color: colors.inkMuted },
+  reportEditorialLabel: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    color: colors.inkSubtle,
+  },
+  reportEditorialDateBlock: { alignItems: 'flex-end' },
+  reportEditorialPeriod: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+    color: colors.inkMuted,
+  },
+  reportEditorialGenerated: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: colors.inkSubtle,
+    marginTop: spacing.sm,
+  },
+  reportHeroMain: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg },
+  reportHeroMainCompact: { alignItems: 'flex-start' },
+  reportHeroCopy: { flex: 1, minWidth: 0, zIndex: 1 },
+  reportHeroArtWrap: { width: 148, height: 148, alignItems: 'center', justifyContent: 'center' },
+  reportHeroArtWrapCompact: { position: 'absolute', width: 104, height: 104, right: -22, top: 42, opacity: 0.3 },
+  reportHeroArtGlow: { position: 'absolute', width: 112, height: 112, borderRadius: radius.pill, backgroundColor: REPORT_SAGE_SURFACE, borderWidth: 1, borderColor: 'rgba(168,191,178,0.26)' },
+  reportHeroArt: { width: '100%', height: '100%' },
+  reportEditorialHeadline: {
+    maxWidth: 420,
+    fontSize: 27,
+    lineHeight: 34,
+    fontWeight: '700',
+    letterSpacing: -0.65,
+    color: colors.ink,
+    marginTop: 0,
+  },
+  reportEditorialSummary: {
+    maxWidth: 440,
+    fontSize: 15,
+    lineHeight: 23,
+    color: colors.inkMuted,
+    marginTop: spacing.sm,
+  },
+  reportSnapshotRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg, paddingRight: spacing.md },
+  reportScoreTile: { width: 190, padding: spacing.md, borderRadius: radius.lg, backgroundColor: REPORT_SAGE_SURFACE, borderWidth: 1, borderColor: 'rgba(168,191,178,0.24)' },
+  reportScoreTileTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  reportScoreTileLabel: { fontSize: 10, lineHeight: 14, fontWeight: '800', letterSpacing: 0.8, color: REPORT_SAGE },
+  reportScoreTileFooter: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: 2 },
+  reportMetricTile: { width: 104, padding: spacing.md, borderRadius: radius.lg, backgroundColor: colors.panelMuted, borderWidth: 1, borderColor: colors.border },
+  reportMetricTileValue: { fontSize: 22, lineHeight: 27, fontWeight: '800', color: colors.ink, marginTop: spacing.sm },
+  reportMetricTileLabel: { fontSize: 12, lineHeight: 17, color: colors.inkMuted, marginTop: 1 },
+  reportScoreUnavailable: { fontSize: 22, lineHeight: 29, fontWeight: '800', color: colors.ink, marginTop: spacing.sm },
+  reportScoreUnavailableNote: { fontSize: 12, lineHeight: 18, color: colors.inkMuted, marginTop: 2 },
+  reportTrustRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.md },
+  reportTrustText: { flex: 1, fontSize: 12, lineHeight: 18, color: colors.inkSubtle },
+  reportConfidenceNote: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.sm },
+  reportConfidenceNoteText: { flex: 1, fontSize: 12, lineHeight: 18, color: colors.inkSubtle },
+  reportCarouselContent: { gap: spacing.md, paddingRight: spacing.lg },
+  reportCarouselHint: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: spacing.sm },
+  reportCarouselHintText: { fontSize: 12, lineHeight: 17, color: colors.inkSubtle },
+  reportCarouselPagination: { minHeight: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm },
+  reportCarouselDots: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  reportCarouselDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.borderStrong },
+  reportCarouselDotActive: { width: 18, backgroundColor: REPORT_SAGE },
+  reportCarouselPageText: { fontSize: 12, lineHeight: 17, fontWeight: '700', color: colors.inkSubtle },
+  reportScoreSummary: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    gap: spacing.xl,
+    paddingVertical: spacing.lg,
+    marginTop: spacing.xl,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+  },
+  reportScoreValueBlock: { minWidth: 138, flexGrow: 0 },
+  reportScoreLabelSmall: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '700',
+    letterSpacing: 0.9,
+    color: colors.inkSubtle,
+  },
+  reportScoreValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginTop: 3,
+  },
+  reportScoreNumber: {
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: '700',
+    letterSpacing: -0.8,
+    color: colors.ink,
+  },
+  reportScoreDenominator: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.inkSubtle,
+    marginLeft: 3,
+  },
+  reportScoreDescriptor: {
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: '600',
+    color: colors.ink,
+  },
+  reportScoreDelta: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: colors.inkMuted,
+    marginTop: 2,
+  },
+  reportScoreDeltaDown: { color: colors.error },
+  reportScoreContext: {
+    maxWidth: 180,
+    fontSize: 14,
+    lineHeight: 21,
+    color: colors.inkSubtle,
+    marginTop: spacing.sm,
+  },
+  reportCoverageBlock: { flex: 1, minWidth: 210 },
+  reportCoverageLabel: {
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '600',
+    color: colors.ink,
+    marginTop: 4,
+  },
+  reportCoverageText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.inkMuted,
+    marginTop: 4,
+  },
+  reportMetricLine: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  reportMetricInline: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  reportMetricDot: {
+    width: 4,
+    height: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.inkSubtle,
+  },
+  reportMetricInlineText: { fontSize: 14, lineHeight: 21, color: colors.inkMuted },
+  reportMetricInlineValue: { fontWeight: '700', color: colors.ink },
+  reportAiDisclosure: {
+    maxWidth: 580,
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.inkMuted,
+    marginTop: spacing.md,
+    paddingLeft: spacing.md,
+    borderLeftWidth: 2,
+    borderLeftColor: colors.borderStrong,
+  },
+  reportSchemaNotice: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.inkMuted,
+    marginTop: spacing.md,
+  },
+  reportSafetyList: { gap: spacing.sm, marginTop: spacing.xl },
+  reportSafetyNotice: {
+    padding: spacing.lg,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderLeftWidth: 3,
+    borderColor: colors.border,
+    borderLeftColor: colors.info,
+    backgroundColor: colors.panel,
+  },
+  reportSafetyNoticeWarning: { borderLeftColor: colors.warn },
+  reportSafetyNoticeUrgent: { borderLeftColor: colors.error },
+  reportSafetyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  reportSafetyTitle: { flex: 1, fontSize: 18, lineHeight: 25, fontWeight: '700', color: colors.ink },
+  reportSafetyBody: { fontSize: 16, lineHeight: 25, color: colors.inkMuted, marginTop: spacing.sm },
+  reportEditorialSection: { marginTop: spacing.xl },
+  reportPlanPanel: {
+    padding: spacing.lg,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panel,
+  },
+  reportPlanFocusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  reportPlanFocusIcon: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, backgroundColor: colors.primaryAction },
+  reportPlanFocusCopy: { flex: 1, minWidth: 0 },
+  reportPlanFocusLabel: { fontSize: 10, lineHeight: 14, fontWeight: '800', letterSpacing: 0.9, color: REPORT_SAGE },
+  reportPlanFocus: {
+    fontSize: 20,
+    lineHeight: 27,
+    fontWeight: '700',
+    letterSpacing: -0.25,
+    color: colors.ink,
+    marginTop: 2,
+  },
+  reportPlanWhy: {
+    fontSize: 16,
+    lineHeight: 25,
+    color: colors.inkMuted,
+    marginTop: spacing.sm,
+  },
+  reportPlanActions: {
+    marginTop: spacing.md,
+    gap: spacing.sm,
+  },
+  reportImplementationGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  reportPlanActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.panelMuted,
+  },
+  reportPlanActionCheck: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: REPORT_SAGE_SURFACE },
+  reportPlanActionIndex: { fontSize: 11, lineHeight: 15, fontWeight: '800', color: REPORT_SAGE },
+  reportPlanActionNumber: {
+    width: 28,
+    fontSize: 14,
+    lineHeight: 22,
+    fontWeight: '700',
+    color: colors.inkSubtle,
+  },
+  reportPlanActionText: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.ink,
+  },
+  reportTrackingPrompt: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  reportTrackingLabel: { color: colors.ink, fontWeight: '700' },
+  reportImplementationFlat: {
+    marginTop: spacing.lg,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  reportFlatSubhead: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: colors.inkSubtle,
+  },
+  reportTrackingText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 22,
+    color: colors.inkMuted,
+  },
+  reportWinsFlat: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
     marginBottom: spacing.lg,
   },
-  reportMethodText: { ...typography.caption, color: colors.inkSubtle, flex: 1 },
+  reportWinsGrid: { gap: spacing.sm },
+  reportWinFlatRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.panelMuted,
+  },
+  reportStoryWinIcon: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.successLight },
+  reportInsightCards: { gap: spacing.sm, marginTop: spacing.lg },
+  reportInlineSectionTitle: { fontSize: 17, lineHeight: 24, fontWeight: '700', color: colors.ink },
+  reportStoryInsightCard: { overflow: 'hidden', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  reportInsightCardButton: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, padding: spacing.md },
+  reportStoryInsightIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: colors.panelRaised },
+  reportInsightIconText: { fontSize: 12, lineHeight: 16, fontWeight: '800', color: REPORT_SAGE },
+  reportInsightCardCopy: { flex: 1, minWidth: 0 },
+  reportInsightCardTitle: { fontSize: 17, lineHeight: 23, fontWeight: '700', color: colors.ink },
+  reportInsightCardBody: { fontSize: 14, lineHeight: 21, color: colors.inkMuted, marginTop: 3 },
+  reportInsightTryRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: REPORT_SAGE_SURFACE },
+  reportInsightTryIcon: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
+  reportInsightTryText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '600', color: colors.ink },
+  reportInsightExpanded: { padding: spacing.md, borderTopWidth: 1, borderTopColor: colors.border },
+  reportInsightArticles: { borderTopWidth: 1, borderTopColor: colors.border },
+  reportInsightArticle: {
+    paddingVertical: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  reportInsightArticleTop: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  reportInsightOrdinal: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    color: colors.inkSubtle,
+  },
+  reportInsightArticleTitle: {
+    fontSize: 20,
+    lineHeight: 27,
+    fontWeight: '600',
+    color: colors.ink,
+    marginTop: spacing.sm,
+  },
+  reportInsightArticleBody: {
+    fontSize: 16,
+    lineHeight: 25,
+    color: colors.inkMuted,
+    marginTop: spacing.sm,
+  },
+  reportInsightWhy: {
+    fontSize: 15,
+    lineHeight: 23,
+    color: colors.inkMuted,
+    marginTop: spacing.sm,
+  },
+  reportInsightWhyLabel: { fontWeight: '700', color: colors.ink },
+  reportInsightAction: {
+    marginTop: spacing.md,
+    paddingLeft: spacing.md,
+    borderLeftWidth: 2,
+    borderLeftColor: colors.borderStrong,
+  },
+  reportInsightActionText: {
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: '600',
+    color: colors.ink,
+    marginTop: 4,
+  },
+  reportCoachEditorial: {
+    marginTop: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: REPORT_SAGE_SURFACE,
+  },
+  reportCoachEditorialLabel: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: colors.inkSubtle,
+  },
+  reportCoachEditorialText: {
+    fontSize: 15,
+    lineHeight: 23,
+    color: colors.ink,
+    marginTop: spacing.sm,
+  },
+  reportQuestionPanel: {
+    marginTop: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderTopWidth: 3,
+    borderColor: colors.border,
+    borderTopColor: colors.info,
+    backgroundColor: colors.panel,
+  },
+  reportQuestionPanelHeader: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  reportQuestionPanelCopy: { flex: 1, minWidth: 190 },
+  reportQuestionPanelEyebrow: { fontSize: 14, lineHeight: 20, fontWeight: '700', color: colors.info },
+  reportQuestionPanelTitle: { fontSize: 20, lineHeight: 27, fontWeight: '700', color: colors.ink, marginTop: 2 },
+  reportQuestionProgress: { fontSize: 14, lineHeight: 21, fontWeight: '600', color: colors.inkMuted },
+  reportQuestionDots: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  reportQuestionDot: { flex: 1, maxWidth: 48, height: 4, borderRadius: radius.pill, backgroundColor: colors.panelRaised },
+  reportQuestionDotAnswered: { backgroundColor: colors.borderStrong },
+  reportQuestionDotActive: { backgroundColor: colors.info },
+  reportQuestionPrompt: { fontSize: 18, lineHeight: 26, fontWeight: '600', color: colors.ink, marginTop: spacing.md },
+  reportQuestionInput: {
+    minHeight: 76,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+    marginTop: spacing.md,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.bgTint,
+    fontSize: 16,
+    lineHeight: 25,
+    color: colors.ink,
+  },
+  reportQuestionCharacterCount: { alignSelf: 'flex-end', fontSize: 14, lineHeight: 20, color: colors.inkSubtle, marginTop: spacing.xs },
+  reportQuestionActions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
+  reportQuestionSecondaryButton: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  reportQuestionPrimaryButton: {
+    minWidth: 170,
+    minHeight: 50,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.sm,
+    backgroundColor: colors.primaryAction,
+  },
+  reportQuestionButtonDisabled: { opacity: 0.42 },
+  reportQuestionSecondaryText: { fontSize: 15, lineHeight: 21, fontWeight: '600', color: colors.inkMuted },
+  reportQuestionPrimaryText: { fontSize: 15, lineHeight: 21, fontWeight: '700', color: colors.onPrimary },
+  reportQuestionSaveStatus: { fontSize: 14, lineHeight: 21, color: colors.inkMuted, marginTop: spacing.md },
+  reportQuestionSaveStatusComplete: { color: colors.success },
+  reportCoachQuestions: {
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  reportCoachQuestionText: { fontSize: 15, lineHeight: 23, color: colors.inkMuted },
+  reportMealGuideFlatList: { gap: spacing.md },
+  reportMealGuideFlatRow: {
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panelMuted,
+  },
+  reportMealGuideFlatTop: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  reportMealGuideFlatTitle: { fontSize: 18, lineHeight: 25, fontWeight: '600', color: colors.ink },
+  reportMealGuideFlatCount: { fontSize: 14, lineHeight: 20, color: colors.inkSubtle },
+  reportMealGuideFlatAdvice: { fontSize: 15, lineHeight: 23, color: colors.inkMuted, marginTop: spacing.sm },
+  reportDetailBlock: { marginTop: spacing.md, gap: spacing.sm },
+  reportPatternFlatRow: {
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panelMuted,
+  },
+  reportDetailTitleRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  reportDetailTitle: { flex: 1, minWidth: 0, fontSize: 17, lineHeight: 24, fontWeight: '600', color: colors.ink },
+  reportDetailBody: { fontSize: 15, lineHeight: 24, color: colors.inkMuted, marginTop: spacing.sm },
+  reportFoodGroupFlatRow: {
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panelMuted,
+  },
+  reportFoodCoverageList: { marginTop: spacing.sm },
+  reportFoodCoverageRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: colors.border },
+  reportFoodCoverageDot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: colors.borderStrong },
+  reportFoodCoverageDotPositive: { backgroundColor: REPORT_SAGE },
+  reportFoodCoverageCopy: { flex: 1, minWidth: 0 },
+  reportFoodCoverageLabel: { fontSize: 13, lineHeight: 18, fontWeight: '700', color: colors.ink },
+  reportFoodCoverageFoods: { fontSize: 11, lineHeight: 16, color: colors.inkSubtle, marginTop: 1 },
+  reportObservedFoodsFlat: { fontSize: 15, lineHeight: 23, fontWeight: '600', color: colors.ink, marginTop: spacing.sm },
+  reportDetailLine: { fontSize: 15, lineHeight: 24, color: colors.inkMuted, marginTop: spacing.sm },
+  reportDetailLineLabel: { fontWeight: '700', color: colors.ink },
+  reportCardCategory: { fontSize: 9, lineHeight: 13, fontWeight: '800', letterSpacing: 0.9, color: colors.inkSubtle, marginBottom: spacing.sm },
+  reportContextCard: { padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted },
+  reportContextCardHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  reportContextCardTitle: { flex: 1, fontSize: 16, lineHeight: 23, fontWeight: '700', color: colors.ink },
+  reportMealBuilderFlat: { gap: spacing.sm },
+  reportMealBuilderCard: { padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted },
+  reportMealBuilderFlatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  reportMealBuilderIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: REPORT_SAGE_SURFACE },
+  reportMealBuilderFlatLabel: {
+    width: 52,
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: '700',
+    color: colors.inkSubtle,
+    textTransform: 'capitalize',
+  },
+  reportMealBuilderFlatValue: { flex: 1, minWidth: 0, fontSize: 14, lineHeight: 21, color: colors.ink },
+  reportSwapFlatRow: {
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panelMuted,
+  },
+  reportSwapCarouselFrom: { fontSize: 14, lineHeight: 21, color: colors.inkMuted },
+  reportSwapArrow: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: REPORT_SAGE_SURFACE, marginVertical: spacing.sm },
+  reportSwapFlatText: { fontSize: 15, lineHeight: 23, color: colors.inkMuted },
+  reportSwapFlatTo: { fontWeight: '700', color: colors.ink },
+  reportSwapFlatWhy: { fontSize: 14, lineHeight: 21, color: colors.inkMuted, marginTop: 3 },
+  reportScoreHistoryFlatRow: {
+    minHeight: 132,
+    justifyContent: 'space-between',
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panelMuted,
+  },
+  reportScoreHistoryFlatValue: { fontSize: 19, lineHeight: 25, fontWeight: '700', color: colors.ink },
+  reportComponentFlatRow: {
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panelMuted,
+  },
+  reportFactFlatRow: {
+    minHeight: 232,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panelMuted,
+  },
+  reportSourceGraphic: { minHeight: 72, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.sm, marginHorizontal: -spacing.sm, marginTop: -spacing.sm, marginBottom: spacing.md, borderRadius: radius.md, backgroundColor: colors.panelRaised },
+  reportSourceGraphicBlue: { backgroundColor: REPORT_BLUE_SURFACE },
+  reportSourceGraphicSage: { backgroundColor: REPORT_SAGE_SURFACE },
+  reportSourceGraphicCircle: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, borderWidth: 1, borderColor: 'rgba(168,191,178,0.28)', backgroundColor: colors.panel },
+  reportSourceGraphicMeta: { alignItems: 'flex-end', gap: 2 },
+  reportSourceCategory: { fontSize: 9, lineHeight: 13, fontWeight: '800', letterSpacing: 0.9, color: colors.inkSubtle },
+  reportSourceNumber: { fontSize: 12, lineHeight: 17, fontWeight: '800', letterSpacing: 1, color: colors.inkSubtle },
+  reportPublisherRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: spacing.sm },
+  reportPublisherDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: REPORT_SAGE },
+  reportFactDomain: { fontSize: 13, lineHeight: 19, color: colors.inkSubtle },
+  reportFactLink: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  reportFactSourceFlat: {
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: '600',
+    color: REPORT_SAGE,
+  },
+  reportFactUnavailable: { fontSize: 14, lineHeight: 21, color: colors.inkSubtle, marginTop: spacing.sm },
+  reportLimitationText: { fontSize: 15, lineHeight: 24, color: colors.inkMuted, marginTop: spacing.sm },
+  reportLimitationsCard: { marginTop: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.infoLight },
+  reportCompactDetails: { marginTop: spacing.lg },
+  reportDetailSections: { gap: spacing.md },
+  reportDetailSection: {
+    paddingVertical: spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  reportDetailSectionHeader: { marginBottom: spacing.lg },
+  reportDetailSectionTitle: { fontSize: 22, lineHeight: 29, fontWeight: '700', color: colors.ink },
+  reportDetailSectionMeta: { fontSize: 14, lineHeight: 21, color: colors.inkMuted, marginTop: 3 },
+  reportDetailSectionContent: {},
+  reportGenericCard: { padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted },
+  reportGenericParagraph: { fontSize: 15, lineHeight: 23, color: colors.inkMuted, marginTop: spacing.sm },
+  reportIssueSection: {
+    paddingTop: spacing.xl,
+    marginTop: spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    gap: spacing.md,
+  },
+  reportIssueCopy: { gap: 4 },
+  reportIssueTitle: { fontSize: 18, lineHeight: 25, fontWeight: '700', color: colors.ink },
+  reportIssueText: { fontSize: 15, lineHeight: 23, color: colors.inkMuted },
+  reportIssueButton: {
+    minHeight: 50,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  reportIssueButtonText: { fontSize: 15, lineHeight: 21, fontWeight: '700', color: colors.ink },
+
+  // Weekly diet report — restrained black, white and solid-gold document
+  paperDocument: {
+    width: '100%',
+    backgroundColor: REPORT_PAGE,
+    marginBottom: spacing.xl,
+  },
+  paperHeader: {
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl,
+  },
+  paperMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  paperEyebrow: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+    color: REPORT_ACCENT,
+  },
+  paperPeriod: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
+    color: REPORT_SUBTLE,
+  },
+  paperHeadline: {
+    maxWidth: 560,
+    fontSize: 30,
+    lineHeight: 37,
+    fontWeight: '800',
+    letterSpacing: -0.7,
+    color: REPORT_INK,
+    marginTop: spacing.lg,
+  },
+  paperSummary: {
+    maxWidth: 560,
+    fontSize: 16,
+    lineHeight: 24,
+    color: REPORT_MUTED,
+    marginTop: spacing.sm,
+  },
+  paperEditorialArt: {
+    width: '100%',
+    height: 96,
+    marginTop: spacing.lg,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: REPORT_BORDER,
+    backgroundColor: REPORT_SURFACE,
+  },
+  reportNoDataHeader: {
+    maxWidth: 560,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl,
+  },
+  reportNoDataIcon: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.xl,
+    borderRadius: radius.md,
+    backgroundColor: REPORT_ACCENT_SURFACE,
+  },
+  reportNoDataTitle: {
+    maxWidth: 500,
+    marginTop: spacing.md,
+    fontSize: 27,
+    lineHeight: 34,
+    fontWeight: '800',
+    letterSpacing: -0.45,
+    color: REPORT_INK,
+  },
+  reportNoDataBody: {
+    maxWidth: 500,
+    marginTop: spacing.xs,
+    fontSize: 15,
+    lineHeight: 23,
+    color: REPORT_MUTED,
+  },
+  reportNoDataProgressHint: {
+    marginTop: spacing.xs,
+    fontSize: 12,
+    lineHeight: 18,
+    color: REPORT_MUTED,
+  },
+  reportOverviewBand: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: spacing.lg,
+    marginTop: spacing.lg,
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: REPORT_BORDER,
+  },
+  reportOverviewBandStack: {
+    flexDirection: 'column',
+    gap: spacing.md,
+  },
+  reportOverviewScore: {
+    minWidth: 130,
+    justifyContent: 'center',
+  },
+  reportOverviewLabel: {
+    fontSize: 10,
+    lineHeight: 15,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: REPORT_SUBTLE,
+  },
+  reportOverviewScoreRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginTop: 2,
+  },
+  reportOverviewScoreValue: {
+    fontSize: 30,
+    lineHeight: 35,
+    fontWeight: '800',
+    letterSpacing: -0.7,
+    color: REPORT_INK,
+  },
+  reportOverviewScoreMax: {
+    marginLeft: 2,
+    fontSize: 12,
+    lineHeight: 18,
+    color: REPORT_SUBTLE,
+  },
+  reportOverviewScoreMeta: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  reportOverviewScoreName: {
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
+    color: REPORT_INK,
+  },
+  reportOverviewTrend: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: REPORT_ACCENT,
+  },
+  reportOverviewUnavailable: {
+    marginTop: spacing.xs,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '700',
+    color: REPORT_INK,
+  },
+  reportOverviewUnavailableNote: {
+    marginTop: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    color: REPORT_MUTED,
+  },
+  reportOverviewStats: {
+    flex: 1,
+    minWidth: 210,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  reportOverviewStat: {
+    flex: 1,
+    minWidth: 68,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+    borderLeftWidth: 1,
+    borderLeftColor: REPORT_BORDER,
+  },
+  reportOverviewStatValue: {
+    fontSize: 20,
+    lineHeight: 25,
+    fontWeight: '800',
+    color: REPORT_INK,
+  },
+  reportOverviewStatLabel: {
+    marginTop: 1,
+    fontSize: 10,
+    lineHeight: 15,
+    color: REPORT_SUBTLE,
+  },
+  reportConfidenceCompact: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  reportConfidenceCompactText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    color: REPORT_MUTED,
+  },
+  reportConfidenceCompactLabel: {
+    fontWeight: '700',
+    color: REPORT_INK,
+  },
+  paperMetricGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'stretch',
+    gap: spacing.sm,
+    marginTop: spacing.xl,
+  },
+  paperScoreMetric: {
+    minWidth: 186,
+    flexBasis: 196,
+    flexGrow: 2,
+    justifyContent: 'space-between',
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: REPORT_BORDER_STRONG,
+    backgroundColor: REPORT_PAGE,
+  },
+  paperMetric: {
+    minWidth: 102,
+    flexBasis: 108,
+    flexGrow: 1,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: REPORT_SURFACE,
+  },
+  paperGridItemFull: {
+    width: '100%',
+    minWidth: '100%',
+    flexBasis: '100%',
+  },
+  paperMetricEyebrow: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: REPORT_SUBTLE,
+  },
+  paperScoreRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginTop: spacing.xs,
+  },
+  paperScoreValue: {
+    fontSize: 38,
+    lineHeight: 43,
+    fontWeight: '800',
+    letterSpacing: -1,
+    color: REPORT_INK,
+  },
+  paperScoreMax: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: REPORT_SUBTLE,
+    marginLeft: 3,
+  },
+  paperScoreMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
+    marginTop: 2,
+  },
+  paperScoreLabel: { fontSize: 13, lineHeight: 19, fontWeight: '700', color: REPORT_INK },
+  paperScoreTrend: { fontSize: 12, lineHeight: 18, color: REPORT_MUTED },
+  paperScoreUnavailable: {
+    fontSize: 20,
+    lineHeight: 27,
+    fontWeight: '700',
+    color: REPORT_INK,
+    marginTop: spacing.sm,
+  },
+  paperScoreUnavailableNote: { fontSize: 13, lineHeight: 19, color: REPORT_MUTED, marginTop: 2 },
+  paperMetricValue: {
+    fontSize: 24,
+    lineHeight: 29,
+    fontWeight: '800',
+    color: REPORT_INK,
+    marginTop: spacing.sm,
+  },
+  paperMetricLabel: { fontSize: 12, lineHeight: 18, color: REPORT_MUTED, marginTop: 1 },
+  paperConfidenceRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  paperConfidenceLabel: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    backgroundColor: REPORT_INFO_SURFACE,
+  },
+  paperConfidenceLabelText: { fontSize: 11, lineHeight: 16, fontWeight: '700', color: REPORT_INFO },
+  paperConfidenceText: { flex: 1, minWidth: 190, fontSize: 13, lineHeight: 20, color: REPORT_MUTED },
+  paperSchemaNotice: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, marginTop: spacing.sm },
+  paperSection: {
+    paddingVertical: spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: REPORT_BORDER,
+  },
+  paperSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  paperSectionIcon: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.sm,
+    backgroundColor: REPORT_ACCENT_SURFACE,
+  },
+  paperSectionHeading: { flex: 1, minWidth: 0 },
+  paperSectionTitle: {
+    fontSize: 22,
+    lineHeight: 29,
+    fontWeight: '700',
+    letterSpacing: -0.25,
+    color: REPORT_INK,
+  },
+  paperSectionMeta: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, marginTop: 2 },
+  paperSafetyList: { gap: spacing.sm, paddingBottom: spacing.md },
+  paperSafetyNotice: {
+    padding: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderLeftWidth: 3,
+    borderColor: REPORT_BORDER,
+    borderLeftColor: REPORT_INFO,
+    backgroundColor: REPORT_PAGE,
+  },
+  paperSafetyNoticeWarning: { borderLeftColor: REPORT_WARNING },
+  paperSafetyNoticeUrgent: { borderLeftColor: REPORT_DANGER },
+  paperSafetyTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  paperSafetyTitle: { flex: 1, fontSize: 16, lineHeight: 23, fontWeight: '700', color: REPORT_INK },
+  paperSafetyBody: { fontSize: 15, lineHeight: 23, color: REPORT_MUTED, marginTop: spacing.xs },
+  paperFocusPanel: {
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: REPORT_BORDER_STRONG,
+    backgroundColor: REPORT_PAGE,
+  },
+  paperFocusHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  paperFocusMarker: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: REPORT_ACCENT,
+  },
+  paperFocusCopy: { flex: 1, minWidth: 0 },
+  paperFocusLabel: { fontSize: 11, lineHeight: 16, fontWeight: '800', letterSpacing: 0.8, color: REPORT_ACCENT },
+  paperFocusTitle: { fontSize: 21, lineHeight: 28, fontWeight: '700', color: REPORT_INK, marginTop: 2 },
+  paperFocusWhy: { fontSize: 15, lineHeight: 23, color: REPORT_MUTED, marginTop: spacing.sm },
+  paperActionList: { marginTop: spacing.lg, borderTopWidth: 1, borderTopColor: REPORT_BORDER },
+  paperActionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: REPORT_BORDER,
+  },
+  paperActionNumber: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: REPORT_ACCENT_SURFACE,
+  },
+  paperActionNumberText: { fontSize: 11, lineHeight: 15, fontWeight: '800', color: REPORT_ACCENT },
+  paperActionText: { flex: 1, fontSize: 15, lineHeight: 22, fontWeight: '600', color: REPORT_INK },
+  paperDefinitionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
+  paperDefinitionCell: {
+    minWidth: 160,
+    flexBasis: 210,
+    flexGrow: 1,
+    padding: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: REPORT_SURFACE,
+  },
+  paperDefinitionLabel: { fontSize: 11, lineHeight: 16, fontWeight: '800', letterSpacing: 0.5, color: REPORT_SUBTLE, textTransform: 'uppercase' },
+  paperDefinitionValue: { fontSize: 14, lineHeight: 21, color: REPORT_MUTED, marginTop: 2 },
+  paperDefinitionValueStrong: { fontWeight: '700', color: REPORT_INK },
+  paperTrackingRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.md },
+  paperTrackingText: { flex: 1, fontSize: 14, lineHeight: 21, color: REPORT_MUTED },
+  paperTrackingLabel: { fontWeight: '700', color: REPORT_INK },
+  paperSubsection: { marginTop: spacing.md },
+  paperSubsectionTitle: { fontSize: 14, lineHeight: 20, fontWeight: '800', color: REPORT_INK, marginBottom: spacing.sm },
+  paperRows: { borderTopWidth: 1, borderTopColor: REPORT_BORDER },
+  paperWinRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: REPORT_BORDER },
+  paperCheckIcon: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: REPORT_ACCENT_SURFACE },
+  paperRowCopy: { flex: 1, minWidth: 0 },
+  paperRowTitle: { fontSize: 16, lineHeight: 23, fontWeight: '700', color: REPORT_INK },
+  paperRowBody: { fontSize: 14, lineHeight: 22, color: REPORT_MUTED, marginTop: 3 },
+  paperRowEvidence: { fontSize: 12, lineHeight: 18, color: REPORT_SUBTLE, marginTop: 4 },
+  paperInsightRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: REPORT_BORDER },
+  paperInsightNumber: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, borderWidth: 1, borderColor: REPORT_BORDER_STRONG },
+  paperInsightNumberText: { fontSize: 11, lineHeight: 15, fontWeight: '800', color: REPORT_INK },
+  paperFindingTitleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.xs },
+  paperConfidenceSmall: { fontSize: 11, lineHeight: 17, fontWeight: '600', color: REPORT_SUBTLE },
+  paperWhyLine: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, marginTop: spacing.xs },
+  paperInlineLabel: { fontWeight: '700', color: REPORT_INK },
+  paperEvidenceLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: spacing.xs },
+  paperEvidenceText: { flex: 1, fontSize: 12, lineHeight: 18, color: REPORT_SUBTLE },
+  paperNextStep: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, padding: spacing.sm, marginTop: spacing.sm, borderRadius: radius.sm, backgroundColor: REPORT_ACCENT_SURFACE },
+  paperNextStepText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '600', color: REPORT_INK },
+  paperPatternRow: { paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: REPORT_BORDER },
+  paperPatternTop: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.sm },
+  paperStatusRow: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  paperStatusDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: REPORT_INFO },
+  paperStatusDotPositive: { backgroundColor: REPORT_ACCENT },
+  paperStatusDotAttention: { backgroundColor: REPORT_WARNING },
+  paperStatusText: { flexShrink: 1, fontSize: 12, lineHeight: 18, fontWeight: '600', color: REPORT_MUTED },
+  paperRhythmBlock: { padding: spacing.md, borderRadius: radius.md, backgroundColor: REPORT_SURFACE },
+  paperRhythmTitle: { fontSize: 15, lineHeight: 22, fontWeight: '700', color: REPORT_INK },
+  paperRhythmFacts: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.sm },
+  paperRhythmFact: { flexGrow: 1, flexBasis: 210, fontSize: 13, lineHeight: 20, color: REPORT_MUTED },
+  paperMealList: { borderTopWidth: 1, borderTopColor: REPORT_BORDER },
+  paperMealRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: REPORT_BORDER },
+  paperMealIcon: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm, backgroundColor: REPORT_ACCENT_SURFACE },
+  paperMealTop: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.xs },
+  paperMealCount: { fontSize: 12, lineHeight: 18, color: REPORT_SUBTLE },
+  paperMealAdvice: { fontSize: 14, lineHeight: 21, color: REPORT_MUTED, marginTop: spacing.xs },
+  paperCoverageGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  paperCoverageCell: { minWidth: 220, flexBasis: 240, flexGrow: 1, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: REPORT_BORDER },
+  paperCoverageTop: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.xs },
+  paperCoverageLabel: { flex: 1, minWidth: 100, fontSize: 14, lineHeight: 20, fontWeight: '700', color: REPORT_INK },
+  paperCoverageStatus: { fontSize: 11, lineHeight: 16, fontWeight: '700', color: REPORT_SUBTLE },
+  paperCoverageStatusPositive: { color: REPORT_ACCENT },
+  paperCoverageFoods: { fontSize: 13, lineHeight: 19, fontWeight: '600', color: REPORT_INK, marginTop: spacing.xs },
+  paperCoverageInsight: { fontSize: 12, lineHeight: 18, color: REPORT_MUTED, marginTop: 3 },
+  paperBuilderGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  paperBuilderCell: { minWidth: 190, flexBasis: 220, flexGrow: 1, flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, padding: spacing.sm, borderRadius: radius.sm, backgroundColor: REPORT_SURFACE },
+  paperBuilderIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: REPORT_ACCENT_SURFACE },
+  paperBuilderValue: { fontSize: 14, lineHeight: 21, color: REPORT_INK, marginTop: 2 },
+  paperSwapRow: { paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: REPORT_BORDER },
+  paperSwapMain: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm },
+  paperSwapFrom: { fontSize: 14, lineHeight: 21, color: REPORT_MUTED },
+  paperSwapTo: { flexShrink: 1, fontSize: 14, lineHeight: 21, fontWeight: '700', color: REPORT_INK },
+  paperContextBlock: { paddingTop: spacing.md, marginTop: spacing.lg, borderTopWidth: 1, borderTopColor: REPORT_BORDER },
+  paperContextTitleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm },
+  paperContextTitle: { flex: 1, minWidth: 120, fontSize: 15, lineHeight: 22, fontWeight: '700', color: REPORT_INK },
+  paperContextBadge: { fontSize: 11, lineHeight: 16, fontWeight: '700', color: REPORT_INFO, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.pill, backgroundColor: REPORT_INFO_SURFACE },
+  paperContextLine: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, marginTop: spacing.xs },
+  paperComponentList: { gap: spacing.md },
+  paperComponentRow: { paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: REPORT_BORDER },
+  paperComponentTop: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.sm },
+  paperComponentLabel: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '700', color: REPORT_INK },
+  paperComponentValue: { fontSize: 14, lineHeight: 21, fontWeight: '800', color: REPORT_INK },
+  paperComponentMax: { fontSize: 12, lineHeight: 18, fontWeight: '500', color: REPORT_SUBTLE },
+  paperComponentTrack: { height: 6, overflow: 'hidden', borderRadius: radius.pill, backgroundColor: REPORT_BORDER, marginTop: spacing.xs },
+  paperComponentFill: { height: '100%', borderRadius: radius.pill, backgroundColor: REPORT_ACCENT },
+  paperComponentInsight: { fontSize: 12, lineHeight: 18, color: REPORT_MUTED, marginTop: spacing.xs },
+  paperCoachNote: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.md },
+  paperCoachRule: { width: 3, borderRadius: radius.pill, backgroundColor: REPORT_ACCENT },
+  paperCoachText: { flex: 1, fontSize: 16, lineHeight: 25, fontStyle: 'italic', color: REPORT_INK },
+  paperGenericSection: { paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: REPORT_BORDER },
+  paperGenericParagraph: { fontSize: 14, lineHeight: 22, color: REPORT_MUTED, marginTop: spacing.xs },
+  paperGenericItem: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.xs },
+  paperGenericDot: { width: 4, height: 4, borderRadius: radius.pill, backgroundColor: REPORT_SUBTLE, marginTop: 7 },
+  paperGenericItemText: { flex: 1, fontSize: 13, lineHeight: 20, color: REPORT_MUTED },
+  paperSourceList: { borderTopWidth: 1, borderTopColor: REPORT_BORDER },
+  paperSourceRow: { minHeight: 72, flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: REPORT_BORDER },
+  paperSourceIcon: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm, backgroundColor: REPORT_INFO_SURFACE },
+  paperSourceCopy: { flex: 1, minWidth: 0 },
+  paperSourceTitle: { fontSize: 15, lineHeight: 22, fontWeight: '700', color: REPORT_INK },
+  paperSourceBody: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, marginTop: 2 },
+  paperSourceMeta: { fontSize: 12, lineHeight: 18, fontWeight: '600', color: REPORT_INFO, marginTop: spacing.xs },
+  paperAboutBox: { padding: spacing.md, marginTop: spacing.md, borderRadius: radius.md, backgroundColor: REPORT_SURFACE },
+  paperAboutTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  paperAboutTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700', color: REPORT_INK },
+  paperAboutText: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, marginTop: spacing.xs },
+  paperLimitationRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.xs },
+  paperLimitationText: { flex: 1, fontSize: 12, lineHeight: 18, color: REPORT_MUTED },
+  paperQuestionPanel: { padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: REPORT_BORDER_STRONG, backgroundColor: REPORT_PAGE },
+  paperQuestionHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  paperQuestionIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm, backgroundColor: REPORT_INFO_SURFACE },
+  paperQuestionHeading: { flex: 1, minWidth: 0 },
+  paperQuestionTitle: { fontSize: 17, lineHeight: 24, fontWeight: '700', color: REPORT_INK },
+  paperQuestionIntro: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, marginTop: 2 },
+  paperQuestionList: { marginTop: spacing.md, gap: spacing.md },
+  paperQuestionItem: { gap: spacing.xs },
+  paperQuestionLabel: { fontSize: 14, lineHeight: 21, fontWeight: '600', color: REPORT_INK },
+  paperQuestionNumber: { color: REPORT_INFO },
+  paperQuestionInput: { minHeight: 68, paddingHorizontal: spacing.sm, paddingVertical: 10, borderRadius: radius.sm, borderWidth: 1, borderColor: REPORT_BORDER_STRONG, backgroundColor: REPORT_SURFACE, fontSize: 15, lineHeight: 22, color: REPORT_INK },
+  paperQuestionFooter: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginTop: spacing.md },
+  paperQuestionStatus: { flex: 1, minWidth: 180, fontSize: 12, lineHeight: 18, color: REPORT_MUTED },
+  paperQuestionSaveButton: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.sm, backgroundColor: REPORT_ACCENT },
+  paperQuestionSaveButtonDisabled: { opacity: 0.42 },
+  paperQuestionSaveText: { fontSize: 14, lineHeight: 20, fontWeight: '700', color: REPORT_PAGE },
+  paperFooter: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, paddingVertical: spacing.xl, borderTopWidth: 1, borderTopColor: REPORT_BORDER },
+  paperFooterCopy: { flex: 1, minWidth: 210 },
+  paperGenerated: { fontSize: 12, lineHeight: 18, color: REPORT_SUBTLE },
+  paperFooterNote: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, marginTop: 2 },
+  paperIssueButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.sm, borderWidth: 1, borderColor: REPORT_BORDER_STRONG, backgroundColor: REPORT_PAGE },
+  paperIssueButtonText: { fontSize: 14, lineHeight: 20, fontWeight: '700', color: REPORT_MUTED },
 
   // Entry detail modal
   detailScreen: { paddingHorizontal: 0 },

@@ -5,7 +5,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { ScreenContainer, Card, SectionTitle } from '../../components/Card';
+import { ScreenContainer, Card } from '../../components/Card';
 import { Badge } from '../../components/Badge';
 import { ErrorState, EmptyState, LoadingState } from '../../components/States';
 import { SkeletonBlock } from '../../components/Skeleton';
@@ -14,9 +14,11 @@ import { ProgressBar } from '../../components/ProgressBar';
 import { MotionAnimation } from '../../components/MotionAnimation';
 import { WeeklyBodyMap } from '../../components/WeeklyBodyMap';
 import {
+  loadCoachBundleCached,
   loadProfileSettingsCached,
   loadWorkoutDayCached,
   loadWorkoutPlanCached,
+  peekCoachBundleCached,
   peekProfileSettingsCached,
   peekWorkoutDayCached,
   peekWorkoutPlanCached,
@@ -25,7 +27,7 @@ import { fetchUserPlans, PENDING_AI_PLAN_BUILD_KEY, selectWorkoutPlan } from '..
 import { hasSeenReadyPlan, markReadyPlanSeen } from '../../services/planRevealService';
 import { flushWorkoutQueue } from '../../store/workoutStore';
 import { getSiteUrl } from '../../constants/config';
-import type { AiPlanRefresh, PlanDay, ProgressSummary, TrainerInfo, UserPlanSummary } from '../../types/api';
+import type { AiPlanRefresh, CoachHubPayload, CoachOption, PlanDay, ProgressSummary, TrainerInfo, UserPlanSummary } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
 import { appTabBarStyle, hiddenTabBarStyle } from '../../navigation/tabBarStyle';
 import { colors } from '../../theme/colors';
@@ -39,6 +41,7 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutList'>;
 const TODAY_WORKOUT_KEY_PREFIX = 'formbae_today_workout:';
 const LAST_SEEN_STREAK_KEY = 'formbae_last_seen_workout_streak';
 const PENDING_STREAK_CELEBRATION_KEY = 'formbae_pending_workout_streak_celebration';
+const COACH_DISCOVERY_ART = require('../../assets/editorial/coach-discovery.jpg');
 
 function keepHeadingEndingTogether(value: string) {
   const words = value.trim().split(/\s+/);
@@ -111,6 +114,199 @@ function resolveTrainerPhotoUrl(value?: string, trainerName?: string) {
   if (/^https?:\/\//i.test(url)) return url;
   if (url.startsWith('/')) return `${getSiteUrl()}${url}`;
   return url;
+}
+
+function coachOptionIsAi(coach: CoachOption) {
+  const kind = String(coach.trainerKind || '').trim().toLowerCase();
+  if (kind === 'ai') return true;
+  if (kind === 'human') return false;
+  return ['female_ai', 'male_ai'].includes(String(coach.trainerPersona || '').trim().toLowerCase());
+}
+
+function coachOptionLabel(coach: CoachOption) {
+  const expertise = String(coach.expertise || '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+  if (expertise && !['female ai', 'male ai'].includes(expertise.toLowerCase())) return expertise;
+  return coachOptionIsAi(coach) ? 'Adaptive AI trainer' : 'Personal trainer';
+}
+
+function coachOptionPrice(coach: CoachOption) {
+  const upgradePaise = Math.round(Number(coach.upgradeAmountPaise || 0));
+  if (coach.requiresUpgrade && Number.isFinite(upgradePaise) && upgradePaise >= 100) {
+    return `₹${Math.round(upgradePaise / 100).toLocaleString('en-IN')} to unlock`;
+  }
+  if (coach.requiresUpgrade) return 'Upgrade required';
+  if (coach.canSelect) return 'Included';
+  return 'View availability';
+}
+
+type CoachPreview = {
+  id: string;
+  name: string;
+  photoUrl: string;
+  label: string;
+  price: string;
+  current: boolean;
+  option: boolean;
+};
+
+function CoachPreviewCard({
+  coach,
+  width,
+  fullWidth,
+  onPress,
+}: {
+  coach: CoachPreview;
+  width: number;
+  fullWidth: boolean;
+  onPress: () => void;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => setImageFailed(false), [coach.photoUrl]);
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.88}
+      onPress={onPress}
+      style={[styles.coachPreviewCard, { width }, fullWidth && styles.coachPreviewCardWide]}
+      accessibilityRole="button"
+      accessibilityLabel={`${coach.name}, ${coach.label}, ${coach.current ? 'your current coach' : coach.price}`}
+      accessibilityHint="Opens coach profile"
+      accessibilityState={{ selected: coach.current }}
+    >
+      <View style={[styles.coachPreviewVisual, fullWidth && styles.coachPreviewVisualWide]}>
+        {coach.photoUrl && !imageFailed ? (
+          <Image
+            source={{ uri: coach.photoUrl }}
+            style={styles.coachPreviewImage}
+            resizeMode="cover"
+            onError={() => setImageFailed(true)}
+            accessible={false}
+          />
+        ) : (
+          <View style={styles.coachPreviewFallback}>
+            <View style={styles.coachPreviewFallbackDisc} />
+            <Text style={styles.coachPreviewInitial}>{coach.name.slice(0, 1).toUpperCase()}</Text>
+          </View>
+        )}
+        <View style={[styles.coachPreviewTag, coach.current && styles.coachPreviewTagCurrent]}>
+          <Text style={[styles.coachPreviewTagText, coach.current && styles.coachPreviewTagTextCurrent]}>
+            {coach.current ? 'YOUR COACH' : coach.price === 'Included' ? 'INCLUDED' : 'EXPLORE'}
+          </Text>
+        </View>
+        <View style={styles.coachPreviewCaption}>
+          <Text style={styles.coachPreviewName} numberOfLines={1}>{coach.name}</Text>
+          <Text style={styles.coachPreviewRole} numberOfLines={1}>{coach.label}</Text>
+        </View>
+      </View>
+      <View style={styles.coachPreviewFooter}>
+        <Text style={styles.coachPreviewPrice}>{coach.current ? 'View coach' : coach.price}</Text>
+        <Feather name="arrow-up-right" size={17} color={colors.ink} />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function CoachDiscoverySection({
+  coaches,
+  viewportWidth,
+  fontScale,
+  onBrowse,
+  onOpenCoach,
+}: {
+  coaches: CoachPreview[];
+  viewportWidth: number;
+  fontScale: number;
+  onBrowse: () => void;
+  onOpenCoach: (coach: CoachPreview) => void;
+}) {
+  const largeText = fontScale >= 1.2;
+  const expandedHero = viewportWidth < 380;
+  const fullWidth = coaches.length === 1 || largeText;
+  const cardWidth = fullWidth
+    ? Math.min(560, Math.max(260, viewportWidth - (spacing.lg * 2)))
+    : Math.min(220, Math.max(196, viewportWidth * 0.6));
+
+  return (
+    <View style={styles.coachDiscoverySection}>
+      <View style={[styles.coachDiscoveryHeader, largeText && styles.coachDiscoveryHeaderLargeText]}>
+        <View style={[styles.coachDiscoveryHeaderCopy, largeText && styles.coachDiscoveryHeaderCopyLargeText]}>
+          <Text style={styles.coachDiscoveryTitle} accessibilityRole="header">Coaching</Text>
+          <Text style={styles.coachDiscoverySubtitle}>Guidance that fits how you train</Text>
+        </View>
+        <TouchableOpacity
+          onPress={onBrowse}
+          style={styles.coachDiscoverySeeAll}
+          accessibilityRole="button"
+          accessibilityLabel="See all coaches"
+        >
+          <Text style={styles.coachDiscoverySeeAllText}>See all</Text>
+          <Feather name="chevron-right" size={17} color={colors.ink} />
+        </TouchableOpacity>
+      </View>
+
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={onBrowse}
+        style={[
+          styles.coachDiscoveryHero,
+          expandedHero && styles.coachDiscoveryHeroExpanded,
+          largeText && styles.coachDiscoveryHeroLargeText,
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel="Explore coaching options"
+        accessibilityHint="Opens coach selection"
+      >
+        {largeText ? (
+          <>
+            <View style={styles.coachDiscoveryImageStage}>
+              <Image source={COACH_DISCOVERY_ART} style={styles.coachDiscoveryImageFlow} resizeMode="cover" accessible={false} />
+            </View>
+            <View style={styles.coachDiscoveryCopyFlow}>
+              <Text style={styles.coachDiscoveryKicker}>MEET YOUR MATCH</Text>
+              <Text style={styles.coachDiscoveryHeroTitle}>Train with the right support</Text>
+              <View style={styles.coachDiscoveryAction}>
+                <Text style={styles.coachDiscoveryActionText}>Explore coaches</Text>
+                <Feather name="arrow-right" size={16} color={colors.onPrimary} />
+              </View>
+            </View>
+          </>
+        ) : (
+          <>
+            <Image source={COACH_DISCOVERY_ART} style={styles.coachDiscoveryImage} resizeMode="cover" accessible={false} />
+            <View style={[styles.coachDiscoveryShade, expandedHero && styles.coachDiscoveryShadeExpanded]} />
+            <View style={[styles.coachDiscoveryCopy, expandedHero && styles.coachDiscoveryCopyExpanded]}>
+              <Text style={styles.coachDiscoveryKicker}>MEET YOUR MATCH</Text>
+              <Text style={styles.coachDiscoveryHeroTitle}>Train with the right support</Text>
+              <View style={styles.coachDiscoveryAction}>
+                <Text style={styles.coachDiscoveryActionText}>Explore coaches</Text>
+                <Feather name="arrow-right" size={16} color={colors.onPrimary} />
+              </View>
+            </View>
+          </>
+        )}
+      </TouchableOpacity>
+
+      {coaches.length ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.coachPreviewRail}
+          decelerationRate="fast"
+        >
+          {coaches.map(coach => (
+            <CoachPreviewCard
+              key={coach.id}
+              coach={coach}
+              width={cardWidth}
+              fullWidth={fullWidth}
+              onPress={() => onOpenCoach(coach)}
+            />
+          ))}
+        </ScrollView>
+      ) : null}
+    </View>
+  );
 }
 
 function waitForNextFrame() {
@@ -250,12 +446,13 @@ function GoldenStreakBadge({ streak, celebrationNonce }: { streak: number; celeb
 
 function WorkoutDashboardScreen({ navigation }: Props) {
   const tabBarHeight = useBottomTabBarHeight();
-  const { width: viewportWidth } = useWindowDimensions();
+  const { width: viewportWidth, fontScale } = useWindowDimensions();
   const warmData = peekWorkoutPlanCached();
   const warmPlan = (warmData?.plan || warmData?.today?.plan) as { planId?: string; days?: PlanDay[]; title?: string } | undefined;
   const warmDays = warmPlan?.days || [];
   const initialWarmDay = warmDays.find((day) => !day.completed) || warmDays[0];
   const warmSettings = peekProfileSettingsCached();
+  const warmCoachHub = peekCoachBundleCached()?.coachHub ?? null;
   const [days, setDays] = useState<PlanDay[]>(warmDays);
   const [title, setTitle] = useState(warmPlan?.title || 'My workout plan');
   const [planId, setPlanId] = useState(warmPlan?.planId || warmData?.today?.plan?.planId || '');
@@ -263,9 +460,9 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [focusedPlanDayId, setFocusedPlanDayId] = useState(initialWarmDay?.planDayId || '');
   const [planDaySelectionTouched, setPlanDaySelectionTouched] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
-  const [trainerPhotoFailed, setTrainerPhotoFailed] = useState(false);
   const [progress, setProgress] = useState<ProgressSummary | null>(warmData?.today?.progress || null);
   const [trainer, setTrainer] = useState<TrainerInfo | null>(warmData?.today?.assignedTrainer || null);
+  const [coachHub, setCoachHub] = useState<CoachHubPayload | null>(warmCoachHub);
   const [aiPlanRefresh, setAiPlanRefresh] = useState<AiPlanRefresh | null>(warmData?.aiPlanRefresh || null);
   const [loading, setLoading] = useState(!warmData);
   const [error, setError] = useState<string | null>(null);
@@ -283,6 +480,18 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const [bodyGender, setBodyGender] = useState<ReturnType<typeof resolveBodyGender>>(
     resolveBodyGender(warmSettings?.profile?.gender),
   );
+
+  useEffect(() => {
+    let active = true;
+    loadCoachBundleCached()
+      .then(bundle => {
+        if (active) setCoachHub(bundle.coachHub);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const load = useCallback(async (options?: { force?: boolean }) => {
     setError(null);
@@ -334,7 +543,6 @@ function WorkoutDashboardScreen({ navigation }: Props) {
       const readyPlanId = data.aiPlanRefresh?.build?.newPlanId || '';
       setReadyPlanAcknowledged(await hasSeenReadyPlan(readyPlanId));
       setBodyGender(resolveBodyGender(settings?.profile?.gender));
-      setTrainerPhotoFailed(false);
       if (warmDay?.planDayId) {
         loadWorkoutDayCached(warmDay.planDayId, 'standard').catch(() => undefined);
         loadWorkoutDayCached(warmDay.planDayId, 'quick').catch(() => undefined);
@@ -354,6 +562,7 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const planReadyToReveal = planBuildStatus === 'completed'
     && Boolean(builtPlanId)
     && builtPlanId === planId
+    && !aiPlanRefresh?.due
     && readyPlanAcknowledged === false;
 
   useEffect(() => {
@@ -383,7 +592,12 @@ function WorkoutDashboardScreen({ navigation }: Props) {
       (async () => {
         const pending = await AsyncStorage.getItem(PENDING_STREAK_CELEBRATION_KEY).catch(() => null);
         const pendingCompletion = parsePendingCompletion(pending);
-        await load({ force: Boolean(pending) });
+        await Promise.all([
+          load({ force: Boolean(pending) }),
+          loadCoachBundleCached()
+            .then(bundle => setCoachHub(bundle.coachHub))
+            .catch(() => undefined),
+        ]);
         if (pending) {
           await AsyncStorage.removeItem(PENDING_STREAK_CELEBRATION_KEY).catch(() => undefined);
           if (pendingCompletion.planDayId) {
@@ -398,7 +612,12 @@ function WorkoutDashboardScreen({ navigation }: Props) {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load({ force: true });
+    await Promise.all([
+      load({ force: true }),
+      loadCoachBundleCached({ force: true })
+        .then(bundle => setCoachHub(bundle.coachHub))
+        .catch(() => undefined),
+    ]);
     setRefreshing(false);
   };
 
@@ -418,6 +637,42 @@ function WorkoutDashboardScreen({ navigation }: Props) {
     }
   }, [focusedPlanDayId, planDaySelectionTouched, todayDay?.planDayId]);
   const focusedMuscles = useMemo(() => deriveWorkoutMuscles(focusedDay), [focusedDay]);
+  const coachPreviews = useMemo<CoachPreview[]>(() => {
+    const currentId = coachHub?.currentTrainer?.trainerId || trainer?.userId || '';
+    const options = coachHub?.trainers || [];
+    const ordered = [
+      ...(coachHub?.currentTrainer ? [coachHub.currentTrainer] : []),
+      ...options,
+    ];
+    const seen = new Set<string>();
+    const previews = ordered.flatMap(coach => {
+      if (!coach.trainerId || seen.has(coach.trainerId)) return [];
+      seen.add(coach.trainerId);
+      return [{
+        id: coach.trainerId,
+        name: coach.name || 'FormBae coach',
+        photoUrl: resolveTrainerPhotoUrl(coach.photoUrl, coach.name),
+        label: coachOptionLabel(coach),
+        price: coachOptionPrice(coach),
+        current: Boolean(currentId && coach.trainerId === currentId),
+        option: true,
+      }];
+    });
+    if (trainer && !previews.some(preview => preview.id === currentId)) {
+      previews.unshift({
+        id: trainer.userId || trainer.name,
+        name: trainer.name || 'FormBae coach',
+        photoUrl: resolveTrainerPhotoUrl(trainer.trainerPhotoUrl, trainer.name),
+        label: trainer.trainerDescription || 'Personal trainer',
+        price: 'Included',
+        current: true,
+        option: false,
+      });
+    }
+    return previews
+      .sort((a, b) => Number(b.current) - Number(a.current))
+      .slice(0, 3);
+  }, [coachHub, trainer]);
   const onSwitchTodayWorkout = async (day: PlanDay) => {
     setSelectedTodayPlanDayId(day.planDayId);
     setFocusedPlanDayId(day.planDayId);
@@ -528,13 +783,13 @@ function WorkoutDashboardScreen({ navigation }: Props) {
   const currentStreak = progress?.completionHistory
     ? deriveCurrentWeekStreak(progress.completionHistory)
     : Math.min(7, progress?.currentStreak ?? 0);
-  const trainerPhoto = resolveTrainerPhotoUrl(trainer?.trainerPhotoUrl, trainer?.name);
   const planHeading = planHeadingParts(title);
   const planTitleFontSize = viewportWidth < 380 || planHeading.title.length > 34
     ? 27
     : planHeading.title.length > 22
       ? 29
       : 32;
+  const alignRefreshContentToCopy = viewportWidth >= 600;
 
   return (
     <ScreenContainer>
@@ -547,7 +802,19 @@ function WorkoutDashboardScreen({ navigation }: Props) {
         {error ? (
           <ErrorState message={error} onRetry={load} />
         ) : days.length === 0 ? (
-          <EmptyState icon="calendar" title="No plan yet" message="Your workout plan will appear here once your trainer publishes it." />
+          <>
+            <EmptyState icon="calendar" title="No plan yet" message="Your workout plan will appear here once your trainer publishes it." />
+            <CoachDiscoverySection
+              coaches={coachPreviews}
+              viewportWidth={viewportWidth}
+              fontScale={fontScale}
+              onBrowse={() => navigation.navigate('Coach', { initialView: 'browse' })}
+              onOpenCoach={coach => navigation.navigate('Coach', {
+                initialView: coach.current || !coach.option ? 'about' : 'detail',
+                ...(coach.option ? { trainerId: coach.id } : {}),
+              })}
+            />
+          </>
         ) : (
           <>
             <View style={styles.headerRow}>
@@ -615,13 +882,13 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                     </Text>
                   </View>
                 </View>
-                <View style={styles.aiRefreshMetaRow}>
+                <View style={[styles.aiRefreshMetaRow, alignRefreshContentToCopy && styles.aiRefreshContentAligned]}>
                   <View style={styles.aiRefreshMetaItem}><Feather name="clock" size={14} color={colors.inkSubtle} /><Text style={styles.aiRefreshMetaText}>About 2 min</Text></View>
                   <View style={styles.aiRefreshMetaDot} />
                   <View style={styles.aiRefreshMetaItem}><Feather name="calendar" size={14} color={colors.inkSubtle} /><Text style={styles.aiRefreshMetaText}>{aiPlanRefresh.planAgeDays} day{aiPlanRefresh.planAgeDays === 1 ? '' : 's'} on this plan</Text></View>
                 </View>
                 {aiPlanRefresh.allowance?.allowed === false ? (
-                  <View style={styles.aiRefreshUnavailable}>
+                  <View style={[styles.aiRefreshUnavailable, alignRefreshContentToCopy && styles.aiRefreshContentAligned]}>
                     <Feather name="lock" size={15} color={colors.inkMuted} />
                     <Text style={styles.aiRefreshUnavailableText}>Check-in is unavailable right now. Your current plan stays active.</Text>
                   </View>
@@ -630,54 +897,13 @@ function WorkoutDashboardScreen({ navigation }: Props) {
                     title={aiPlanRefresh.build?.status === 'failed' ? 'Try building again' : 'Start check-in'}
                     icon={aiPlanRefresh.build?.status === 'failed' ? 'refresh-cw' : 'arrow-right'}
                     onPress={() => navigation.navigate('PlanRefresh', aiPlanRefresh.build?.status === 'failed' ? { retryFailedBuild: true } : undefined)}
-                    style={styles.aiRefreshButton}
+                    style={alignRefreshContentToCopy
+                      ? { ...styles.aiRefreshButton, ...styles.aiRefreshContentAligned }
+                      : styles.aiRefreshButton}
                   />
                 )}
               </View>
             ) : null}
-
-            <SectionTitle>Your coach</SectionTitle>
-            {trainer ? (
-              <Card variant="outline" style={styles.trainerCard} onPress={() => navigation.navigate('Coach')}>
-                <View style={styles.trainerPhotoWrap}>
-                  {trainerPhoto && !trainerPhotoFailed ? (
-                    <Image source={{ uri: trainerPhoto }} style={styles.trainerPhoto} resizeMode="cover" onError={() => setTrainerPhotoFailed(true)} />
-                  ) : (
-                    <View style={styles.trainerFallback}>
-                      <Text style={styles.trainerInitial}>{(trainer.name || 'T').slice(0, 1).toUpperCase()}</Text>
-                    </View>
-                  )}
-                </View>
-                <View style={styles.trainerInfo}>
-                  <Text style={styles.trainerLabel}>Your coach</Text>
-                  <Text style={styles.trainerName}>{trainer.name || 'FormBae Trainer'}</Text>
-                  <Text style={styles.trainerDescription}>
-                    {trainer.trainerDescription || 'Guiding your workout plan, check-ins and weekly progress.'}
-                  </Text>
-                </View>
-                <View style={styles.trainerBadge}>
-                  <Feather name="chevron-right" size={20} color={colors.accent} />
-                </View>
-              </Card>
-            ) : (
-              <Card variant="outline" style={styles.trainerCard} onPress={() => navigation.navigate('Coach')}>
-                <View style={styles.trainerPhotoWrap}>
-                  <View style={styles.trainerFallback}>
-                    <Feather name="user-plus" size={22} color={colors.accentDark} />
-                  </View>
-                </View>
-                <View style={styles.trainerInfo}>
-                  <Text style={styles.trainerLabel}>Your coach</Text>
-                  <Text style={styles.trainerName}>Coach not assigned yet</Text>
-                  <Text style={styles.trainerDescription}>
-                    Open coach details to see assignment status and available options.
-                  </Text>
-                </View>
-                <View style={styles.trainerBadge}>
-                  <Feather name="chevron-right" size={20} color={colors.accent} />
-                </View>
-              </Card>
-            )}
 
             <View style={styles.weekSection}>
               <View style={styles.weekHeader}>
@@ -814,6 +1040,17 @@ function WorkoutDashboardScreen({ navigation }: Props) {
               </View>
               <Feather name="chevron-right" size={20} color={colors.inkSubtle} />
             </TouchableOpacity>
+
+            <CoachDiscoverySection
+              coaches={coachPreviews}
+              viewportWidth={viewportWidth}
+              fontScale={fontScale}
+              onBrowse={() => navigation.navigate('Coach', { initialView: 'browse' })}
+              onOpenCoach={coach => navigation.navigate('Coach', {
+                initialView: coach.current || !coach.option ? 'about' : 'detail',
+                ...(coach.option ? { trainerId: coach.id } : {}),
+              })}
+            />
           </>
         )}
       </ScrollView>
@@ -1357,6 +1594,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.panelWarm,
   },
   aiRefreshCopy: { flex: 1, minWidth: 0 },
+  aiRefreshContentAligned: { marginLeft: 42 + spacing.md },
   aiRefreshKicker: { ...typography.overline, color: colors.gold },
   aiRefreshTitle: { ...typography.title, color: colors.ink, marginTop: 3 },
   aiRefreshText: { ...typography.body, color: colors.inkMuted, marginTop: spacing.xs, lineHeight: 22 },
@@ -1367,31 +1605,138 @@ const styles = StyleSheet.create({
   aiRefreshButton: { marginTop: spacing.sm },
   aiRefreshUnavailable: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, marginTop: spacing.sm, paddingTop: spacing.sm },
   aiRefreshUnavailableText: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 18 },
-  trainerCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md, padding: spacing.md },
-  trainerPhotoWrap: {
-    width: 58,
-    height: 58,
-    borderRadius: 22,
-    overflow: 'hidden',
-    backgroundColor: colors.accentLight,
-    borderWidth: 1,
-    borderColor: colors.accentSurface,
+  coachDiscoverySection: { marginTop: spacing.xl + spacing.sm },
+  coachDiscoveryHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    marginBottom: spacing.md,
   },
-  trainerPhoto: { width: '100%', height: '100%' },
-  trainerFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight },
-  trainerInitial: { ...typography.title, color: colors.accentDark },
-  trainerInfo: { flex: 1 },
-  trainerLabel: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase', marginBottom: 2 },
-  trainerName: { ...typography.subtitle, color: colors.ink },
-  trainerDescription: { ...typography.caption, color: colors.inkMuted, marginTop: 2, lineHeight: 17 },
-  trainerBadge: {
-    width: 34,
-    height: 34,
+  coachDiscoveryHeaderLargeText: { flexDirection: 'column', alignItems: 'stretch' },
+  coachDiscoveryHeaderCopy: { flex: 1, minWidth: 0 },
+  coachDiscoveryHeaderCopyLargeText: { flex: 0 },
+  coachDiscoveryTitle: { ...typography.title, color: colors.ink },
+  coachDiscoverySubtitle: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  coachDiscoverySeeAll: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingLeft: spacing.sm,
+  },
+  coachDiscoverySeeAllText: { ...typography.caption, color: colors.ink, fontWeight: '800' },
+  coachDiscoveryHero: {
+    height: 218,
+    overflow: 'hidden',
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.panel,
+  },
+  coachDiscoveryHeroExpanded: { height: 260 },
+  coachDiscoveryHeroLargeText: { height: 'auto' },
+  coachDiscoveryImage: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, width: '100%', height: '100%' },
+  coachDiscoveryImageStage: { height: 180, overflow: 'hidden', backgroundColor: colors.panelMuted },
+  coachDiscoveryImageFlow: { width: '100%', height: '100%' },
+  coachDiscoveryShade: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: '61%',
+    backgroundColor: 'rgba(5,6,10,0.78)',
+  },
+  coachDiscoveryShadeExpanded: { width: '78%' },
+  coachDiscoveryCopy: {
+    width: '58%',
+    height: '100%',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  coachDiscoveryCopyExpanded: { width: '76%', paddingHorizontal: spacing.lg },
+  coachDiscoveryCopyFlow: { padding: spacing.lg, backgroundColor: colors.panel },
+  coachDiscoveryKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
+  coachDiscoveryHeroTitle: {
+    fontSize: 25,
+    lineHeight: 30,
+    fontWeight: '900',
+    letterSpacing: -0.45,
+    color: colors.inkStrong,
+    marginTop: spacing.xs,
+  },
+  coachDiscoveryAction: {
+    minHeight: 40,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     borderRadius: radius.pill,
+    backgroundColor: colors.primaryAction,
+    paddingHorizontal: spacing.md,
+    marginTop: spacing.md,
+  },
+  coachDiscoveryActionText: { ...typography.caption, color: colors.onPrimary, fontWeight: '900' },
+  coachPreviewRail: { gap: spacing.md, paddingTop: spacing.md, paddingRight: spacing.lg },
+  coachPreviewCard: {
+    overflow: 'hidden',
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.panel,
+  },
+  coachPreviewCardWide: { alignSelf: 'stretch' },
+  coachPreviewVisual: { aspectRatio: 4 / 5, overflow: 'hidden', backgroundColor: colors.panelMuted },
+  coachPreviewVisualWide: { aspectRatio: 1.55 },
+  coachPreviewImage: { width: '100%', height: '100%' },
+  coachPreviewFallback: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accentLight,
+    overflow: 'hidden',
+    backgroundColor: colors.panelMuted,
   },
+  coachPreviewFallbackDisc: {
+    position: 'absolute',
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    backgroundColor: colors.panelWarm,
+  },
+  coachPreviewInitial: { fontSize: 64, lineHeight: 72, color: colors.goldMuted, fontWeight: '900' },
+  coachPreviewTag: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: spacing.sm,
+    minHeight: 27,
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(5,6,10,0.82)',
+    paddingHorizontal: spacing.sm,
+  },
+  coachPreviewTagCurrent: { backgroundColor: colors.gold },
+  coachPreviewTagText: { fontSize: 9, lineHeight: 12, fontWeight: '900', letterSpacing: 0.7, color: colors.ink },
+  coachPreviewTagTextCurrent: { color: colors.onPrimary },
+  coachPreviewCaption: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(5,6,10,0.82)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  coachPreviewName: { ...typography.subtitle, color: colors.inkStrong },
+  coachPreviewRole: { ...typography.caption, color: colors.onAccentMuted, marginTop: 1 },
+  coachPreviewFooter: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.md,
+  },
+  coachPreviewPrice: { ...typography.caption, color: colors.ink, fontWeight: '800' },
   weekSection: { marginTop: spacing.xl },
   weekHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.sm },
   weekHeaderCopy: { flex: 1, minWidth: 0 },

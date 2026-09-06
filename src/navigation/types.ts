@@ -45,9 +45,14 @@ export type ProgressStackParamList = {
   TrophyDetails: { openInfo?: boolean } | undefined;
 };
 
+export type CoachScreenParams = {
+  initialView?: 'about' | 'browse' | 'detail';
+  trainerId?: string;
+};
+
 export type WorkoutStackParamList = {
   WorkoutList: undefined;
-  Coach: undefined;
+  Coach: CoachScreenParams | undefined;
   PlanRefresh: { retryFailedBuild?: boolean } | undefined;
   WorkoutSummary: { planDayId: string; title: string; mode?: 'standard' | 'quick'; initialDetail?: WorkoutDayDetail };
   WorkoutDetail: { planDayId: string; title: string; mode?: 'standard' | 'quick'; initialDetail?: WorkoutDayDetail };
@@ -67,7 +72,7 @@ export type WorkoutStackParamList = {
 export type ProfileStackParamList = {
   ProfileMain: undefined;
   EditProfile: undefined;
-  Trainer: undefined;
+  Trainer: CoachScreenParams | undefined;
   Legal: undefined;
   DeleteAccount: undefined;
 };

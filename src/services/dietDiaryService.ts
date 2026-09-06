@@ -20,18 +20,37 @@ export type RemoteDietDiaryEntry = {
 
 type DietDiaryMutationResponse = { ok: boolean; entry: RemoteDietDiaryEntry; trophies?: TrophySummary };
 
+export const DIET_DIARY_CACHE_KEY = 'dietDiary:v3';
+
+export type DietReportSectionId =
+  | 'overview'
+  | 'weeklyPlan'
+  | 'observations'
+  | 'coachNote'
+  | 'questions'
+  | 'loggingRhythm'
+  | 'mealGuidance'
+  | 'patternsAndFoodCoverage'
+  | 'goalsRhythmTraining'
+  | 'mealFormulaAndSwaps'
+  | 'scoreDetails'
+  | 'sourcesAndLimitations';
+
 export type DietCoachFeedback = {
   schemaVersion?: number;
   template?: { id: 'weekly-diet-report'; version: number };
+  sectionOrder?: DietReportSectionId[];
   weekStartDate: string;
   weekEndDate?: string;
   generatedAt: string;
+  previousReports?: DietCoachFeedback[];
   title: string;
   headline?: string;
   summary: string;
   nextFocus: string;
   highlights: string[];
   score?: {
+    availability?: 'available' | 'insufficientEvidence' | 'temporarilyUnavailable';
     overall: number;
     label: string;
     trend?: number | null;
@@ -101,19 +120,41 @@ export type DietCoachFeedback = {
     trackingFocus?: string;
   };
   questionsForNextWeek?: string[];
+  questionResponses?: Array<{ questionIndex?: number; question: string; answer: string }>;
   coachNote?: string;
   limitations?: string[];
+  safetyNotices?: Array<{
+    id?: string;
+    title?: string;
+    body: string;
+    severity?: 'info' | 'warning' | 'urgent';
+  }>;
+  sections?: Array<{
+    id?: string;
+    title: string;
+    summary?: string;
+    paragraphs?: string[];
+    items?: string[];
+  }>;
   status?: 'pending' | 'ready';
   nextInDays?: number;
+  /** Evidence accumulated since the last generated report, expressed from 0–100. */
+  enrichmentScore?: number;
+  requirements?: {
+    /** Minimum enrichment score required before report generation can run. */
+    enrichment?: number;
+  };
   stats: {
     loggedItems: number;
     mealMoments?: number;
     daysLogged: number;
     describedEntries?: number;
+    describedDaysLogged?: number;
     memoryEntries: number;
     photoEntries: number;
     workoutsCompleted?: number;
     mealCounts: Record<string, number>;
+    describedMealCounts?: Record<string, number>;
     recentFoods: string[];
   };
 };
@@ -124,13 +165,39 @@ export type DietReportChart = {
   title: string;
   subtitle: string;
   unit: 'meals' | 'points';
-  points: Array<{ key: string; date: string; label: string; value: number }>;
+  points: Array<{
+    key: string;
+    date: string;
+    label: string;
+    value: number | null;
+    missingReason?: string;
+  }>;
   minValue?: number;
   maxValue: number;
 };
 
 export async function fetchDietDiary() {
-  return apiRequest<{ entries: RemoteDietDiaryEntry[]; feedback?: DietCoachFeedback }>('/diet/diary');
+  return apiRequest<{ entries: RemoteDietDiaryEntry[]; feedback?: DietCoachFeedback }>('/diet/diary', {
+    // A newly due report can be generated during this request. Avoid retrying
+    // the same expensive generation while the first request is still active.
+    timeoutMs: 90000,
+    retries: 0,
+  });
+}
+
+export async function submitDietReportResponses(params: {
+  reportGeneratedAt: string;
+  answers: Array<{ questionIndex: number; answer: string }>;
+}) {
+  const response = await apiRequest<{
+    ok: boolean;
+    answers: Array<{ questionIndex: number; question: string; answer: string }>;
+  }>('/diet/report/responses', {
+    method: 'PATCH',
+    body: params,
+  });
+  invalidateCachedResource(DIET_DIARY_CACHE_KEY);
+  return response;
 }
 
 export async function uploadDietDiaryEntry(params: {
@@ -159,7 +226,7 @@ export async function uploadDietDiaryEntry(params: {
       imageBase64,
     },
   });
-  invalidateCachedResource('dietDiary');
+  invalidateCachedResource(DIET_DIARY_CACHE_KEY);
   invalidateCachedResource('progressBundle');
   publishOrRefreshTrophySummary(response.trophies);
   return response;
@@ -180,7 +247,7 @@ export async function uploadTextDietDiaryEntry(params: {
       createdAt: params.createdAt,
     },
   });
-  invalidateCachedResource('dietDiary');
+  invalidateCachedResource(DIET_DIARY_CACHE_KEY);
   invalidateCachedResource('progressBundle');
   publishOrRefreshTrophySummary(response.trophies);
   return response;
@@ -195,7 +262,7 @@ export async function uploadSkippedDietMeal(params: {
     method: 'POST',
     body: { ...params, status: 'skipped' },
   });
-  invalidateCachedResource('dietDiary');
+  invalidateCachedResource(DIET_DIARY_CACHE_KEY);
   invalidateCachedResource('progressBundle');
   publishOrRefreshTrophySummary(response.trophies);
   return response;
@@ -212,7 +279,7 @@ export async function updateRemoteDietDiaryEntry(
       body: params,
     },
   );
-  invalidateCachedResource('dietDiary');
+  invalidateCachedResource(DIET_DIARY_CACHE_KEY);
   invalidateCachedResource('progressBundle');
   publishOrRefreshTrophySummary(response.trophies);
   return response;
@@ -220,7 +287,7 @@ export async function updateRemoteDietDiaryEntry(
 
 export async function deleteRemoteDietDiaryEntry(entryId: string) {
   const response = await apiRequest<{ ok: boolean; trophies?: TrophySummary }>(`/diet/diary/${encodeURIComponent(entryId)}`, { method: 'DELETE' });
-  invalidateCachedResource('dietDiary');
+  invalidateCachedResource(DIET_DIARY_CACHE_KEY);
   invalidateCachedResource('progressBundle');
   publishOrRefreshTrophySummary(response.trophies);
   return response;

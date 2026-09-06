@@ -1,6 +1,6 @@
 import { getCachedResource, peekCachedResource } from './appCache';
 import { fetchAccountability, fetchAccountabilityBae } from './accountabilityService';
-import { fetchDietDiary } from './dietDiaryService';
+import { DIET_DIARY_CACHE_KEY, fetchDietDiary } from './dietDiaryService';
 import { fetchMessages } from './messageService';
 import { fetchProgress, fetchTrophyLeaderboard, flushPendingProgressLogs } from './progressService';
 import { fetchSettings } from './settingsService';
@@ -14,7 +14,7 @@ export const CACHE_KEYS = {
   // Bump when the progress response contract changes so an older persisted
   // bundle cannot hide a newly generated weekly review after an app update.
   progressBundle: 'progressBundle:v11',
-  dietDiary: 'dietDiary',
+  dietDiary: DIET_DIARY_CACHE_KEY,
   profileSettings: 'profileSettings',
   coachBundle: 'coachBundle',
   workoutDay: 'workoutDay',

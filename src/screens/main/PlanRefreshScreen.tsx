@@ -44,6 +44,14 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'PlanRefresh'>;
 
 const PLAN_REFRESH_DRAFT_PREFIX = 'plan-refresh-draft:';
 const CHECK_IN_LOAD_TIMEOUT_MS = 18000;
+type PlanRefreshPhase = 'form' | 'building' | 'success';
+
+export function resolvePlanRefreshPhase(refresh: AiPlanRefresh | null): PlanRefreshPhase {
+  const buildStatus = refresh?.build?.status;
+  if (buildStatus === 'building' || buildStatus === 'requested') return 'building';
+  if (refresh && !refresh.due && buildStatus === 'completed' && refresh.build?.newPlanId) return 'success';
+  return 'form';
+}
 
 function withCheckInTimeout<T>(promise: Promise<T>) {
   return new Promise<T>((resolve, reject) => {
@@ -79,7 +87,7 @@ export function PlanRefreshScreen({ navigation, route }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
-  const [phase, setPhase] = useState<'form' | 'building' | 'success'>('form');
+  const [phase, setPhase] = useState<PlanRefreshPhase>('form');
 
   useLayoutEffect(() => {
     navigation.getParent()?.setOptions({ tabBarStyle: hiddenTabBarStyle });
@@ -97,10 +105,10 @@ export function PlanRefreshScreen({ navigation, route }: Props) {
       setDays(plan?.days || []);
       const refresh = data.aiPlanRefresh || null;
       setAiPlanRefresh(refresh);
-      const buildStatus = refresh?.build?.status;
-      if (buildStatus === 'building' || buildStatus === 'requested') {
+      const nextPhase = resolvePlanRefreshPhase(refresh);
+      if (nextPhase === 'building') {
         setPhase('building');
-      } else if (buildStatus === 'completed' && refresh?.build?.newPlanId) {
+      } else if (nextPhase === 'success' && refresh?.build?.newPlanId) {
         await markReadyPlanSeen(refresh.build.newPlanId).catch(() => undefined);
         allowExitRef.current = true;
         setPhase('success');

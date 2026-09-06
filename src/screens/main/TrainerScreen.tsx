@@ -1,19 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AccessibilityInfo,
   ActivityIndicator,
   Alert,
-  Animated,
-  Easing,
   Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, Card } from '../../components/Card';
@@ -28,12 +26,15 @@ import { loadCoachBundleCached, peekCoachBundleCached } from '../../services/pre
 import { useAuthStore } from '../../store/authStore';
 import { getSiteUrl } from '../../constants/config';
 import type { CoachOption, PaymentPlan } from '../../types/api';
+import type { CoachScreenParams } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
 
 type CoachTab = 'about' | 'change' | 'detail';
+type CoachFilter = 'all' | 'ai' | 'personal';
+type CoachRoute = RouteProp<{ Coach: CoachScreenParams | undefined }, 'Coach'>;
 
 function photoUrl(value: string) {
   const url = value.trim();
@@ -47,6 +48,16 @@ function formatPrice(value: string) {
   const amount = Number(String(value || '').replace(/,/g, '').trim());
   if (!Number.isFinite(amount) || amount <= 0) return 'Included';
   return `₹${amount.toLocaleString('en-IN')}/mo`;
+}
+
+function coachAccessPrice(coach: CoachOption) {
+  const upgradePaise = Math.round(Number(coach.upgradeAmountPaise || 0));
+  if (coach.requiresUpgrade && Number.isFinite(upgradePaise) && upgradePaise >= 100) {
+    return `₹${Math.round(upgradePaise / 100).toLocaleString('en-IN')} to unlock`;
+  }
+  if (coach.requiresUpgrade) return 'Upgrade required';
+  if (coach.canSelect) return 'Included';
+  return formatPrice(coach.monthlyFee);
 }
 
 function formatCoachLabel(coach: CoachOption) {
@@ -107,8 +118,17 @@ function trainerUpgradePlan(coach: CoachOption): PaymentPlan | null {
 
 export function TrainerScreen() {
   const navigation = useNavigation();
+  const route = useRoute<CoachRoute>();
   const tabBarHeight = useBottomTabBarHeight();
-  const [tab, setTab] = useState<CoachTab>('about');
+  const { width: viewportWidth, fontScale } = useWindowDimensions();
+  const [tab, setTab] = useState<CoachTab>(
+    route.params?.initialView === 'browse'
+      ? 'change'
+      : route.params?.initialView === 'detail'
+        ? 'detail'
+        : 'about',
+  );
+  const [filter, setFilter] = useState<CoachFilter>('all');
   const [viewingCoach, setViewingCoach] = useState<CoachOption | null>(null);
   const [changingId, setChangingId] = useState('');
   const [payingTrainerId, setPayingTrainerId] = useState('');
@@ -118,12 +138,71 @@ export function TrainerScreen() {
     loadCoachBundleCached({ force: mode === 'refresh' }),
   [], { initialData: peekCoachBundleCached() });
 
-  const currentCoach = data?.coachHub.currentTrainer ?? data?.coachHub.trainers[0] ?? null;
+  const appliedRouteRef = useRef('');
+  const currentCoach = data?.coachHub.currentTrainer ?? null;
   const selectedCoach = useMemo(
-    () => data?.coachHub.trainers.find((coach) => coach.trainerId === currentCoach?.trainerId) ?? currentCoach,
+    () => currentCoach
+      ? data?.coachHub.trainers.find((coach) => coach.trainerId === currentCoach.trainerId) ?? currentCoach
+      : null,
     [currentCoach, data?.coachHub.trainers],
   );
   const currentIsAi = currentCoach ? isAiCoach(currentCoach) : false;
+  const availableCoaches = useMemo(() => {
+    const coaches = [
+      ...(data?.coachHub.currentTrainer ? [data.coachHub.currentTrainer] : []),
+      ...(data?.coachHub.trainers || []),
+    ];
+    const seen = new Set<string>();
+    return coaches.filter(coach => {
+      if (!coach.trainerId || seen.has(coach.trainerId)) return false;
+      seen.add(coach.trainerId);
+      return true;
+    });
+  }, [data?.coachHub.currentTrainer, data?.coachHub.trainers]);
+  const hasAiCoaches = availableCoaches.some(isAiCoach);
+  const hasPersonalCoaches = availableCoaches.some(coach => !isAiCoach(coach));
+  const showFilters = hasAiCoaches && hasPersonalCoaches;
+  const activeFilter: CoachFilter = (filter === 'ai' && !hasAiCoaches) || (filter === 'personal' && !hasPersonalCoaches)
+    ? 'all'
+    : filter;
+
+  useEffect(() => {
+    if ((filter === 'ai' && !hasAiCoaches) || (filter === 'personal' && !hasPersonalCoaches)) {
+      setFilter('all');
+    }
+  }, [filter, hasAiCoaches, hasPersonalCoaches]);
+
+  const visibleCoaches = useMemo(() => {
+    const filtered = availableCoaches.filter(coach => (
+      activeFilter === 'all' || (activeFilter === 'ai' ? isAiCoach(coach) : !isAiCoach(coach))
+    ));
+    return [...filtered].sort((a, b) => (
+      Number(b.trainerId === currentCoach?.trainerId) - Number(a.trainerId === currentCoach?.trainerId)
+    ));
+  }, [activeFilter, availableCoaches, currentCoach?.trainerId]);
+  const stackCoachCards = viewportWidth < 390 || fontScale >= 1.2;
+
+  useEffect(() => {
+    if (!data) return;
+    const routeKey = `${route.key}:${route.params?.initialView || 'about'}:${route.params?.trainerId || ''}`;
+    if (appliedRouteRef.current === routeKey) return;
+    const requestedCoach = route.params?.trainerId
+      ? availableCoaches.find(coach => coach.trainerId === route.params?.trainerId) || null
+      : null;
+    if (route.params?.initialView === 'detail') {
+      setViewingCoach(requestedCoach);
+      setTab(requestedCoach ? 'detail' : 'change');
+    } else if (route.params?.initialView === 'browse' || !data.coachHub.currentTrainer) {
+      setViewingCoach(null);
+      setTab('change');
+    } else {
+      setViewingCoach(null);
+      setTab('about');
+    }
+    appliedRouteRef.current = routeKey;
+  }, [availableCoaches, data, route.key, route.params?.initialView, route.params?.trainerId]);
+
+  const activeTab: CoachTab = !currentCoach && tab === 'about' ? 'change' : tab;
 
   const startTrainerUpgrade = useCallback(
     async (coach: CoachOption) => {
@@ -205,6 +284,7 @@ export function TrainerScreen() {
   if (loading) {
     return (
       <ScreenContainer>
+        <CoachHeader title="Coaching" onBack={() => navigation.canGoBack() && navigation.goBack()} />
         <LoadingState message="Loading your coach..." />
       </ScreenContainer>
     );
@@ -213,14 +293,16 @@ export function TrainerScreen() {
   if (error || !data) {
     return (
       <ScreenContainer>
+        <CoachHeader title="Coaching" onBack={() => navigation.canGoBack() && navigation.goBack()} />
         <ErrorState message={error || 'Could not load your coach.'} onRetry={reload} />
       </ScreenContainer>
     );
   }
 
-  if (!currentCoach) {
+  if (!currentCoach && !availableCoaches.length) {
     return (
       <ScreenContainer>
+        <CoachHeader title="Coaching" onBack={() => navigation.canGoBack() && navigation.goBack()} />
         <EmptyState icon="user-plus" title="No coach assigned" message="Your coach will appear here once assigned." />
       </ScreenContainer>
     );
@@ -229,19 +311,19 @@ export function TrainerScreen() {
   return (
     <ScreenContainer>
       <CoachHeader
-        title={tab === 'change' ? 'Upgrade coach' : tab === 'detail' ? 'Coach profile' : 'Your coach'}
+        title={activeTab === 'change' ? 'Coaches' : activeTab === 'detail' ? 'Coach profile' : 'Your coach'}
         onBack={() => {
-          if (tab === 'detail') {
+          if (activeTab === 'detail') {
             setViewingCoach(null);
             setTab('change');
-          } else if (tab === 'change') {
+          } else if (activeTab === 'change' && currentCoach) {
             setTab('about');
           } else if (navigation.canGoBack()) {
             navigation.goBack();
           }
         }}
       />
-      {tab === 'about' ? (
+      {activeTab === 'about' && currentCoach ? (
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
@@ -252,20 +334,27 @@ export function TrainerScreen() {
         </ScrollView>
       ) : null}
 
-      {tab === 'change' ? (
+      {activeTab === 'change' ? (
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
         >
-          <ChangeCoachHeader />
-          <View style={styles.coachList}>
-            {data.coachHub.trainers.map((coach) => (
+          <ChangeCoachHeader
+            accessLabel={data.coachHub.access?.trainerAccessLabel || ''}
+            accessRemainingWeeks={data.coachHub.access?.trainerAccessRemainingWeeks || 0}
+            filter={activeFilter}
+            showFilters={showFilters}
+            onFilter={setFilter}
+          />
+          <View style={[styles.coachList, stackCoachCards && styles.coachListStack]}>
+            {visibleCoaches.map((coach) => (
               <CoachOptionCard
                 key={coach.trainerId}
                 coach={coach}
-                current={coach.trainerId === currentCoach.trainerId}
+                current={coach.trainerId === currentCoach?.trainerId}
                 changing={changingId === coach.trainerId || payingTrainerId === coach.trainerId}
+                fullWidth={stackCoachCards}
                 onPress={() => {
                   setViewingCoach(coach);
                   setTab('detail');
@@ -276,10 +365,10 @@ export function TrainerScreen() {
         </ScrollView>
       ) : null}
 
-      {tab === 'detail' && viewingCoach ? (
+      {activeTab === 'detail' && viewingCoach ? (
         <CoachDetailPage
           coach={viewingCoach}
-          current={viewingCoach.trainerId === currentCoach.trainerId}
+          current={viewingCoach.trainerId === currentCoach?.trainerId}
           loading={changingId === viewingCoach.trainerId || payingTrainerId === viewingCoach.trainerId}
           tabBarHeight={tabBarHeight}
           onContinue={() => {
@@ -288,6 +377,10 @@ export function TrainerScreen() {
                 'Coach change locked',
                 `${viewingCoach.reason} You can change again after ${formatUnlockDate(viewingCoach.blockedUntil)}.`,
               );
+              return;
+            }
+            if (!viewingCoach.canSelect && !viewingCoach.requiresUpgrade) {
+              Alert.alert('Coach unavailable', viewingCoach.reason || 'This coach is not available with your current access.');
               return;
             }
             if (viewingCoach.requiresUpgrade) {
@@ -316,11 +409,15 @@ function CoachHeader({ title, onBack }: { title: string; onBack: () => void }) {
 
 function CoachHero({ coach, ai }: { coach: CoachOption; ai: boolean }) {
   const image = photoUrl(coach.photoUrl);
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => setImageFailed(false), [image]);
+
   return (
     <View style={styles.hero}>
       <View style={styles.heroTop}>
-        {image ? (
-          <Image source={{ uri: image }} style={styles.heroImage} resizeMode="cover" />
+        {image && !imageFailed ? (
+          <Image source={{ uri: image }} style={styles.heroImage} resizeMode="cover" onError={() => setImageFailed(true)} accessible={false} />
         ) : (
           <View style={styles.aiPhotoFallback}>
             <Feather name="user" size={28} color={colors.inkMuted} />
@@ -376,55 +473,6 @@ function CoachAbout({
 }
 
 function GoldUpgradeButton({ onPress }: { onPress: () => void }) {
-  const shimmer = useRef(new Animated.Value(0)).current;
-  const pulse = useRef(new Animated.Value(0)).current;
-  const [reduceMotion, setReduceMotion] = useState(false);
-
-  useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => undefined);
-    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
-    return () => subscription.remove();
-  }, []);
-
-  useEffect(() => {
-    if (reduceMotion) {
-      shimmer.stopAnimation();
-      pulse.stopAnimation();
-      shimmer.setValue(0);
-      pulse.setValue(0);
-      return undefined;
-    }
-
-    const shimmerLoop = Animated.loop(
-      Animated.sequence([
-        Animated.delay(500),
-        Animated.timing(shimmer, {
-          toValue: 1,
-          duration: 1500,
-          easing: Easing.inOut(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.delay(1800),
-      ]),
-    );
-    const pulseLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ]),
-    );
-    shimmerLoop.start();
-    pulseLoop.start();
-    return () => {
-      shimmerLoop.stop();
-      pulseLoop.stop();
-    };
-  }, [pulse, reduceMotion, shimmer]);
-
-  const shimmerTranslate = shimmer.interpolate({ inputRange: [0, 1], outputRange: [-120, 360] });
-  const glowScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.98, 1.025] });
-  const glowOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.38, 0.7] });
-
   return (
     <TouchableOpacity
       activeOpacity={0.9}
@@ -433,12 +481,7 @@ function GoldUpgradeButton({ onPress }: { onPress: () => void }) {
       accessibilityRole="button"
       accessibilityLabel="Upgrade to a personal coach"
     >
-      <Animated.View pointerEvents="none" style={[styles.goldGlow, { opacity: glowOpacity, transform: [{ scale: glowScale }] }]} />
       <View style={styles.goldButton}>
-        <Animated.View
-          pointerEvents="none"
-          style={[styles.goldShimmer, { transform: [{ translateX: shimmerTranslate }, { rotate: '16deg' }] }]}
-        />
         <View style={styles.goldIcon}>
           <Feather name="star" size={22} color="#251800" />
         </View>
@@ -452,13 +495,58 @@ function GoldUpgradeButton({ onPress }: { onPress: () => void }) {
   );
 }
 
-function ChangeCoachHeader() {
+function ChangeCoachHeader({
+  accessLabel,
+  accessRemainingWeeks,
+  filter,
+  showFilters,
+  onFilter,
+}: {
+  accessLabel: string;
+  accessRemainingWeeks: number;
+  filter: CoachFilter;
+  showFilters: boolean;
+  onFilter: (filter: CoachFilter) => void;
+}) {
+  const accessCopy = accessRemainingWeeks > 0
+    ? `${accessRemainingWeeks} week${accessRemainingWeeks === 1 ? '' : 's'} of coach access remaining`
+    : String(accessLabel || '').trim();
   return (
     <View style={styles.changeHeader}>
       <View style={styles.changeHeaderText}>
         <Text style={styles.changeTitle}>Choose a coach</Text>
-        <Text style={styles.changeSubtitle}>Compare experience, availability, and access before continuing.</Text>
+        <Text style={styles.changeSubtitle}>Compare coaching style and access.</Text>
       </View>
+      {accessCopy ? (
+        <View style={styles.accessStrip}>
+          <View style={styles.accessStripIcon}><Feather name="check" size={14} color={colors.onPrimary} /></View>
+          <Text style={styles.accessStripText}>
+            {accessCopy}
+          </Text>
+        </View>
+      ) : null}
+      {showFilters ? (
+        <View style={styles.filterRow} accessibilityRole="radiogroup">
+          {([
+            ['all', 'All'],
+            ['ai', 'AI'],
+            ['personal', 'Personal'],
+          ] as Array<[CoachFilter, string]>).map(([value, label]) => {
+            const selected = filter === value;
+            return (
+              <TouchableOpacity
+                key={value}
+                onPress={() => onFilter(value)}
+                style={[styles.filterButton, selected && styles.filterButtonSelected]}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+              >
+                <Text style={[styles.filterText, selected && styles.filterTextSelected]}>{label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -489,11 +577,43 @@ function CoachDetailPage({
   onContinue: () => void;
 }) {
   const image = photoUrl(coach.photoUrl);
+  const [imageFailed, setImageFailed] = useState(false);
   const firstName = coach.name.trim().split(/\s+/)[0] || 'coach';
   const isAi = isAiCoach(coach);
   const isLocked = Boolean(coach.blockedUntil);
-  const languages = coach.languages?.filter(Boolean).join(', ') || 'English';
-  const availability = coach.availableSlotCount > 0 ? `${coach.availableSlotCount} slots open` : 'Shared after access';
+  const isUnavailable = !current && !coach.canSelect && !coach.requiresUpgrade && !isLocked;
+  const languages = coach.languages?.filter(Boolean).join(', ') || '';
+  const availability = coach.availableSlotCount > 0 ? `${coach.availableSlotCount} slots open` : '';
+  const nextOpening = coach.nextSlotAt && Number.isFinite(new Date(coach.nextSlotAt).getTime())
+    ? formatNextSlot(coach.nextSlotAt)
+    : '';
+  const detailFacts = [
+    { icon: 'globe', label: 'Languages', value: languages },
+    { icon: 'calendar', label: 'Availability', value: availability },
+    { icon: 'clock', label: 'Next opening', value: nextOpening },
+    {
+      icon: 'credit-card',
+      label: 'Coach access',
+      value: current
+        ? 'Current access'
+        : isLocked
+          ? `Available ${formatUnlockDate(coach.blockedUntil)}`
+          : isUnavailable
+            ? 'Not available'
+            : coachAccessPrice(coach),
+    },
+  ].filter(item => item.value);
+  const actionTitle = current
+    ? 'Current coach'
+    : isLocked
+      ? `Available ${formatUnlockDate(coach.blockedUntil)}`
+      : isUnavailable
+        ? 'Not available'
+      : coach.requiresUpgrade
+        ? `Unlock ${firstName}`
+        : `Choose ${firstName}`;
+
+  useEffect(() => setImageFailed(false), [image]);
 
   return (
     <ScrollView
@@ -502,8 +622,8 @@ function CoachDetailPage({
     >
       <View style={styles.detailHero}>
         <View style={styles.detailHeroTop}>
-          {image ? (
-            <Image source={{ uri: image }} style={styles.detailImage} resizeMode="cover" />
+          {image && !imageFailed ? (
+            <Image source={{ uri: image }} style={styles.detailImage} resizeMode="cover" onError={() => setImageFailed(true)} accessible={false} />
           ) : (
             <Avatar name={coach.name} size={94} tone={current ? 'accent' : 'neutral'} />
           )}
@@ -517,7 +637,7 @@ function CoachDetailPage({
           <Badge label={coach.tier || 'Coach'} tone="gold" icon="award" />
           {current ? <Badge label="Current coach" tone="neutral" icon="check" /> : null}
         </View>
-        <Text style={styles.detailPrice}>{formatPrice(coach.monthlyFee)}</Text>
+        {!current ? <Text style={styles.detailPrice}>{coachAccessPrice(coach)}</Text> : null}
         <Text style={styles.detailIntro}>{coachBlurb(coach)}</Text>
       </View>
 
@@ -543,26 +663,37 @@ function CoachDetailPage({
         </Card>
       </View>
 
-      <View style={styles.detailSection}>
-        <Text style={styles.detailSectionTitle}>Coach details</Text>
-        <View style={styles.detailGrid}>
-          <DetailFact icon="globe" label="Languages" value={languages} />
-          <DetailFact icon="calendar" label="Availability" value={availability} />
-          <DetailFact icon="clock" label="Next opening" value={formatNextSlot(coach.nextSlotAt)} />
-          <DetailFact icon="credit-card" label="Coach access" value={formatPrice(coach.monthlyFee)} />
+      {detailFacts.length ? (
+        <View style={styles.detailSection}>
+          <Text style={styles.detailSectionTitle}>Coach details</Text>
+          <View style={styles.detailGrid}>
+            {detailFacts.map(fact => <DetailFact key={fact.label} {...fact} />)}
+          </View>
         </View>
-      </View>
+      ) : null}
 
       <Card style={styles.checkoutNote}>
         <View style={styles.checkoutNoteIcon}>
           <Feather name={current ? 'check' : 'shield'} size={18} color={current ? colors.success : colors.ink} />
         </View>
         <View style={styles.checkoutNoteText}>
-          <Text style={styles.checkoutNoteTitle}>{current ? 'This is your current coach' : 'Secure coach access'}</Text>
+          <Text style={styles.checkoutNoteTitle}>
+            {current
+              ? 'This is your current coach'
+              : isUnavailable
+                ? 'Currently unavailable'
+                : coach.requiresUpgrade
+                  ? 'Secure coach access'
+                  : 'Your progress stays connected'}
+          </Text>
           <Text style={styles.checkoutNoteBody}>
             {current
               ? 'Your current plan and workout history are already connected to this coach.'
-              : 'Both options continue to the coach paywall. You can choose an available slot after payment is verified.'}
+              : isUnavailable
+                ? coach.reason || 'This coach is not available with your current access.'
+              : coach.requiresUpgrade
+                ? 'Complete the coach upgrade securely. Your existing workout history stays connected after access is confirmed.'
+                : 'Changing coaches keeps your workout history and current progress intact.'}
           </Text>
         </View>
       </Card>
@@ -571,20 +702,11 @@ function CoachDetailPage({
 
       <View style={styles.detailActions}>
         <PrimaryButton
-          title="Book a slot"
-          icon="calendar"
-          variant="secondary"
+          title={actionTitle}
+          icon={current ? 'check' : isLocked ? 'lock' : coach.requiresUpgrade ? 'unlock' : 'arrow-right'}
           size="lg"
           loading={loading}
-          disabled={current || isLocked}
-          onPress={onContinue}
-        />
-        <PrimaryButton
-          title={current ? 'Current coach' : `Proceed with ${firstName}`}
-          icon={current ? 'check' : 'arrow-right'}
-          size="lg"
-          loading={loading}
-          disabled={current || isLocked}
+          disabled={current || isLocked || isUnavailable}
           onPress={onContinue}
         />
       </View>
@@ -630,60 +752,69 @@ function CoachOptionCard({
   coach,
   current,
   changing,
+  fullWidth,
   onPress,
 }: {
   coach: CoachOption;
   current: boolean;
   changing: boolean;
+  fullWidth: boolean;
   onPress: () => void;
 }) {
   const image = photoUrl(coach.photoUrl);
+  const [imageFailed, setImageFailed] = useState(false);
   const label = formatCoachLabel(coach);
-  const blurb = coachBlurb(coach);
   const disabled = changing;
-  const actionLabel = current ? 'View' : 'View profile';
+  const locked = Boolean(coach.blockedUntil);
+  const status = current ? 'Current' : coach.requiresUpgrade ? 'Upgrade' : coach.canSelect ? 'Included' : 'View';
+
+  useEffect(() => setImageFailed(false), [image]);
+
   return (
     <TouchableOpacity
       activeOpacity={0.84}
       onPress={onPress}
       disabled={disabled}
-      style={[styles.optionCard, current && styles.optionCurrent, coach.requiresUpgrade && styles.optionUpgrade]}
+      style={[
+        styles.optionCard,
+        fullWidth && styles.optionCardFull,
+        current && styles.optionCurrent,
+        coach.requiresUpgrade && styles.optionUpgrade,
+      ]}
       accessibilityRole="button"
-      accessibilityLabel={`View ${coach.name}'s coach profile`}
-      accessibilityState={{ disabled }}
+      accessibilityLabel={`${coach.name}, ${label}, ${status}, ${coachAccessPrice(coach)}`}
+      accessibilityHint="Opens coach profile"
+      accessibilityState={{ disabled, selected: current }}
     >
-      <View style={styles.optionTop}>
-        {image ? <Image source={{ uri: image }} style={styles.optionImage} /> : <Avatar name={coach.name} size={62} tone={current ? 'accent' : 'neutral'} />}
-        <View style={styles.optionText}>
-          <View style={styles.optionNameRow}>
-            <Text style={styles.optionName}>{coach.name}</Text>
+      <View style={styles.optionVisual}>
+        {image && !imageFailed ? (
+          <Image source={{ uri: image }} style={styles.optionImage} resizeMode="cover" onError={() => setImageFailed(true)} accessible={false} />
+        ) : (
+          <View style={styles.optionFallback}>
+            <View style={styles.optionFallbackDisc} />
+            <Text style={styles.optionFallbackInitial}>{coach.name.slice(0, 1).toUpperCase()}</Text>
           </View>
-          <Text style={styles.optionMeta}>{label}</Text>
+        )}
+        <View style={[
+          styles.optionStatus,
+          current && styles.optionStatusCurrent,
+          coach.requiresUpgrade && styles.optionStatusUpgrade,
+        ]}>
+          <Feather name={current ? 'check' : coach.requiresUpgrade ? 'lock' : 'arrow-right'} size={12} color={current || coach.requiresUpgrade ? colors.onPrimary : colors.ink} />
+          <Text style={[styles.optionStatusText, (current || coach.requiresUpgrade) && styles.optionStatusTextDark]}>{status}</Text>
         </View>
-        <View style={[styles.optionStatus, current && styles.optionStatusCurrent, coach.requiresUpgrade && styles.optionStatusUpgrade]}>
-          <Feather name={current ? 'check' : coach.requiresUpgrade ? 'star' : 'arrow-right'} size={16} color={current ? colors.ink : coach.requiresUpgrade ? '#2a1700' : colors.white} />
+        <View style={styles.optionCaption}>
+          <Text style={styles.optionName} numberOfLines={1}>{coach.name}</Text>
+          <Text style={styles.optionMeta} numberOfLines={1}>{label}</Text>
         </View>
-      </View>
-      <Text style={styles.optionDescription}>{blurb}</Text>
-      <View style={styles.optionMetaRow}>
-        <View style={styles.optionChip}>
-          <Feather name="award" size={13} color={colors.inkMuted} />
-          <Text style={styles.optionChipText}>{coach.tier || 'bronze'}</Text>
-        </View>
-        {coach.requiresUpgrade ? (
-          <View style={styles.optionChip}>
-            <Feather name="lock" size={13} color={colors.inkMuted} />
-            <Text style={styles.optionChipText}>Paid upgrade</Text>
-          </View>
-        ) : null}
       </View>
       <View style={styles.optionFooter}>
-        <Text style={styles.optionPrice}>{formatPrice(coach.monthlyFee)}</Text>
-        <View style={[styles.selectPill, current && styles.selectPillSecondary]}>
-          {changing ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <Text style={[styles.selectText, current && styles.selectTextSecondary]}>{actionLabel}</Text>}
-        </View>
+        <Text style={styles.optionPrice} numberOfLines={1}>
+          {current ? 'View profile' : !coach.canSelect && !coach.requiresUpgrade ? 'View availability' : coachAccessPrice(coach)}
+        </Text>
+        {changing ? <ActivityIndicator size="small" color={colors.ink} /> : <Feather name="arrow-up-right" size={17} color={colors.ink} />}
       </View>
-      {!coach.canSelect && !current ? <Text style={styles.optionReason}>{coach.blockedUntil ? `${coach.reason} Available ${formatUnlockDate(coach.blockedUntil)}.` : coach.reason}</Text> : null}
+      {locked ? <View style={styles.optionLockedDot} /> : null}
     </TouchableOpacity>
   );
 }
@@ -763,37 +894,20 @@ const styles = StyleSheet.create({
   singleActionButton: { marginTop: spacing.md },
   goldButtonWrap: {
     marginTop: spacing.md,
-    minHeight: 86,
-    justifyContent: 'center',
-  },
-  goldGlow: {
-    position: 'absolute',
-    top: 8,
-    right: 12,
-    bottom: 8,
-    left: 12,
-    borderRadius: radius.xl,
-    backgroundColor: '#d8a92f',
+    minHeight: 80,
   },
   goldButton: {
     minHeight: 80,
     borderRadius: radius.xl,
     overflow: 'hidden',
-    backgroundColor: '#f0c85e',
+    backgroundColor: colors.gold,
     borderWidth: 1,
-    borderColor: '#ffe7a3',
+    borderColor: colors.gold,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-  },
-  goldShimmer: {
-    position: 'absolute',
-    top: -32,
-    bottom: -32,
-    width: 76,
-    backgroundColor: 'rgba(255,255,255,0.28)',
   },
   goldIcon: {
     width: 48,
@@ -809,13 +923,57 @@ const styles = StyleSheet.create({
   goldTitle: { ...typography.bodyBold, color: '#251800', fontWeight: '900' },
   goldSubtitle: { ...typography.caption, color: 'rgba(37,24,0,0.68)', marginTop: 3, lineHeight: 17 },
   changeHeader: {
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
     paddingHorizontal: 2,
   },
   changeHeaderText: { gap: 6 },
   changeTitle: { ...typography.hero, color: colors.ink },
   changeSubtitle: { ...typography.body, color: colors.inkMuted, lineHeight: 22 },
-  coachList: { gap: spacing.md },
+  accessStrip: {
+    minHeight: 50,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: spacing.sm,
+  },
+  accessStripIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.gold,
+  },
+  accessStripText: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 18, fontWeight: '700' },
+  filterRow: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    gap: spacing.xs,
+    padding: 4,
+    marginTop: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: colors.panel,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  filterButton: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.sm,
+  },
+  filterButtonSelected: { backgroundColor: colors.primaryAction },
+  filterText: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
+  filterTextSelected: { color: colors.onPrimary },
+  coachList: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: spacing.sm },
+  coachListStack: { flexDirection: 'column' },
   detailScroll: { paddingTop: spacing.xs },
   detailHero: {
     borderRadius: radius.lg,
@@ -899,50 +1057,62 @@ const styles = StyleSheet.create({
   detailReason: { ...typography.caption, color: colors.error, marginTop: spacing.md },
   detailActions: { gap: spacing.sm, marginTop: spacing.lg },
   optionCard: {
+    width: '48.5%',
+    overflow: 'hidden',
     borderRadius: radius.lg,
     backgroundColor: colors.panel,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.md,
-    gap: 12,
   },
-  optionCurrent: { borderColor: colors.goldMuted, backgroundColor: colors.panelMuted },
-  optionUpgrade: { borderColor: '#dcc47a' },
-  optionTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  optionImage: { width: 62, height: 62, borderRadius: 22, backgroundColor: colors.panelMuted },
-  optionText: { flex: 1, minWidth: 0 },
-  optionNameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  optionName: { ...typography.subtitle, color: colors.ink, flex: 1, fontSize: 19, lineHeight: 24 },
-  optionMeta: { ...typography.bodyBold, color: colors.inkMuted, marginTop: 2 },
-  optionStatus: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentFill,
-    alignItems: 'center',
-    justifyContent: 'center',
+  optionCardFull: { width: '100%' },
+  optionCurrent: { borderColor: colors.goldMuted },
+  optionUpgrade: { borderColor: colors.borderStrong },
+  optionVisual: { width: '100%', aspectRatio: 4 / 5, overflow: 'hidden', backgroundColor: colors.panelMuted },
+  optionImage: { width: '100%', height: '100%', backgroundColor: colors.panelMuted },
+  optionFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  optionFallbackDisc: {
+    position: 'absolute',
+    width: 142,
+    height: 142,
+    borderRadius: 71,
+    backgroundColor: colors.panelWarm,
   },
-  optionStatusCurrent: { backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
-  optionStatusUpgrade: { backgroundColor: '#f4c84d' },
-  optionDescription: { ...typography.body, color: colors.inkMuted, lineHeight: 22 },
-  optionMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  optionChip: {
-    minHeight: 30,
-    borderRadius: radius.pill,
-    backgroundColor: colors.panelMuted,
-    borderWidth: 1,
-    borderColor: colors.border,
+  optionFallbackInitial: { fontSize: 58, lineHeight: 66, fontWeight: '900', color: colors.goldMuted },
+  optionCaption: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(5,6,10,0.84)',
     paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  optionName: { ...typography.bodyBold, color: colors.inkStrong, fontSize: 17, lineHeight: 22 },
+  optionMeta: { ...typography.caption, color: colors.onAccentMuted, marginTop: 1 },
+  optionStatus: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: spacing.sm,
+    minHeight: 28,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(5,6,10,0.84)',
+    paddingHorizontal: spacing.sm,
   },
-  optionChipText: { ...typography.caption, color: colors.inkMuted, fontWeight: '800', textTransform: 'capitalize' },
-  optionFooter: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  optionPrice: { ...typography.subtitle, color: colors.ink, flexShrink: 1 },
-  selectPill: { minWidth: 104, alignItems: 'center', borderRadius: radius.md, backgroundColor: colors.primaryAction, paddingHorizontal: spacing.md, paddingVertical: 11 },
-  selectPillSecondary: { backgroundColor: colors.panelMuted, borderWidth: 1, borderColor: colors.border },
-  selectText: { ...typography.caption, color: colors.onPrimary, fontWeight: '800' },
-  selectTextSecondary: { color: colors.inkMuted },
-  optionReason: { ...typography.caption, color: colors.error, marginTop: spacing.sm },
+  optionStatusCurrent: { backgroundColor: colors.gold },
+  optionStatusUpgrade: { backgroundColor: colors.gold },
+  optionStatusText: { fontSize: 10, lineHeight: 13, color: colors.ink, fontWeight: '900' },
+  optionStatusTextDark: { color: colors.onPrimary },
+  optionFooter: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  optionPrice: { ...typography.caption, color: colors.ink, flex: 1, fontWeight: '800' },
+  optionLockedDot: { position: 'absolute', top: 0, right: 0, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.inkSubtle },
 });
