@@ -7,7 +7,6 @@ import {
   View,
   Text,
   StyleSheet,
-  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
@@ -26,7 +25,6 @@ import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
 import { waitForMainStartupWindow } from '../../utils/startupGate';
 import {
-  startupArtworkResizeMode,
   startupProgressMeta,
   startupProgressTarget,
 } from '../../utils/startupPresentation';
@@ -39,7 +37,7 @@ import type { RootStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Splash'>;
 
-const STARTUP_ART = require('../../assets/editorial/startup-people-hero-v2.jpg');
+const STARTUP_ART = require('../../assets/editorial/startup-people-hero-v3.jpg');
 
 const STARTUP_LINES = [
   'Short sessions still count.',
@@ -66,12 +64,6 @@ function progressLabel(
 export function SplashScreen({ navigation }: Props) {
   const { bootstrap, ready, token, status } = useAuthStore();
   const insets = useSafeAreaInsets();
-  const { width: viewportWidth, height: viewportHeight } =
-    useWindowDimensions();
-  const artworkResizeMode = startupArtworkResizeMode(
-    viewportWidth,
-    viewportHeight,
-  );
   const mountedAt = useRef(Date.now()).current;
   const startupLine = useRef(
     STARTUP_LINES[Math.floor(Date.now() / 86_400_000) % STARTUP_LINES.length],
@@ -254,7 +246,7 @@ export function SplashScreen({ navigation }: Props) {
       defaultSource={STARTUP_ART}
       style={styles.screen}
       imageStyle={styles.artwork}
-      resizeMode={artworkResizeMode}
+      resizeMode="cover"
       accessible={false}
     >
       <LinearGradient

@@ -4,6 +4,7 @@ import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import NativeLinearGradient from 'react-native-linear-gradient';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Line as SvgLine, Path, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { Card, ScreenContainer, ScreenTitle } from '../../components/Card';
 import { FormInput } from '../../components/FormInput';
@@ -188,6 +189,8 @@ export function ProgressScreen({ route, navigation }: Props) {
   const mealTarget = review?.requirements?.meals ?? 12;
   const workoutProgress = Math.min(reviewStats.workoutsCompleted, workoutTarget);
   const mealProgress = Math.min(reviewStats.mealsLogged, mealTarget);
+  const workoutGoalPercent = workoutTarget > 0 ? Math.min(100, Math.round((workoutProgress / workoutTarget) * 100)) : 100;
+  const mealGoalPercent = mealTarget > 0 ? Math.min(100, Math.round((mealProgress / mealTarget) * 100)) : 100;
   const workoutGoalMet = workoutProgress >= workoutTarget;
   const hasMealRequirement = mealTarget > 0;
   const mealGoalMet = hasMealRequirement && mealProgress >= mealTarget;
@@ -198,22 +201,23 @@ export function ProgressScreen({ route, navigation }: Props) {
   const showReportCountdown = reviewReady || activationGoalsComplete === activationGoalsTotal;
   const nextReviewDayLabel = `${nextReviewDays} day${nextReviewDays === 1 ? '' : 's'}`;
   const reportHeroTitle = reviewReady
-    ? 'Your week, clearly explained'
+    ? 'Your week, explained'
     : showReportCountdown
       ? `Next report in ${nextReviewDayLabel}`
       : 'Your week is taking shape';
   const reportHeroDetail = reviewReady
-    ? `Fresh insights · Next update in ${nextReviewDayLabel}`
+    ? `Fresh insights · Updates in ${nextReviewDayLabel}`
     : showReportCountdown
       ? 'Your weekly inputs are complete'
       : hasMealRequirement
-        ? `${workoutProgress}/${workoutTarget} workouts · ${mealProgress}/${mealTarget} meals`
-        : `${workoutProgress}/${workoutTarget} workouts logged`;
+        ? `Workouts ${workoutGoalPercent}% · Meals ${mealGoalPercent}%`
+        : `Workouts ${workoutGoalPercent}%`;
   const reportHeroProgress = reviewReady
     ? 1
     : showReportCountdown
       ? reportCycleProgress
       : activationProgress;
+  const reportCompletionPercent = Math.round(Math.max(0, Math.min(1, reportHeroProgress)) * 100);
   const nextFocusDomain = review?.nextFocusDomain ?? 'workout';
   const nextFocusCta = nextFocusDomain === 'diet'
     ? 'Log your next meal'
@@ -270,12 +274,13 @@ export function ProgressScreen({ route, navigation }: Props) {
   const reportHighlights = review?.highlights?.length
     ? review.highlights
     : (review?.wins ?? []).map(win => ({ title: win, evidence: '', whyItMatters: '' }));
-  const reportDomains = review?.domains?.length
-    ? review.domains
-    : [
-        { key: 'training', title: 'Training', status: 'building' as const, summary: review?.workoutInsight || '', evidence: [], actions: review?.workoutRecommendation ? [review.workoutRecommendation] : [] },
-        { key: 'nutrition', title: 'Nutrition', status: 'building' as const, summary: review?.nutritionInsight || '', evidence: [], actions: review?.nutritionRecommendation ? [review.nutritionRecommendation] : [] },
-      ];
+  const reportFindings = review?.keyFindings?.length
+    ? review.keyFindings.slice(0, 2)
+    : reportHighlights.slice(0, 2).map(item => ({
+        domain: 'progress',
+        title: item.title,
+        insight: item.whyItMatters || item.evidence,
+      }));
   const reportActions = review?.actionPlan?.length
     ? review.actionPlan
     : review?.nextFocusTitle
@@ -363,8 +368,7 @@ export function ProgressScreen({ route, navigation }: Props) {
               <Feather name="chevron-left" size={22} color={colors.ink} />
             </TouchableOpacity>
             <View style={styles.reportHeaderText}>
-              <Text style={styles.reportHeaderEyebrow}>Progress</Text>
-              <Text style={styles.reportHeaderTitle}>Progress report</Text>
+              <Text style={styles.reportHeaderTitle}>Weekly report</Text>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate('ProgressReportHistory')} style={styles.reportHistoryButton} accessibilityRole="button" accessibilityLabel="View previous reports">
               <Feather name="clock" size={16} color={colors.gold} />
@@ -374,7 +378,6 @@ export function ProgressScreen({ route, navigation }: Props) {
 
           <View style={styles.reportLead}>
             <View style={styles.reportLeadMeta}>
-              <Text style={styles.reportLeadKicker}>Weekly report</Text>
               <View style={styles.reportLeadStatus}>
                 <View style={styles.reportLeadStatusDot} />
                 <Text style={styles.reportLeadStatusText}>{reviewReady ? 'Latest report' : showReportCountdown ? 'Inputs complete' : 'Collecting activity'}</Text>
@@ -412,98 +415,40 @@ export function ProgressScreen({ route, navigation }: Props) {
                     <Text style={styles.momentumLabel}>{reportMetrics.momentumLabel}</Text>
                   </View>
                 </Card>
-                <Card style={styles.confidenceCard}>
-                  <View style={styles.confidenceTop}>
-                    <Feather name="layers" size={18} color={colors.gold} />
-                    <Text style={styles.confidenceLevel}>{(review?.confidence?.level || 'medium').toUpperCase()} CONFIDENCE</Text>
-                  </View>
-                  <Text style={styles.confidenceReason} numberOfLines={2}>{review?.confidence?.reason || 'Based on this week’s logged activity.'}</Text>
-                </Card>
               </View>
 
               <ReportSectionHeader kicker="Activity" title="How your week unfolded" />
               <WeeklyActivityChart data={reportMetrics.dailyActivity} />
 
-              <ReportSectionHeader kicker="Scorecard" title="Your strongest signals" />
-              <DimensionScorecard dimensions={reportMetrics.dimensions} />
-
-              {reportMetrics.workoutFocus.length || reportMetrics.feedbackSignals.length ? (
-                <View style={styles.reportChartPair}>
-                  {reportMetrics.workoutFocus.length ? <DistributionChart title="Training focus" items={reportMetrics.workoutFocus} /> : null}
-                  {reportMetrics.feedbackSignals.length ? <DistributionChart title="Workout feedback" items={reportMetrics.feedbackSignals} /> : null}
-                </View>
-              ) : null}
-
-              {reportHighlights.length ? (
+              {reportFindings.length ? (
                 <>
-                  <ReportSectionHeader kicker="Wins" title="What moved forward" />
-                  <View style={styles.highlightGrid}>
-                    {reportHighlights.slice(0, 3).map((item, index) => (
-                      <View key={`${item.title}-${index}`} style={styles.highlightCard}>
-                        <View style={styles.highlightNumber}><Text style={styles.highlightNumberText}>{index + 1}</Text></View>
-                        <Text style={styles.highlightTitle}>{item.title}</Text>
-                        {item.evidence ? <Text style={styles.highlightEvidence}>{item.evidence}</Text> : null}
-                      </View>
-                    ))}
-                  </View>
-                </>
-              ) : null}
-
-              {review?.keyFindings?.length ? (
-                <>
-                  <ReportSectionHeader kicker="Insights" title="What the data suggests" />
+                  <ReportSectionHeader kicker="Takeaways" title="What matters this week" />
                   <View style={styles.findingStack}>
-                    {review.keyFindings.slice(0, 3).map((finding, index) => (
+                    {reportFindings.map((finding, index) => (
                       <View key={`${finding.title}-${index}`} style={styles.findingCard}>
                         <View style={styles.findingTop}>
                           <Text style={styles.findingDomain}>{finding.domain}</Text>
-                          <Feather name="arrow-up-right" size={16} color={colors.gold} />
                         </View>
                         <Text style={styles.findingTitle}>{finding.title}</Text>
-                        <Text style={styles.findingInsight} numberOfLines={2}>{finding.insight}</Text>
+                        {finding.insight ? <Text style={styles.findingInsight} numberOfLines={2}>{finding.insight}</Text> : null}
                       </View>
                     ))}
                   </View>
                 </>
               ) : null}
 
-              <ReportSectionHeader kicker="Deep dive" title="Coaching by area" />
-              <View style={styles.domainStack}>
-                {reportDomains.filter(domain => domain.summary).slice(0, 3).map((domain, index) => (
-                  <DomainReportCard key={`${domain.key}-${index}`} domain={domain} />
-                ))}
-              </View>
-
-              {reportMetrics.bodyChanges.length ? (
+              {reportActions.length ? (
                 <>
-                  <ReportSectionHeader kicker="Body" title="Logged measurement changes" />
-                  <BodyChangeGrid changes={reportMetrics.bodyChanges} />
-                </>
-              ) : null}
-
-              {review?.watchouts?.length ? (
-                <>
-                  <ReportSectionHeader kicker="Watch" title="Signals to respond to" />
-                  <View style={styles.watchoutStack}>
-                    {review.watchouts.map((watchout, index) => (
-                      <View key={`${watchout.title}-${index}`} style={styles.watchoutCard}>
-                        <Feather name="alert-circle" size={18} color={colors.gold} />
-                        <View style={styles.watchoutCopy}>
-                          <Text style={styles.watchoutTitle}>{watchout.title}</Text>
-                          <Text style={styles.watchoutResponse} numberOfLines={2}>{watchout.response}</Text>
-                        </View>
-                      </View>
+                  <ReportSectionHeader kicker="Next week" title="Your next steps" />
+                  <View style={styles.actionPlanStack}>
+                    {reportActions.slice(0, 2).map((action, index) => (
+                      <ActionPlanCard key={`${action.title}-${index}`} action={action} />
                     ))}
                   </View>
                 </>
               ) : null}
 
-              <ReportSectionHeader kicker="Next week" title="Your action plan" />
-              <View style={styles.actionPlanStack}>
-                {reportActions.slice(0, 2).map((action, index) => (
-                  <ActionPlanCard key={`${action.title}-${index}`} action={action} />
-                ))}
-              </View>
+              {review?.coachNote ? <Text style={styles.coachNote}>{review.coachNote}</Text> : null}
               <PrimaryButton title={nextFocusCta} icon="arrow-right" onPress={openNextFocus} style={styles.reportPrimaryAction} />
             </>
           ) : (
@@ -604,12 +549,9 @@ export function ProgressScreen({ route, navigation }: Props) {
           <View style={styles.headerCopy}>
             <Text style={styles.progressScreenTitle} accessibilityRole="header">Progress</Text>
           </View>
-          <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.75} accessibilityRole="button" accessibilityLabel={`${nextReviewDayLabel} until next report. ${activationGoalsComplete} of 2 goals complete`}>
+          <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.75} accessibilityRole="button" accessibilityLabel={`${nextReviewDayLabel} to next report. ${reportCompletionPercent}% complete`}>
             <View style={styles.reportCountdown}>
-              <View style={styles.reportCountdownCopy}>
-                <Text style={styles.reportCountdownValue}>{nextReviewDayLabel}</Text>
-                <Text style={styles.reportCountdownLabel}>Next report</Text>
-              </View>
+              <Text style={styles.reportCountdownValue}>{nextReviewDayLabel} to next report</Text>
               <Feather name="chevron-right" size={17} color={colors.gold} />
             </View>
           </TouchableOpacity>
@@ -637,7 +579,7 @@ export function ProgressScreen({ route, navigation }: Props) {
             <View style={styles.overviewHead}>
               <View>
                 <Text style={styles.overviewKicker}>This week</Text>
-                <Text style={styles.overviewTitle}>{reviewStats.workoutsCompleted} of {reviewStats.workoutsPlanned || 0} workouts</Text>
+                <Text style={styles.overviewTitle}>Workout completion</Text>
               </View>
               <Text style={styles.overviewValue}>{adherence}%</Text>
             </View>
@@ -659,34 +601,56 @@ export function ProgressScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.88} accessibilityRole="button" accessibilityLabel={`Open progress report. ${nextReviewDayLabel} until next report. ${activationGoalsComplete} of ${activationGoalsTotal} goals complete`}>
-          <View style={styles.reportCard}>
-            <Image
-              source={getProgressReportArtwork(profileGender)}
-              style={styles.reportArtwork}
-              resizeMode="cover"
-              accessible={false}
-              testID="progress-report-art"
-            />
-            <View style={styles.reportArtworkShade} />
-            <View style={styles.reportHeroContent}>
-              <View style={styles.reportHeroStatus}>
-                <View style={[styles.reportHeroStatusDot, reviewReady && styles.reportHeroStatusDotReady]} />
-                <Text style={styles.reportHeroKicker}>
-                  {reviewReady ? 'Latest ready' : showReportCountdown ? 'Next report' : 'Weekly progress'}
-                </Text>
-              </View>
-              <Text style={styles.reportTitle}>{reportHeroTitle}</Text>
-              <Text style={styles.reportHeroDetail}>{reportHeroDetail}</Text>
-              <View style={styles.reportTrack}>
-                <View style={[styles.reportTrackFill, { width: `${Math.max(0, Math.min(1, reportHeroProgress)) * 100}%` }]} />
-              </View>
-              <View style={styles.reportAction}>
-                <Text style={styles.reportActionText}>Open report</Text>
-                <Feather name="arrow-right" size={16} color={colors.onPrimary} />
+        <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.88} accessibilityRole="button" accessibilityLabel={`Open progress report. ${nextReviewDayLabel} to next report. ${reportCompletionPercent}% complete`}>
+          {reviewReady ? (
+            <View style={styles.reportCard}>
+              <Image
+                source={getProgressReportArtwork(profileGender)}
+                style={styles.reportArtwork}
+                resizeMode="cover"
+                accessible={false}
+                testID="progress-report-art"
+              />
+              <NativeLinearGradient
+                colors={['rgba(5,6,10,0.98)', 'rgba(5,6,10,0.9)', 'rgba(5,6,10,0.3)', 'rgba(5,6,10,0.02)']}
+                locations={[0, 0.48, 0.76, 1]}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={styles.reportArtworkShade}
+                pointerEvents="none"
+              />
+              <View style={styles.reportHeroContent}>
+                <View style={styles.reportHeroStatus}>
+                  <View style={[styles.reportHeroStatusDot, styles.reportHeroStatusDotReady]} />
+                  <Text style={styles.reportHeroKicker}>Latest ready</Text>
+                </View>
+                <Text style={styles.reportTitle} numberOfLines={2}>{reportHeroTitle}</Text>
+                <Text style={styles.reportHeroDetail} numberOfLines={1}>{reportHeroDetail}</Text>
+                <View style={styles.reportAction}>
+                  <Text style={styles.reportActionText}>View report</Text>
+                  <Feather name="arrow-right" size={16} color={colors.onPrimary} />
+                </View>
               </View>
             </View>
-          </View>
+          ) : (
+            <View style={styles.reportPendingCard}>
+              <View style={styles.reportPendingIcon}>
+                <Feather name="file-text" size={19} color={colors.gold} />
+              </View>
+              <View style={styles.reportPendingCopy}>
+                <View style={styles.reportPendingHead}>
+                  <Text style={styles.reportPendingTitle}>Weekly report</Text>
+                  <Text style={styles.reportPendingPercent}>{reportCompletionPercent}%</Text>
+                </View>
+                <Text style={styles.reportPendingDetail}>{reportHeroDetail}</Text>
+                <Text style={styles.reportPendingCountdown}>{nextReviewDayLabel} to next report</Text>
+                <View style={styles.reportPendingTrack}>
+                  <View style={[styles.reportTrackFill, { width: `${reportCompletionPercent}%` }]} />
+                </View>
+              </View>
+              <Feather name="chevron-right" size={18} color={colors.inkSubtle} />
+            </View>
+          )}
         </TouchableOpacity>
 
         <Text style={styles.bodyMeasurementsTitle} accessibilityRole="header">Body measurements</Text>
@@ -861,8 +825,8 @@ function ReportSectionHeader({ kicker, title }: { kicker: string; title: string 
 }
 
 function MomentumRing({ value }: { value: number }) {
-  const size = 92;
-  const stroke = 8;
+  const size = 78;
+  const stroke = 7;
   const radiusValue = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radiusValue;
   const progress = Math.max(0, Math.min(100, value)) / 100;
@@ -879,6 +843,18 @@ function MomentumRing({ value }: { value: number }) {
 }
 
 function WeeklyActivityChart({ data }: { data: Array<{ date: string; label: string; workouts: number; foodLogs: number }> }) {
+  const hasActivity = data.some(item => item.workouts > 0 || item.foodLogs > 0);
+  if (!hasActivity) {
+    return (
+      <Card style={styles.activityEmpty}>
+        <View style={styles.activityEmptyIcon}><Feather name="calendar" size={19} color={colors.gold} /></View>
+        <View style={styles.activityEmptyCopy}>
+          <Text style={styles.activityEmptyTitle}>No activity logged this week</Text>
+          <Text style={styles.activityEmptyText}>Your workouts and food logs will appear here.</Text>
+        </View>
+      </Card>
+    );
+  }
   const peak = Math.max(1, ...data.map(item => Math.max(item.workouts, item.foodLogs)));
   return (
     <Card style={styles.activityChart}>
@@ -903,69 +879,6 @@ function WeeklyActivityChart({ data }: { data: Array<{ date: string; label: stri
 
 function activityBarHeight(value: number, peak: number) {
   return { height: value ? Math.max(8, (value / peak) * 86) : 2 };
-}
-
-function DimensionScorecard({ dimensions }: { dimensions: Array<{ key: string; label: string; value: number; status: string }> }) {
-  return (
-    <Card style={styles.dimensionCard}>
-      {dimensions.map(dimension => (
-        <View key={dimension.key} style={styles.dimensionRow} accessible accessibilityLabel={`${dimension.label}: ${Math.round(dimension.value)} out of 100, ${dimension.status}`}>
-          <View style={styles.dimensionTop}><Text style={styles.dimensionLabel}>{dimension.label}</Text><Text style={styles.dimensionValue}>{Math.round(dimension.value)}</Text></View>
-          <View style={styles.dimensionTrack}><View style={[styles.dimensionFill, { width: `${Math.max(0, Math.min(100, dimension.value))}%` }]} /></View>
-          <Text style={styles.dimensionStatus}>{dimension.status}</Text>
-        </View>
-      ))}
-    </Card>
-  );
-}
-
-function DistributionChart({ title, items }: { title: string; items: Array<{ label: string; count: number }> }) {
-  const total = Math.max(1, items.reduce((sum, item) => sum + item.count, 0));
-  return (
-    <Card style={styles.distributionCard}>
-      <Text style={styles.distributionTitle}>{title}</Text>
-      {items.slice(0, 5).map(item => (
-        <View key={item.label} style={styles.distributionRow}>
-          <View style={styles.distributionTop}><Text style={styles.distributionLabel} numberOfLines={1}>{item.label}</Text><Text style={styles.distributionValue}>{item.count}</Text></View>
-          <View style={styles.distributionTrack}><View style={[styles.distributionFill, { width: `${Math.max(6, (item.count / total) * 100)}%` }]} /></View>
-        </View>
-      ))}
-    </Card>
-  );
-}
-
-function DomainReportCard({ domain }: { domain: { key: string; title: string; status: string; summary: string; evidence?: string[]; actions?: string[] } }) {
-  const icon = domain.key === 'nutrition' ? 'coffee' : domain.key === 'body' ? 'trending-up' : domain.key === 'recovery' ? 'moon' : 'activity';
-  return (
-    <View style={styles.domainCard}>
-      <View style={styles.domainHead}>
-        <View style={styles.domainIcon}><Feather name={icon} size={18} color={colors.gold} /></View>
-        <Text style={styles.domainTitle}>{domain.title}</Text>
-        <Text style={styles.domainStatus}>{domain.status}</Text>
-      </View>
-      <Text style={styles.domainSummary} numberOfLines={2}>{domain.summary}</Text>
-      {domain.actions?.length ? (
-        <View style={styles.domainActions}>
-          <Text style={styles.domainActionsLabel}>TRY NEXT</Text>
-          {domain.actions.slice(0, 1).map(item => <Text key={item} style={styles.domainActionText} numberOfLines={2}>→ {item}</Text>)}
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-function BodyChangeGrid({ changes }: { changes: Array<{ key: string; label: string; unit: string; current: number; change: number }> }) {
-  return (
-    <View style={styles.bodyChangeGrid}>
-      {changes.map(item => (
-        <View key={item.key} style={styles.bodyChangeCard}>
-          <Text style={styles.bodyChangeLabel}>{item.label}</Text>
-          <Text style={styles.bodyChangeValue}>{item.current} <Text style={styles.bodyChangeUnit}>{item.unit}</Text></Text>
-          <Text style={styles.bodyChangeDelta}>{item.change > 0 ? '+' : ''}{item.change} {item.unit}</Text>
-        </View>
-      ))}
-    </View>
-  );
 }
 
 function ActionPlanCard({ action }: { action: { priority: number; domain: string; title: string; why: string; steps?: string[]; successMeasure?: string } }) {
@@ -1172,7 +1085,7 @@ function TrendLineChart({
 const styles = StyleSheet.create({
   scroll: {},
   reportScroll: { paddingBottom: spacing.xl },
-  reportHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: 20 },
+  reportHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.lg },
   reportBackButton: { width: 42, height: 42, borderRadius: radius.pill, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
   reportHeaderText: { flex: 1, minWidth: 0 },
   reportHeaderEyebrow: { ...typography.overline, color: colors.gold, textTransform: 'uppercase', marginBottom: 1 },
@@ -1202,10 +1115,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
   headerCopy: { flex: 1 },
   progressScreenTitle: { fontSize: 27, lineHeight: 33, fontWeight: '700', letterSpacing: -0.35, color: colors.ink },
-  reportCountdown: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, paddingLeft: 12, paddingRight: spacing.sm, paddingVertical: spacing.xs },
-  reportCountdownCopy: { alignItems: 'flex-end', justifyContent: 'center' },
-  reportCountdownValue: { fontSize: 15, lineHeight: 19, color: colors.ink, fontWeight: '600' },
-  reportCountdownLabel: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.6 },
+  reportCountdown: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, paddingHorizontal: spacing.sm },
+  reportCountdownValue: { fontSize: 12, lineHeight: 16, color: colors.inkMuted, fontWeight: '600' },
   eyebrow: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: 2 },
   logHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
   backButton: {
@@ -1261,21 +1172,32 @@ const styles = StyleSheet.create({
   rankingsCopy: { flex: 1, minWidth: 0 },
   rankingsTitle: { ...typography.bodyBold, color: colors.onPrimary, fontWeight: '600' },
 
-  reportCard: { minHeight: 226, overflow: 'hidden', borderRadius: radius.xl, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panel },
-  reportArtwork: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, width: '100%', height: '100%' },
-  reportArtworkShade: { position: 'absolute', top: 0, bottom: 0, left: 0, width: '68%', backgroundColor: 'rgba(5,6,10,0.68)' },
-  reportHeroContent: { width: '66%', minHeight: 226, justifyContent: 'center', alignItems: 'flex-start', padding: spacing.lg },
+  reportCard: { minHeight: 190, overflow: 'hidden', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panel },
+  // All report artwork is 3:2. Preserve that ratio and anchor it to the top;
+  // the wide card then trims only the lower scene instead of the subject's head.
+  reportArtwork: { position: 'absolute', top: 0, left: 0, width: '100%', aspectRatio: 1.5 },
+  reportArtworkShade: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
+  reportHeroContent: { width: '64%', minHeight: 190, justifyContent: 'center', alignItems: 'flex-start', paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   reportHeroStatus: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  reportHeroStatusDot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: colors.inkSubtle },
+  reportHeroStatusDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.inkSubtle },
   reportHeroStatusDotReady: { backgroundColor: colors.gold },
-  reportHeroKicker: { ...typography.overline, color: colors.gold, fontWeight: '600', textTransform: 'uppercase' },
+  reportHeroKicker: { fontSize: 10, lineHeight: 13, letterSpacing: 0.8, color: colors.gold, fontWeight: '700', textTransform: 'uppercase' },
   bodyMeasurementsTitle: { fontSize: 18, lineHeight: 24, fontWeight: '500', color: colors.ink, marginTop: spacing.lg, marginBottom: spacing.sm },
-  reportTitle: { fontSize: 22, lineHeight: 28, fontWeight: '700', color: colors.inkStrong, letterSpacing: -0.25, marginTop: spacing.sm },
-  reportHeroDetail: { ...typography.caption, color: colors.onAccentMuted, lineHeight: 18, marginTop: spacing.xs },
+  reportTitle: { fontSize: 20, lineHeight: 25, fontWeight: '700', color: colors.inkStrong, letterSpacing: -0.2, marginTop: spacing.sm },
+  reportHeroDetail: { fontSize: 11, lineHeight: 16, color: colors.onAccentMuted, fontWeight: '500', marginTop: 4 },
   reportTrack: { width: '100%', height: 5, borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.16)', overflow: 'hidden', marginTop: spacing.md },
   reportTrackFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
-  reportAction: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderRadius: radius.pill, backgroundColor: colors.primaryAction, paddingHorizontal: spacing.md, marginTop: spacing.md },
+  reportAction: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderRadius: radius.pill, backgroundColor: colors.primaryAction, paddingHorizontal: 14, marginTop: spacing.md },
   reportActionText: { ...typography.caption, color: colors.onPrimary, fontWeight: '600' },
+  reportPendingCard: { minHeight: 118, flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.md },
+  reportPendingIcon: { width: 42, height: 42, flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, backgroundColor: colors.panelWarm },
+  reportPendingCopy: { flex: 1, minWidth: 0 },
+  reportPendingHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  reportPendingTitle: { ...typography.bodyBold, color: colors.ink, fontWeight: '600' },
+  reportPendingPercent: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
+  reportPendingDetail: { ...typography.caption, color: colors.inkMuted, marginTop: 3 },
+  reportPendingCountdown: { fontSize: 11, lineHeight: 15, color: colors.inkSubtle, marginTop: 2 },
+  reportPendingTrack: { height: 3, borderRadius: radius.pill, backgroundColor: colors.borderStrong, overflow: 'hidden', marginTop: spacing.sm },
 
   overviewHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.lg },
   overviewKicker: { ...typography.overline, color: colors.inkMuted, fontWeight: '600', textTransform: 'uppercase' },
@@ -1283,13 +1205,12 @@ const styles = StyleSheet.create({
   overviewValue: { fontSize: 24, lineHeight: 29, fontWeight: '700', letterSpacing: -0.3, color: colors.ink },
   overviewBar: { marginTop: spacing.md },
 
-  reportLead: { paddingTop: spacing.sm, paddingBottom: spacing.lg },
-  reportLeadMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
-  reportLeadKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
+  reportLead: { paddingBottom: 20 },
+  reportLeadMeta: { flexDirection: 'row', alignItems: 'center' },
   reportLeadStatus: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   reportLeadStatusDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.gold },
   reportLeadStatusText: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
-  reportLeadTitle: { fontSize: 25, lineHeight: 31, fontWeight: '800', letterSpacing: -0.4, color: colors.ink, marginTop: spacing.md },
+  reportLeadTitle: { fontSize: 24, lineHeight: 30, fontWeight: '800', letterSpacing: -0.35, color: colors.ink, marginTop: spacing.sm },
   reportLeadSummary: { fontSize: 14, lineHeight: 20, color: colors.inkMuted, marginTop: spacing.sm, maxWidth: 520 },
   reportDataRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border, marginBottom: spacing.lg },
   reportDatum: { flex: 1, minWidth: 0, alignItems: 'center', paddingHorizontal: spacing.xs },
@@ -1300,20 +1221,21 @@ const styles = StyleSheet.create({
   reportSectionHead: { marginBottom: spacing.sm },
   reportSectionKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
   reportSectionTitle: { fontSize: 20, lineHeight: 26, fontWeight: '800', color: colors.ink, marginTop: 2 },
-  reportOverviewGrid: { gap: spacing.sm, marginBottom: spacing.lg },
-  momentumCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
-  momentumRing: { width: 92, height: 92, alignItems: 'center', justifyContent: 'center' },
+  reportOverviewGrid: { marginBottom: spacing.lg },
+  momentumCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: 14 },
+  momentumRing: { width: 78, height: 78, alignItems: 'center', justifyContent: 'center' },
   momentumRingValue: { position: 'absolute', alignItems: 'center' },
-  momentumRingNumber: { fontSize: 25, lineHeight: 28, fontWeight: '900', color: colors.ink, letterSpacing: -0.5 },
+  momentumRingNumber: { fontSize: 22, lineHeight: 25, fontWeight: '900', color: colors.ink, letterSpacing: -0.4 },
   momentumRingUnit: { fontSize: 9, lineHeight: 12, color: colors.inkMuted, fontWeight: '700' },
   momentumCopy: { flex: 1, minWidth: 0 },
   momentumLabel: { fontSize: 18, lineHeight: 23, color: colors.ink, fontWeight: '800', marginTop: 2 },
   momentumCaption: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: 4 },
-  confidenceCard: { padding: spacing.md, gap: spacing.sm, backgroundColor: colors.panelMuted },
-  confidenceTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  confidenceLevel: { ...typography.overline, color: colors.gold },
-  confidenceReason: { ...typography.caption, color: colors.inkMuted, lineHeight: 18 },
   activityChart: { padding: spacing.md, marginBottom: spacing.lg },
+  activityEmpty: { minHeight: 92, flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md, marginBottom: spacing.lg, backgroundColor: colors.panelMuted },
+  activityEmptyIcon: { width: 40, height: 40, flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, backgroundColor: colors.panelWarm },
+  activityEmptyCopy: { flex: 1, minWidth: 0 },
+  activityEmptyTitle: { ...typography.bodyBold, color: colors.ink, fontWeight: '600' },
+  activityEmptyText: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
   chartLegend: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.md },
   chartLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   chartLegendWorkout: { width: 9, height: 9, borderRadius: 2, backgroundColor: colors.gold },

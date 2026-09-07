@@ -413,7 +413,7 @@ export function ProfileScreen({ navigation }: Props) {
               style={styles.gymCard}
               onPress={() => navigation.navigate('GymPicker')}
               accessibilityRole="button"
-              accessibilityLabel={selectedGymPlaceId ? 'Change your gym' : 'Choose your gym'}
+              accessibilityLabel={selectedGymPlaceId ? 'Change your gym' : 'Add your gym'}
             >
               <Image source={gymArtwork} style={styles.gymArtwork} resizeMode="cover" accessible={false} accessibilityIgnoresInvertColors />
               <LinearGradient
@@ -443,7 +443,7 @@ export function ProfileScreen({ navigation }: Props) {
                   </>
                 )}
                 <View style={styles.gymAction}>
-                  <Text style={styles.gymActionText}>{selectedGymPlaceId ? 'Change gym' : 'Find a gym'}</Text>
+                  <Text style={styles.gymActionText}>{selectedGymPlaceId ? 'Change gym' : 'Add your gym'}</Text>
                   <Feather name="arrow-right" size={17} color={colors.onPrimary} />
                 </View>
               </View>
@@ -673,9 +673,9 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     width: '100%',
-    // The source artwork is 3:2 while the hero is intentionally wider.
-    // Preserve that ratio and crop from the bottom so faces stay in frame.
-    aspectRatio: 3 / 2,
+    // Keep the portrait top-anchored and only trim its lower edge. Explicit
+    // height avoids the oversized close-up produced by aspect-ratio layout.
+    height: '132%',
   },
   bodyArtworkShade: {
     position: 'absolute',

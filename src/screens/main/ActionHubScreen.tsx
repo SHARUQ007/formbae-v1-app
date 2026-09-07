@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ImageBackground, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View, type ImageSourcePropType } from 'react-native';
+import { ActivityIndicator, Alert, Image, ImageBackground, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image-picker';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -16,6 +16,7 @@ import {
   fetchAccountabilityBae,
   joinAccountabilityBaeFriend,
   leaveAccountabilityBae,
+  normalizeAccountabilityBaeSummary,
   startAccountabilityBaeMatch,
   updateAccountability,
   uploadAccountabilityBaeProof,
@@ -28,6 +29,7 @@ import { subscribeToTrophySummary } from '../../services/trophyRealtime';
 import type { AccountabilityBaeSummary, AccountabilitySummary, TrophySummary } from '../../types/api';
 import {
   currentMealType,
+  isUsableDietEntry,
   isMealWindow,
   isToday,
   nextPlanDay,
@@ -59,6 +61,7 @@ type TodayTask = {
   action: string;
   onOpen: () => void;
   active?: boolean;
+  committable?: boolean;
 };
 
 export function ActionHubScreen({ navigation }: Props) {
@@ -84,10 +87,12 @@ export function ActionHubScreen({ navigation }: Props) {
   const [accountabilityUnavailable, setAccountabilityUnavailable] = useState(false);
   const [baeUnavailable, setBaeUnavailable] = useState(false);
   const autoCompletedDate = useRef('');
+  const loadGeneration = useRef(0);
 
   useEffect(() => subscribeToTrophySummary(setTrophies), []);
 
   const applyBaeSummary = useCallback((next: AccountabilityBaeSummary) => {
+    loadGeneration.current += 1;
     setAccountabilityBae(next);
     setBaeLoading(false);
     setBaeUnavailable(false);
@@ -95,36 +100,46 @@ export function ActionHubScreen({ navigation }: Props) {
   const partnerStatus = accountabilityBae?.status;
 
   const load = useCallback(async (force = false) => {
+    const generation = loadGeneration.current + 1;
+    loadGeneration.current = generation;
+    const isCurrent = () => loadGeneration.current === generation;
     if (force) autoCompletedDate.current = '';
     setBaeLoading(true);
     // Apply each resource as soon as it arrives. The previous all-at-once
     // update kept the entire tab behind whichever optional service was slowest.
     const [, nextAccountability] = await Promise.allSettled([
       resolveContextualSnapshot().then((value) => {
-        setSnapshot(value);
-        setInitialLoading(false);
+        if (isCurrent()) {
+          setSnapshot(value);
+          setInitialLoading(false);
+        }
         return value;
       }),
       fetchAccountability({ force }).then((value) => {
-        setAccountability(value);
+        if (isCurrent()) setAccountability(value);
         return value;
       }),
       fetchAccountabilityBae({ force: true })
         .then((value) => {
-          setAccountabilityBae(value);
-          setBaeUnavailable(false);
+          if (isCurrent()) {
+            setAccountabilityBae(value);
+            setBaeUnavailable(false);
+          }
           return value;
         })
         .catch((error) => {
-          setBaeUnavailable(true);
+          if (isCurrent()) setBaeUnavailable(true);
           throw error;
         })
-        .finally(() => setBaeLoading(false)),
+        .finally(() => {
+          if (isCurrent()) setBaeLoading(false);
+        }),
       loadProgressBundleCached({ force }).then((value) => {
-        setTrophies(value.progress.trophies ?? null);
+        if (isCurrent()) setTrophies(value.progress.trophies ?? null);
         return value;
       }),
     ]);
+    if (!isCurrent()) return;
     setAccountabilityUnavailable(nextAccountability.status === 'rejected');
     setInitialLoading(false);
   }, []);
@@ -233,7 +248,7 @@ export function ActionHubScreen({ navigation }: Props) {
 
   const startTodayTask = async (task: TodayTask) => {
     if (startingTaskKey) return;
-    if (accountability?.today || !canCreateAccountabilityCommitment(task.kind)) {
+    if (task.committable === false || accountability?.today || !canCreateAccountabilityCommitment(task.kind)) {
       task.onOpen();
       return;
     }
@@ -383,11 +398,10 @@ export function ActionHubScreen({ navigation }: Props) {
   const commitmentActive = commitment?.status === 'active';
   const nextWorkout = nextPlanDay(plan);
   const mealType = currentMealType();
-  const currentMealLogged = snapshot.dietEntries.some(
+  const usableDietEntries = snapshot.dietEntries.filter(isUsableDietEntry);
+  const currentMealLogged = usableDietEntries.some(
     (entry) => isToday(entry.createdAt)
       && entry.mealType === mealType
-      && entry.kind !== 'skip'
-      && entry.status !== 'skipped',
   );
   const todayTasks: TodayTask[] = [];
   if (commitmentActive) {
@@ -402,14 +416,15 @@ export function ActionHubScreen({ navigation }: Props) {
       active: true,
     });
   }
-  if (isMealWindow() && !currentMealLogged) {
+  if ((isMealWindow() || usableDietEntries.length === 0) && !currentMealLogged) {
+    const firstMeal = usableDietEntries.length === 0;
     todayTasks.push({
       key: `diet:${mealType}`,
       kind: 'diet',
       targetId: mealType,
-      title: `Replay your ${mealType.toLowerCase()}`,
-      detail: 'Recall it one item at a time',
-      action: 'Play',
+      title: firstMeal ? 'Log your first meal' : `Replay your ${mealType.toLowerCase()}`,
+      detail: firstMeal ? 'Start building your food memory' : 'Recall it one item at a time',
+      action: firstMeal ? 'Add' : 'Play',
       onOpen: openFoodMemory,
     });
   }
@@ -433,6 +448,18 @@ export function ActionHubScreen({ navigation }: Props) {
       detail: 'Plan check-in is ready',
       action: 'Check in',
       onOpen: () => navigation.navigate('Workouts', { screen: 'PlanRefresh' }),
+    });
+  }
+  if (!plan?.days?.length && !snapshot.workoutData?.aiPlanRefresh?.due) {
+    todayTasks.push({
+      key: 'workout:first',
+      kind: 'workout',
+      targetId: 'browse',
+      title: 'Choose your first workout',
+      detail: 'Your training starts here',
+      action: 'Explore',
+      onOpen: openWorkout,
+      committable: false,
     });
   }
   const uniqueTodayTasks = todayTasks.filter((task, index, tasks) => tasks.findIndex((candidate) => candidate.kind === task.kind && candidate.targetId === task.targetId) === index);
@@ -461,7 +488,7 @@ export function ActionHubScreen({ navigation }: Props) {
             <Text style={styles.kicker}>{dateLabel}</Text>
             <Text style={styles.pageTitle}>Accountability</Text>
           </View>
-          <TouchableOpacity style={styles.trophyButton} onPress={() => navigation.navigate('Progress')} activeOpacity={0.76} accessibilityRole="button" accessibilityLabel={`${trophies?.score ?? 0} trophies. View trophy progress`}>
+          <TouchableOpacity style={styles.trophyButton} onPress={() => navigation.navigate('Progress')} activeOpacity={0.76} accessibilityRole="button" accessibilityLabel={trophies ? `${trophies.score} trophies. View trophy progress` : 'Trophy score unavailable. View trophy progress'}>
             <MaterialCommunityIcon name="trophy-outline" size={20} color={colors.gold} />
             <View style={styles.trophyButtonCopy}>
               <Text style={styles.trophyButtonValue}>{trophies?.score ?? '—'}</Text>
@@ -486,7 +513,6 @@ export function ActionHubScreen({ navigation }: Props) {
           partnerLoading={baeLoading && !accountabilityBae}
           partnerUnavailable={baeUnavailable && !accountabilityBae}
           compact={compactLayout}
-          todayArtwork={getAccountabilityTaskArtwork(uniqueTodayTasks[0]?.kind || 'progress')}
           onChange={setActiveView}
         />
         {activeView === 'today' ? (
@@ -538,13 +564,12 @@ export function ActionHubScreen({ navigation }: Props) {
 
 type AccountabilityView = 'today' | 'bae';
 
-export function AccountabilityModeSwitch({ activeView, partnerStatus, partnerLoading, partnerUnavailable, compact, todayArtwork, onChange }: {
+export function AccountabilityModeSwitch({ activeView, partnerStatus, partnerLoading, partnerUnavailable, compact, onChange }: {
   activeView: AccountabilityView;
   partnerStatus?: AccountabilityBaeSummary['status'];
   partnerLoading: boolean;
   partnerUnavailable: boolean;
   compact: boolean;
-  todayArtwork: ImageSourcePropType;
   onChange: (view: AccountabilityView) => void;
 }) {
   const partnerCaption = partnerUnavailable ? 'Unavailable' : partnerLoading ? 'Loading' : getAccountabilityBaeModeCaption(partnerStatus);
@@ -552,7 +577,7 @@ export function AccountabilityModeSwitch({ activeView, partnerStatus, partnerLoa
     <View style={styles.accountabilityTabs} accessibilityRole="tablist" accessibilityLabel="Accountability views">
       <AccountabilityModeOption
         active={activeView === 'today'}
-        artwork={todayArtwork}
+        icon="sun"
         label="My day"
         caption="Your focus"
         compact={compact}
@@ -560,7 +585,7 @@ export function AccountabilityModeSwitch({ activeView, partnerStatus, partnerLoa
       />
       <AccountabilityModeOption
         active={activeView === 'bae'}
-        artwork={getAccountabilityBaeArtwork(partnerStatus)}
+        icon="users"
         label="Partner"
         caption={partnerCaption}
         compact={compact}
@@ -570,9 +595,9 @@ export function AccountabilityModeSwitch({ activeView, partnerStatus, partnerLoa
   );
 }
 
-function AccountabilityModeOption({ active, artwork, label, caption, compact, onPress }: {
+function AccountabilityModeOption({ active, icon, label, caption, compact, onPress }: {
   active: boolean;
-  artwork: ImageSourcePropType;
+  icon: string;
   label: string;
   caption: string;
   compact: boolean;
@@ -587,15 +612,19 @@ function AccountabilityModeOption({ active, artwork, label, caption, compact, on
       accessibilityLabel={`${label}. ${caption}`}
       accessibilityState={{ selected: active }}
     >
-      <Image
-        source={artwork}
-        style={[styles.accountabilityTabArtwork, compact && styles.accountabilityTabArtworkCompact, active && styles.accountabilityTabArtworkActive]}
-        resizeMode="contain"
+      <View
+        style={[
+          styles.accountabilityTabIcon,
+          compact && styles.accountabilityTabIconCompact,
+          active && styles.accountabilityTabIconActive,
+        ]}
         accessible={false}
-      />
+      >
+        <Feather name={icon} size={compact ? 20 : 22} color={active ? colors.onPrimary : colors.gold} />
+      </View>
       <View style={styles.accountabilityTabCopy}>
         <Text style={[styles.accountabilityTabText, active && styles.accountabilityTabTextActive]} numberOfLines={1}>{label}</Text>
-        {!compact ? <Text style={[styles.accountabilityTabCaption, active && styles.accountabilityTabCaptionActive]} numberOfLines={1}>{caption}</Text> : null}
+        {!compact ? <Text style={[styles.accountabilityTabCaption, active && styles.accountabilityTabCaptionActive]} numberOfLines={2}>{caption}</Text> : null}
       </View>
     </TouchableOpacity>
   );
@@ -654,7 +683,8 @@ type AccountabilityBaeCardProps = {
   onViewTrophies: () => void;
 };
 
-export function AccountabilityBaeCard({ data, loading, compact, busy, friendCode, onFriendCodeChange, onStart, onJoinFriend, onShareFriendCode, onSubmitProof, onLeave, onRetry, onViewTrophies }: AccountabilityBaeCardProps) {
+export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, friendCode, onFriendCodeChange, onStart, onJoinFriend, onShareFriendCode, onSubmitProof, onLeave, onRetry, onViewTrophies }: AccountabilityBaeCardProps) {
+  const data = normalizeAccountabilityBaeSummary(rawData);
   if (loading && !data) {
     return <BaeLoadingState />;
   }
@@ -720,27 +750,28 @@ export function AccountabilityBaeCard({ data, loading, compact, busy, friendCode
           <BaePreference kind="friend" label="Friend" detail="Use a code" compact={compact} onPress={() => onStart('friend')} disabled={busy} />
         </View>
         {busy ? <ActivityIndicator color={colors.gold} /> : null}
-        <View style={styles.baeSafety}><Feather name="lock" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>First name + initial · photos unlock together · no face required</Text></View>
+        <View style={styles.baeSafety}><Feather name="lock" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>Only your first name and initial are shown. Photos unlock after you both check in, and showing your face is optional.</Text></View>
       </View>
     );
   }
 
   if (data.status === 'waiting') {
     const friendMode = data.preference === 'friend';
+    const inviteCodeReady = Boolean(data.inviteCode);
     return (
       <View style={styles.partnerSection}>
         {header}
         <BaeArtworkHero
           eyebrow={friendMode ? 'INVITE READY' : 'MATCHING NOW'}
           title={friendMode ? 'Bring a friend along' : 'Finding your person'}
-          body={friendMode ? 'Share your private code to connect.' : `Looking for a compatible ${data.preference} partner.`}
+          body={friendMode ? 'Share your private code to connect.' : data.preference ? `Looking for a compatible ${data.preference} partner.` : 'Looking for a compatible training partner.'}
           loading={!friendMode || busy}
         />
         {friendMode ? (
           <>
             <View style={styles.friendInviteBox}>
-              <View style={styles.friendCodeCopy}><Text style={styles.friendCodeLabel}>PARTNER CODE</Text><Text style={styles.friendCodeValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{data.inviteCode}</Text></View>
-              <PrimaryButton title="Invite" icon="share-2" size="sm" onPress={onShareFriendCode} style={styles.friendShareButton} />
+              <View style={styles.friendCodeCopy}><Text style={styles.friendCodeLabel}>PARTNER CODE</Text><Text style={styles.friendCodeValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{inviteCodeReady ? data.inviteCode : 'Preparing…'}</Text></View>
+              <PrimaryButton title="Invite" icon="share-2" size="sm" onPress={onShareFriendCode} disabled={!inviteCodeReady || busy} style={styles.friendShareButton} />
             </View>
             <Text style={styles.friendJoinLabel}>Already have their code?</Text>
             <View style={styles.friendJoinRow}>
@@ -994,13 +1025,13 @@ const styles = StyleSheet.create({
   accountabilityTabs: { flexDirection: 'row', gap: spacing.xs, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.lg, backgroundColor: colors.bg, padding: spacing.xs, marginTop: spacing.lg },
   accountabilityTab: { flex: 1, minWidth: 0, minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: 'transparent', borderRadius: radius.md, padding: 5 },
   accountabilityTabActive: { borderColor: colors.gold, backgroundColor: colors.gold },
-  accountabilityTabArtwork: { width: 72, height: 48, flexShrink: 0, borderRadius: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg },
-  accountabilityTabArtworkCompact: { width: 60, height: 40 },
-  accountabilityTabArtworkActive: { borderColor: 'rgba(0,0,0,0.32)' },
+  accountabilityTabIcon: { width: 48, height: 48, flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panelRaised },
+  accountabilityTabIconCompact: { width: 40, height: 40 },
+  accountabilityTabIconActive: { borderColor: 'rgba(0,0,0,0.22)', backgroundColor: 'rgba(8,9,12,0.08)' },
   accountabilityTabCopy: { flex: 1, minWidth: 0 },
   accountabilityTabText: { ...typography.label, color: colors.ink, fontWeight: '800' },
   accountabilityTabTextActive: { color: colors.onPrimary },
-  accountabilityTabCaption: { fontSize: 10, lineHeight: 14, color: colors.inkMuted, fontWeight: '600', marginTop: 1 },
+  accountabilityTabCaption: { fontSize: 10, lineHeight: 12, color: colors.inkMuted, fontWeight: '600', marginTop: 1 },
   accountabilityTabCaptionActive: { color: 'rgba(8,9,12,0.68)' },
   todayDashboard: { flex: 1 },
   todayHero: { marginTop: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.md },

@@ -3,17 +3,6 @@ import type { MainAppPreloadSnapshot } from '../services/preloadService';
 export const STARTUP_PROGRESS_FLOOR = 0.08;
 export const STARTUP_PROGRESS_LOADING_CEILING = 0.94;
 
-export function startupArtworkResizeMode(
-  viewportWidth: number,
-  viewportHeight: number,
-): 'cover' | 'contain' {
-  if (viewportWidth <= 0 || viewportHeight <= 0) return 'cover';
-
-  // The artwork is composed for tall phones. On tablets and landscape screens,
-  // containing it preserves every person while the black canvas masks sidebars.
-  return viewportHeight / viewportWidth < 1.65 ? 'contain' : 'cover';
-}
-
 export function startupProgressTarget(
   ready: boolean,
   snapshot: MainAppPreloadSnapshot,

@@ -1,9 +1,15 @@
 import { DarkTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { SplashScreen } from '../screens/auth/SplashScreen';
 import { useAuthStore } from '../store/authStore';
 import { trackMobileActivity } from '../services/activityService';
+import {
+  resolveOnboardingInitialRoute,
+  resolvePaidInitialRoute,
+  resolveRootRoute,
+  shouldReconcileRootRoute,
+} from '../utils/routing';
 import type { RootStackParamList } from './types';
 import { colors } from '../theme/colors';
 
@@ -48,7 +54,8 @@ export function RootNavigator() {
   const navigationRef = useRef<React.ComponentRef<typeof NavigationContainer<RootStackParamList>>>(null);
   const pageViewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTrackedPathRef = useRef('');
-  const { ready, token } = useAuthStore();
+  const [navigationReady, setNavigationReady] = useState(false);
+  const { ready, token, status } = useAuthStore();
 
   const queuePageView = useCallback((path: string) => {
     if (!token || path === lastTrackedPathRef.current) return;
@@ -60,15 +67,38 @@ export function RootNavigator() {
   }, [token]);
 
   useEffect(() => {
-    if (!ready || token) return;
+    if (!ready || !navigationReady) return;
     const nav = navigationRef.current;
     if (!nav?.isReady()) return;
+    const rootState = nav.getRootState();
+    const currentRoot = rootState.routes[rootState.index ?? 0]?.name as keyof RootStackParamList | undefined;
+    if (!token) {
+      if (currentRoot !== 'Auth') {
+        nav.reset({ index: 0, routes: [{ name: 'Auth' }] });
+      }
+      return;
+    }
+    if (!status || currentRoot === 'Splash' || currentRoot === 'Auth') return;
 
-    nav.reset({
-      index: 0,
-      routes: [{ name: 'Auth' }],
-    });
-  }, [ready, token]);
+    const expectedRoot = resolveRootRoute(status.recommendedNextScreen);
+    if (!shouldReconcileRootRoute(currentRoot, expectedRoot)) return;
+
+    if (expectedRoot === 'Onboarding') {
+      nav.reset({
+        index: 0,
+        routes: [{ name: 'Onboarding', params: { screen: resolveOnboardingInitialRoute(status.recommendedNextScreen) } }],
+      });
+      return;
+    }
+    if (expectedRoot === 'PaidTransition') {
+      nav.reset({
+        index: 0,
+        routes: [{ name: 'PaidTransition', params: { screen: resolvePaidInitialRoute(status.recommendedNextScreen) } }],
+      });
+      return;
+    }
+    nav.reset({ index: 0, routes: [{ name: expectedRoot }] });
+  }, [navigationReady, ready, status, token]);
 
   useEffect(() => () => {
     if (pageViewTimerRef.current) clearTimeout(pageViewTimerRef.current);
@@ -79,6 +109,7 @@ export function RootNavigator() {
       theme={navigationTheme}
       ref={navigationRef}
       onReady={() => {
+        setNavigationReady(true);
         if (token) {
           queuePageView(getActiveRoutePath(navigationRef.current?.getRootState()));
         }

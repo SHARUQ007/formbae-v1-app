@@ -5,6 +5,7 @@ import type { DietCoachFeedback } from '../../services/dietDiaryService';
 import {
   DietReportPendingState,
   DietReportStory,
+  formatDaysToNextDietReport,
   getDietReportEnrichmentState,
 } from './DietScreen';
 
@@ -222,7 +223,7 @@ function renderedText(renderer: ReactTestRenderer.ReactTestRenderer) {
 }
 
 describe('DietReportStory', () => {
-  it('renders the complete report as immediately readable static content', async () => {
+  it('renders a concise report without duplicating extended model fields', async () => {
     let renderer!: ReactTestRenderer.ReactTestRenderer;
     await ReactTestRenderer.act(() => {
       renderer = ReactTestRenderer.create(<DietReportStory feedback={completeReport()} />);
@@ -231,40 +232,36 @@ describe('DietReportStory', () => {
     const text = renderedText(renderer);
     [
       'Lunch became more balanced',
-      'Based on nine described meals across five days.',
       'Build a repeatable breakfast',
-      'Set out oats and a bowl',
       'Protein appeared at lunch',
       'Breakfast had the least detail this week.',
-      'Lunch variety improved',
-      'Lunch often paired dal with rice.',
-      'Pulses and legumes',
-      'Regular lunch protein supports the strength goal.',
-      'Simple breakfast formula',
-      'One option prepared the night before',
-      'Plants and fibre-rich foods',
       'Keep the change small enough to repeat.',
-      'A useful extra note',
-      'Build variety across the week',
       'Several dinners were not described.',
-      'Which breakfast is easiest?',
-      'When do you usually train?',
     ].forEach(value => expect(text).toContain(value));
+
+    [
+      'Based on nine described meals across five days.',
+      'Lunch variety improved',
+      'Pulses and legumes',
+      'Simple breakfast formula',
+      'Plants and fibre-rich foods',
+      'Which breakfast is easiest?',
+    ].forEach(value => expect(text).not.toContain(value));
 
     expect(text).toContain('PATTERN SCORE');
     expect(text).toContain('+4 vs last report');
     expect(renderer.root.findAll(node => node.props.accessibilityLabel === 'Weekly report summary').length).toBeGreaterThan(0);
     expect(renderer.root.findAll(node => node.props.accessibilityLabel === '5 days with detail').length).toBeGreaterThan(0);
     expect(renderer.root.findAll(node => node.props.accessibilityLabel === '9 described meals').length).toBeGreaterThan(0);
-    expect(renderer.root.findAll(node => node.props.accessibilityLabel === '10 meal moments').length).toBeGreaterThan(0);
+    expect(renderer.root.findAll(node => node.props.accessibilityLabel === '10 meal moments')).toHaveLength(0);
     expect(renderer.root.findAll(node => node.props.horizontal === true)).toHaveLength(0);
     expect(renderer.root.findAll(node => node.props.accessibilityRole === 'adjustable')).toHaveLength(0);
     expect(renderer.root.findAll(node => typeof node.props.accessibilityState?.expanded === 'boolean')).toHaveLength(0);
-    expect(renderer.root.findAllByType(TextInput)).toHaveLength(2);
-    expect(renderer.root.findAll(node => node.props.testID === 'weekly-nutrition-art').length).toBeGreaterThan(0);
+    expect(renderer.root.findAllByType(TextInput)).toHaveLength(0);
+    expect(renderer.root.findAll(node => node.props.testID === 'weekly-nutrition-art')).toHaveLength(0);
   });
 
-  it('deduplicates sources and disables unsafe URLs', async () => {
+  it('keeps source detail out of the primary reading flow', async () => {
     const report = completeReport();
 
     let renderer!: ReactTestRenderer.ReactTestRenderer;
@@ -280,13 +277,8 @@ describe('DietReportStory', () => {
         .map(node => node.props.accessibilityLabel)
         .filter(Boolean),
     );
-    expect(linkLabels).toEqual(new Set(['Open Build variety across the week from World Health Organization']));
-    expect(renderer.root.findAll(node => node.props.accessibilityLabel === 'Open Build variety across the week from World Health Organization').length).toBeGreaterThan(0);
-
-    const unsafeSource = renderer.root.findAll(node => node.props.accessibilityLabel === 'Unlinked reference, attributed to Reference publisher');
-    expect(unsafeSource.length).toBeGreaterThan(0);
-    expect(unsafeSource.some(node => node.props.disabled === true)).toBe(true);
-    expect(unsafeSource.every(node => node.props.accessibilityRole === undefined)).toBe(true);
+    expect(linkLabels).toEqual(new Set());
+    expect(text).toContain('General wellness guidance only—not medical advice.');
     expect(renderer.root.findAllByType(TextInput)).toHaveLength(0);
     expect(renderer.root.findAll(node => node.props.testID === 'weekly-nutrition-art')).toHaveLength(0);
   });
@@ -475,6 +467,11 @@ describe('DietReportStory', () => {
 });
 
 describe('diet report enrichment', () => {
+  it('formats the report card countdown as its secondary text', () => {
+    expect(formatDaysToNextDietReport(1)).toBe('1 day to next report');
+    expect(formatDaysToNextDietReport(7)).toBe('7 days to next report');
+  });
+
   it('keeps a below-threshold pending state concise, actionable, and accessible', async () => {
     const feedback = pendingReport(49);
     expect(getDietReportEnrichmentState(feedback)).toMatchObject({

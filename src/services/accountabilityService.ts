@@ -5,6 +5,91 @@ import type { AccountabilityBaeSummary, AccountabilitySummary } from '../types/a
 
 const ACCOUNTABILITY_CACHE_KEY = 'accountability:summary:v1';
 const ACCOUNTABILITY_BAE_CACHE_KEY = 'accountability:bae:v1';
+const DEFAULT_BAE_TROPHY_THRESHOLD = 50;
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function finiteNonNegative(value: unknown, fallback: number) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.max(0, numeric) : fallback;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/** Keeps cached or partially deployed Partner payloads safe for the UI. */
+export function normalizeAccountabilityBaeSummary(value: unknown): AccountabilityBaeSummary | null {
+  const raw = recordValue(value);
+  if (!raw) return null;
+
+  const rawAccess = recordValue(raw.access);
+  const suppliedThreshold = finiteNonNegative(rawAccess?.trophyThreshold, DEFAULT_BAE_TROPHY_THRESHOLD);
+  const threshold = suppliedThreshold > 0 ? suppliedThreshold : DEFAULT_BAE_TROPHY_THRESHOLD;
+  const score = finiteNonNegative(rawAccess?.trophyScore, 0);
+  const remainingFallback = Math.max(0, threshold - score);
+  const override = rawAccess?.override === 'locked' || rawAccess?.override === 'unlocked'
+    ? rawAccess.override
+    : 'default';
+  const access = {
+    unlocked: rawAccess?.unlocked === true || override === 'unlocked',
+    override,
+    trophyScore: score,
+    trophyThreshold: threshold,
+    trophiesRemaining: finiteNonNegative(rawAccess?.trophiesRemaining, remainingFallback),
+  } as NonNullable<AccountabilityBaeSummary['access']>;
+
+  const validStatus = raw.status === 'locked' || raw.status === 'inactive' || raw.status === 'waiting' || raw.status === 'matched';
+  const status: AccountabilityBaeSummary['status'] = validStatus
+    ? raw.status as AccountabilityBaeSummary['status']
+    : rawAccess && !access.unlocked
+      ? 'locked'
+      : 'inactive';
+  const preference = raw.preference === 'male' || raw.preference === 'female' || raw.preference === 'friend'
+    ? raw.preference
+    : '';
+  const rawPartner = recordValue(raw.partner);
+  const partnerName = stringValue(rawPartner?.displayName);
+  const rawChallenge = recordValue(raw.challenge);
+  const challengeTitle = stringValue(rawChallenge?.title);
+  const youSubmitted = raw.youSubmitted === true;
+  const partnerSubmitted = raw.partnerSubmitted === true;
+
+  return {
+    status,
+    preference,
+    inviteCode: stringValue(raw.inviteCode),
+    access,
+    partner: partnerName
+      ? { userId: stringValue(rawPartner?.userId), displayName: partnerName }
+      : null,
+    challenge: challengeTitle
+      ? {
+          id: stringValue(rawChallenge?.id),
+          title: challengeTitle,
+          prompt: stringValue(rawChallenge?.prompt),
+          icon: stringValue(rawChallenge?.icon) || 'walk',
+          date: stringValue(rawChallenge?.date),
+          dueLabel: stringValue(rawChallenge?.dueLabel) || 'Today',
+        }
+      : null,
+    youSubmitted,
+    partnerSubmitted,
+    bothSubmitted: raw.bothSubmitted === true && youSubmitted && partnerSubmitted,
+    yourProofUrl: youSubmitted ? stringValue(raw.yourProofUrl) || undefined : undefined,
+    partnerProofUrl: partnerSubmitted ? stringValue(raw.partnerProofUrl) || undefined : undefined,
+  };
+}
+
+function requireBaeSummary(value: unknown) {
+  const summary = normalizeAccountabilityBaeSummary(value);
+  if (!summary) throw new Error('Partner mode returned an invalid response.');
+  return summary;
+}
 
 export function fetchAccountability(options?: { force?: boolean }) {
   return getCachedResource(
@@ -33,35 +118,38 @@ export function updateAccountability(body: {
 export function fetchAccountabilityBae(options?: { force?: boolean }) {
   return getCachedResource(
     ACCOUNTABILITY_BAE_CACHE_KEY,
-    () => apiRequest<AccountabilityBaeSummary>('/accountability/bae'),
+    () => apiRequest<unknown>('/accountability/bae').then(requireBaeSummary),
     { force: options?.force },
-  );
+  ).then(requireBaeSummary);
 }
 
 export function peekAccountabilityBae() {
-  return peekCachedResource<AccountabilityBaeSummary>(ACCOUNTABILITY_BAE_CACHE_KEY);
+  return normalizeAccountabilityBaeSummary(
+    peekCachedResource<unknown>(ACCOUNTABILITY_BAE_CACHE_KEY),
+  );
 }
 
-function cacheBae(summary: AccountabilityBaeSummary) {
+function cacheBae(value: unknown) {
+  const summary = requireBaeSummary(value);
   setCachedResource(ACCOUNTABILITY_BAE_CACHE_KEY, summary);
   return summary;
 }
 
 export function startAccountabilityBaeMatch(preference: 'male' | 'female' | 'friend') {
-  return apiRequest<AccountabilityBaeSummary>('/accountability/bae/match', { method: 'POST', body: { preference } }).then(cacheBae);
+  return apiRequest<unknown>('/accountability/bae/match', { method: 'POST', body: { preference } }).then(cacheBae);
 }
 
 export function joinAccountabilityBaeFriend(inviteCode: string) {
-  return apiRequest<AccountabilityBaeSummary>('/accountability/bae/friend/join', { method: 'POST', body: { inviteCode } }).then(cacheBae);
+  return apiRequest<unknown>('/accountability/bae/friend/join', { method: 'POST', body: { inviteCode } }).then(cacheBae);
 }
 
 export function leaveAccountabilityBae() {
-  return apiRequest<AccountabilityBaeSummary>('/accountability/bae/leave', { method: 'POST' }).then(cacheBae);
+  return apiRequest<unknown>('/accountability/bae/leave', { method: 'POST' }).then(cacheBae);
 }
 
 export function uploadAccountabilityBaeProof(asset: Asset) {
   if (!asset.base64) throw new Error('Photo data is unavailable.');
-  return apiRequest<AccountabilityBaeSummary>('/accountability/bae/proof', {
+  return apiRequest<unknown>('/accountability/bae/proof', {
     method: 'POST',
     timeoutMs: 30000,
     body: { imageBase64: asset.base64, imageMime: asset.type || 'image/jpeg' },

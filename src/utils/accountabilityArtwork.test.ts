@@ -11,7 +11,7 @@ function assetPath(source: unknown) {
 describe('accountability task presentation', () => {
   it.each([
     ['diet', 'accountability-food-memory.jpg'],
-    ['workout', 'accountability-workout.jpg'],
+    ['workout', 'accountability-workout-card.jpg'],
     ['refresh', 'accountability-plan.jpg'],
     ['progress', 'accountability-progress.jpg'],
   ])('selects purpose-built artwork for %s', (kind, filename) => {

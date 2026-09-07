@@ -1,5 +1,5 @@
 import { loadWorkoutPlanCached, peekWorkoutPlanCached } from '../services/preloadService';
-import { loadDietDiaryEntries, peekDietDiaryEntries, type MealType } from '../store/dietDiaryStore';
+import { loadDietDiaryEntries, peekDietDiaryEntries, type DietDiaryEntry, type MealType } from '../store/dietDiaryStore';
 import type { PlanDay, TodayPayload } from '../types/api';
 import { mealForCurrentTime } from './dietDiaryTime';
 
@@ -24,10 +24,23 @@ export function isMealWindow(date = new Date()) {
   return hour >= 5 && hour < 23;
 }
 
-export function isToday(value: string) {
+export function isToday(value: string, reference = new Date()) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return false;
-  return date.toDateString() === new Date().toDateString();
+  return date.toDateString() === reference.toDateString();
+}
+
+export function isUsableDietEntry(entry: DietDiaryEntry) {
+  return entry.kind !== 'skip' && entry.status !== 'skipped';
+}
+
+export function shouldOfferMealTask(entries: DietDiaryEntry[], date = new Date()) {
+  const usableEntries = entries.filter(isUsableDietEntry);
+  const mealType = currentMealType(date);
+  const currentMealLogged = usableEntries.some(
+    (entry) => isToday(entry.createdAt, date) && entry.mealType === mealType,
+  );
+  return !currentMealLogged && (isMealWindow(date) || usableEntries.length === 0);
 }
 
 export function workoutTitle(day?: PlanDay) {
@@ -42,10 +55,10 @@ export function nextPlanDay(plan?: TodayPayload['plan']) {
 
 export function resolveTargetFromSnapshot(snapshot: Omit<ContextualSnapshot, 'target'>): ContextualTarget {
   const { workoutData, dietEntries } = snapshot;
-  const mealType = currentMealType();
-  const hasCurrentMealLog = dietEntries.some((entry) => isToday(entry.createdAt) && entry.mealType === mealType);
+  const now = new Date();
+  const mealType = currentMealType(now);
 
-  if (isMealWindow() && !hasCurrentMealLog) {
+  if (shouldOfferMealTask(dietEntries, now)) {
     return {
       kind: 'diet',
       label: mealType,
@@ -73,6 +86,15 @@ export function resolveTargetFromSnapshot(snapshot: Omit<ContextualSnapshot, 'ta
       label: 'Ava',
       detail: 'Next plan',
       icon: 'refresh-cw',
+    };
+  }
+
+  if (!plan?.days?.length) {
+    return {
+      kind: 'workout',
+      label: 'Start',
+      detail: 'First workout',
+      icon: 'activity',
     };
   }
 

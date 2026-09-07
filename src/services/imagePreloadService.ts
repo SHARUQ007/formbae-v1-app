@@ -25,7 +25,6 @@ import {
 
 const APP_ICON = require('../assets/app-icon.png') as ImageSourcePropType;
 const COACH_DISCOVERY_ART = require('../assets/editorial/coach-discovery.jpg') as ImageSourcePropType;
-const WEEKLY_NUTRITION_ART = require('../assets/editorial/weekly-nutrition-rhythm.jpg') as ImageSourcePropType;
 
 const MEMBERSHIP_ARTWORK = {
   female: [
@@ -109,7 +108,6 @@ export function getMainAppArtworkSources(profileGender?: string) {
   return uniqueSources([
     APP_ICON,
     COACH_DISCOVERY_ART,
-    WEEKLY_NUTRITION_ART,
     getCoachArtworkSource({ name: 'Ava' }),
     getAccountabilityTaskArtwork('diet'),
     getAccountabilityTaskArtwork('workout'),

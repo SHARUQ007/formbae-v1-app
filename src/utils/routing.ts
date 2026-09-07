@@ -50,3 +50,16 @@ export function resolvePaidInitialRoute(screen: RecommendedNextScreen): keyof im
       return 'PaidWelcome';
   }
 }
+
+/** Reconciles stale cached setup routes without overriding deliberate screens. */
+export function shouldReconcileRootRoute(
+  current: keyof RootStackParamList | undefined,
+  expected: keyof RootStackParamList,
+) {
+  if (!current || current === 'Splash' || current === 'Auth') return false;
+  if (current === 'Main') return expected !== 'Main';
+  if (current === 'Onboarding' || current === 'PaidTransition') {
+    return current !== expected;
+  }
+  return false;
+}

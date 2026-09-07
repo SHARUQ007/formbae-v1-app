@@ -1,9 +1,8 @@
 import React from 'react';
-import { Image } from 'react-native';
+import { Image, Text } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import type { AccountabilityBaeSummary } from '../../types/api';
 import { AccountabilityBaeCard, AccountabilityModeSwitch } from './ActionHubScreen';
-import { getAccountabilityTaskArtwork } from '../../utils/accountabilityArtwork';
 
 const noop = () => undefined;
 
@@ -45,7 +44,7 @@ const matchedBase: AccountabilityBaeSummary = {
 };
 
 describe('Accountability Bae UI states', () => {
-  it('uses artwork navigation with concise, accurate query states', async () => {
+  it('uses lightweight icon navigation with concise, accurate query states', async () => {
     const onChange = jest.fn();
     let renderer!: ReactTestRenderer.ReactTestRenderer;
     await ReactTestRenderer.act(() => {
@@ -56,15 +55,18 @@ describe('Accountability Bae UI states', () => {
           partnerLoading={false}
           partnerUnavailable
           compact={false}
-          todayArtwork={getAccountabilityTaskArtwork('workout')}
           onChange={onChange}
         />,
       );
     });
     expect(copy(renderer)).toContain('Unavailable');
-    const modeArtwork = renderer.root.findAllByType(Image);
-    expect(modeArtwork).toHaveLength(2);
-    expect(modeArtwork.every((image) => image.props.resizeMode === 'contain')).toBe(true);
+    expect(renderer.root.findAll(node => node.props.name === 'sun')).toHaveLength(1);
+    expect(renderer.root.findAll(node => node.props.name === 'users')).toHaveLength(1);
+    expect(renderer.root.findAllByType(Image)).toHaveLength(0);
+    const partnerCaption = renderer.root
+      .findAllByType(Text)
+      .find(node => node.props.children === 'Unavailable');
+    expect(partnerCaption?.props.numberOfLines).toBe(2);
     renderer.root.findByProps({ accessibilityLabel: 'My day. Your focus' }).props.onPress();
     expect(onChange).toHaveBeenCalledWith('today');
   });
@@ -74,8 +76,9 @@ describe('Accountability Bae UI states', () => {
     const renderer = await renderCard({ status: 'inactive', preference: '', inviteCode: '' }, { onStart });
     const text = copy(renderer);
     expect(text).toContain('Better together');
-    expect(text).toContain('photos unlock together');
-    expect(text).toContain('no face required');
+    expect(text).toContain('Only your first name and initial are shown.');
+    expect(text).toContain('Photos unlock after you both check in');
+    expect(text).toContain('showing your face is optional');
     renderer.root.findByProps({ accessibilityLabel: 'Female. Auto-match' }).props.onPress();
     expect(onStart).toHaveBeenCalledWith('female');
   });
@@ -110,5 +113,50 @@ describe('Accountability Bae UI states', () => {
     expect(text).not.toContain('Check in with a photo');
     const sources = renderer.root.findAllByType(Image).map((node) => JSON.stringify(node.props.source));
     expect(sources.some((source) => source.includes('/accountability/bae/proof/partner'))).toBe(true);
+  });
+
+  it('renders a safe locked state for partial or invalid access data', async () => {
+    const renderer = await renderCard({
+      status: 'locked',
+      preference: '',
+      inviteCode: '',
+      access: {
+        unlocked: false,
+        override: 'default',
+        trophyScore: Number.NaN,
+        trophyThreshold: 0,
+        trophiesRemaining: Number.POSITIVE_INFINITY,
+      },
+    });
+    const text = copy(renderer);
+    expect(text).toContain('50 more trophies');
+    expect(text).not.toContain('NaN');
+    expect(text).not.toContain('Infinity');
+  });
+
+  it('does not expose an invite action until the friend code is ready', async () => {
+    const renderer = await renderCard({
+      status: 'waiting',
+      preference: 'friend',
+      inviteCode: '',
+    });
+    expect(copy(renderer)).toContain('Preparing…');
+    expect(renderer.root.findByProps({ accessibilityLabel: 'Invite' }).props.accessibilityState.disabled).toBe(true);
+  });
+
+  it('rejects contradictory completion flags from stale cached payloads', async () => {
+    const renderer = await renderCard({
+      ...matchedBase,
+      youSubmitted: true,
+      partnerSubmitted: false,
+      bothSubmitted: true,
+      yourProofUrl: '/accountability/bae/proof/me',
+      partnerProofUrl: '/accountability/bae/proof/partner',
+    });
+    const text = copy(renderer);
+    expect(text).not.toContain('You both showed up');
+    expect(text).toContain('Waiting for Priya K.');
+    const sources = renderer.root.findAllByType(Image).map((node) => JSON.stringify(node.props.source));
+    expect(sources.some((source) => source.includes('/accountability/bae/proof/partner'))).toBe(false);
   });
 });

@@ -10,23 +10,38 @@ import { flushWorkoutQueue } from '../store/workoutStore';
 import type { SessionUser, UserStatus } from '../types/api';
 
 const STATUS_CACHE_PREFIX = 'formbae_auth_status_v2:';
+let initializedUserId = '';
+let mainPreloadedUserId = '';
+let statusRefreshInFlight: { token: string; promise: Promise<UserStatus> } | null = null;
 
 function statusCacheKey(token: string) {
   return `${STATUS_CACHE_PREFIX}${getCacheSessionId(token)}`;
 }
 
 function runPostAuthInit(status: UserStatus) {
-  // Fire-and-forget; never blocks or breaks the UI.
-  flushWorkoutQueue().catch(() => undefined);
-  // Main-app endpoints are expensive and irrelevant to onboarding/payment
-  // routes. Splash coordinates this same session-scoped preload for home.
-  if (status.recommendedNextScreen === 'home') preloadMainAppData();
-  registerForRemotePush().catch(() => undefined);
-  syncReminders({
-    workoutReminders: true,
-    weeklyCheckInReminders: true,
-    trainerMessageReminders: true,
-  }).catch(() => undefined);
+  if (initializedUserId !== status.userId) {
+    initializedUserId = status.userId;
+    // Fire-and-forget; never blocks or breaks the UI.
+    flushWorkoutQueue().catch(() => undefined);
+    registerForRemotePush().catch(() => undefined);
+    syncReminders({
+      workoutReminders: true,
+      weeklyCheckInReminders: true,
+      trainerMessageReminders: true,
+    }).catch(() => undefined);
+  }
+  // A user can move from setup to home without passing through Splash. Warm
+  // main data exactly once when that transition becomes visible.
+  if (status.recommendedNextScreen === 'home' && mainPreloadedUserId !== status.userId) {
+    mainPreloadedUserId = status.userId;
+    preloadMainAppData();
+  }
+}
+
+function resetPostAuthInit() {
+  initializedUserId = '';
+  mainPreloadedUserId = '';
+  statusRefreshInFlight = null;
 }
 
 async function loadCachedStatus(token: string): Promise<UserStatus | null> {
@@ -101,6 +116,7 @@ export function useAuthStore() {
       const token = await loadToken();
       bootstrapToken = token;
       if (!token) {
+        resetPostAuthInit();
         setCacheSession(null);
         setState({ ready: true, token: null, user: null, status: null, loading: false });
         return;
@@ -113,8 +129,11 @@ export function useAuthStore() {
         runPostAuthInit(cachedStatus);
         fetchUserStatus()
           .then((freshStatus) => {
+            if (state.token !== token) return;
+            setCacheSession(token, freshStatus.userId);
             saveCachedStatus(token, freshStatus);
             setState({ status: freshStatus });
+            runPostAuthInit(freshStatus);
           })
           .catch(() => undefined);
         return;
@@ -126,6 +145,7 @@ export function useAuthStore() {
       runPostAuthInit(status);
     } catch {
       await logoutRequest();
+      resetPostAuthInit();
       invalidateCachedResource();
       clearCachedStatus(bootstrapToken);
       setCacheSession(null);
@@ -156,10 +176,23 @@ export function useAuthStore() {
   }, []);
 
   const refreshStatus = useCallback(async () => {
-    const status = await fetchUserStatus();
-    if (state.token) setCacheSession(state.token, status.userId);
-    if (state.token) saveCachedStatus(state.token, status);
+    const refreshToken = state.token;
+    if (!refreshToken) throw new Error('Your session has ended. Please sign in again.');
+    const promise = statusRefreshInFlight?.token === refreshToken
+      ? statusRefreshInFlight.promise
+      : fetchUserStatus();
+    statusRefreshInFlight = { token: refreshToken, promise };
+    let status: UserStatus;
+    try {
+      status = await promise;
+    } finally {
+      if (statusRefreshInFlight?.promise === promise) statusRefreshInFlight = null;
+    }
+    if (state.token !== refreshToken) throw new Error('Your session changed while refreshing.');
+    setCacheSession(refreshToken, status.userId);
+    saveCachedStatus(refreshToken, status);
     setState({ status });
+    runPostAuthInit(status);
     return status;
   }, []);
 
@@ -167,6 +200,7 @@ export function useAuthStore() {
     try {
       await logoutRequest();
     } finally {
+      resetPostAuthInit();
       invalidateCachedResource();
       clearCachedStatus(state.token);
       setCacheSession(null);
@@ -177,6 +211,7 @@ export function useAuthStore() {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       logoutRequest().finally(() => {
+        resetPostAuthInit();
         invalidateCachedResource();
         clearCachedStatus(state.token);
         setCacheSession(null);

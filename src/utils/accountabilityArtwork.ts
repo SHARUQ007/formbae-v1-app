@@ -2,7 +2,7 @@ import type { ImageSourcePropType } from 'react-native';
 
 const ACCOUNTABILITY_TASK_ARTWORK: Record<'diet' | 'workout' | 'refresh' | 'progress', ImageSourcePropType> = {
   diet: require('../assets/editorial/accountability-food-memory.jpg'),
-  workout: require('../assets/editorial/accountability-workout.jpg'),
+  workout: require('../assets/editorial/accountability-workout-card.jpg'),
   refresh: require('../assets/editorial/accountability-plan.jpg'),
   progress: require('../assets/editorial/accountability-progress.jpg'),
 };

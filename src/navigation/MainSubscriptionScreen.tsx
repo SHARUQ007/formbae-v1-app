@@ -4,6 +4,11 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { MainTabNavigator } from './MainTabNavigator';
 import { useAuthStore } from '../store/authStore';
+import {
+  resolveOnboardingInitialRoute,
+  resolvePaidInitialRoute,
+  resolveRootRoute,
+} from '../utils/routing';
 import type { RootStackParamList } from './types';
 import { colors } from '../theme/colors';
 import { radius } from '../theme/radius';
@@ -31,8 +36,25 @@ export function MainSubscriptionScreen({ navigation }: Props) {
   }, [refreshStatus]);
 
   useEffect(() => {
-    if (subscription?.state === 'expired') navigation.replace('Renewal');
-  }, [navigation, subscription?.state]);
+    if (!status) return;
+    const root = subscription?.state === 'expired'
+      ? 'Renewal'
+      : resolveRootRoute(status.recommendedNextScreen);
+    if (root === 'Main') return;
+    if (root === 'Onboarding') {
+      navigation.replace('Onboarding', {
+        screen: resolveOnboardingInitialRoute(status.recommendedNextScreen),
+      });
+      return;
+    }
+    if (root === 'PaidTransition') {
+      navigation.replace('PaidTransition', {
+        screen: resolvePaidInitialRoute(status.recommendedNextScreen),
+      });
+      return;
+    }
+    navigation.replace(root);
+  }, [navigation, status, subscription?.state]);
 
   const graceDays = subscription?.graceDaysRemaining || 0;
   return (

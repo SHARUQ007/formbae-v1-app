@@ -45,7 +45,7 @@ describe('Profile subscription disclosure', () => {
     expect(StyleSheet.flatten(bodyArtwork.props.style)).toEqual(expect.objectContaining({
       top: 0,
       width: '100%',
-      aspectRatio: 3 / 2,
+      height: '132%',
     }));
     expect(StyleSheet.flatten(planArtwork.props.style)).toEqual(expect.objectContaining({ width: '100%', height: '100%' }));
 

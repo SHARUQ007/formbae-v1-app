@@ -2,7 +2,6 @@ import type { MainAppPreloadSnapshot } from '../services/preloadService';
 import {
   STARTUP_PROGRESS_FLOOR,
   STARTUP_PROGRESS_LOADING_CEILING,
-  startupArtworkResizeMode,
   startupProgressMeta,
   startupProgressTarget,
 } from './startupPresentation';
@@ -16,14 +15,6 @@ function snapshot(
 }
 
 describe('startup presentation', () => {
-  it('keeps the splash artwork full-bleed on phones without cropping wide screens', () => {
-    expect(startupArtworkResizeMode(390, 844)).toBe('cover');
-    expect(startupArtworkResizeMode(360, 640)).toBe('cover');
-    expect(startupArtworkResizeMode(768, 1024)).toBe('contain');
-    expect(startupArtworkResizeMode(1024, 768)).toBe('contain');
-    expect(startupArtworkResizeMode(0, 0)).toBe('cover');
-  });
-
   it('shows a small initial rail without inventing time-based progress', () => {
     expect(startupProgressTarget(false, snapshot('ready', 6))).toBe(
       STARTUP_PROGRESS_FLOOR,
