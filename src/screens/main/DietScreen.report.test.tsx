@@ -11,7 +11,7 @@ import {
 
 function completeReport(): DietCoachFeedback {
   return {
-    schemaVersion: 8,
+    schemaVersion: 10,
     weekStartDate: '2026-08-24',
     weekEndDate: '2026-08-30',
     generatedAt: '2026-08-30T10:00:00.000Z',
@@ -223,7 +223,7 @@ function renderedText(renderer: ReactTestRenderer.ReactTestRenderer) {
 }
 
 describe('DietReportStory', () => {
-  it('renders a concise report without duplicating extended model fields', async () => {
+  it('renders a detailed report without duplicating unrelated legacy fields', async () => {
     let renderer!: ReactTestRenderer.ReactTestRenderer;
     await ReactTestRenderer.act(() => {
       renderer = ReactTestRenderer.create(<DietReportStory feedback={completeReport()} />);
@@ -235,13 +235,16 @@ describe('DietReportStory', () => {
       'Build a repeatable breakfast',
       'Protein appeared at lunch',
       'Breakfast had the least detail this week.',
+      'A repeatable option can reduce morning decisions.',
+      'Two breakfasts described',
+      'Lunch variety improved',
+      'Build variety across the week',
       'Keep the change small enough to repeat.',
       'Several dinners were not described.',
     ].forEach(value => expect(text).toContain(value));
 
     [
       'Based on nine described meals across five days.',
-      'Lunch variety improved',
       'Pulses and legumes',
       'Simple breakfast formula',
       'Plants and fibre-rich foods',
@@ -261,7 +264,7 @@ describe('DietReportStory', () => {
     expect(renderer.root.findAll(node => node.props.testID === 'weekly-nutrition-art')).toHaveLength(0);
   });
 
-  it('keeps source detail out of the primary reading flow', async () => {
+  it('renders deduplicated linked sources at the end', async () => {
     const report = completeReport();
 
     let renderer!: ReactTestRenderer.ReactTestRenderer;
@@ -277,8 +280,10 @@ describe('DietReportStory', () => {
         .map(node => node.props.accessibilityLabel)
         .filter(Boolean),
     );
-    expect(linkLabels).toEqual(new Set());
-    expect(text).toContain('General wellness guidance only—not medical advice.');
+    expect(linkLabels).toEqual(new Set(['Open Build variety across the week from World Health Organization']));
+    expect(text).toContain('Sources');
+    expect(text).toContain('Unlinked reference');
+    expect(text).toContain('Portions, calories and nutrients are not inferred. General wellness guidance only.');
     expect(renderer.root.findAllByType(TextInput)).toHaveLength(0);
     expect(renderer.root.findAll(node => node.props.testID === 'weekly-nutrition-art')).toHaveLength(0);
   });

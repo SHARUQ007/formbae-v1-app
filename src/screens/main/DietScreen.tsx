@@ -66,6 +66,7 @@ import { radius } from '../../theme/radius';
 import { shadows } from '../../theme/shadows';
 import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
+import { reportTypography } from '../../theme/reportTypography';
 import { getDietReportEmptyArtwork } from '../../utils/reportArtwork';
 import { isDateInCurrentWeek } from '../../utils/weeklyMuscles';
 import {
@@ -187,7 +188,7 @@ function memorySlotDraftKey(date: Date, mealType: MealType) {
 /** Ava regenerates the diet report on a fixed weekly cadence (backend: FEEDBACK_INTERVAL_DAYS). */
 const REPORT_CYCLE_DAYS = 7;
 const DEFAULT_REPORT_ENRICHMENT_REQUIREMENT = 50;
-const SUPPORTED_DIET_REPORT_SCHEMA_VERSION = 9;
+const SUPPORTED_DIET_REPORT_SCHEMA_VERSION = 10;
 const REPORT_SAGE = '#A8BFB2';
 const REPORT_SAGE_SURFACE = 'rgba(168,191,178,0.12)';
 const REPORT_BLUE_SURFACE = 'rgba(145,189,248,0.10)';
@@ -950,13 +951,13 @@ export function DietReportStory({
 
       {hasPlan ? (
         <ReportPaperSection
-          title={interactive ? 'Your plan for the next 7 days' : 'Plan suggested after this report'}
-          meta="One focus with a simple way to follow through"
+          title={interactive ? 'Next 7 days' : 'Suggested protocol'}
+          meta="One practical protocol based on this diary"
         >
           <View style={styles.paperFocusPanel}>
             {focus ? (
               <View style={styles.paperFocusHeader}>
-                <View style={styles.paperFocusMarker}><Feather name="arrow-up-right" size={18} color={REPORT_PAGE} /></View>
+                <Text style={styles.paperFocusMarker}>01</Text>
                 <View style={styles.paperFocusCopy}>
                   <Text style={styles.paperFocusLabel}>{interactive ? 'PRIMARY FOCUS' : 'SUGGESTED FOCUS'}</Text>
                   <Text style={styles.paperFocusTitle}>{focus}</Text>
@@ -969,7 +970,7 @@ export function DietReportStory({
               <View style={styles.paperActionList}>
                 {actions.map((action, index) => (
                   <View key={`${action}-${index}`} style={styles.paperActionRow}>
-                    <View style={styles.paperActionNumber}><Text style={styles.paperActionNumberText}>{index + 1}</Text></View>
+                    <Text style={styles.paperActionNumber}>{String(index + 1).padStart(2, '0')}</Text>
                     <Text style={styles.paperActionText}>{action}</Text>
                   </View>
                 ))}
@@ -998,14 +999,14 @@ export function DietReportStory({
       ) : null}
 
       {hasFindings ? (
-        <ReportPaperSection title="Key findings" meta="The strongest signals from the diary data" icon="search">
+        <ReportPaperSection title="What the diary supports" meta="Observed entries only; intake is not estimated">
           {wins.length ? (
             <View style={styles.paperSubsection}>
               <Text style={styles.paperSubsectionTitle}>Working well</Text>
               <View style={styles.paperRows}>
-                {wins.slice(0, 1).map((win, index) => (
+                {wins.map((win, index) => (
                   <View key={`${win.title}-${index}`} style={styles.paperWinRow}>
-                    <View style={styles.paperCheckIcon}><Feather name="check" size={14} color={REPORT_ACCENT} /></View>
+                    <Text style={styles.paperCheckIcon}>✓</Text>
                     <View style={styles.paperRowCopy}>
                       <Text style={styles.paperRowTitle}>{reportText(win.title)}</Text>
                       {reportText(win.detail) ? <Text style={styles.paperRowBody}>{reportText(win.detail)}</Text> : null}
@@ -1021,15 +1022,17 @@ export function DietReportStory({
             <View style={styles.paperSubsection}>
               <Text style={styles.paperSubsectionTitle}>Top opportunities</Text>
               <View style={styles.paperRows}>
-                {priorities.slice(0, 2).map((insight, index) => (
+                {priorities.map((insight, index) => (
                   <View key={`${insight.title}-${index}`} style={styles.paperInsightRow}>
-                    <View style={styles.paperInsightNumber}><Text style={styles.paperInsightNumberText}>{insight.rank || index + 1}</Text></View>
+                    <Text style={styles.paperInsightNumber}>{String(insight.rank || index + 1).padStart(2, '0')}</Text>
                     <View style={styles.paperRowCopy}>
                       <Text style={styles.paperRowTitle}>{reportText(insight.title)}</Text>
                       <Text style={styles.paperRowBody}>{reportText(insight.observation)}</Text>
+                      {reportText(insight.whyItMatters) ? <Text style={styles.paperInsightWhy}>{reportText(insight.whyItMatters)}</Text> : null}
+                      <ReportEvidenceLine items={reportStringArray(insight.evidence)} />
                       {reportText(insight.nextStep) ? (
                         <View style={styles.paperNextStep}>
-                          <Feather name="arrow-right" size={15} color={REPORT_ACCENT} />
+                          <Text style={styles.paperNextStepLabel}>NEXT</Text>
                           <Text style={styles.paperNextStepText}>{reportText(insight.nextStep)}</Text>
                         </View>
                       ) : null}
@@ -1040,7 +1043,7 @@ export function DietReportStory({
             </View>
           ) : null}
 
-          {showExtendedReportDetails && patterns.length ? (
+          {patterns.length ? (
             <View style={styles.paperSubsection}>
               <Text style={styles.paperSubsectionTitle}>Weekly patterns</Text>
               <View style={styles.paperRows}>
@@ -1263,10 +1266,21 @@ export function DietReportStory({
       ) : null}
 
       <ReportPaperSection
-        title="About this report"
-        icon="book-open"
+        title="Method & limits"
       >
-        {showExtendedReportDetails && facts.length ? (
+        <View style={styles.paperAboutBox}>
+          <Text style={styles.paperAboutText}>Patterns use only foods named in your diary. Portions, calories and nutrients are not inferred. General wellness guidance only.</Text>
+          {limitations.map((item, index) => (
+            <View key={`${item}-${index}`} style={styles.paperLimitationRow}>
+              <View style={styles.paperGenericDot} />
+              <Text style={styles.paperLimitationText}>{item}</Text>
+            </View>
+          ))}
+        </View>
+      </ReportPaperSection>
+
+      {facts.length ? (
+        <ReportPaperSection title="Sources" meta="Articles and guidance used in this report">
           <View style={styles.paperSourceList}>
             {facts.map((fact, index) => {
               const sourceUrl = reportText(fact.sourceUrl);
@@ -1283,33 +1297,19 @@ export function DietReportStory({
                   accessibilityRole={canOpen ? 'link' : undefined}
                   accessibilityLabel={canOpen ? `Open ${factTitle} from ${sourceName}` : `${factTitle}, attributed to ${sourceName}`}
                 >
-                  <View style={styles.paperSourceIcon}><Feather name="book-open" size={16} color={REPORT_INFO} /></View>
+                  <Text style={styles.paperSourceNumber}>{String(index + 1).padStart(2, '0')}</Text>
                   <View style={styles.paperSourceCopy}>
                     <Text style={styles.paperSourceTitle}>{factTitle}</Text>
                     {reportText(fact.body) ? <Text style={styles.paperSourceBody}>{reportText(fact.body)}</Text> : null}
                     <Text style={styles.paperSourceMeta}>{sourceName}</Text>
                   </View>
-                  {canOpen ? <Feather name="external-link" size={17} color={REPORT_INFO} /> : null}
+                  {canOpen ? <Feather name="external-link" size={15} color={REPORT_INFO} /> : null}
                 </TouchableOpacity>
               );
             })}
           </View>
-        ) : null}
-
-        <View style={styles.paperAboutBox}>
-          <View style={styles.paperAboutTitleRow}>
-            <Feather name="info" size={16} color={REPORT_INFO} />
-            <Text style={styles.paperAboutTitle}>How to read this report</Text>
-          </View>
-          <Text style={styles.paperAboutText}>AI-assisted patterns from your food diary. General wellness guidance only—not medical advice.</Text>
-          {limitations.map((item, index) => (
-            <View key={`${item}-${index}`} style={styles.paperLimitationRow}>
-              <View style={styles.paperGenericDot} />
-              <Text style={styles.paperLimitationText}>{item}</Text>
-            </View>
-          ))}
-        </View>
-      </ReportPaperSection>
+        </ReportPaperSection>
+      ) : null}
 
       {showExtendedReportDetails && interactive && questions.length ? (
         <View style={styles.paperSection}>
@@ -3524,8 +3524,8 @@ const styles = StyleSheet.create({
     minHeight: 48,
     alignItems: 'center',
   },
-  reportSubpageHeader: { width: '100%', maxWidth: 640, alignSelf: 'center' },
-  reportHeaderTheme: { paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: REPORT_BORDER },
+  reportSubpageHeader: { width: '100%', maxWidth: 640, minHeight: 56, alignSelf: 'center' },
+  reportHeaderTheme: { paddingBottom: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: REPORT_BORDER },
   screenTitleWrap: { flex: 1, minWidth: 0 },
   subpageTitle: {
     ...typography.title,
@@ -3535,7 +3535,7 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
     textAlignVertical: 'center',
   },
-  reportSubpageTitle: { color: REPORT_INK },
+  reportSubpageTitle: { ...reportTypography.heading, color: REPORT_INK },
   headerIconButton: {
     width: 48,
     height: 48,
@@ -3546,24 +3546,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  reportHeaderIconButton: { backgroundColor: REPORT_PAGE, borderColor: REPORT_BORDER },
+  reportHeaderIconButton: { width: 38, height: 38, backgroundColor: REPORT_SURFACE, borderWidth: 0 },
   reportHistoryAction: {
-    height: 40,
+    height: 36,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: 10,
     borderRadius: radius.pill,
     backgroundColor: colors.panel,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  reportHistoryActionText: {
-    ...typography.label,
-    color: colors.ink,
-    fontWeight: '700',
-  },
-  reportHistoryActionTheme: { backgroundColor: REPORT_PAGE, borderColor: REPORT_BORDER_STRONG },
+  reportHistoryActionText: { ...reportTypography.bodyStrong, fontSize: 12, lineHeight: 16, color: colors.ink },
+  reportHistoryActionTheme: { backgroundColor: REPORT_SURFACE, borderWidth: 0 },
   reportHistoryActionTextTheme: { color: REPORT_INK },
   reportCountChipTheme: { backgroundColor: REPORT_SURFACE, borderColor: REPORT_BORDER },
   reportCountTextTheme: { color: REPORT_MUTED },
@@ -4426,15 +4422,12 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   reportPendingEyebrow: {
-    fontSize: 11,
-    lineHeight: 16,
-    fontWeight: '800',
-    letterSpacing: 1,
+    ...reportTypography.label,
     color: REPORT_ACCENT,
   },
-  reportPendingTitle: { maxWidth: 520, fontSize: 28, lineHeight: 35, fontWeight: '700', letterSpacing: -0.45, color: REPORT_INK, marginTop: spacing.md },
-  reportPendingBody: { maxWidth: 520, fontSize: 15, lineHeight: 23, color: REPORT_MUTED, marginTop: spacing.xs },
-  reportCountdownLabel: { fontSize: 11, lineHeight: 16, fontWeight: '800', letterSpacing: 0.9, color: REPORT_SUBTLE },
+  reportPendingTitle: { ...reportTypography.display, maxWidth: 520, color: REPORT_INK, marginTop: spacing.md },
+  reportPendingBody: { ...reportTypography.body, maxWidth: 520, color: REPORT_MUTED, marginTop: spacing.xs },
+  reportCountdownLabel: { ...reportTypography.label, color: REPORT_SUBTLE },
   reportMasthead: {
     paddingHorizontal: spacing.xs,
     paddingTop: spacing.sm,
@@ -5126,7 +5119,7 @@ const styles = StyleSheet.create({
   reportPendingProgressValue: { fontSize: 28, lineHeight: 34, fontWeight: '800', color: REPORT_ACCENT },
   reportPendingProgressRequirement: { fontSize: 12, lineHeight: 18, fontWeight: '600', color: REPORT_MUTED },
   reportPendingMetaRow: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  reportPendingCadence: { fontSize: 12, lineHeight: 18, color: REPORT_SUBTLE },
+  reportPendingCadence: { ...reportTypography.data, fontSize: 10, lineHeight: 16, color: REPORT_SUBTLE },
   reportEnrichmentResultText: { fontSize: 13, lineHeight: 20, fontWeight: '700', color: REPORT_INK, marginTop: spacing.xs },
   reportPendingEvidenceFacts: { fontSize: 12, lineHeight: 18, color: REPORT_SUBTLE, marginTop: 2 },
   reportPendingTip: { width: '100%', flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, padding: spacing.sm, marginTop: spacing.md, borderRadius: radius.sm, backgroundColor: REPORT_PAGE },
@@ -5134,15 +5127,15 @@ const styles = StyleSheet.create({
   reportFooterAction: { paddingTop: spacing.lg, marginTop: spacing.xl, borderTopWidth: 1, borderTopColor: REPORT_BORDER, gap: spacing.lg },
   reportFooterActionPending: { paddingTop: 0, marginTop: 0, borderTopWidth: 0, gap: 0 },
   reportFooterCopy: { gap: 3 },
-  reportFooterTitle: { fontSize: 20, lineHeight: 27, fontWeight: '600', color: REPORT_INK },
-  reportFooterText: { fontSize: 14, lineHeight: 22, color: REPORT_MUTED },
+  reportFooterTitle: { ...reportTypography.heading, color: REPORT_INK },
+  reportFooterText: { ...reportTypography.body, color: REPORT_MUTED },
   reportLogMealButton: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm, borderRadius: radius.md, backgroundColor: REPORT_INK },
   reportLogMealButtonPending: { minHeight: 64, backgroundColor: REPORT_ACCENT },
   reportLogMealButtonEmbedded: { marginTop: spacing.lg, borderRadius: radius.lg },
   reportLogMealButtonIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm, backgroundColor: REPORT_PAGE },
   reportLogMealButtonCopy: { flex: 1, minWidth: 0 },
-  reportLogMealButtonText: { fontSize: 16, lineHeight: 21, fontWeight: '700', color: REPORT_PAGE },
-  reportLogMealButtonHint: { marginTop: 1, fontSize: 12, lineHeight: 17, fontWeight: '500', color: 'rgba(5, 6, 9, 0.66)' },
+  reportLogMealButtonText: { ...reportTypography.bodyStrong, fontSize: 15, lineHeight: 20, color: REPORT_PAGE },
+  reportLogMealButtonHint: { ...reportTypography.body, marginTop: 1, fontSize: 11, lineHeight: 16, color: 'rgba(5, 6, 9, 0.66)' },
 
   // Weekly diet report — calm editorial presentation
   reportStatusTextRow: {
@@ -5877,31 +5870,24 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   paperEyebrow: {
-    fontSize: 12,
-    lineHeight: 18,
-    fontWeight: '800',
-    letterSpacing: 1.1,
+    ...reportTypography.label,
     color: REPORT_ACCENT,
   },
   paperPeriod: {
-    fontSize: 13,
-    lineHeight: 19,
-    fontWeight: '600',
+    ...reportTypography.data,
+    fontSize: 11,
+    lineHeight: 16,
     color: REPORT_SUBTLE,
   },
   paperHeadline: {
+    ...reportTypography.display,
     maxWidth: 560,
-    fontSize: 30,
-    lineHeight: 37,
-    fontWeight: '800',
-    letterSpacing: -0.7,
     color: REPORT_INK,
     marginTop: spacing.lg,
   },
   paperSummary: {
+    ...reportTypography.body,
     maxWidth: 560,
-    fontSize: 16,
-    lineHeight: 24,
     color: REPORT_MUTED,
     marginTop: spacing.sm,
   },
@@ -5929,19 +5915,15 @@ const styles = StyleSheet.create({
     backgroundColor: REPORT_ACCENT_SURFACE,
   },
   reportNoDataTitle: {
+    ...reportTypography.display,
     maxWidth: 500,
     marginTop: spacing.md,
-    fontSize: 27,
-    lineHeight: 34,
-    fontWeight: '800',
-    letterSpacing: -0.45,
     color: REPORT_INK,
   },
   reportNoDataBody: {
+    ...reportTypography.body,
     maxWidth: 500,
     marginTop: spacing.xs,
-    fontSize: 15,
-    lineHeight: 23,
     color: REPORT_MUTED,
   },
   reportNoDataProgressHint: {
@@ -6006,9 +5988,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   reportNoDataPeriod: {
-    fontSize: 11,
-    lineHeight: 16,
-    fontWeight: '600',
+    ...reportTypography.data,
+    fontSize: 10,
+    lineHeight: 15,
     color: REPORT_MUTED,
   },
   reportNoDataHeroCopy: {
@@ -6029,26 +6011,21 @@ const styles = StyleSheet.create({
     backgroundColor: REPORT_ACCENT,
   },
   reportNoDataStatus: {
-    fontSize: 10,
-    lineHeight: 14,
-    fontWeight: '700',
-    letterSpacing: 1,
+    ...reportTypography.label,
     color: REPORT_ACCENT,
   },
   reportNoDataHeroTitle: {
+    ...reportTypography.display,
     maxWidth: 440,
     marginTop: spacing.md,
-    fontSize: 26,
-    lineHeight: 32,
-    fontWeight: '700',
-    letterSpacing: -0.4,
     color: REPORT_INK,
   },
   reportNoDataHeroBody: {
+    ...reportTypography.body,
     maxWidth: 440,
     marginTop: spacing.sm,
     fontSize: 13,
-    lineHeight: 19,
+    lineHeight: 20,
     color: REPORT_MUTED,
   },
   reportOverviewBand: {
@@ -6070,10 +6047,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   reportOverviewLabel: {
-    fontSize: 10,
-    lineHeight: 15,
-    fontWeight: '800',
-    letterSpacing: 0.8,
+    ...reportTypography.label,
     color: REPORT_SUBTLE,
   },
   reportOverviewScoreRow: {
@@ -6082,10 +6056,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   reportOverviewScoreValue: {
-    fontSize: 30,
-    lineHeight: 35,
-    fontWeight: '800',
-    letterSpacing: -0.7,
+    ...reportTypography.dataLarge,
+    fontSize: 28,
+    lineHeight: 34,
     color: REPORT_INK,
   },
   reportOverviewScoreMax: {
@@ -6139,16 +6112,16 @@ const styles = StyleSheet.create({
     borderLeftColor: REPORT_BORDER,
   },
   reportOverviewStatValue: {
-    fontSize: 20,
+    ...reportTypography.dataLarge,
+    fontSize: 19,
     lineHeight: 25,
-    fontWeight: '800',
     color: REPORT_INK,
   },
   reportOverviewStatLabel: {
+    ...reportTypography.label,
     marginTop: 1,
-    fontSize: 10,
-    lineHeight: 15,
     color: REPORT_SUBTLE,
+    textTransform: 'uppercase',
   },
   paperMetricGrid: {
     flexDirection: 'row',
@@ -6249,33 +6222,28 @@ const styles = StyleSheet.create({
   paperConfidenceText: { flex: 1, minWidth: 190, fontSize: 13, lineHeight: 20, color: REPORT_MUTED },
   paperSchemaNotice: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, marginTop: spacing.sm },
   paperSection: {
-    paddingVertical: spacing.xl,
+    paddingVertical: spacing.lg,
     borderTopWidth: 1,
     borderTopColor: REPORT_BORDER,
   },
   paperSectionHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
+    gap: spacing.xs,
+    marginBottom: spacing.md,
   },
   paperSectionIcon: {
-    width: 34,
-    height: 34,
+    width: 22,
+    height: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.sm,
-    backgroundColor: REPORT_ACCENT_SURFACE,
   },
   paperSectionHeading: { flex: 1, minWidth: 0 },
   paperSectionTitle: {
-    fontSize: 22,
-    lineHeight: 29,
-    fontWeight: '700',
-    letterSpacing: -0.25,
+    ...reportTypography.heading,
     color: REPORT_INK,
   },
-  paperSectionMeta: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, marginTop: 2 },
+  paperSectionMeta: { ...reportTypography.body, fontSize: 12, lineHeight: 18, color: REPORT_MUTED, marginTop: 2 },
   paperSafetyList: { gap: spacing.sm, paddingBottom: spacing.md },
   paperSafetyNotice: {
     padding: spacing.md,
@@ -6292,44 +6260,42 @@ const styles = StyleSheet.create({
   paperSafetyTitle: { flex: 1, fontSize: 16, lineHeight: 23, fontWeight: '700', color: REPORT_INK },
   paperSafetyBody: { fontSize: 15, lineHeight: 23, color: REPORT_MUTED, marginTop: spacing.xs },
   paperFocusPanel: {
-    padding: spacing.lg,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: REPORT_BORDER_STRONG,
-    backgroundColor: REPORT_PAGE,
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: REPORT_BORDER,
   },
   paperFocusHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
   paperFocusMarker: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.pill,
-    backgroundColor: REPORT_ACCENT,
+    ...reportTypography.data,
+    width: 24,
+    paddingTop: 1,
+    fontSize: 10,
+    lineHeight: 15,
+    color: REPORT_ACCENT,
   },
   paperFocusCopy: { flex: 1, minWidth: 0 },
-  paperFocusLabel: { fontSize: 11, lineHeight: 16, fontWeight: '800', letterSpacing: 0.8, color: REPORT_ACCENT },
-  paperFocusTitle: { fontSize: 21, lineHeight: 28, fontWeight: '700', color: REPORT_INK, marginTop: 2 },
-  paperFocusWhy: { fontSize: 15, lineHeight: 23, color: REPORT_MUTED, marginTop: spacing.sm },
-  paperActionList: { marginTop: spacing.lg, borderTopWidth: 1, borderTopColor: REPORT_BORDER },
+  paperFocusLabel: { ...reportTypography.label, color: REPORT_ACCENT },
+  paperFocusTitle: { ...reportTypography.heading, color: REPORT_INK, marginTop: 2 },
+  paperFocusWhy: { ...reportTypography.body, color: REPORT_MUTED, marginTop: spacing.sm },
+  paperActionList: { marginTop: spacing.md, marginLeft: 38, borderTopWidth: 1, borderTopColor: REPORT_BORDER },
   paperActionRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: spacing.sm,
+    gap: spacing.md,
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: REPORT_BORDER,
   },
   paperActionNumber: {
+    ...reportTypography.data,
     width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.pill,
-    backgroundColor: REPORT_ACCENT_SURFACE,
+    paddingTop: 1,
+    fontSize: 10,
+    lineHeight: 17,
+    color: REPORT_SUBTLE,
   },
-  paperActionNumberText: { fontSize: 11, lineHeight: 15, fontWeight: '800', color: REPORT_ACCENT },
-  paperActionText: { flex: 1, fontSize: 15, lineHeight: 22, fontWeight: '600', color: REPORT_INK },
+  paperActionText: { ...reportTypography.bodyStrong, flex: 1, fontSize: 14, lineHeight: 20, color: REPORT_INK },
   paperDefinitionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
   paperDefinitionCell: {
     minWidth: 160,
@@ -6346,23 +6312,24 @@ const styles = StyleSheet.create({
   paperTrackingText: { flex: 1, fontSize: 14, lineHeight: 21, color: REPORT_MUTED },
   paperTrackingLabel: { fontWeight: '700', color: REPORT_INK },
   paperSubsection: { marginTop: spacing.md },
-  paperSubsectionTitle: { fontSize: 14, lineHeight: 20, fontWeight: '800', color: REPORT_INK, marginBottom: spacing.sm },
+  paperSubsectionTitle: { ...reportTypography.label, color: REPORT_SUBTLE, marginBottom: spacing.xs, textTransform: 'uppercase' },
   paperRows: { borderTopWidth: 1, borderTopColor: REPORT_BORDER },
   paperWinRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: REPORT_BORDER },
-  paperCheckIcon: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: REPORT_ACCENT_SURFACE },
+  paperCheckIcon: { ...reportTypography.data, width: 24, paddingTop: 1, fontSize: 12, lineHeight: 18, color: REPORT_ACCENT },
   paperRowCopy: { flex: 1, minWidth: 0 },
-  paperRowTitle: { fontSize: 16, lineHeight: 23, fontWeight: '700', color: REPORT_INK },
-  paperRowBody: { fontSize: 14, lineHeight: 22, color: REPORT_MUTED, marginTop: 3 },
+  paperRowTitle: { ...reportTypography.bodyStrong, fontSize: 16, lineHeight: 22, color: REPORT_INK },
+  paperRowBody: { ...reportTypography.body, fontSize: 13, lineHeight: 20, color: REPORT_MUTED, marginTop: 3 },
   paperRowEvidence: { fontSize: 12, lineHeight: 18, color: REPORT_SUBTLE, marginTop: 4 },
   paperInsightRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: REPORT_BORDER },
-  paperInsightNumber: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, borderWidth: 1, borderColor: REPORT_BORDER_STRONG },
-  paperInsightNumberText: { fontSize: 11, lineHeight: 15, fontWeight: '800', color: REPORT_INK },
+  paperInsightNumber: { ...reportTypography.data, width: 24, paddingTop: 1, fontSize: 10, lineHeight: 18, color: REPORT_ACCENT },
   paperWhyLine: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, marginTop: spacing.xs },
   paperInlineLabel: { fontWeight: '700', color: REPORT_INK },
   paperEvidenceLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: spacing.xs },
   paperEvidenceText: { flex: 1, fontSize: 12, lineHeight: 18, color: REPORT_SUBTLE },
-  paperNextStep: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, padding: spacing.sm, marginTop: spacing.sm, borderRadius: radius.sm, backgroundColor: REPORT_ACCENT_SURFACE },
-  paperNextStepText: { flex: 1, fontSize: 14, lineHeight: 21, fontWeight: '600', color: REPORT_INK },
+  paperInsightWhy: { ...reportTypography.body, fontSize: 13, lineHeight: 20, color: REPORT_INK, marginTop: spacing.xs },
+  paperNextStep: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm, paddingTop: spacing.sm, marginTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: REPORT_BORDER },
+  paperNextStepLabel: { ...reportTypography.label, fontSize: 8, lineHeight: 11, color: REPORT_ACCENT },
+  paperNextStepText: { ...reportTypography.bodyStrong, flex: 1, fontSize: 13, lineHeight: 19, color: REPORT_INK },
   paperPatternRow: { paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: REPORT_BORDER },
   paperPatternTop: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.sm },
   paperStatusRow: { flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -6420,17 +6387,16 @@ const styles = StyleSheet.create({
   paperGenericItemText: { flex: 1, fontSize: 13, lineHeight: 20, color: REPORT_MUTED },
   paperSourceList: { borderTopWidth: 1, borderTopColor: REPORT_BORDER },
   paperSourceRow: { minHeight: 72, flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: REPORT_BORDER },
+  paperSourceNumber: { ...reportTypography.data, width: 24, paddingTop: 2, fontSize: 10, lineHeight: 16, color: REPORT_INFO },
   paperSourceIcon: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm, backgroundColor: REPORT_INFO_SURFACE },
   paperSourceCopy: { flex: 1, minWidth: 0 },
   paperSourceTitle: { fontSize: 15, lineHeight: 22, fontWeight: '700', color: REPORT_INK },
   paperSourceBody: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, marginTop: 2 },
   paperSourceMeta: { fontSize: 12, lineHeight: 18, fontWeight: '600', color: REPORT_INFO, marginTop: spacing.xs },
-  paperAboutBox: { padding: spacing.md, marginTop: spacing.md, borderRadius: radius.md, backgroundColor: REPORT_SURFACE },
-  paperAboutTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  paperAboutTitle: { fontSize: 14, lineHeight: 21, fontWeight: '700', color: REPORT_INK },
-  paperAboutText: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, marginTop: spacing.xs },
+  paperAboutBox: { paddingVertical: spacing.xs },
+  paperAboutText: { ...reportTypography.body, fontSize: 12, lineHeight: 18, color: REPORT_MUTED },
   paperLimitationRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.xs },
-  paperLimitationText: { flex: 1, fontSize: 12, lineHeight: 18, color: REPORT_MUTED },
+  paperLimitationText: { ...reportTypography.body, flex: 1, fontSize: 11, lineHeight: 17, color: REPORT_MUTED },
   paperQuestionPanel: { padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: REPORT_BORDER_STRONG, backgroundColor: REPORT_PAGE },
   paperQuestionHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   paperQuestionIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm, backgroundColor: REPORT_INFO_SURFACE },
@@ -6449,8 +6415,8 @@ const styles = StyleSheet.create({
   paperQuestionSaveText: { fontSize: 14, lineHeight: 20, fontWeight: '700', color: REPORT_PAGE },
   paperFooter: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, paddingVertical: spacing.xl, borderTopWidth: 1, borderTopColor: REPORT_BORDER },
   paperFooterCopy: { flex: 1, minWidth: 210 },
-  paperGenerated: { fontSize: 12, lineHeight: 18, color: REPORT_SUBTLE },
-  paperFooterNote: { fontSize: 13, lineHeight: 20, color: REPORT_MUTED, marginTop: 2 },
+  paperGenerated: { ...reportTypography.data, fontSize: 10, lineHeight: 16, color: REPORT_SUBTLE },
+  paperFooterNote: { ...reportTypography.body, fontSize: 12, lineHeight: 18, color: REPORT_MUTED, marginTop: 2 },
   paperIssueButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, borderRadius: radius.sm, borderWidth: 1, borderColor: REPORT_BORDER_STRONG, backgroundColor: REPORT_PAGE },
   paperIssueButtonText: { fontSize: 14, lineHeight: 20, fontWeight: '700', color: REPORT_MUTED },
 
