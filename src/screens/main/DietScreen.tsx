@@ -188,7 +188,7 @@ function memorySlotDraftKey(date: Date, mealType: MealType) {
 /** Ava regenerates the diet report on a fixed weekly cadence (backend: FEEDBACK_INTERVAL_DAYS). */
 const REPORT_CYCLE_DAYS = 7;
 const DEFAULT_REPORT_ENRICHMENT_REQUIREMENT = 50;
-const SUPPORTED_DIET_REPORT_SCHEMA_VERSION = 11;
+const SUPPORTED_DIET_REPORT_SCHEMA_VERSION = 12;
 const REPORT_SAGE = '#A8BFB2';
 const REPORT_SAGE_SURFACE = 'rgba(168,191,178,0.12)';
 const REPORT_BLUE_SURFACE = 'rgba(145,189,248,0.10)';

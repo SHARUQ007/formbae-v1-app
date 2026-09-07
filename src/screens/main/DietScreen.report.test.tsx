@@ -11,7 +11,7 @@ import {
 
 function completeReport(): DietCoachFeedback {
   return {
-    schemaVersion: 11,
+    schemaVersion: 12,
     weekStartDate: '2026-08-24',
     weekEndDate: '2026-08-30',
     generatedAt: '2026-08-30T10:00:00.000Z',
