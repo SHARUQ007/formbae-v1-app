@@ -22,8 +22,7 @@ export function getAccountabilityTaskArtwork(kind: string) {
   return ACCOUNTABILITY_TASK_ARTWORK[knownTaskKind(kind) ? kind : 'progress'];
 }
 
-export function getAccountabilityTaskLabel(kind: string, active = false) {
-  if (active) return 'ACTIVE PROMISE';
+export function getAccountabilityTaskLabel(kind: string) {
   return ACCOUNTABILITY_TASK_LABELS[knownTaskKind(kind) ? kind : 'progress'];
 }
 

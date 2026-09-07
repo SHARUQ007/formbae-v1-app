@@ -1,5 +1,6 @@
-import { apiRequest } from './apiClient';
+import { apiRequest, getAuthToken } from './apiClient';
 import { invalidateCachedResource } from './appCache';
+import { getSiteUrl } from '../constants/config';
 import type { AnalysisReport, CoachHubPayload, TrainerRecommendation } from '../types/api';
 
 export async function fetchRecommendedTrainer() {
@@ -19,6 +20,23 @@ export async function fetchTrainerById(id: string) {
 
 export async function fetchCoachHub() {
   return apiRequest<CoachHubPayload>('/trainer/options');
+}
+
+/**
+ * Temporary compatibility source for trainer photos created before the
+ * dedicated backend image route was available in every environment.
+ */
+export async function fetchCoachHubPhotoFallbacks() {
+  const token = getAuthToken();
+  if (!token) throw new Error('Authentication is required to load coach photos.');
+  const response = await fetch(`${getSiteUrl()}/api/mobile/trainer/options`, {
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) throw new Error(`Coach photo fallback failed (${response.status}).`);
+  return response.json() as Promise<CoachHubPayload>;
 }
 
 export async function changeCoach(trainerId: string) {

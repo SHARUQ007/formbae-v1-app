@@ -62,6 +62,9 @@ describe('Accountability Bae UI states', () => {
       );
     });
     expect(copy(renderer)).toContain('Unavailable');
+    const modeArtwork = renderer.root.findAllByType(Image);
+    expect(modeArtwork).toHaveLength(2);
+    expect(modeArtwork.every((image) => image.props.resizeMode === 'contain')).toBe(true);
     renderer.root.findByProps({ accessibilityLabel: 'My day. Your focus' }).props.onPress();
     expect(onChange).toHaveBeenCalledWith('today');
   });

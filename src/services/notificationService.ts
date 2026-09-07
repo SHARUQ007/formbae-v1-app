@@ -230,7 +230,7 @@ export async function displayLocalNotification(title: string, body: string): Pro
   });
 }
 
-export async function scheduleAccountabilityReminder(commitmentTitle: string): Promise<void> {
+export async function scheduleAccountabilityReminder(taskTitle: string): Promise<void> {
   const granted = await ensureNotificationSetup();
   if (!granted) return;
   const now = Date.now();
@@ -241,8 +241,8 @@ export async function scheduleAccountabilityReminder(commitmentTitle: string): P
   await notifee.createTriggerNotification(
     {
       id: IDS.accountability,
-      title: 'A promise to yourself',
-      body: `${commitmentTitle} is still waiting. A small follow-through counts.`,
+      title: 'Today’s focus',
+      body: `${taskTitle} is ready when you are.`,
       android: { channelId: CHANNEL_ID, pressAction: { id: 'default' } },
     },
     { type: TriggerType.TIMESTAMP, timestamp, alarmManager: { allowWhileIdle: true } },

@@ -24,7 +24,7 @@ describe('accountability task presentation', () => {
   });
 
   it('labels active items consistently', () => {
-    expect(getAccountabilityTaskLabel('diet', true)).toBe('ACTIVE PROMISE');
+    expect(getAccountabilityTaskLabel('diet')).toBe('FOOD MEMORY');
   });
 
   it('only creates persistent commitments for completable task kinds', () => {

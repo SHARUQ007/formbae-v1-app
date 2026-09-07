@@ -3,7 +3,7 @@ import {
   AccessibilityInfo,
   Animated,
   Easing,
-  Image,
+  ImageBackground,
   View,
   Text,
   StyleSheet,
@@ -83,7 +83,6 @@ export function SplashScreen({ navigation }: Props) {
   const [motionPreference, setMotionPreference] =
     useState<MotionPreference>('unknown');
   const bridgeOpacity = useRef(new Animated.Value(1)).current;
-  const artworkOpacity = useRef(new Animated.Value(0)).current;
   const headerReveal = useRef(new Animated.Value(0)).current;
   const footerReveal = useRef(new Animated.Value(0)).current;
   const progressAnimation = useRef(new Animated.Value(0.08)).current;
@@ -121,11 +120,9 @@ export function SplashScreen({ navigation }: Props) {
 
     if (motionPreference === 'reduce' || entranceComplete.current) {
       bridgeOpacity.stopAnimation();
-      artworkOpacity.stopAnimation();
       headerReveal.stopAnimation();
       footerReveal.stopAnimation();
       bridgeOpacity.setValue(0);
-      artworkOpacity.setValue(1);
       headerReveal.setValue(1);
       footerReveal.setValue(1);
       entranceComplete.current = true;
@@ -133,12 +130,6 @@ export function SplashScreen({ navigation }: Props) {
     }
 
     const reveal = Animated.parallel([
-      Animated.timing(artworkOpacity, {
-        toValue: 1,
-        duration: 420,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
       Animated.timing(bridgeOpacity, {
         toValue: 0,
         duration: 220,
@@ -166,7 +157,6 @@ export function SplashScreen({ navigation }: Props) {
     });
     return () => reveal.stop();
   }, [
-    artworkOpacity,
     bridgeOpacity,
     footerReveal,
     headerReveal,
@@ -259,27 +249,25 @@ export function SplashScreen({ navigation }: Props) {
   }, [motionPreference, progress, progressAnimation]);
 
   return (
-    <View style={styles.screen}>
-      <Animated.View style={[styles.artworkLayer, { opacity: artworkOpacity }]}>
-        <Image
-          source={STARTUP_ART}
-          style={styles.artwork}
-          resizeMode={artworkResizeMode}
-          accessible={false}
-          fadeDuration={0}
-        />
-        <LinearGradient
-          colors={[
-            'rgba(5, 6, 9, 0.76)',
-            'rgba(5, 6, 9, 0.04)',
-            'rgba(5, 6, 9, 0.16)',
-            'rgba(5, 6, 9, 0.95)',
-          ]}
-          locations={[0, 0.24, 0.58, 1]}
-          style={styles.artworkShade}
-          pointerEvents="none"
-        />
-      </Animated.View>
+    <ImageBackground
+      source={STARTUP_ART}
+      defaultSource={STARTUP_ART}
+      style={styles.screen}
+      imageStyle={styles.artwork}
+      resizeMode={artworkResizeMode}
+      accessible={false}
+    >
+      <LinearGradient
+        colors={[
+          'rgba(5, 6, 9, 0.76)',
+          'rgba(5, 6, 9, 0.04)',
+          'rgba(5, 6, 9, 0.16)',
+          'rgba(5, 6, 9, 0.95)',
+        ]}
+        locations={[0, 0.24, 0.58, 1]}
+        style={styles.artworkShade}
+        pointerEvents="none"
+      />
 
       <View
         style={[
@@ -397,7 +385,7 @@ export function SplashScreen({ navigation }: Props) {
           Train better form
         </Text>
       </Animated.View>
-    </View>
+    </ImageBackground>
   );
 }
 
@@ -406,19 +394,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg,
   },
-  artworkLayer: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-  },
   artwork: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
     width: '100%',
     height: '100%',
   },

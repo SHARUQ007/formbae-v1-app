@@ -673,7 +673,9 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     width: '100%',
-    height: '100%',
+    // The source artwork is 3:2 while the hero is intentionally wider.
+    // Preserve that ratio and crop from the bottom so faces stay in frame.
+    aspectRatio: 3 / 2,
   },
   bodyArtworkShade: {
     position: 'absolute',

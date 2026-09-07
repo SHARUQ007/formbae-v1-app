@@ -262,7 +262,7 @@ export function ActionHubScreen({ navigation }: Props) {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Please try again.';
       if (message.includes('gender in Profile')) {
-        Alert.alert('Complete your profile first', 'Add your gender before using automatic partner matching.', [
+        Alert.alert('Complete your profile', 'Add your gender in Profile to use automatic matching.', [
           { text: 'Not now', style: 'cancel' },
           { text: 'Open profile', onPress: () => navigation.navigate('Profile') },
         ]);
@@ -329,7 +329,7 @@ export function ActionHubScreen({ navigation }: Props) {
 
   const openProofPicker = () => {
     const replacing = Boolean(accountabilityBae?.youSubmitted);
-    Alert.alert(replacing ? 'Replace today’s proof?' : 'Submit today’s proof', 'Your photo stays private to this match. Your partner can view it only after both of you submit. Your face does not need to be visible.', [
+    Alert.alert(replacing ? 'Replace today’s proof?' : 'Submit today’s proof', 'Your partner sees it only after you both submit. Faces are optional.', [
       { text: 'Take photo', onPress: () => { takeProofPhoto().catch(() => undefined); } },
       { text: 'Choose from library', onPress: () => { chooseProofPhoto().catch(() => undefined); } },
       { text: 'Cancel', style: 'cancel' },
@@ -338,7 +338,7 @@ export function ActionHubScreen({ navigation }: Props) {
 
   const leaveBae = () => {
     if (baeBusy) return;
-    Alert.alert('Leave this match?', 'Both people will be disconnected and the shared proof photos stored for this match will be deleted. This cannot be undone.', [
+    Alert.alert('Leave match?', 'This ends the match for both of you and permanently deletes its proof photos.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Leave match',
@@ -396,7 +396,7 @@ export function ActionHubScreen({ navigation }: Props) {
       kind: commitment.targetKind,
       targetId: commitment.targetId,
       title: commitment.title,
-      detail: 'Active accountability task',
+      detail: 'Ready to continue',
       action: 'Continue',
       onOpen: openCommitment,
       active: true,
@@ -474,7 +474,7 @@ export function ActionHubScreen({ navigation }: Props) {
           <InlineNotice
             icon="wifi-off"
             title={accountability ? 'Showing saved accountability' : 'Accountability is offline'}
-            body={accountability ? 'Your latest saved status is visible. Refresh when your connection returns.' : 'Reconnect before creating or completing a promise.'}
+            body={accountability ? 'Your latest saved status is visible. Refresh when your connection returns.' : 'Reconnect before starting or completing today’s task.'}
             action="Retry"
             onPress={() => load(true)}
           />
@@ -587,7 +587,12 @@ function AccountabilityModeOption({ active, artwork, label, caption, compact, on
       accessibilityLabel={`${label}. ${caption}`}
       accessibilityState={{ selected: active }}
     >
-      <Image source={artwork} style={[styles.accountabilityTabArtwork, compact && styles.accountabilityTabArtworkCompact, active && styles.accountabilityTabArtworkActive]} resizeMode="cover" accessible={false} />
+      <Image
+        source={artwork}
+        style={[styles.accountabilityTabArtwork, compact && styles.accountabilityTabArtworkCompact, active && styles.accountabilityTabArtworkActive]}
+        resizeMode="contain"
+        accessible={false}
+      />
       <View style={styles.accountabilityTabCopy}>
         <Text style={[styles.accountabilityTabText, active && styles.accountabilityTabTextActive]} numberOfLines={1}>{label}</Text>
         {!compact ? <Text style={[styles.accountabilityTabCaption, active && styles.accountabilityTabCaptionActive]} numberOfLines={1}>{caption}</Text> : null}
@@ -663,7 +668,7 @@ export function AccountabilityBaeCard({ data, loading, compact, busy, friendCode
       ? 'We’ll keep matching in the background'
       : data.status === 'locked'
         ? 'Unlock shared daily challenges'
-        : 'Small promises, kept together';
+        : 'A little support goes a long way';
   const header = (
     <View style={styles.baeHeader}>
       <View style={styles.baeHeaderCopy}>
@@ -942,14 +947,8 @@ function TodayTaskCard({ task, featured, loading, onPress }: { task: TodayTask; 
           <View style={styles.todayTaskCardTop}>
             <View style={styles.todayTaskCategory}>
               <View style={styles.todayTaskCategoryDot} />
-              <Text style={styles.todayTaskCategoryText} numberOfLines={1}>{getAccountabilityTaskLabel(task.kind, task.active)}</Text>
+              <Text style={styles.todayTaskCategoryText} numberOfLines={1}>{getAccountabilityTaskLabel(task.kind)}</Text>
             </View>
-            {task.active ? (
-              <View style={styles.todayTaskActiveBadge}>
-                <Feather name="check" size={12} color={colors.onPrimary} />
-                <Text style={styles.todayTaskActiveBadgeText}>Set</Text>
-              </View>
-            ) : null}
           </View>
 
           <View style={styles.todayTaskCardBottom}>
@@ -995,7 +994,7 @@ const styles = StyleSheet.create({
   accountabilityTabs: { flexDirection: 'row', gap: spacing.xs, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.lg, backgroundColor: colors.bg, padding: spacing.xs, marginTop: spacing.lg },
   accountabilityTab: { flex: 1, minWidth: 0, minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: 'transparent', borderRadius: radius.md, padding: 5 },
   accountabilityTabActive: { borderColor: colors.gold, backgroundColor: colors.gold },
-  accountabilityTabArtwork: { width: 72, height: 48, flexShrink: 0, borderRadius: 9, borderWidth: 1, borderColor: colors.border },
+  accountabilityTabArtwork: { width: 72, height: 48, flexShrink: 0, borderRadius: 9, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg },
   accountabilityTabArtworkCompact: { width: 60, height: 40 },
   accountabilityTabArtworkActive: { borderColor: 'rgba(0,0,0,0.32)' },
   accountabilityTabCopy: { flex: 1, minWidth: 0 },
@@ -1027,8 +1026,6 @@ const styles = StyleSheet.create({
   todayTaskCategory: { maxWidth: '76%', flexDirection: 'row', alignItems: 'center', gap: 7 },
   todayTaskCategoryDot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: colors.gold },
   todayTaskCategoryText: { ...typography.overline, flexShrink: 1, color: colors.gold },
-  todayTaskActiveBadge: { minHeight: 26, flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: radius.pill, backgroundColor: colors.gold, paddingHorizontal: spacing.sm },
-  todayTaskActiveBadgeText: { fontSize: 10, lineHeight: 13, color: colors.onPrimary, fontWeight: '900' },
   todayTaskCardBottom: { alignItems: 'flex-start', marginTop: spacing.lg },
   todayTaskCardCopy: { width: '72%', minWidth: 0 },
   todayTaskCardTitle: { fontSize: 22, lineHeight: 26, color: colors.inkStrong, fontWeight: '800', letterSpacing: -0.3 },

@@ -42,7 +42,11 @@ describe('Profile subscription disclosure', () => {
     const bodyArtwork = tree!.root.findByProps({ testID: 'body-profile-artwork' });
     const planArtwork = tree!.root.findByProps({ testID: 'plan-profile-artwork' });
     expect(bodyArtwork.props.source).not.toEqual(planArtwork.props.source);
-    expect(StyleSheet.flatten(bodyArtwork.props.style)).toEqual(expect.objectContaining({ width: '100%', height: '100%' }));
+    expect(StyleSheet.flatten(bodyArtwork.props.style)).toEqual(expect.objectContaining({
+      top: 0,
+      width: '100%',
+      aspectRatio: 3 / 2,
+    }));
     expect(StyleSheet.flatten(planArtwork.props.style)).toEqual(expect.objectContaining({ width: '100%', height: '100%' }));
 
     expect(tree!.root.findAllByProps({ children: 'Cancel subscription' })).toHaveLength(0);

@@ -20,11 +20,11 @@ import { Badge } from '../../components/Badge';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
-import { changeCoach } from '../../services/trainerService';
+import { changeCoach, fetchCoachHubPhotoFallbacks } from '../../services/trainerService';
 import { runNativeCheckout } from '../../services/paymentService';
 import { loadCoachBundleCached, peekCoachBundleCached } from '../../services/preloadService';
 import { useAuthStore } from '../../store/authStore';
-import type { CoachOption, PaymentPlan } from '../../types/api';
+import type { CoachHubPayload, CoachOption, PaymentPlan } from '../../types/api';
 import type { CoachScreenParams } from '../../navigation/types';
 import { getCoachArtworkSource } from '../../utils/coachArtwork';
 import { colors } from '../../theme/colors';
@@ -108,6 +108,24 @@ function trainerUpgradePlan(coach: CoachOption): PaymentPlan | null {
   };
 }
 
+function mergeCoachPhotos(current: CoachHubPayload, fallback: CoachHubPayload): CoachHubPayload {
+  const fallbackPhotos = new Map(
+    [fallback.currentTrainer, ...fallback.trainers]
+      .filter((coach): coach is CoachOption => Boolean(coach?.trainerId && coach.photoUrl))
+      .map(coach => [coach.trainerId, coach.photoUrl]),
+  );
+  const withFallbackPhoto = (coach: CoachOption | null) => {
+    if (!coach) return null;
+    const photoUrl = fallbackPhotos.get(coach.trainerId);
+    return photoUrl ? { ...coach, photoUrl } : coach;
+  };
+  return {
+    ...current,
+    currentTrainer: withFallbackPhoto(current.currentTrainer),
+    trainers: current.trainers.map(coach => withFallbackPhoto(coach) as CoachOption),
+  };
+}
+
 export function TrainerScreen() {
   const navigation = useNavigation();
   const route = useRoute<CoachRoute>();
@@ -124,11 +142,31 @@ export function TrainerScreen() {
   const [viewingCoach, setViewingCoach] = useState<CoachOption | null>(null);
   const [changingId, setChangingId] = useState('');
   const [payingTrainerId, setPayingTrainerId] = useState('');
+  const [coachImageRevision, setCoachImageRevision] = useState(0);
+  const coachImageRecoveryAttempted = useRef(false);
   const { user, status, refreshStatus } = useAuthStore();
 
-  const { data, loading, error, reload, refresh, refreshing } = useAsync((mode) =>
+  const { data, loading, error, reload, refresh, refreshing, setData } = useAsync((mode) =>
     loadCoachBundleCached({ force: mode === 'refresh' }),
   [], { initialData: peekCoachBundleCached() });
+
+  const refreshCoaches = useCallback(async () => {
+    // Remount image nodes as well as refreshing data. React Native otherwise
+    // keeps a failed remote image in the fallback state when its URL is unchanged.
+    setCoachImageRevision((value) => value + 1);
+    await refresh();
+  }, [refresh]);
+
+  const recoverCoachImages = useCallback(() => {
+    if (coachImageRecoveryAttempted.current) return;
+    coachImageRecoveryAttempted.current = true;
+    fetchCoachHubPhotoFallbacks()
+      .then((fallback) => {
+        setData(current => current ? { ...current, coachHub: mergeCoachPhotos(current.coachHub, fallback) } : current);
+        setCoachImageRevision(value => value + 1);
+      })
+      .catch(() => refreshCoaches().catch(() => undefined));
+  }, [refreshCoaches, setData]);
 
   const appliedRouteRef = useRef('');
   const currentCoach = data?.coachHub.currentTrainer ?? null;
@@ -319,9 +357,9 @@ export function TrainerScreen() {
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshCoaches} tintColor={colors.accent} />}
         >
-          <CoachHero coach={currentCoach} ai={currentIsAi} />
+          <CoachHero key={`coach-hero-${coachImageRevision}`} coach={currentCoach} ai={currentIsAi} onImageError={recoverCoachImages} />
           <CoachAbout coach={selectedCoach || currentCoach} ai={currentIsAi} onUpgrade={() => setTab('change')} onChange={() => setTab('change')} />
         </ScrollView>
       ) : null}
@@ -330,7 +368,7 @@ export function TrainerScreen() {
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshCoaches} tintColor={colors.accent} />}
         >
           <ChangeCoachHeader
             accessLabel={data.coachHub.access?.trainerAccessLabel || ''}
@@ -339,11 +377,12 @@ export function TrainerScreen() {
             showFilters={showFilters}
             onFilter={setFilter}
           />
-          <View style={[styles.coachList, stackCoachCards && styles.coachListStack]}>
+          <View key={`coach-list-${coachImageRevision}`} style={[styles.coachList, stackCoachCards && styles.coachListStack]}>
             {visibleCoaches.map((coach) => (
               <CoachOptionCard
                 key={coach.trainerId}
                 coach={coach}
+                onImageError={recoverCoachImages}
                 current={coach.trainerId === currentCoach?.trainerId}
                 changing={changingId === coach.trainerId || payingTrainerId === coach.trainerId}
                 fullWidth={stackCoachCards}
@@ -359,7 +398,9 @@ export function TrainerScreen() {
 
       {activeTab === 'detail' && viewingCoach ? (
         <CoachDetailPage
+          key={`coach-detail-${viewingCoach.trainerId}-${coachImageRevision}`}
           coach={viewingCoach}
+          onImageError={recoverCoachImages}
           current={viewingCoach.trainerId === currentCoach?.trainerId}
           loading={changingId === viewingCoach.trainerId || payingTrainerId === viewingCoach.trainerId}
           tabBarHeight={tabBarHeight}
@@ -399,7 +440,7 @@ function CoachHeader({ title, onBack }: { title: string; onBack: () => void }) {
   );
 }
 
-function CoachHero({ coach, ai }: { coach: CoachOption; ai: boolean }) {
+function CoachHero({ coach, ai, onImageError }: { coach: CoachOption; ai: boolean; onImageError?: () => void }) {
   const image = useMemo(
     () => getCoachArtworkSource({ name: coach.name, photoUrl: coach.photoUrl }),
     [coach.name, coach.photoUrl],
@@ -412,7 +453,16 @@ function CoachHero({ coach, ai }: { coach: CoachOption; ai: boolean }) {
     <View style={styles.hero}>
       <View style={styles.heroTop}>
         {image && !imageFailed ? (
-          <Image source={image} style={styles.heroImage} resizeMode="cover" onError={() => setImageFailed(true)} accessible={false} />
+          <Image
+            source={image}
+            style={styles.heroImage}
+            resizeMode="cover"
+            onError={() => {
+              setImageFailed(true);
+              onImageError?.();
+            }}
+            accessible={false}
+          />
         ) : (
           <View style={styles.aiPhotoFallback}>
             <Feather name="user" size={28} color={colors.inkMuted} />
@@ -564,12 +614,14 @@ function CoachDetailPage({
   loading,
   tabBarHeight,
   onContinue,
+  onImageError,
 }: {
   coach: CoachOption;
   current: boolean;
   loading: boolean;
   tabBarHeight: number;
   onContinue: () => void;
+  onImageError?: () => void;
 }) {
   const image = useMemo(
     () => getCoachArtworkSource({ name: coach.name, photoUrl: coach.photoUrl }),
@@ -621,7 +673,16 @@ function CoachDetailPage({
       <View style={styles.detailHero}>
         <View style={styles.detailHeroTop}>
           {image && !imageFailed ? (
-            <Image source={image} style={styles.detailImage} resizeMode="cover" onError={() => setImageFailed(true)} accessible={false} />
+            <Image
+              source={image}
+              style={styles.detailImage}
+              resizeMode="cover"
+              onError={() => {
+                setImageFailed(true);
+                onImageError?.();
+              }}
+              accessible={false}
+            />
           ) : (
             <Avatar name={coach.name} size={94} tone={current ? 'accent' : 'neutral'} />
           )}
@@ -752,12 +813,14 @@ function CoachOptionCard({
   changing,
   fullWidth,
   onPress,
+  onImageError,
 }: {
   coach: CoachOption;
   current: boolean;
   changing: boolean;
   fullWidth: boolean;
   onPress: () => void;
+  onImageError?: () => void;
 }) {
   const image = useMemo(
     () => getCoachArtworkSource({ name: coach.name, photoUrl: coach.photoUrl }),
@@ -789,7 +852,16 @@ function CoachOptionCard({
     >
       <View style={styles.optionVisual}>
         {image && !imageFailed ? (
-          <Image source={image} style={styles.optionImage} resizeMode="cover" onError={() => setImageFailed(true)} accessible={false} />
+          <Image
+            source={image}
+            style={styles.optionImage}
+            resizeMode="cover"
+            onError={() => {
+              setImageFailed(true);
+              onImageError?.();
+            }}
+            accessible={false}
+          />
         ) : (
           <View style={styles.optionFallback}>
             <View style={styles.optionFallbackDisc} />
