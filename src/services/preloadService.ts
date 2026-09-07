@@ -1,3 +1,4 @@
+import type { ImageSourcePropType } from 'react-native';
 import { getActiveCacheSessionId, getCachedResource, peekCachedResource } from './appCache';
 import { fetchAccountability, fetchAccountabilityBae } from './accountabilityService';
 import { DIET_DIARY_CACHE_KEY, fetchDietDiary } from './dietDiaryService';
@@ -6,13 +7,14 @@ import {
   getCoachImageSources,
   getDietDiaryImageSources,
   getMainAppArtworkSources,
+  dedupeImageSources,
   preloadImageSources,
 } from './imagePreloadService';
 import { fetchProgress, fetchTrophyLeaderboard, flushPendingProgressLogs } from './progressService';
 import { fetchSettings } from './settingsService';
 import { fetchCoachHub } from './trainerService';
 import { fetchWorkoutDay, fetchWorkoutPlan } from './workoutService';
-import { loadDietDiaryEntries } from '../store/dietDiaryStore';
+import { loadDietDiaryEntries, peekDietDiaryEntries } from '../store/dietDiaryStore';
 
 export const CACHE_KEYS = {
   // Bump when the plan presentation contract changes so persisted legacy
@@ -326,6 +328,25 @@ function startMainAppPreload(): PreloadRun {
 /** Resolves once first-paint data has settled; callers should still use a hard deadline. */
 export function preloadMainAppCriticalData() {
   return startMainAppPreload().criticalReady;
+}
+
+/**
+ * Returns the final first-frame sources after critical data has hydrated.
+ * Splash mounts these in native Image views so pixel decoding—not just URI
+ * prefetching—finishes before Main is revealed.
+ */
+export function getMainAppImageSourcesSnapshot(): ImageSourcePropType[] {
+  const settings = peekProfileSettingsCached();
+  const workout = peekWorkoutPlanCached();
+  const coach = peekCoachBundleCached();
+  const diaryEntries = peekDietDiaryEntries() || [];
+  return dedupeImageSources([
+    ...getMainAppArtworkSources(settings?.profile?.gender),
+    ...(coach?.coachHub
+      ? getCoachImageSources(coach.coachHub, workout?.today?.assignedTrainer)
+      : []),
+    ...getDietDiaryImageSources(diaryEntries.slice(0, 8)),
+  ]);
 }
 
 /** Starts the complete warm-up. Optional tasks intentionally continue after navigation. */

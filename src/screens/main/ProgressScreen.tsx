@@ -260,6 +260,7 @@ export function ProgressScreen({ route, navigation }: Props) {
   const reportHistory = reviewReady ? review?.history ?? [] : [];
   const reportStats = reviewReady ? review?.reportStats ?? reviewStats : reviewStats;
   const fallbackDailyActivity = buildFallbackDailyActivity(progress.completionHistory ?? []);
+  const fallbackActiveDays = fallbackDailyActivity.filter(day => day.workouts > 0 || day.foodLogs > 0).length;
   const reportMetrics = review?.metrics ?? {
     momentumScore: Math.round((Math.max(0, Math.min(100, reportStats.adherencePct)) * 0.75) + (Math.min(100, reportStats.currentStreak * 20) * 0.25)),
     momentumLabel: reportStats.adherencePct >= 80 ? 'Strong week' : reportStats.adherencePct >= 50 ? 'Building' : 'Starting point',
@@ -271,7 +272,21 @@ export function ProgressScreen({ route, navigation }: Props) {
     workoutFocus: [],
     feedbackSignals: [],
     bodyChanges: [],
+    coverage: {
+      activeDays: fallbackActiveDays,
+      workoutDays: fallbackDailyActivity.filter(day => day.workouts > 0).length,
+      foodDays: reportStats.dietDaysLogged,
+      totalSignals: reportStats.workoutsCompleted + reportStats.mealsLogged + reportStats.workoutFeedbackCount + reportStats.checkInCount + reportStats.bodyLogCount,
+    },
+    weeklyDeltas: [],
   };
+  const reportCoverage = reportMetrics.coverage ?? {
+    activeDays: reportMetrics.dailyActivity.filter(day => day.workouts > 0 || day.foodLogs > 0).length,
+    workoutDays: reportMetrics.dailyActivity.filter(day => day.workouts > 0).length,
+    foodDays: reportStats.dietDaysLogged,
+    totalSignals: reportStats.workoutsCompleted + reportStats.mealsLogged + reportStats.workoutFeedbackCount + reportStats.checkInCount + reportStats.bodyLogCount,
+  };
+  const reportDeltas = reportMetrics.weeklyDeltas ?? [];
   const reportHighlights = review?.highlights?.length
     ? review.highlights
     : (review?.wins ?? []).map(win => ({ title: win, evidence: '', whyItMatters: '' }));
@@ -400,8 +415,107 @@ export function ProgressScreen({ route, navigation }: Props) {
                 <ReportDatum label="Food logs" value={`${reportStats.mealsLogged}`} />
               </View>
 
+              <ReportSectionHeader kicker="Scorecard" title="Weekly momentum" />
+              <View style={styles.momentumCard}>
+                <View style={styles.momentumSummary}>
+                  <View style={styles.momentumScoreRow}>
+                    <Text style={styles.momentumScore}>{reportMetrics.momentumScore}</Text>
+                    <Text style={styles.momentumScoreMax}>/100</Text>
+                  </View>
+                  <Text style={styles.momentumLabel}>{reportMetrics.momentumLabel}</Text>
+                </View>
+                <View style={styles.momentumDimensions}>
+                  {reportMetrics.dimensions.map(dimension => {
+                    const value = Math.max(0, Math.min(100, Math.round(dimension.value)));
+                    return (
+                      <View key={dimension.key} style={styles.dimensionRow}>
+                        <View style={styles.dimensionTop}>
+                          <Text style={styles.dimensionLabel}>{dimension.label}</Text>
+                          <Text style={styles.dimensionValue}>{value}%</Text>
+                        </View>
+                        <View
+                          style={styles.dimensionTrack}
+                          accessible
+                          accessibilityRole="progressbar"
+                          accessibilityLabel={dimension.label}
+                          accessibilityValue={{ min: 0, max: 100, now: value }}
+                        >
+                          <View style={[styles.dimensionFill, { width: `${value}%` }]} />
+                        </View>
+                        <Text style={styles.dimensionStatus}>{dimension.status}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+                <Text style={styles.momentumMethod}>A directional score from plan adherence, food detail, streak and food pattern data when available.</Text>
+              </View>
+
+              <ReportSectionHeader kicker="Coverage" title="Signals behind this report" />
+              <View style={styles.signalMetricGrid}>
+                <ReportMetricTile value={`${reportCoverage.activeDays}/7`} label="Active days" detail="Workout or food activity" />
+                <ReportMetricTile value={`${reportCoverage.totalSignals}`} label="Saved signals" detail="Entries used this week" />
+                <ReportMetricTile value={`${reportStats.workoutFeedbackCount}`} label="Session ratings" detail="Workout feedback" />
+                <ReportMetricTile value={`${reportStats.checkInCount}`} label="Check-ins" detail={`${reportStats.bodyLogCount} body update${reportStats.bodyLogCount === 1 ? '' : 's'}`} />
+              </View>
+
+              {reportDeltas.length ? (
+                <>
+                  <ReportSectionHeader kicker="Comparison" title="Versus your last report" />
+                  <View style={styles.deltaGrid}>
+                    {reportDeltas.map(metric => (
+                      <View key={metric.key} style={styles.deltaCard} accessible accessibilityLabel={`${metric.label}: ${metric.current}${metric.unit === 'pp' ? ' percent' : ''}, change ${metric.change}`}>
+                        <Text style={styles.deltaLabel}>{metric.label}</Text>
+                        <Text style={styles.deltaCurrent}>{metric.current}{metric.unit === 'pp' ? '%' : ''}</Text>
+                        <Text style={[styles.deltaChange, metric.change < 0 && styles.deltaChangeDown]}>
+                          {metric.change === 0 ? 'No change' : `${metric.change > 0 ? '+' : ''}${metric.change}${metric.unit} from ${metric.previous}${metric.unit === 'pp' ? '%' : ''}`}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              ) : null}
+
               <ReportSectionHeader kicker="Observed" title="7-day record" />
               <WeeklyActivityChart data={reportMetrics.dailyActivity} />
+
+              {reportMetrics.workoutFocus.length || reportMetrics.feedbackSignals.length ? (
+                <>
+                  <ReportSectionHeader kicker="Training" title="Session breakdown" />
+                  <View style={styles.reportChartPair}>
+                    {reportMetrics.workoutFocus.length ? <DistributionCard title="Workout focus" items={reportMetrics.workoutFocus} /> : null}
+                    {reportMetrics.feedbackSignals.length ? <DistributionCard title="How sessions felt" items={reportMetrics.feedbackSignals} /> : null}
+                  </View>
+                </>
+              ) : null}
+
+              {reportMetrics.bodyChanges.length ? (
+                <>
+                  <ReportSectionHeader kicker="Body data" title="Measured change" />
+                  <View style={styles.bodyChangeGrid}>
+                    {reportMetrics.bodyChanges.map(metric => (
+                      <View key={metric.key} style={styles.bodyChangeCard} accessible accessibilityLabel={`${metric.label}: ${metric.current} ${metric.unit}, change ${metric.change} ${metric.unit}`}>
+                        <Text style={styles.bodyChangeLabel}>{metric.label}</Text>
+                        <Text style={styles.bodyChangeValue}>{metric.current}<Text style={styles.bodyChangeUnit}> {metric.unit}</Text></Text>
+                        <Text style={styles.bodyChangeDelta}>{metric.change === 0 ? 'No change' : `${metric.change > 0 ? '+' : ''}${metric.change} ${metric.unit}`}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  <Text style={styles.bodyChangeNote}>Changes compare measurements saved inside this seven-day reporting window.</Text>
+                </>
+              ) : null}
+
+              {review?.confidence ? (
+                <View style={styles.confidenceCard}>
+                  <View style={styles.confidenceTop}>
+                    <Feather name="shield" size={16} color={colors.gold} />
+                    <Text style={styles.confidenceLabel}>{review.confidence.level} confidence</Text>
+                  </View>
+                  <Text style={styles.confidenceReason}>{review.confidence.reason}</Text>
+                  {review.confidence.missingSignals?.length ? (
+                    <Text style={styles.confidenceMissing}>More useful next time: {review.confidence.missingSignals.join(' · ')}</Text>
+                  ) : null}
+                </View>
+              ) : null}
 
               {reportHighlights.length ? (
                 <>
@@ -977,6 +1091,39 @@ function ReportDatum({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ReportMetricTile({ value, label, detail }: { value: string; label: string; detail: string }) {
+  return (
+    <View style={styles.signalMetricCard} accessible accessibilityLabel={`${label}: ${value}. ${detail}`}>
+      <Text style={styles.signalMetricValue}>{value}</Text>
+      <Text style={styles.signalMetricLabel}>{label}</Text>
+      <Text style={styles.signalMetricDetail}>{detail}</Text>
+    </View>
+  );
+}
+
+function DistributionCard({ title, items }: { title: string; items: Array<{ label: string; count: number }> }) {
+  const maximum = Math.max(1, ...items.map(item => item.count));
+  return (
+    <View style={styles.distributionCard}>
+      <Text style={styles.distributionTitle}>{title}</Text>
+      {items.map(item => {
+        const width = Math.max(5, Math.round((item.count / maximum) * 100));
+        return (
+          <View key={item.label} style={styles.distributionRow}>
+            <View style={styles.distributionTop}>
+              <Text style={styles.distributionLabel}>{item.label}</Text>
+              <Text style={styles.distributionValue}>{item.count}</Text>
+            </View>
+            <View style={styles.distributionTrack}>
+              <View style={[styles.distributionFill, { width: `${width}%` }]} />
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 function ActivationGoalRow({ icon, label, noun, current, target, complete, onPress }: { icon: string; label: string; noun: string; current: number; target: number; complete: boolean; onPress: () => void }) {
   const remaining = Math.max(0, target - current);
   const progress = Math.min(100, Math.round((current / Math.max(1, target)) * 100));
@@ -1342,6 +1489,14 @@ const styles = StyleSheet.create({
   observationEvidence: { ...reportTypography.data, fontSize: 11, lineHeight: 17, color: colors.gold, marginTop: 3 },
   observationScope: { ...reportTypography.body, fontSize: 12, lineHeight: 18, color: colors.inkMuted, marginTop: 3 },
   dimensionCard: { padding: spacing.md, gap: spacing.md, marginBottom: spacing.md },
+  momentumCard: { padding: spacing.md, gap: spacing.md, marginBottom: spacing.lg, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panel },
+  momentumSummary: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.sm, paddingBottom: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  momentumScoreRow: { flexDirection: 'row', alignItems: 'baseline' },
+  momentumScore: { ...reportTypography.dataLarge, fontSize: 30, lineHeight: 35, color: colors.ink },
+  momentumScoreMax: { ...reportTypography.data, fontSize: 11, lineHeight: 16, color: colors.inkSubtle, marginLeft: 2 },
+  momentumLabel: { ...reportTypography.bodyStrong, color: colors.gold },
+  momentumDimensions: { gap: spacing.md },
+  momentumMethod: { ...reportTypography.body, fontSize: 10, lineHeight: 15, color: colors.inkSubtle },
   dimensionRow: { gap: 6 },
   dimensionTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   dimensionLabel: { ...typography.bodyBold, color: colors.ink },
@@ -1349,6 +1504,17 @@ const styles = StyleSheet.create({
   dimensionTrack: { height: 7, borderRadius: radius.pill, backgroundColor: colors.panelRaised, overflow: 'hidden' },
   dimensionFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
   dimensionStatus: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', textTransform: 'capitalize' },
+  signalMetricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
+  signalMetricCard: { width: '48%', minHeight: 104, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  signalMetricValue: { ...reportTypography.dataLarge, fontSize: 22, lineHeight: 27, color: colors.ink },
+  signalMetricLabel: { ...reportTypography.bodyStrong, fontSize: 12, lineHeight: 18, color: colors.ink, marginTop: 2 },
+  signalMetricDetail: { ...reportTypography.body, fontSize: 10, lineHeight: 15, color: colors.inkSubtle, marginTop: 2 },
+  deltaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
+  deltaCard: { width: '48%', minHeight: 96, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.panelMuted, borderWidth: 1, borderColor: colors.border },
+  deltaLabel: { ...reportTypography.label, color: colors.inkSubtle, textTransform: 'uppercase' },
+  deltaCurrent: { ...reportTypography.dataLarge, fontSize: 20, lineHeight: 25, color: colors.ink, marginTop: 3 },
+  deltaChange: { ...reportTypography.data, fontSize: 10, lineHeight: 15, color: colors.gold, marginTop: 2 },
+  deltaChangeDown: { color: colors.inkMuted },
   reportChartPair: { gap: spacing.sm, marginBottom: spacing.xl },
   distributionCard: { padding: spacing.md, gap: spacing.sm },
   distributionTitle: { ...typography.bodyBold, color: colors.ink, marginBottom: 2 },
@@ -1391,6 +1557,12 @@ const styles = StyleSheet.create({
   bodyChangeValue: { fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: '900', marginTop: 3 },
   bodyChangeUnit: { fontSize: 12, color: colors.inkMuted, fontWeight: '700' },
   bodyChangeDelta: { ...typography.caption, color: colors.gold, fontWeight: '700', marginTop: 2 },
+  bodyChangeNote: { ...reportTypography.body, fontSize: 10, lineHeight: 15, color: colors.inkSubtle, marginTop: -spacing.md, marginBottom: spacing.lg },
+  confidenceCard: { marginBottom: spacing.lg, paddingVertical: spacing.md, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
+  confidenceTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  confidenceLabel: { ...reportTypography.label, color: colors.gold, textTransform: 'uppercase' },
+  confidenceReason: { ...reportTypography.body, fontSize: 12, lineHeight: 18, color: colors.inkMuted, marginTop: spacing.xs },
+  confidenceMissing: { ...reportTypography.data, fontSize: 10, lineHeight: 16, color: colors.inkSubtle, marginTop: spacing.xs },
   watchoutStack: { gap: spacing.sm, marginBottom: spacing.xl },
   watchoutCard: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted, padding: spacing.md },
   watchoutCopy: { flex: 1, minWidth: 0 },

@@ -24,6 +24,7 @@ import {
 } from '../utils/reportArtwork';
 
 const APP_ICON = require('../assets/app-icon.png') as ImageSourcePropType;
+const BRAND_MARK = require('../assets/formbae-mark-transparent.png') as ImageSourcePropType;
 const COACH_DISCOVERY_ART = require('../assets/editorial/coach-discovery.jpg') as ImageSourcePropType;
 
 const MEMBERSHIP_ARTWORK = {
@@ -78,14 +79,16 @@ async function preloadImageSource(source: ImageSourcePropType) {
     return true;
   }
 
-  // getSize goes through the native image loader for local/data URIs. Network
-  // artwork uses prefetch so it is retained by the platform image cache.
-  if (!/^https?:\/\//i.test(resolved.uri)) {
+  // Inline and content-provider images cannot be downloaded separately; asking
+  // the native loader for their dimensions still warms its decode path.
+  if (/^(?:data|content):/i.test(resolved.uri)) {
     await Image.getSize(resolved.uri);
     return true;
   }
 
-  const cached = await Image.prefetch(resolved.uri);
+  // Prefetch bundled file/resource URIs too. getSize alone can resolve metadata
+  // without decoding pixels, which caused blank first frames after fresh login.
+  const cached = await Image.prefetch(resolved.uri).catch(() => false);
   if (!cached) await Image.getSize(resolved.uri);
   return true;
 }
@@ -107,6 +110,7 @@ export function getMainAppArtworkSources(profileGender?: string) {
 
   return uniqueSources([
     APP_ICON,
+    BRAND_MARK,
     COACH_DISCOVERY_ART,
     getCoachArtworkSource({ name: 'Ava' }),
     getAccountabilityTaskArtwork('diet'),
@@ -171,4 +175,10 @@ export function getAccountabilityProofSources(summary: AccountabilityBaeSummary)
       return { uri };
     }),
   );
+}
+
+export function dedupeImageSources(
+  sources: Array<ImageSourcePropType | null | undefined>,
+) {
+  return uniqueSources(sources);
 }

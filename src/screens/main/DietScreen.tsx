@@ -188,7 +188,7 @@ function memorySlotDraftKey(date: Date, mealType: MealType) {
 /** Ava regenerates the diet report on a fixed weekly cadence (backend: FEEDBACK_INTERVAL_DAYS). */
 const REPORT_CYCLE_DAYS = 7;
 const DEFAULT_REPORT_ENRICHMENT_REQUIREMENT = 50;
-const SUPPORTED_DIET_REPORT_SCHEMA_VERSION = 12;
+const SUPPORTED_DIET_REPORT_SCHEMA_VERSION = 13;
 const REPORT_SAGE = '#A8BFB2';
 const REPORT_SAGE_SURFACE = 'rgba(168,191,178,0.12)';
 const REPORT_BLUE_SURFACE = 'rgba(145,189,248,0.10)';
@@ -758,9 +758,6 @@ export function DietReportStory({
   artworkGender?: string;
   onLogMeal?: () => void;
 }) {
-  // The concise presentation intentionally keeps richer legacy fields readable
-  // by the service layer without turning every field into another UI section.
-  const showExtendedReportDetails = false;
   const { width: viewportWidth, fontScale } = useWindowDimensions();
   const stackReportGrid = viewportWidth < 380 || fontScale >= 1.2;
   const hasReportStats = Boolean(feedback.stats && typeof feedback.stats === 'object' && !Array.isArray(feedback.stats));
@@ -845,7 +842,8 @@ export function DietReportStory({
   const headlineMetrics = [
     daysLogged !== null ? { value: daysLogged, label: daysLogged === 1 ? 'day with detail' : 'days with detail', icon: 'calendar' } : null,
     describedEntries !== null ? { value: describedEntries, label: describedEntries === 1 ? 'described meal' : 'described meals', icon: 'edit-3' } : null,
-    mealMoments !== null ? { value: mealMoments, label: mealMoments === 1 ? 'meal moment' : 'meal moments', icon: 'clock' } : null,
+    workoutsCompleted !== null ? { value: workoutsCompleted, label: workoutsCompleted === 1 ? 'workout linked' : 'workouts linked', icon: 'activity' } : null,
+    mealMoments !== null ? { value: mealMoments, label: mealMoments === 1 ? 'meal moment saved' : 'meal moments saved', icon: 'clock' } : null,
   ].filter((item): item is { value: number; label: string; icon: string } => Boolean(item));
   const implementationRows = [
     { label: 'When', value: reportText(implementation?.cue) },
@@ -934,7 +932,7 @@ export function DietReportStory({
 
           {headlineMetrics.length ? (
             <View style={styles.reportOverviewStats}>
-              {headlineMetrics.slice(0, 2).map(metric => (
+              {headlineMetrics.slice(0, 3).map(metric => (
                 <View key={metric.label} style={styles.reportOverviewStat} accessible accessibilityLabel={`${metric.value} ${metric.label}`}>
                   <Text style={styles.reportOverviewStatValue}>{metric.value}</Text>
                   <Text style={styles.reportOverviewStatLabel}>{metric.label}</Text>
@@ -943,6 +941,15 @@ export function DietReportStory({
             </View>
           ) : null}
         </View>
+
+        {score !== null && reportText(feedback.score?.confidenceNote) ? (
+          <View style={styles.paperConfidenceRow}>
+            <View style={styles.paperConfidenceLabel}>
+              <Text style={styles.paperConfidenceLabelText}>{`${reportText(feedback.score?.confidence) || 'limited'} confidence`.toUpperCase()}</Text>
+            </View>
+            <Text style={styles.paperConfidenceText}>{reportText(feedback.score?.confidenceNote)}</Text>
+          </View>
+        ) : null}
 
         {newerSchema ? <Text style={styles.paperSchemaNotice}>Some newer report fields are shown as additional notes below.</Text> : null}
       </View>
@@ -977,7 +984,7 @@ export function DietReportStory({
               </View>
             ) : null}
 
-            {showExtendedReportDetails && implementationRows.length ? (
+            {implementationRows.length ? (
               <View style={styles.paperDefinitionGrid}>
                 {implementationRows.map(item => (
                   <View key={item.label} style={[styles.paperDefinitionCell, stackReportGrid && styles.paperGridItemFull]}>
@@ -988,7 +995,7 @@ export function DietReportStory({
               </View>
             ) : null}
 
-            {showExtendedReportDetails && reportText(feedback.nextWeek?.trackingFocus) ? (
+            {reportText(feedback.nextWeek?.trackingFocus) ? (
               <View style={styles.paperTrackingRow}>
                 <Feather name="eye" size={15} color={REPORT_ACCENT} />
                 <Text style={styles.paperTrackingText}><Text style={styles.paperTrackingLabel}>Notice: </Text>{reportText(feedback.nextWeek?.trackingFocus)}</Text>
@@ -1063,7 +1070,7 @@ export function DietReportStory({
         </ReportPaperSection>
       ) : null}
 
-      {showExtendedReportDetails && hasMealData ? (
+      {hasMealData ? (
         <ReportPaperSection title="Meals & food coverage" meta="What was observed, without calorie estimates" icon="pie-chart">
           {reportText(feedback.mealRhythm?.summary) || reportText(feedback.mealRhythm?.strongestWindow) || reportText(feedback.mealRhythm?.opportunityWindow) ? (
             <View style={styles.paperRhythmBlock}>
@@ -1139,7 +1146,7 @@ export function DietReportStory({
         </ReportPaperSection>
       ) : null}
 
-      {showExtendedReportDetails && hasPracticalContext ? (
+      {hasPracticalContext ? (
         <ReportPaperSection title="Make it practical" meta="A reusable meal formula and context for your goals" icon="compass">
           {mealBuilderRows.length ? (
             <View style={styles.paperSubsection}>
@@ -1202,7 +1209,7 @@ export function DietReportStory({
         </ReportPaperSection>
       ) : null}
 
-      {showExtendedReportDetails && score !== null && scoreComponents.length ? (
+      {score !== null && scoreComponents.length ? (
         <ReportPaperSection title="Score breakdown" meta="How the diary-based score was composed" icon="bar-chart-2">
           <View style={styles.paperComponentList}>
             {scoreComponents.map((component, index) => {
@@ -1241,7 +1248,7 @@ export function DietReportStory({
         </ReportPaperSection>
       ) : null}
 
-      {showExtendedReportDetails && genericSections.length ? (
+      {newerSchema && genericSections.length ? (
         <ReportPaperSection title="Additional notes" meta="Useful details included by this report format" icon="file-text">
           <View style={styles.paperRows}>
             {genericSections.map((section, sectionIndex) => {
@@ -1311,7 +1318,7 @@ export function DietReportStory({
         </ReportPaperSection>
       ) : null}
 
-      {showExtendedReportDetails && interactive && questions.length ? (
+      {interactive && questions.length ? (
         <View style={styles.paperSection}>
           <ReportQuestionsForm
             key={`${feedback.generatedAt}-${questions.join('|')}`}

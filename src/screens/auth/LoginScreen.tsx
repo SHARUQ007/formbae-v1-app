@@ -1,36 +1,73 @@
-import { useState } from 'react';
-import { Alert, View, Text, StyleSheet } from 'react-native';
+import { useRef, useState } from 'react';
+import {
+  AccessibilityInfo,
+  Alert,
+  InputAccessoryView,
+  Keyboard,
+  Linking,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
-import { ScreenContainer, ScreenHeader } from '../../components/Card';
+import NativeLinearGradient from 'react-native-linear-gradient';
+import { ScreenContainer } from '../../components/Card';
 import { FormInput } from '../../components/FormInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { KeyboardScreen } from '../../components/KeyboardScreen';
-import { LogoMark } from '../../components/Logo';
+import { Logo } from '../../components/Logo';
 import { useAuthStore } from '../../store/authStore';
 import { resolveOnboardingInitialRoute, resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
+import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
 import type { AuthStackParamList, RootStackParamList } from '../../navigation/types';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
+const PHONE_ACCESSORY_ID = 'formbae-phone-keyboard';
+const TERMS_URL = 'https://formbae.in/terms-of-use';
+const PRIVACY_URL = 'https://formbae.in/privacy-policy';
+
 export function LoginScreen({ navigation, route }: Props) {
-  const { login, loading, error } = useAuthStore();
+  const { login, loading } = useAuthStore();
+  const { height, fontScale } = useWindowDimensions();
+  const compact = height < 700 || fontScale > 1.15;
+  const phoneRef = useRef<TextInput>(null);
+  const submittingRef = useRef(false);
   const [mobile, setMobile] = useState('');
   const [name, setName] = useState('');
+  const [phoneError, setPhoneError] = useState('');
   const isSignup = route.params?.mode === 'signup';
 
+  const handleMobileChange = (value: string) => {
+    setMobile(toNationalMobileInput(value));
+    if (phoneError) setPhoneError('');
+  };
+
   const onSubmit = async () => {
+    if (submittingRef.current) return;
     const digits = normalizeIndianMobile(mobile);
     if (!digits) {
-      Alert.alert('Enter mobile', 'Please enter a valid Indian mobile number.');
+      const message = 'Enter a valid 10-digit Indian mobile number.';
+      setPhoneError(message);
+      phoneRef.current?.focus();
+      AccessibilityInfo.announceForAccessibility(message);
       return;
     }
+
+    Keyboard.dismiss();
+    submittingRef.current = true;
+    setPhoneError('');
     try {
-      const response = await login(digits, name || undefined, true);
+      const response = await login(digits, name.trim() || undefined, true);
       const rootNav = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
       const root = resolveRootRoute(response.status.recommendedNextScreen);
       if (root === 'Onboarding') {
@@ -44,64 +81,241 @@ export function LoginScreen({ navigation, route }: Props) {
       // Returning users enter through the bounded startup warm-up so their
       // first Main frame is hydrated instead of immediately showing loaders.
       rootNav?.replace(root === 'Main' ? 'Splash' : root);
-    } catch {
-      // error shown below
+    } catch (submitError) {
+      const message = submitError instanceof Error ? submitError.message : 'We could not sign you in. Please try again.';
+      setPhoneError(message);
+      AccessibilityInfo.announceForAccessibility(message);
+    } finally {
+      submittingRef.current = false;
     }
   };
 
+  const openLegalPage = (url: string, label: string) => {
+    Linking.openURL(url).catch(() => {
+      Alert.alert(`Could not open ${label}`, 'Please check your connection and try again.');
+    });
+  };
+
+  const returnToWelcome = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+
+    // Login can still be restored or deep-linked without a Welcome entry in
+    // the stack. Keep the back action useful in that case as well.
+    navigation.replace('Welcome');
+  };
+
   return (
-    <ScreenContainer withBottomInset>
-      <ScreenHeader title="" onBack={() => navigation.goBack()} />
-      <KeyboardScreen scroll>
-        <View style={styles.hero}>
-          <LogoMark size={64} />
-          <Text style={styles.title}>{isSignup ? 'Create your account' : 'Continue with phone'}</Text>
-          <Text style={styles.subtitle}>
-            Enter your phone number to continue. New users start with the fitness analysis; paid users sync their plan automatically.
-          </Text>
+    <ScreenContainer withBottomInset style={styles.screen}>
+      <NativeLinearGradient
+        colors={['#101116', colors.bg, colors.bg]}
+        locations={[0, 0.38, 1]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+
+      <View style={styles.topBar}>
+        <TouchableOpacity
+          onPress={returnToWelcome}
+          style={styles.backButton}
+          activeOpacity={0.78}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          accessibilityHint="Returns to the welcome screen"
+          hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+        >
+          <Feather name="chevron-left" size={25} color={colors.ink} />
+        </TouchableOpacity>
+        <View style={styles.brand}>
+          <Logo height={compact ? 31 : 34} showTagline={false} />
         </View>
+        <View style={styles.topBarSpacer} />
+      </View>
 
-        {isSignup ? (
-          <FormInput label="Your name" icon="user" value={name} onChangeText={setName} placeholder="Optional" autoCapitalize="words" />
-        ) : null}
-        <FormInput
-          label="Mobile number"
-          icon="phone"
-          value={mobile}
-          onChangeText={setMobile}
-          placeholder="10-digit number or +91 number"
-          keyboardType="phone-pad"
-        />
-
-        {error ? (
-          <View style={styles.errorRow}>
-            <Feather name="alert-circle" size={15} color={colors.error} />
-            <Text style={styles.error}>{error}</Text>
+      <KeyboardScreen
+        scroll
+        style={styles.keyboard}
+        contentContainerStyle={[styles.scrollContent, compact && styles.scrollContentCompact]}
+      >
+        <View style={styles.content}>
+          <View style={styles.intro}>
+            <View style={styles.accentRule} />
+            <Text style={styles.title} accessibilityRole="header">
+              {isSignup ? 'Start your analysis' : 'Welcome back'}
+            </Text>
+            <Text style={styles.subtitle}>
+              {isSignup
+                ? 'Enter your details to create your FormBae profile.'
+                : 'Enter the mobile number linked to your FormBae profile.'}
+            </Text>
           </View>
-        ) : null}
 
-        <PrimaryButton title="Continue" icon="arrow-right" onPress={onSubmit} loading={loading} style={styles.cta} />
-        <Text style={styles.legal}>By continuing you agree to FormBae&apos;s Terms and Privacy Policy.</Text>
+          <View style={styles.form}>
+            {isSignup ? (
+              <FormInput
+                label="First name"
+                icon="user"
+                value={name}
+                onChangeText={setName}
+                placeholder="Your first name"
+                autoCapitalize="words"
+                autoComplete="name"
+                textContentType="givenName"
+                returnKeyType="next"
+                maxLength={50}
+                editable={!loading}
+                blurOnSubmit={false}
+                onSubmitEditing={() => phoneRef.current?.focus()}
+              />
+            ) : null}
+
+            <FormInput
+              ref={phoneRef}
+              label="Mobile number"
+              prefix="+91"
+              value={mobile}
+              onChangeText={handleMobileChange}
+              placeholder="98765 43210"
+              keyboardType="phone-pad"
+              autoComplete="tel"
+              textContentType="telephoneNumber"
+              returnKeyType="done"
+              maxLength={14}
+              editable={!loading}
+              autoCorrect={false}
+              spellCheck={false}
+              inputAccessoryViewID={Platform.OS === 'ios' ? PHONE_ACCESSORY_ID : undefined}
+              onSubmitEditing={onSubmit}
+              accessibilityHint="Enter the 10 digits after plus 91"
+              error={phoneError || undefined}
+            />
+
+            <PrimaryButton
+              title={isSignup ? 'Continue to analysis' : 'Sign in'}
+              icon="arrow-right"
+              iconPosition="trailing"
+              onPress={onSubmit}
+              loading={loading}
+              size="lg"
+              style={styles.cta}
+              contentStyle={styles.ctaContent}
+            />
+
+            <Text style={styles.legal}>
+              By continuing, you agree to our{' '}
+              <Text
+                style={styles.legalLink}
+                onPress={() => openLegalPage(TERMS_URL, 'Terms of Use')}
+                accessibilityRole="link"
+                accessibilityLabel="Read FormBae Terms of Use"
+              >
+                Terms of Use
+              </Text>{' '}
+              and{' '}
+              <Text
+                style={styles.legalLink}
+                onPress={() => openLegalPage(PRIVACY_URL, 'Privacy Policy')}
+                accessibilityRole="link"
+                accessibilityLabel="Read FormBae Privacy Policy"
+              >
+                Privacy Policy
+              </Text>
+              .
+            </Text>
+          </View>
+        </View>
       </KeyboardScreen>
+
+      {Platform.OS === 'ios' ? (
+        <InputAccessoryView nativeID={PHONE_ACCESSORY_ID}>
+          <View style={styles.keyboardAccessory}>
+            <Text style={styles.keyboardAccessoryLabel}>Mobile number</Text>
+            <TouchableOpacity
+              onPress={() => Keyboard.dismiss()}
+              style={styles.keyboardDoneButton}
+              accessibilityRole="button"
+              accessibilityLabel="Done entering mobile number"
+            >
+              <Text style={styles.keyboardDoneText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </InputAccessoryView>
+      ) : null}
     </ScreenContainer>
   );
 }
 
-function normalizeIndianMobile(value: string) {
+export function normalizeIndianMobile(value: string) {
   const digits = value.replace(/\D/g, '');
-  if (digits.length === 10) return digits;
-  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
-  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
-  if (digits.length > 10 && digits.endsWith(digits.slice(-10))) return digits.slice(-10);
-  return '';
+  const national = digits.length === 10
+    ? digits
+    : digits.length === 11 && digits.startsWith('0')
+      ? digits.slice(1)
+      : digits.length === 12 && digits.startsWith('91')
+        ? digits.slice(2)
+        : '';
+  return /^[6-9]\d{9}$/.test(national) ? national : '';
+}
+
+function toNationalMobileInput(value: string) {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length > 10 && digits.startsWith('91')) return digits.slice(2, 12);
+  if (digits.length > 10 && digits.startsWith('0')) return digits.slice(1, 11);
+  return digits.slice(0, 10);
 }
 
 const styles = StyleSheet.create({
-  hero: { alignItems: 'flex-start', marginBottom: spacing.lg },
-  title: { ...typography.hero, color: colors.ink, marginTop: spacing.md },
-  subtitle: { ...typography.body, color: colors.inkMuted, marginTop: spacing.sm },
-  errorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.sm },
-  error: { ...typography.caption, color: colors.error, flex: 1 },
-  cta: { marginTop: spacing.sm },
-  legal: { ...typography.caption, color: colors.inkSubtle, textAlign: 'center', marginTop: spacing.lg },
+  screen: { backgroundColor: colors.bg },
+  topBar: { minHeight: 52, flexDirection: 'row', alignItems: 'center' },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(17,18,23,0.88)',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  brand: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  topBarSpacer: { width: 44, height: 44 },
+  keyboard: { backgroundColor: 'transparent' },
+  scrollContent: { justifyContent: 'center', paddingTop: spacing.lg, paddingBottom: spacing.xxl },
+  scrollContentCompact: { justifyContent: 'flex-start', paddingTop: spacing.xl, paddingBottom: spacing.lg },
+  content: { width: '100%', maxWidth: 480, alignSelf: 'center' },
+  intro: { maxWidth: 420, marginBottom: spacing.xl },
+  accentRule: { width: 38, height: 3, borderRadius: radius.pill, backgroundColor: colors.accent, marginBottom: spacing.md },
+  title: { ...typography.display, fontSize: 34, lineHeight: 40, letterSpacing: -0.8, color: colors.inkStrong },
+  subtitle: { ...typography.body, fontSize: 16, lineHeight: 24, color: colors.inkMuted, marginTop: spacing.sm, maxWidth: 410 },
+  form: { width: '100%' },
+  cta: { minHeight: 62, borderRadius: radius.xl, marginTop: spacing.xs, paddingHorizontal: 20 },
+  ctaContent: { width: '100%', justifyContent: 'space-between' },
+  legal: {
+    ...typography.caption,
+    maxWidth: 390,
+    alignSelf: 'center',
+    color: colors.inkSubtle,
+    textAlign: 'center',
+    marginTop: spacing.lg,
+  },
+  legalLink: {
+    color: colors.inkMuted,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  keyboardAccessory: {
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.panelRaised,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderStrong,
+  },
+  keyboardAccessoryLabel: { ...typography.caption, color: colors.inkMuted },
+  keyboardDoneButton: { minWidth: 56, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' },
+  keyboardDoneText: { ...typography.bodyBold, color: colors.accent },
 });

@@ -1,10 +1,20 @@
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import { colors } from '../theme/colors';
 
-export function KeyboardScreen({ children, scroll = false }: { children: React.ReactNode; scroll?: boolean }) {
+export function KeyboardScreen({
+  children,
+  scroll = false,
+  contentContainerStyle,
+  style,
+}: {
+  children: React.ReactNode;
+  scroll?: boolean;
+  contentContainerStyle?: StyleProp<ViewStyle>;
+  style?: StyleProp<ViewStyle>;
+}) {
   return (
     <KeyboardAvoidingView
-      style={styles.flex}
+      style={[styles.flex, style]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
     >
@@ -12,7 +22,8 @@ export function KeyboardScreen({ children, scroll = false }: { children: React.R
         <ScrollView
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={styles.content}
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          contentContainerStyle={[styles.content, contentContainerStyle]}
         >
           {children}
         </ScrollView>

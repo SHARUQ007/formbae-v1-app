@@ -341,6 +341,20 @@ export type WeeklyProgressReportSnapshot = {
     workoutFocus: Array<{ label: string; count: number }>;
     feedbackSignals: Array<{ label: string; count: number }>;
     bodyChanges: Array<{ key: string; label: string; unit: string; start: number; current: number; change: number }>;
+    coverage?: {
+      activeDays: number;
+      workoutDays: number;
+      foodDays: number;
+      totalSignals: number;
+    };
+    weeklyDeltas?: Array<{
+      key: string;
+      label: string;
+      current: number;
+      previous: number;
+      change: number;
+      unit: '' | 'pp';
+    }>;
   };
   period?: { start: string; end: string };
   reportStats?: {

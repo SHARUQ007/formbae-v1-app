@@ -18,7 +18,9 @@ type Props = {
   variant?: Variant;
   size?: Size;
   icon?: string;
+  iconPosition?: 'leading' | 'trailing';
   style?: ViewStyle;
+  contentStyle?: ViewStyle;
 };
 
 const heights: Record<Size, number> = { sm: 42, md: 52, lg: 58 };
@@ -31,7 +33,9 @@ export function PrimaryButton({
   variant = 'primary',
   size = 'md',
   icon,
+  iconPosition = 'leading',
   style,
+  contentStyle,
 }: Props) {
   const isDisabled = !!loading || !!disabled;
   const fg =
@@ -68,9 +72,10 @@ export function PrimaryButton({
       {loading ? (
         <ActivityIndicator color={fg} />
       ) : (
-        <View style={styles.content}>
-          {icon ? <Feather name={icon} size={18} color={fg} /> : null}
+        <View style={[styles.content, contentStyle]}>
+          {icon && iconPosition === 'leading' ? <Feather name={icon} size={18} color={fg} /> : null}
           <Text style={[styles.text, { color: fg }]}>{title}</Text>
+          {icon && iconPosition === 'trailing' ? <Feather name={icon} size={18} color={fg} /> : null}
         </View>
       )}
     </TouchableOpacity>

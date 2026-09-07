@@ -1,19 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
   Easing,
+  Image,
   ImageBackground,
   View,
   Text,
   StyleSheet,
+  type ImageSourcePropType,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { Logo, LogoMark } from '../../components/Logo';
+import { Logo } from '../../components/Logo';
 import {
   getMainAppPreloadSnapshot,
+  getMainAppImageSourcesSnapshot,
   preloadMainAppCriticalData,
   subscribeToMainAppPreload,
   type MainAppPreloadSnapshot,
@@ -49,6 +52,55 @@ const STARTUP_LINES = [
 
 type MotionPreference = 'unknown' | 'full' | 'reduce';
 
+function NativeImageWarmup({
+  sources,
+  onComplete,
+}: {
+  sources: ImageSourcePropType[];
+  onComplete: () => void;
+}) {
+  const settled = useRef(new Set<number>());
+  const completed = useRef(false);
+
+  useEffect(() => {
+    settled.current.clear();
+    completed.current = false;
+    if (!sources.length) {
+      completed.current = true;
+      onComplete();
+    }
+  }, [onComplete, sources]);
+
+  const markSettled = useCallback((index: number) => {
+    if (completed.current) return;
+    settled.current.add(index);
+    if (settled.current.size < sources.length) return;
+    completed.current = true;
+    onComplete();
+  }, [onComplete, sources.length]);
+
+  return (
+    <View
+      style={styles.imageWarmup}
+      pointerEvents="none"
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+    >
+      {sources.map((source, index) => (
+        <Image
+          key={`startup-image-${index}`}
+          source={source}
+          style={styles.imageWarmupItem}
+          resizeMode="cover"
+          fadeDuration={0}
+          onLoadEnd={() => markSettled(index)}
+          accessible={false}
+        />
+      ))}
+    </View>
+  );
+}
+
 function progressLabel(
   ready: boolean,
   finishing: boolean,
@@ -72,6 +124,7 @@ export function SplashScreen({ navigation }: Props) {
   const [snapshot, setSnapshot] = useState(getMainAppPreloadSnapshot);
   const [finishing, setFinishing] = useState(false);
   const [mainPreloadStarted, setMainPreloadStarted] = useState(false);
+  const [imageWarmupSources, setImageWarmupSources] = useState<ImageSourcePropType[]>([]);
   const [motionPreference, setMotionPreference] =
     useState<MotionPreference>('unknown');
   const bridgeOpacity = useRef(new Animated.Value(1)).current;
@@ -79,6 +132,12 @@ export function SplashScreen({ navigation }: Props) {
   const footerReveal = useRef(new Animated.Value(0)).current;
   const progressAnimation = useRef(new Animated.Value(0.08)).current;
   const entranceComplete = useRef(false);
+  const imageWarmupResolver = useRef<(() => void) | null>(null);
+
+  const completeImageWarmup = useCallback(() => {
+    imageWarmupResolver.current?.();
+    imageWarmupResolver.current = null;
+  }, []);
 
   useEffect(() => {
     if (!ready) bootstrap();
@@ -185,7 +244,20 @@ export function SplashScreen({ navigation }: Props) {
     }
 
     let active = true;
-    const criticalReady = preloadMainAppCriticalData();
+    const criticalDataReady = preloadMainAppCriticalData();
+    const criticalReady = criticalDataReady.then(() => new Promise<void>(resolve => {
+      if (!active) {
+        resolve();
+        return;
+      }
+      const sources = getMainAppImageSourcesSnapshot();
+      if (!sources.length) {
+        resolve();
+        return;
+      }
+      imageWarmupResolver.current = resolve;
+      setImageWarmupSources(sources);
+    }));
     setSnapshot(getMainAppPreloadSnapshot());
     setMainPreloadStarted(true);
     waitForMainStartupWindow(mountedAt, criticalReady).then(() => {
@@ -196,8 +268,9 @@ export function SplashScreen({ navigation }: Props) {
     });
     return () => {
       active = false;
+      completeImageWarmup();
     };
-  }, [mountedAt, navigation, ready, status, token]);
+  }, [completeImageWarmup, mountedAt, navigation, ready, status, token]);
 
   const preloadReady = ready && mainPreloadStarted;
   const visibleSnapshot: MainAppPreloadSnapshot = mainPreloadStarted
@@ -247,8 +320,13 @@ export function SplashScreen({ navigation }: Props) {
       style={styles.screen}
       imageStyle={styles.artwork}
       resizeMode="cover"
+      fadeDuration={0}
       accessible={false}
     >
+      <NativeImageWarmup
+        sources={imageWarmupSources}
+        onComplete={completeImageWarmup}
+      />
       <LinearGradient
         colors={[
           'rgba(5, 6, 9, 0.76)',
@@ -365,8 +443,7 @@ export function SplashScreen({ navigation }: Props) {
         importantForAccessibility="no-hide-descendants"
       >
         <View style={styles.launchBrand}>
-          <LogoMark size={72} />
-          <Text style={styles.launchWordmark}>FormBae</Text>
+          <Logo height={48} showTagline={false} />
         </View>
         <Text
           style={[
@@ -396,6 +473,20 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
+  },
+  imageWarmup: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 2,
+    height: 2,
+    opacity: 0.01,
+    overflow: 'hidden',
+  },
+  imageWarmupItem: {
+    position: 'absolute',
+    width: 2,
+    height: 2,
   },
   content: {
     flex: 1,
@@ -490,14 +581,6 @@ const styles = StyleSheet.create({
     right: 0,
     left: 0,
     alignItems: 'center',
-  },
-  launchWordmark: {
-    marginTop: 12,
-    fontSize: 36,
-    lineHeight: 43,
-    fontWeight: '700',
-    letterSpacing: -0.6,
-    color: colors.ink,
   },
   launchTagline: {
     position: 'absolute',

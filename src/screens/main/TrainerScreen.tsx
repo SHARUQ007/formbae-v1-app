@@ -885,7 +885,7 @@ function CoachOptionCard({
         <Text style={styles.optionPrice} numberOfLines={1}>
           {current ? 'View profile' : !coach.canSelect && !coach.requiresUpgrade ? 'View availability' : coachAccessPrice(coach)}
         </Text>
-        {changing ? <ActivityIndicator size="small" color={colors.ink} /> : <Feather name="arrow-up-right" size={17} color={colors.ink} />}
+        {changing ? <ActivityIndicator size="small" color={colors.ink} /> : <Feather name="arrow-right" size={17} color={colors.ink} />}
       </View>
       {locked ? <View style={styles.optionLockedDot} /> : null}
     </TouchableOpacity>

@@ -11,7 +11,7 @@ import {
 
 function completeReport(): DietCoachFeedback {
   return {
-    schemaVersion: 12,
+    schemaVersion: 13,
     weekStartDate: '2026-08-24',
     weekEndDate: '2026-08-30',
     generatedAt: '2026-08-30T10:00:00.000Z',
@@ -249,18 +249,23 @@ describe('DietReportStory', () => {
       'Simple breakfast formula',
       'Plants and fibre-rich foods',
       'Which breakfast is easiest?',
-    ].forEach(value => expect(text).not.toContain(value));
+      'Describe breakfast on three days',
+      'Name the breakfast protein when present.',
+      'Training nutrition',
+    ].forEach(value => expect(text).toContain(value));
 
     expect(text).toContain('PATTERN SCORE');
     expect(text).toContain('+4 vs last report');
     expect(renderer.root.findAll(node => node.props.accessibilityLabel === 'Weekly report summary').length).toBeGreaterThan(0);
     expect(renderer.root.findAll(node => node.props.accessibilityLabel === '5 days with detail').length).toBeGreaterThan(0);
     expect(renderer.root.findAll(node => node.props.accessibilityLabel === '9 described meals').length).toBeGreaterThan(0);
+    expect(renderer.root.findAll(node => node.props.accessibilityLabel === '2 workouts linked').length).toBeGreaterThan(0);
     expect(renderer.root.findAll(node => node.props.accessibilityLabel === '10 meal moments')).toHaveLength(0);
     expect(renderer.root.findAll(node => node.props.horizontal === true)).toHaveLength(0);
     expect(renderer.root.findAll(node => node.props.accessibilityRole === 'adjustable')).toHaveLength(0);
     expect(renderer.root.findAll(node => typeof node.props.accessibilityState?.expanded === 'boolean')).toHaveLength(0);
-    expect(renderer.root.findAllByType(TextInput)).toHaveLength(0);
+    expect(renderer.root.findAllByType(TextInput)).toHaveLength(2);
+    expect(renderer.root.findAll(node => node.props.accessibilityRole === 'progressbar').length).toBeGreaterThan(0);
     expect(renderer.root.findAll(node => node.props.testID === 'weekly-nutrition-art')).toHaveLength(0);
   });
 

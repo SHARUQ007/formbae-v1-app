@@ -7,9 +7,16 @@ const getLoginScreen = () => require('../screens/auth/LoginScreen').LoginScreen;
 
 export function AuthNavigator() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator initialRouteName="Welcome" screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Welcome" component={WelcomeScreen} />
-      <Stack.Screen name="Login" getComponent={getLoginScreen} />
+      <Stack.Screen
+        name="Login"
+        getComponent={getLoginScreen}
+        options={({ route }) => ({
+          animation: route.params?.reduceMotion ? 'none' : 'fade_from_bottom',
+          animationDuration: 240,
+        })}
+      />
     </Stack.Navigator>
   );
 }

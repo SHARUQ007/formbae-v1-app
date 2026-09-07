@@ -12,7 +12,7 @@ export type RootStackParamList = {
 
 export type AuthStackParamList = {
   Welcome: undefined;
-  Login: { mode?: 'login' | 'signup' };
+  Login: { mode?: 'login' | 'signup'; reduceMotion?: boolean };
 };
 
 export type OnboardingStackParamList = {
