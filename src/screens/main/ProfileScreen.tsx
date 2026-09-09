@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Alert, Image, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -9,6 +9,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenTitle } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { Avatar } from '../../components/Avatar';
+import { ProfileGymSection } from '../../components/ProfileGymSection';
 import { LoadingState, ErrorState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { peekCachedResource } from '../../services/appCache';
@@ -17,12 +18,11 @@ import { fetchGym, type GymPlace } from '../../services/gymService';
 import { syncReminders } from '../../services/notificationService';
 import { CACHE_KEYS, loadProfileSettingsCached } from '../../services/preloadService';
 import { titleCase } from '../../utils/format';
-import { getBodyProfileArtwork, getGymProfileArtwork, getPlanProfileArtwork } from '../../utils/profileArtwork';
+import { getBodyProfileArtwork, getPlanProfileArtwork } from '../../utils/profileArtwork';
 import { useAuthStore } from '../../store/authStore';
 import type { ProfileStackParamList, RootStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
-import { shadows } from '../../theme/shadows';
 import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
 
@@ -98,7 +98,6 @@ export function ProfileScreen({ navigation }: Props) {
   const [manageAccessOpen, setManageAccessOpen] = useState(false);
   const [selectedGym, setSelectedGym] = useState<GymPlace | null>(null);
   const [gymLoading, setGymLoading] = useState(false);
-  const [gymUnavailable, setGymUnavailable] = useState(false);
   const hasFocusedRef = useRef(false);
   const [notifications, setNotifications] = useState<NotificationPrefs>(
     cached?.notifications ?? {
@@ -117,7 +116,7 @@ export function ProfileScreen({ navigation }: Props) {
     setNotifications(settings.notifications);
     syncReminders(settings.notifications).catch(() => undefined);
     return settings;
-  });
+  }, [], { initialData: cached ?? null });
 
   const current = data || cached;
   const profile = (current?.profile ?? {}) as Record<string, string>;
@@ -136,18 +135,16 @@ export function ProfileScreen({ navigation }: Props) {
     if (!selectedGymPlaceId) {
       setSelectedGym(null);
       setGymLoading(false);
-      setGymUnavailable(false);
       return;
     }
     const controller = new AbortController();
     setGymLoading(true);
-    setGymUnavailable(false);
+    setSelectedGym(null);
     fetchGym(selectedGymPlaceId, controller.signal)
-      .then((place) => setSelectedGym(place))
+      .then((place) => { if (!controller.signal.aborted) setSelectedGym(place); })
       .catch(() => {
         if (!controller.signal.aborted) {
           setSelectedGym(null);
-          setGymUnavailable(true);
         }
       })
       .finally(() => {
@@ -224,7 +221,6 @@ export function ProfileScreen({ navigation }: Props) {
   ].filter((item) => Boolean(item.value));
   const bodyArtwork = getBodyProfileArtwork(profile.gender);
   const planArtwork = getPlanProfileArtwork(profile.gender);
-  const gymArtwork = getGymProfileArtwork(profile.gender);
   const compactProfile = viewportWidth < 380 || fontScale >= 1.18;
   const largeText = fontScale >= 1.18;
   const availableArtworkWidth = Math.max(280, viewportWidth - spacing.lg * 2);
@@ -265,37 +261,34 @@ export function ProfileScreen({ navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
       >
         <ScreenTitle>Profile</ScreenTitle>
-        {loading && cached ? <Text style={styles.syncing}>Refreshing latest details...</Text> : null}
 
-        <View style={styles.heroCard}>
-          <View style={styles.heroAvatarRing}>
-            <Avatar name={displayName} iconId={profile.avatarIcon} size={52} tone="neutral" />
-          </View>
-          <View style={styles.heroIdentity}>
-            <Text style={styles.name} numberOfLines={1}>
-              {displayName}
-            </Text>
-            {displayContact ? (
-              <Text style={styles.phone} numberOfLines={1}>
-                {displayContact}
-              </Text>
-            ) : null}
-            <View style={styles.heroStatus}>
-              <View style={[styles.statusDot, !accessActive && styles.statusDotWarn]} />
-              <Text style={[styles.heroBadgeText, !accessActive && styles.warnText]} numberOfLines={1}>
-                {accessLabel}
-                {planName ? ` · ${planName}` : ''}
-              </Text>
+        <View style={styles.bodyProfileCard} testID="profile-summary-card">
+          <View style={styles.profileIdentityRow}>
+            <View style={styles.heroAvatarRing}>
+              <Avatar name={displayName} iconId={profile.avatarIcon} size={compactProfile ? 40 : 52} tone="neutral" />
             </View>
+            <View style={styles.heroIdentity}>
+              <Text style={styles.name} numberOfLines={2}>
+                {displayName}
+              </Text>
+              {displayContact ? (
+                <Text style={styles.phone} numberOfLines={1}>
+                  {displayContact}
+                </Text>
+              ) : null}
+              <View style={styles.heroStatus}>
+                <View style={[styles.statusDot, !accessActive && styles.statusDotWarn]} />
+                <Text style={[styles.heroBadgeText, !accessActive && styles.warnText]} numberOfLines={1}>
+                  {accessLabel}
+                  {planName ? ` · ${planName}` : ''}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity style={styles.iconAction} onPress={editProfile} accessibilityRole="button" accessibilityLabel="Edit profile">
+              <Feather name="edit-3" size={18} color={colors.inkMuted} />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.iconAction} onPress={editProfile} accessibilityRole="button" accessibilityLabel="Edit profile">
-            <Feather name="edit-3" size={18} color={colors.inkMuted} />
-          </TouchableOpacity>
-        </View>
-
-        <SectionHeading title="Body profile" action="Edit" onAction={editProfile} />
-        <View style={styles.bodyProfileCard}>
-          <View style={[styles.bodyArtworkFrame, { height: artworkHeight }]}>
+          <View style={[styles.bodyArtworkFrame, largeText && styles.bodyArtworkFrameLarge]}>
             <Image
               source={bodyArtwork}
               style={styles.bodyArtwork}
@@ -363,7 +356,7 @@ export function ProfileScreen({ navigation }: Props) {
         </View>
 
         <SectionHeading title="Plan" action="Edit" onAction={editProfile} />
-        <View style={styles.planCard}>
+        <View style={styles.planCard} testID="plan-and-gym-card">
           <View style={[styles.planArtworkFrame, { height: artworkHeight }]}>
             <Image
               source={planArtwork}
@@ -403,53 +396,11 @@ export function ProfileScreen({ navigation }: Props) {
           ) : (
             <Text style={styles.planEmpty}>Add your goal and routine preferences.</Text>
           )}
+          {workoutSetting === 'Gym' ? (
+            <ProfileGymSection gym={selectedGym} saved={Boolean(selectedGymPlaceId)} loading={gymLoading}
+              onSelect={() => navigation.navigate('GymPicker')} />
+          ) : null}
         </View>
-
-        {workoutSetting === 'Gym' ? (
-          <>
-            <SectionHeading title="Your gym" />
-            <TouchableOpacity
-              activeOpacity={0.9}
-              style={styles.gymCard}
-              onPress={() => navigation.navigate('GymPicker')}
-              accessibilityRole="button"
-              accessibilityLabel={selectedGymPlaceId ? 'Change your gym' : 'Add your gym'}
-            >
-              <Image source={gymArtwork} style={styles.gymArtwork} resizeMode="cover" accessible={false} accessibilityIgnoresInvertColors />
-              <LinearGradient
-                colors={['rgba(5,6,10,0.96)', 'rgba(5,6,10,0.70)', 'rgba(5,6,10,0.10)']}
-                locations={[0, 0.52, 0.9]}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 1, y: 0.5 }}
-                style={styles.gymShade}
-                pointerEvents="none"
-              />
-              <View style={styles.gymCopy}>
-                <Text style={styles.artworkOverline}>TRAINING HOME</Text>
-                {gymLoading ? (
-                  <View style={styles.gymLoadingRow}>
-                    <ActivityIndicator size="small" color={colors.gold} />
-                    <Text style={styles.gymLoadingText}>Loading your gym…</Text>
-                  </View>
-                ) : (
-                  <>
-                    <Text style={styles.gymTitle} numberOfLines={2}>
-                      {selectedGym?.name || (selectedGymPlaceId ? 'Your gym is saved' : 'Choose your gym')}
-                    </Text>
-                    <Text style={styles.gymCaption} numberOfLines={2}>
-                      {selectedGym?.address || (gymUnavailable ? 'Tap to refresh or choose another gym.' : 'Keep your usual training place with your plan.')}
-                    </Text>
-                    {selectedGym ? <Text style={styles.gymAttribution}>Google Maps</Text> : null}
-                  </>
-                )}
-                <View style={styles.gymAction}>
-                  <Text style={styles.gymActionText}>{selectedGymPlaceId ? 'Change gym' : 'Add your gym'}</Text>
-                  <Feather name="arrow-right" size={17} color={colors.onPrimary} />
-                </View>
-              </View>
-            </TouchableOpacity>
-          </>
-        ) : null}
 
         <SectionHeading title="Access" />
         <View style={styles.accessCard}>
@@ -593,27 +544,19 @@ function ActionRow({ icon, label, value, tone, onPress, isLast }: { icon: string
 const styles = StyleSheet.create({
   screenScroll: { flex: 1 },
   scroll: {},
-  syncing: {
-    ...typography.caption,
-    color: colors.inkSubtle,
-    marginTop: -spacing.sm,
-    marginBottom: spacing.md,
-  },
-  heroCard: {
+
+  profileIdentityRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm + 4,
-    borderRadius: radius.lg,
-    backgroundColor: colors.panel,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.sm + 4,
-    ...shadows.sm,
+    padding: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   heroIdentity: { flex: 1, minWidth: 0 },
   iconAction: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: radius.pill,
     backgroundColor: colors.panelRaised,
     alignItems: 'center',
@@ -664,18 +607,20 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   bodyArtworkFrame: {
-    height: 184,
+    height: 156,
     backgroundColor: colors.bg,
     overflow: 'hidden',
   },
+  bodyArtworkFrameLarge: { height: 184 },
   bodyArtwork: {
     position: 'absolute',
     top: 0,
     left: 0,
     width: '100%',
-    // Keep the portrait top-anchored and only trim its lower edge. Explicit
-    // height avoids the oversized close-up produced by aspect-ratio layout.
-    height: '132%',
+    // Preserve the source proportions and anchor its top edge. A percentage
+    // height with cover would crop the head as the card gets shorter.
+    height: undefined,
+    aspectRatio: 1000 / 667,
   },
   bodyArtworkShade: {
     position: 'absolute',
@@ -834,51 +779,6 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     padding: spacing.md,
   },
-  gymCard: {
-    height: 190,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.panel,
-    overflow: 'hidden',
-  },
-  gymArtwork: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-  },
-  gymShade: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-  },
-  gymCopy: {
-    flex: 1,
-    width: '62%',
-    padding: spacing.md,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-  },
-  gymTitle: { ...typography.title, color: colors.inkStrong, marginTop: spacing.xs },
-  gymCaption: { ...typography.caption, color: colors.inkMuted, marginTop: 3 },
-  gymAttribution: { fontSize: 12, lineHeight: 16, fontWeight: '400', color: colors.inkMuted, marginTop: 3 },
-  gymLoadingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm },
-  gymLoadingText: { ...typography.caption, color: colors.inkMuted },
-  gymAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    marginTop: spacing.sm,
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: radius.pill,
-    backgroundColor: colors.primaryAction,
-  },
-  gymActionText: { ...typography.label, color: colors.onPrimary },
   listPanel: {
     borderWidth: 1,
     borderColor: colors.border,

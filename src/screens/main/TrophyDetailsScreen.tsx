@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Alert, Modal, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
-import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Card, ScreenContainer, SectionTitle } from '../../components/Card';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { AccountabilityViewArt } from '../../components/AccountabilityViewArt';
+import { ScreenContainer } from '../../components/Card';
 import { ErrorState, LoadingState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import type { ProgressStackParamList } from '../../navigation/types';
@@ -20,7 +20,8 @@ import { useAuthStore } from '../../store/authStore';
 import type { ProgressSummary, TrophyLeaderboard } from '../../types/api';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
-import { shadows } from '../../theme/shadows';
+import { TrophyInfoSheet } from '../../components/TrophyInfoSheet';
+import { TrophyIllustration } from '../../components/TrophyIllustration';
 import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
 
@@ -48,14 +49,13 @@ function buildTrophyScreenData(
   preferredName: string,
   leaderboardError = '',
 ): TrophyScreenData {
-  const score = progress.trophies?.score ?? 0;
   if (!leaderboard) {
     return {
       progress,
       leaderboard: {
-        leaders: [{ rank: 1, displayName: preferredName, score, isCurrentUser: true }],
-        currentUser: { rank: 1, displayName: preferredName, score, isCurrentUser: true },
-        participantCount: 1,
+        leaders: [],
+        currentUser: null,
+        participantCount: 0,
       },
       leaderboardAvailable: false,
       leaderboardError,
@@ -88,8 +88,10 @@ function buildTrophyScreenData(
 }
 
 export function TrophyDetailsScreen({ navigation, route }: Props) {
-  const insets = useSafeAreaInsets();
   const { user, status } = useAuthStore();
+  const tabBarHeight = useBottomTabBarHeight();
+  const { width, fontScale } = useWindowDimensions();
+  const compact = width < 360 || fontScale >= 1.3;
   const currentUserName = leaderboardDisplayName(user?.name || status?.name);
   const [infoOpen, setInfoOpen] = useState(Boolean(route.params?.openInfo));
   const [joinOpen, setJoinOpen] = useState(false);
@@ -189,38 +191,12 @@ export function TrophyDetailsScreen({ navigation, route }: Props) {
   const trophy = data.progress.trophies;
   const leaders = data.leaderboard.leaders;
   const participantCount = data.leaderboard.participantCount;
+  const currentUser = data.leaderboard.currentUser || leaders.find(row => row.isCurrentUser);
+  const milestoneProgress = Math.max(0, Math.min(1, (trophy.score - trophy.safeZone) / Math.max(1, trophy.nextMilestone - trophy.safeZone)));
   const currentOutsideTop = data.leaderboard.currentUser && !leaders.some((row) => row.isCurrentUser) ? data.leaderboard.currentUser : null;
-  const safeZoneBand = Math.max(1, trophy.nextMilestone - trophy.safeZone);
-  const safeZoneProgress = Math.max(0, Math.min(1, (trophy.score - trophy.safeZone) / safeZoneBand));
 
-  return (
-    <ScreenContainer withBottomInset>
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.gold} />}
-        contentContainerStyle={styles.scroll}
-      >
-        <TrophyHeader onBack={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('ProgressMain')} onInfo={() => setInfoOpen(true)} score={trophy.score} />
-
-        <View style={styles.leaderboardHead}>
-          <View>
-            <SectionTitle style={styles.leaderboardTitle}>Your friends</SectionTitle>
-            <Text style={styles.participants}>{participantCount} {participantCount === 1 ? 'member' : 'members'}</Text>
-          </View>
-        </View>
-        <Card style={styles.leaderboardCard}>
-          {leaders.length ? leaders.map((row) => <LeaderboardRow key={`${row.rank}-${row.displayName}`} {...row} />) : <Text style={styles.emptyText}>Invite friends to start your leaderboard.</Text>}
-          {currentOutsideTop ? <><View style={styles.ellipsis}><Text style={styles.ellipsisText}>•••</Text></View><LeaderboardRow {...currentOutsideTop} /></> : null}
-        </Card>
-        {!data.leaderboardAvailable ? (
-          <TouchableOpacity style={styles.serviceNotice} onPress={refresh} accessibilityRole="button" accessibilityLabel="Retry leaderboard">
-            <Feather name="refresh-cw" size={14} color={colors.gold} />
-            <Text style={styles.serviceNoticeText}>{data.leaderboardError || 'Could not load leaderboard.'} Tap to retry.</Text>
-          </TouchableOpacity>
-        ) : null}
-      </ScrollView>
-      <View style={styles.bottomDock}>
+  const invitationActions = (
+      <View style={[styles.bottomDock, compact && styles.bottomDockCompact]}>
         <TouchableOpacity style={styles.joinCodeButton} onPress={() => setJoinOpen(true)} accessibilityRole="button" accessibilityLabel="Join leaderboard with a code">
           <Feather name="link" size={17} color={colors.ink} />
           <Text style={styles.joinCodeButtonText}>Join with code</Text>
@@ -230,69 +206,67 @@ export function TrophyDetailsScreen({ navigation, route }: Props) {
           <Text style={styles.inviteButtonText}>{sharing ? 'Opening…' : 'Invite friends'}</Text>
         </TouchableOpacity>
       </View>
-      <Modal visible={infoOpen} transparent animationType="slide" onRequestClose={() => setInfoOpen(false)}>
-        <View style={styles.infoModalBackdrop}>
-          <ScrollView
-            style={styles.infoModalCard}
-            contentContainerStyle={[styles.infoModalContent, { paddingBottom: insets.bottom + spacing.xl }]}
-            showsVerticalScrollIndicator={false}
-            contentInsetAdjustmentBehavior="always"
-          >
-            <View style={styles.sheetHandle} />
-            <View style={styles.infoModalHead}>
-              <View style={styles.infoModalTitleRow}>
-                <View style={styles.infoModalTitleIcon}><MaterialCommunityIcon name="trophy-outline" size={21} color={colors.gold} /></View>
-                <Text style={styles.modalTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.82}>How trophies work</Text>
-              </View>
-              <TouchableOpacity style={styles.modalClose} onPress={() => setInfoOpen(false)} accessibilityRole="button" accessibilityLabel="Close trophy information">
-                <Feather name="x" size={21} color={colors.ink} />
-              </TouchableOpacity>
+  );
+
+  return (
+    <ScreenContainer style={{ paddingBottom: tabBarHeight + spacing.sm }}>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.gold} />}
+        contentContainerStyle={styles.scroll}
+      >
+        <TrophyHeader onBack={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('ProgressMain')} onInfo={() => setInfoOpen(true)} />
+
+        <View style={styles.scoreCard}>
+          <View style={styles.scoreTop}>
+            <TrophyIllustration size={56} />
+            <View style={styles.scoreCopy}>
+              <Text style={styles.scoreLabel}>YOUR TROPHIES</Text>
+              <Text style={styles.scoreValue}>{trophy.score}</Text>
             </View>
-            <View style={styles.infoScoreRow}>
-              <View style={styles.infoScoreMedallion}><MaterialCommunityIcon name="trophy" size={30} color={colors.gold} /></View>
-              <View style={styles.infoScoreCopy}><Text style={styles.infoScoreLabel}>YOUR SCORE</Text><Text style={styles.infoScoreValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.76}>{trophy.score}<Text style={styles.infoScoreUnit}> trophies</Text></Text></View>
-              <View style={styles.infoSafeZone}><MaterialCommunityIcon name="shield-check" size={18} color={colors.gold} /><Text style={styles.infoSafeZoneText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Safe zone {trophy.safeZone}</Text></View>
+            <View style={styles.rankSummary}>
+              <Text style={styles.scoreLabel}>YOUR RANK</Text>
+              <Text style={styles.rankValue}>{data.leaderboardAvailable && currentUser ? `#${currentUser.rank}` : '—'}</Text>
             </View>
-            <View style={styles.rulesGrid}>
-              <TrophyRule
-                icon="dumbbell"
-                title="1 workout completed"
-                value="+10"
-              />
-              <TrophyRule
-                icon="notebook-edit-outline"
-                title="1 food log"
-                value="+1"
-              />
-              <TrophyRule
-                icon="calendar-check-outline"
-                title="Missed workout"
-                value="−3"
-              />
-              <TrophyRule
-                icon="notebook-remove-outline"
-                title="3 missed food logs"
-                value="−1"
-              />
-              <TrophyRule
-                icon="fire"
-                title="Streak"
-                value="Bonus"
-                wide
-              />
-            </View>
-            <View style={styles.safeZoneCard}>
-              <View style={styles.safeZoneRule}><MaterialCommunityIcon name="shield-check-outline" size={21} color={colors.gold} /><Text style={styles.safeZoneRuleText}>Safe zone every 25 trophies</Text></View>
-              <View style={styles.safeZoneTrack}><View style={[styles.safeZoneTrackFill, { width: `${safeZoneProgress * 100}%` }]} /></View>
-              <Text style={styles.nextSafeZoneText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>{trophy.pointsToNext} to next safe zone</Text>
-            </View>
-          </ScrollView>
+          </View>
+          <View style={styles.milestoneHead}>
+            <Text style={styles.milestoneCopy}>{trophy.pointsToNext} to your next safe zone</Text>
+            <Text style={styles.milestoneValue}>{trophy.nextMilestone}</Text>
+          </View>
+          <View style={styles.milestoneTrack} accessibilityRole="progressbar"
+            accessibilityValue={{ min: 0, max: 100, now: Math.round(milestoneProgress * 100), text: `${trophy.pointsToNext} trophies to the next safe zone` }}>
+            <View style={[styles.milestoneFill, { width: `${milestoneProgress * 100}%` }]} />
+          </View>
         </View>
-      </Modal>
+
+        <View style={styles.leaderboardHead}>
+          <Text style={styles.leaderboardTitle} accessibilityRole="header">Your friends</Text>
+          <Text style={styles.participants}>{data.leaderboardAvailable ? `${participantCount} ${participantCount === 1 ? 'member' : 'members'}` : 'Rankings unavailable'}</Text>
+        </View>
+        {data.leaderboardAvailable && leaders.length ? <View style={styles.leaderboardCard}>
+          <View style={styles.columnHead}>
+            <Text style={[styles.columnLabel, styles.rankColumn]}>RANK</Text>
+            <Text style={[styles.columnLabel, styles.memberColumn]}>MEMBER</Text>
+            <Text style={styles.columnLabel}>TROPHIES</Text>
+          </View>
+          {leaders.map((row) => <LeaderboardRow key={`${row.rank}-${row.displayName}`} {...row} compact={compact} />)}
+          {currentOutsideTop ? <><View style={styles.ellipsis}><Text style={styles.ellipsisText}>Your position</Text></View><LeaderboardRow {...currentOutsideTop} compact={compact} /></> : null}
+        </View> : null}
+        {!data.leaderboardAvailable ? (
+          <TouchableOpacity style={styles.serviceNotice} onPress={refresh} accessibilityRole="button" accessibilityLabel="Retry leaderboard">
+            <Feather name="refresh-cw" size={14} color={colors.gold} />
+            <Text style={styles.serviceNoticeText}>{data.leaderboardError || 'Could not load leaderboard.'} Tap to retry.</Text>
+          </TouchableOpacity>
+        ) : null}
+      </ScrollView>
+      {invitationActions}
+
+      <TrophyInfoSheet visible={infoOpen} trophy={trophy} onClose={() => setInfoOpen(false)} />
       <Modal visible={joinOpen} transparent animationType="fade" onRequestClose={() => setJoinOpen(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <View style={styles.modalIcon}><Feather name="users" size={23} color={colors.gold} /></View>
+            <View style={styles.modalIcon}><AccountabilityViewArt kind="partner" size={38} /></View>
             <Text style={styles.modalTitle}>Join a leaderboard</Text>
             <Text style={styles.modalCopy}>Enter the invite code they shared with you.</Text>
             <TextInput
@@ -317,113 +291,94 @@ export function TrophyDetailsScreen({ navigation, route }: Props) {
   );
 }
 
-function TrophyHeader({ onBack, onInfo, score }: { onBack: () => void; onInfo?: () => void; score?: number }) {
-  return (
-    <View style={styles.header}>
-      <TouchableOpacity onPress={onBack} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Back to progress">
-        <Feather name="chevron-left" size={24} color={colors.ink} />
-      </TouchableOpacity>
-      <View style={styles.headerCopy}><Text style={styles.eyebrow}>Rewards</Text><Text style={styles.title}>Leaderboard</Text></View>
-      {onInfo ? <TouchableOpacity style={styles.headerInfoButton} onPress={onInfo} accessibilityRole="button" accessibilityLabel="How trophies work"><MaterialCommunityIcon name="information-outline" size={20} color={colors.gold} /><Text style={styles.headerInfoText}>Info</Text></TouchableOpacity> : null}
-      {score !== undefined ? <View style={styles.headerTrophies} accessibilityLabel={`${score} trophies`}><MaterialCommunityIcon name="trophy" size={29} color={colors.gold} /><Text style={styles.headerTrophyValue}>{score}</Text></View> : null}
-    </View>
-  );
+function TrophyHeader({ onBack, onInfo }: { onBack: () => void; onInfo?: () => void }) {
+  return <View style={styles.header}>
+    <TouchableOpacity onPress={onBack} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Back to progress">
+      <Feather name="chevron-left" size={24} color={colors.ink} />
+    </TouchableOpacity>
+    <View style={styles.headerCopy}><Text style={styles.title} accessibilityRole="header">Leaderboard</Text></View>
+    {onInfo ? <TouchableOpacity style={styles.headerInfoButton} onPress={onInfo} accessibilityRole="button" accessibilityLabel="How trophies work"><Feather name="info" size={20} color={colors.inkMuted} /></TouchableOpacity> : null}
+  </View>;
 }
 
-function TrophyRule({ icon, title, value, wide = false }: { icon: string; title: string; value: string; wide?: boolean }) {
-  return (
-    <View style={[styles.trophyRule, wide && styles.trophyRuleWide]}>
-      <View style={styles.trophyRuleIcon}><MaterialCommunityIcon name={icon} size={22} color={colors.gold} /></View>
-      <View style={styles.trophyRuleValueRow}>
-        <Text style={styles.trophyRuleValue}>{value}</Text>
-        <MaterialCommunityIcon name="trophy" size={16} color={colors.gold} />
-      </View>
-      <Text style={styles.trophyRuleTitle}>{title}</Text>
-    </View>
-  );
-}
-
-function LeaderboardRow({ rank, displayName, score, isCurrentUser }: { rank: number; displayName: string; score: number; isCurrentUser: boolean }) {
+function LeaderboardRow({ rank, displayName, score, isCurrentUser, compact }: { rank: number; displayName: string; score: number; isCurrentUser: boolean; compact: boolean }) {
   const name = leaderboardDisplayName(displayName);
   const medalColor = rank === 1 ? colors.gold : rank === 2 ? '#b9bec8' : '#bf865b';
-  return (
-    <View style={[styles.leaderRow, isCurrentUser && styles.leaderRowCurrent]}>
-      <View style={styles.rankSlot}>{rank <= 3 ? <MaterialCommunityIcon name="medal" size={21} color={medalColor} /> : <Text style={styles.rankText}>{rank}</Text>}</View>
-      <View style={styles.avatar}><Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text></View>
-      <Text style={[styles.leaderName, isCurrentUser && styles.leaderNameCurrent]} numberOfLines={1}>{name}</Text>
-      <MaterialCommunityIcon name="trophy" size={16} color={colors.gold} />
-      <Text style={styles.leaderScore}>{score}</Text>
+  const initials = name.split(' ').slice(0, 2).map(word => word.charAt(0).toUpperCase()).join('');
+  return <View style={[styles.leaderRow, isCurrentUser && styles.leaderRowCurrent]} accessible
+    accessibilityLabel={`Rank ${rank}. ${name}${isCurrentUser ? '. You' : ''}. ${score} trophies`}>
+    {isCurrentUser ? <View style={styles.currentAccent} /> : null}
+    <View style={[styles.rankSlot, rank <= 3 && styles.topRankSlot]}>
+      <Text style={[styles.rankText, rank <= 3 && { color: medalColor }]}>{rank}</Text>
     </View>
-  );
+    {!compact ? <View style={styles.avatar}><Text style={styles.avatarText}>{initials}</Text></View> : null}
+    <View style={styles.leaderIdentity}>
+      <Text style={styles.leaderName} numberOfLines={2}>{name}</Text>
+      {isCurrentUser ? <View style={styles.youBadge}><Text style={styles.youLabel}>You</Text></View> : null}
+    </View>
+    <View style={styles.leaderScoreGroup}>
+      <TrophyIllustration size={24} />
+      <Text style={[styles.leaderScore, isCurrentUser && styles.leaderScoreCurrent]}>{score}</Text>
+    </View>
+  </View>;
 }
 
 const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   scroll: { flexGrow: 1, paddingBottom: spacing.md },
   header: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.lg },
-  headerCopy: { flex: 1 },
+  headerCopy: { flex: 1, minWidth: 0 },
   backButton: { width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
-  eyebrow: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
-  title: { ...typography.title, color: colors.ink, marginTop: 2 },
-  headerInfoButton: { minHeight: 40, paddingHorizontal: 11, borderRadius: radius.pill, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.goldMuted },
-  headerInfoText: { ...typography.caption, color: colors.gold, fontWeight: '900' },
-  headerTrophies: { minWidth: 72, minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderLeftWidth: 1, borderLeftColor: colors.border, paddingLeft: spacing.md },
-  headerTrophyValue: { fontSize: 24, lineHeight: 29, color: colors.ink, fontWeight: '900' },
-  leaderboardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
-  leaderboardTitle: { marginTop: 0, marginBottom: 0 },
-  participants: { ...typography.caption, color: colors.inkSubtle, marginTop: 2 },
-  inviteButton: { flex: 1, minHeight: 48, paddingHorizontal: 14, borderRadius: radius.md, backgroundColor: colors.primaryAction, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  inviteButtonText: { ...typography.caption, color: colors.onPrimary, fontWeight: '900' },
-  leaderboardCard: { padding: 0, overflow: 'hidden', backgroundColor: colors.panel, borderColor: colors.border },
-  leaderRow: { minHeight: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, gap: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
-  leaderRowCurrent: { backgroundColor: colors.accentLight },
-  rankSlot: { width: 28, alignItems: 'center', justifyContent: 'center' },
-  rankText: { fontSize: 15, color: colors.inkMuted, fontWeight: '800' },
-  avatar: { width: 32, height: 32, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
-  avatarText: { ...typography.caption, color: colors.ink, fontWeight: '900' },
-  leaderName: { ...typography.bodyBold, color: colors.ink, flex: 1 },
-  leaderNameCurrent: { color: colors.gold },
-  leaderScore: { ...typography.bodyBold, color: colors.ink, minWidth: 30, textAlign: 'right' },
-  ellipsis: { height: 28, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: colors.border },
-  ellipsisText: { color: colors.inkSubtle, letterSpacing: 3 },
-  emptyText: { ...typography.body, color: colors.inkMuted, padding: spacing.lg, textAlign: 'center' },
-  serviceNotice: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: spacing.xs, marginTop: spacing.sm, padding: spacing.sm, borderRadius: radius.md, backgroundColor: colors.accentLight },
+  title: { ...typography.title, color: colors.ink },
+  headerInfoButton: { width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border },
+  scoreCard: { borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: 16, marginBottom: 24 },
+  scoreTop: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12 },
+  scoreCopy: { flexGrow: 1, flexShrink: 1, gap: 3 },
+  scoreLabel: { ...typography.overline, fontSize: 9, letterSpacing: 1, color: colors.inkMuted },
+  scoreValue: { fontSize: 38, lineHeight: 44, fontWeight: '800', color: colors.gold, fontVariant: ['tabular-nums'] },
+  rankSummary: { gap: 3, borderLeftWidth: 1, borderLeftColor: colors.border, paddingLeft: 16 },
+  rankValue: { fontSize: 28, lineHeight: 36, fontWeight: '700', color: colors.ink, fontVariant: ['tabular-nums'] },
+  milestoneHead: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 20, marginBottom: 9 },
+  milestoneCopy: { ...typography.caption, color: colors.inkMuted, flex: 1 },
+  milestoneValue: { ...typography.caption, color: colors.ink, fontWeight: '700' },
+  milestoneTrack: { height: 5, borderRadius: 3, overflow: 'hidden', backgroundColor: colors.border },
+  milestoneFill: { height: '100%', borderRadius: 3, backgroundColor: colors.gold },
+  leaderboardHead: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12 },
+  leaderboardTitle: { ...typography.subtitle, color: colors.ink, fontWeight: '700' },
+  participants: { ...typography.caption, color: colors.inkMuted },
+  inviteButton: { flex: 1, minHeight: 48, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14, backgroundColor: colors.gold, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+  inviteButtonText: { ...typography.label, color: colors.onPrimary, fontWeight: '700', flexShrink: 1 },
+  leaderboardCard: { borderWidth: 1, borderRadius: 20, overflow: 'hidden', backgroundColor: colors.panel, borderColor: colors.border },
+  columnHead: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, gap: 12 },
+  columnLabel: { ...typography.overline, fontSize: 8, letterSpacing: 0.9, color: colors.inkSubtle },
+  rankColumn: { width: 32, textAlign: 'center' },
+  memberColumn: { flex: 1 },
+  leaderRow: { minHeight: 80, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 15, gap: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  leaderRowCurrent: { backgroundColor: colors.panelMuted },
+  currentAccent: { position: 'absolute', left: 0, width: 2, top: 22, bottom: 22, borderRadius: 2, backgroundColor: colors.gold },
+  rankSlot: { width: 32, minHeight: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  topRankSlot: { backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border },
+  rankText: { fontSize: 15, color: colors.inkMuted, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  avatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
+  avatarText: { ...typography.caption, fontSize: 11, color: colors.inkMuted, fontWeight: '600' },
+  leaderIdentity: { flex: 1, minWidth: 0, gap: 5 },
+  leaderName: { ...typography.bodyBold, color: colors.ink },
+  youBadge: { alignSelf: 'flex-start', borderRadius: 5, backgroundColor: colors.panelRaised, paddingHorizontal: 6, paddingVertical: 1 },
+  youLabel: { ...typography.caption, fontSize: 9, lineHeight: 14, color: colors.inkMuted },
+  leaderScore: { fontSize: 22, lineHeight: 28, fontWeight: '700', color: colors.ink, textAlign: 'right', fontVariant: ['tabular-nums'] },
+  leaderScoreCurrent: { color: colors.gold },
+  leaderScoreGroup: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  ellipsis: { paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: colors.border },
+  ellipsisText: { ...typography.caption, color: colors.inkSubtle },
+  serviceNotice: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: spacing.xs, marginTop: spacing.sm, padding: spacing.sm, borderRadius: radius.md, backgroundColor: colors.panelRaised },
   serviceNoticeText: { ...typography.caption, color: colors.inkMuted, flexShrink: 1 },
-  bottomDock: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.lg, backgroundColor: colors.panel, padding: spacing.sm, marginTop: spacing.sm, marginBottom: spacing.xs },
+  bottomDock: { flexDirection: 'row', alignItems: 'stretch', gap: 10, paddingTop: 12, paddingBottom: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  bottomDockCompact: { flexDirection: 'column' },
   joinCodeButton: { flex: 1, minHeight: 48, paddingHorizontal: 12, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panelMuted, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  joinCodeButtonText: { ...typography.caption, color: colors.ink, fontWeight: '900' },
+  joinCodeButtonText: { ...typography.label, color: colors.ink, fontWeight: '600', flexShrink: 1 },
   modalBackdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'center', padding: spacing.lg },
   modalCard: { borderRadius: radius.xl, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.borderStrong, padding: spacing.lg },
-  infoModalBackdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'flex-end', paddingHorizontal: spacing.md },
-  infoModalCard: { width: '100%', maxHeight: '92%', alignSelf: 'center', borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, backgroundColor: colors.panel, borderWidth: 1, borderBottomWidth: 0, borderColor: colors.borderStrong, overflow: 'hidden', ...shadows.lg },
-  infoModalContent: { width: '100%', paddingHorizontal: spacing.md, paddingTop: spacing.sm, gap: spacing.md },
-  sheetHandle: { alignSelf: 'center', width: 42, height: 4, borderRadius: radius.pill, backgroundColor: colors.borderStrong, marginBottom: spacing.xs },
-  infoModalHead: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
-  infoModalTitleRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  infoModalTitleIcon: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
-  modalClose: { width: 40, height: 40, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border },
-  infoScoreRow: { width: '100%', minHeight: 92, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.accentSurface, backgroundColor: colors.panelWarm, padding: spacing.md },
-  infoScoreMedallion: { width: 50, height: 50, flexShrink: 0, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface },
-  infoScoreCopy: { flex: 1, minWidth: 0 },
-  infoScoreValue: { fontSize: 32, lineHeight: 37, color: colors.ink, fontWeight: '900', letterSpacing: -0.5 },
-  infoScoreUnit: { fontSize: 12, lineHeight: 16, color: colors.inkMuted, fontWeight: '700', letterSpacing: 0 },
-  infoScoreLabel: { ...typography.overline, color: colors.gold, fontWeight: '800' },
-  infoSafeZone: { maxWidth: '42%', minWidth: 0, flexShrink: 1, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: radius.pill, backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 9, paddingVertical: 7 },
-  infoSafeZoneText: { minWidth: 0, flexShrink: 1, fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '900' },
-  rulesGrid: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  trophyRule: { width: '47.5%', minWidth: 0, minHeight: 132, flexGrow: 1, alignItems: 'flex-start', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted, padding: spacing.md },
-  trophyRuleWide: { width: '100%', minHeight: 112 },
-  trophyRuleIcon: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight },
-  trophyRuleValueRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 'auto' },
-  trophyRuleValue: { fontSize: 23, lineHeight: 28, color: colors.ink, fontWeight: '900' },
-  trophyRuleTitle: { ...typography.caption, color: colors.inkMuted, fontWeight: '800', marginTop: 2 },
-  safeZoneCard: { width: '100%', minWidth: 0, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted, padding: spacing.md },
-  safeZoneRule: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  safeZoneRuleText: { ...typography.bodyBold, color: colors.ink, flex: 1 },
-  safeZoneTrack: { height: 6, borderRadius: radius.pill, backgroundColor: colors.panelRaised, overflow: 'hidden', marginTop: spacing.md },
-  safeZoneTrackFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
-  nextSafeZoneText: { width: '100%', ...typography.caption, color: colors.inkMuted, fontWeight: '800', marginTop: spacing.sm },
-  modalIcon: { width: 48, height: 48, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, marginBottom: spacing.md },
+  modalIcon: { width: 48, height: 48, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised, marginBottom: spacing.md },
   modalTitle: { minWidth: 0, flexShrink: 1, ...typography.title, color: colors.ink },
   modalCopy: { ...typography.body, color: colors.inkMuted, marginTop: spacing.xs },
   codeInput: { height: 54, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panelMuted, color: colors.ink, textAlign: 'center', fontSize: 18, fontWeight: '900', letterSpacing: 3, marginTop: spacing.lg, paddingHorizontal: spacing.md },

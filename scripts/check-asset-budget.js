@@ -6,9 +6,11 @@ const assetRoot = path.join(appRoot, 'src', 'assets');
 const sourceRoot = path.join(appRoot, 'src');
 const iosNativeAssetRoot = path.join(appRoot, 'ios', 'FormBae', 'Images.xcassets');
 const androidNativeAssetRoot = path.join(appRoot, 'android', 'app', 'src', 'main', 'res');
-const sharedAssetBudgetBytes = 2_750_000;
-const iosRasterBudgetBytes = 3_250_000;
-const androidRasterBudgetBytes = 3_050_000;
+// Requested rotating library: 24 editorial photos, 18 scorecard thumbnails, 6 action thumbnails, 2 journal images and 84 SVGs.
+// Individual raster cap stays unchanged; no originals are bundled.
+const sharedAssetBudgetBytes = 5_300_000;
+const iosRasterBudgetBytes = 5_850_000;
+const androidRasterBudgetBytes = 5_600_000;
 const singleRasterBudgetBytes = 220_000;
 
 function walk(directory) {

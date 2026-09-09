@@ -1,3 +1,4 @@
+import { normalizeWorkoutBundle, normalizeWorkoutDetail } from '../utils/workoutTitle';
 import type { ImageSourcePropType } from 'react-native';
 import { getActiveCacheSessionId, getCachedResource, peekCachedResource } from './appCache';
 import { fetchAccountability, fetchAccountabilityBae } from './accountabilityService';
@@ -15,6 +16,7 @@ import { fetchSettings } from './settingsService';
 import { fetchCoachHub } from './trainerService';
 import { fetchWorkoutDay, fetchWorkoutPlan } from './workoutService';
 import { loadDietDiaryEntries, peekDietDiaryEntries } from '../store/dietDiaryStore';
+import { preloadReadingPage } from './readingFeedService';
 
 export const CACHE_KEYS = {
   // Bump when the plan presentation contract changes so persisted legacy
@@ -22,7 +24,7 @@ export const CACHE_KEYS = {
   workoutPlan: 'workoutPlan:v2',
   // Bump when the progress response contract changes so an older persisted
   // bundle cannot hide a newly generated weekly review after an app update.
-  progressBundle: 'progressBundle:v11',
+  progressBundle: 'progressBundle:v12',
   dietDiary: DIET_DIARY_CACHE_KEY,
   profileSettings: 'profileSettings',
   // v2 discards the brief rollout window where cached coach payloads could
@@ -32,33 +34,34 @@ export const CACHE_KEYS = {
   trophyLeaderboard: 'trophyLeaderboard',
 } as const;
 
-export function loadWorkoutPlanCached(options?: { force?: boolean }) {
-  return getCachedResource(CACHE_KEYS.workoutPlan, fetchWorkoutPlan, { force: options?.force });
+export async function loadWorkoutPlanCached(options?: { force?: boolean }) {
+  return normalizeWorkoutBundle(await getCachedResource(CACHE_KEYS.workoutPlan, fetchWorkoutPlan, { force: options?.force }));
 }
 
 export function peekWorkoutPlanCached() {
-  return peekCachedResource<Awaited<ReturnType<typeof fetchWorkoutPlan>>>(CACHE_KEYS.workoutPlan);
+  const cached = peekCachedResource<Awaited<ReturnType<typeof fetchWorkoutPlan>>>(CACHE_KEYS.workoutPlan);
+  return cached ? normalizeWorkoutBundle(cached) : cached;
 }
 
-export function loadWorkoutDayCached(planDayId: string, mode: 'standard' | 'quick' = 'standard', options?: { force?: boolean }) {
-  return getCachedResource(
+export async function loadWorkoutDayCached(planDayId: string, mode: 'standard' | 'quick' = 'standard', options?: { force?: boolean }) {
+  return normalizeWorkoutDetail(await getCachedResource(
     `${CACHE_KEYS.workoutDay}:${planDayId}:${mode}`,
     () => fetchWorkoutDay(planDayId, mode),
     { force: options?.force },
-  );
+  ));
 }
 
 export function peekWorkoutDayCached(planDayId: string, mode: 'standard' | 'quick' = 'standard') {
-  return peekCachedResource<Awaited<ReturnType<typeof fetchWorkoutDay>>>(`${CACHE_KEYS.workoutDay}:${planDayId}:${mode}`);
+  const cached = peekCachedResource<Awaited<ReturnType<typeof fetchWorkoutDay>>>(`${CACHE_KEYS.workoutDay}:${planDayId}:${mode}`);
+  return cached ? normalizeWorkoutDetail(cached) : cached;
 }
 
 export function loadProgressBundleCached(options?: { force?: boolean }) {
   return getCachedResource(
     CACHE_KEYS.progressBundle,
     async () => {
-      // Persisted offline body logs are flushed before reading progress so the
-      // response reflects everything the user has already saved on-device.
-      await flushPendingProgressLogs();
+      // Retry durable uploads independently; a slow upload must not block the dashboard.
+      flushPendingProgressLogs().catch(() => undefined);
       // Progress is the only payload consumed by the Progress, Trophy and
       // Action tabs. Do not hold it behind unrelated check-in, plan and profile
       // requests; those resources are preloaded independently.
@@ -206,6 +209,12 @@ function startMainAppPreload(): PreloadRun {
   });
 
   const workoutPlanRequest = loadWorkoutPlanCached();
+  // Public reading content warms alongside startup without holding the splash.
+  const readingRoom = preloadReadingPage()
+    .then(page => preloadImageSources(page.articles.slice(0, 3).map(article =>
+      article.imageUrl ? { uri: article.imageUrl } : null,
+    )))
+    .catch(() => null);
   const profileSettingsRequest = loadProfileSettingsCached();
   const coachBundleRequest = loadCoachBundleCached();
   const workoutPlan = trackPreloadTask(runId, 'Training plan', true, workoutPlanRequest);
@@ -304,6 +313,7 @@ function startMainAppPreload(): PreloadRun {
       }),
     );
     const optionalResults = await Promise.allSettled([
+      readingRoom,
       remoteDietDiary,
       trophyLeaderboard,
       accountabilityBae,

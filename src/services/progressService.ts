@@ -183,7 +183,11 @@ export function flushPendingProgressLogs() {
 }
 
 export async function fetchProgress() {
-  const progress = await apiRequest<ProgressSummary>('/progress');
+  const progress = await apiRequest<ProgressSummary>('/progress', {
+    // The dashboard returns saved analysis while due reports generate in the background.
+    timeoutMs: 30000,
+    retries: 0,
+  });
   if (progress.trophies) return progress;
 
   // Compatibility for older API deployments and cached accounts: trophy

@@ -4,7 +4,7 @@ import { apiRequest, getDirectApiUrl } from './apiClient';
 import { invalidateCachedResource } from './appCache';
 import { publishOrRefreshTrophySummary } from './trophyRealtime';
 import type { MealType } from '../store/dietDiaryStore';
-import type { TrophySummary } from '../types/api';
+import type { ReportEvidenceCoverage, TrophySummary } from '../types/api';
 import { getBackendApiBaseUrl } from '../constants/config';
 
 export type RemoteDietDiaryEntry = {
@@ -27,7 +27,6 @@ export type DietReportSectionId =
   | 'overview'
   | 'weeklyPlan'
   | 'observations'
-  | 'coachNote'
   | 'questions'
   | 'loggingRhythm'
   | 'mealGuidance'
@@ -39,6 +38,9 @@ export type DietReportSectionId =
 
 export type DietCoachFeedback = {
   schemaVersion?: number;
+  reportKind?: 'diet';
+  generationMethod?: 'ai' | 'data_summary';
+  evidenceCoverage?: ReportEvidenceCoverage;
   template?: { id: 'weekly-diet-report'; version: number };
   sectionOrder?: DietReportSectionId[];
   weekStartDate: string;
@@ -48,6 +50,7 @@ export type DietCoachFeedback = {
   title: string;
   headline?: string;
   summary: string;
+  weekSummary?: string;
   nextFocus: string;
   highlights: string[];
   score?: {
@@ -55,8 +58,6 @@ export type DietCoachFeedback = {
     overall: number;
     label: string;
     trend?: number | null;
-    confidence: 'high' | 'medium' | 'limited';
-    confidenceNote: string;
     components: Array<{
       key: string;
       label: string;
@@ -85,13 +86,16 @@ export type DietCoachFeedback = {
     evidence: string[];
   }>;
   priorityInsights?: Array<{
+    id?: string;
     rank: number;
     title: string;
     observation: string;
     whyItMatters: string;
+    benefit?: string;
+    riskIfUnchanged?: string;
     nextStep: string;
     evidence: string[];
-    confidence: 'high' | 'medium' | 'limited';
+    evidenceIds?: string[];
   }>;
   foodGroups?: Array<{
     key: string;
@@ -112,8 +116,22 @@ export type DietCoachFeedback = {
   trainingNutrition?: { summary: string; trainingDayAction: string; restDayAction: string };
   facts?: Array<{ id: string; title: string; body: string; sourceLabel: string; sourceUrl: string }>;
   nextWeek?: {
+    actionPlan?: Array<{
+      id: string;
+      priority: number;
+      title: string;
+      why: string;
+      cue: string;
+      steps: string[];
+      fallback: string;
+      successMeasure: string;
+      sourceInsightId: string;
+      evidenceIds: string[];
+    }>;
     primaryFocus: string;
     whyItMatters: string;
+    benefit?: string;
+    riskIfUnchanged?: string;
     actions: string[];
     mealBuilder: { title: string; plants: string; protein: string; carbs: string; extras: string };
     smartSwaps: Array<{ from: string; to: string; why: string }>;
@@ -122,7 +140,6 @@ export type DietCoachFeedback = {
   };
   questionsForNextWeek?: string[];
   questionResponses?: Array<{ questionIndex?: number; question: string; answer: string }>;
-  coachNote?: string;
   limitations?: string[];
   safetyNotices?: Array<{
     id?: string;
@@ -150,6 +167,7 @@ export type DietCoachFeedback = {
     mealMoments?: number;
     daysLogged: number;
     describedEntries?: number;
+    describedMealMoments?: number;
     describedDaysLogged?: number;
     memoryEntries: number;
     photoEntries: number;
@@ -179,9 +197,9 @@ export type DietReportChart = {
 
 export async function fetchDietDiary() {
   return apiRequest<{ entries: RemoteDietDiaryEntry[]; feedback?: DietCoachFeedback }>('/diet/diary', {
-    // A newly due report can be generated during this request. Avoid retrying
-    // the same expensive generation while the first request is still active.
-    timeoutMs: 90000,
+    // A due report is generated synchronously: allow the draft, source audit
+    // and bounded repair to finish without starting a duplicate generation.
+    timeoutMs: 420000,
     retries: 0,
   });
 }

@@ -29,6 +29,13 @@ export async function loadWorkoutProgress(planDayId: string): Promise<WorkoutPro
   }
 }
 
+export function hasWorkoutStarted(progress: WorkoutProgress): boolean {
+  return Boolean(progress.activeExerciseId || progress.rest
+    || progress.completedExerciseIds?.length
+    || Object.values(progress.setProgressByExercise || {}).some(count => count > 0)
+    || Object.values(progress.setLogsByExercise || {}).some(logs => logs.length > 0));
+}
+
 export async function saveWorkoutProgress(progress: WorkoutProgress) {
   await AsyncStorage.setItem(`${PROGRESS_PREFIX}${progress.planDayId}`, JSON.stringify(progress));
 }

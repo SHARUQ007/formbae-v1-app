@@ -12,6 +12,7 @@ import {
 } from '../utils/routing';
 import type { RootStackParamList } from './types';
 import { colors } from '../theme/colors';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -51,6 +52,7 @@ function getActiveRoutePath(state: ReturnType<NonNullable<React.ComponentRef<typ
 }
 
 export function RootNavigator() {
+  const reduceMotion = useReducedMotion();
   const navigationRef = useRef<React.ComponentRef<typeof NavigationContainer<RootStackParamList>>>(null);
   const pageViewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTrackedPathRef = useRef('');
@@ -73,9 +75,10 @@ export function RootNavigator() {
     const rootState = nav.getRootState();
     const currentRoot = rootState.routes[rootState.index ?? 0]?.name as keyof RootStackParamList | undefined;
     if (!token) {
-      if (currentRoot !== 'Auth') {
-        nav.reset({ index: 0, routes: [{ name: 'Auth' }] });
-      }
+      // Splash owns the cold-start handoff so the first transition is timed
+      // consistently instead of being skipped on faster devices.
+      if (currentRoot === 'Splash' || currentRoot === 'Auth') return;
+      nav.reset({ index: 0, routes: [{ name: 'Auth' }] });
       return;
     }
     if (!status || currentRoot === 'Splash' || currentRoot === 'Auth') return;
@@ -120,12 +123,20 @@ export function RootNavigator() {
         }
       }}
     >
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          animation: reduceMotion ? 'none' : 'fade',
+          animationDuration: 260,
+          gestureEnabled: false,
+          contentStyle: { backgroundColor: colors.bg },
+        }}
+      >
         <Stack.Screen name="Splash" component={SplashScreen} />
         <Stack.Screen name="Auth" getComponent={getAuthNavigator} />
         <Stack.Screen name="Onboarding" getComponent={getOnboardingNavigator} />
         <Stack.Screen name="PaidTransition" getComponent={getPaidTransitionNavigator} />
-        <Stack.Screen name="Main" getComponent={getMainSubscriptionScreen} options={{ animation: 'fade' }} />
+        <Stack.Screen name="Main" getComponent={getMainSubscriptionScreen} />
         <Stack.Screen name="Renewal" getComponent={getSubscriptionRenewalScreen} />
       </Stack.Navigator>
     </NavigationContainer>

@@ -5,6 +5,7 @@ import { getYoutubeEmbedUrl } from '../utils/video';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
+import { GymLoadingMessage } from './GymLoadingMessage';
 
 const COMPACT_VIDEO_MAX_HEIGHT = Math.min(560, Math.round(Dimensions.get('window').height * 0.62));
 
@@ -42,6 +43,7 @@ function DirectExerciseVideo({ url, compact = false, fill = false, style }: { ur
   return (
     <View style={[fill ? styles.videoWrapFill : styles.videoWrap, compact && styles.videoWrapCompact, style]}>
       <WebView
+        key={embed}
         source={{ html, baseUrl: 'https://formbae.in' }}
         style={styles.webview}
         originWhitelist={['https://*', 'http://*', 'about:blank']}
@@ -52,8 +54,9 @@ function DirectExerciseVideo({ url, compact = false, fill = false, style }: { ur
         mediaPlaybackRequiresUserAction
         startInLoadingState
         renderLoading={() => (
-          <View style={styles.loading}>
-            <ActivityIndicator color={colors.white} />
+          <View style={styles.loading} accessible accessibilityLabel="Loading exercise video">
+            <ActivityIndicator color={colors.gold} />
+            <GymLoadingMessage style={styles.loadingMessage} />
           </View>
         )}
         renderError={() => (
@@ -83,7 +86,8 @@ const styles = StyleSheet.create({
   videoWrapFill: { width: '100%', flex: 1, borderRadius: 26, overflow: 'hidden', backgroundColor: '#000' },
   videoWrapCompact: { maxHeight: COMPACT_VIDEO_MAX_HEIGHT },
   webview: { flex: 1, backgroundColor: '#000' },
-  loading: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' },
+  loading: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg, padding: spacing.lg, gap: spacing.md },
+  loadingMessage: { ...typography.label, color: colors.ink, textAlign: 'center' },
   fallback: { alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
   fallbackTitle: { ...typography.bodyBold, color: colors.white, textAlign: 'center', marginBottom: spacing.md },
   retryText: { ...typography.caption, color: colors.white, fontWeight: '800' },

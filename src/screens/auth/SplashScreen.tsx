@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Logo } from '../../components/Logo';
+import { GymLoadingMessage } from '../../components/GymLoadingMessage';
 import {
   getMainAppPreloadSnapshot,
   getMainAppImageSourcesSnapshot,
@@ -41,6 +42,7 @@ import type { RootStackParamList } from '../../navigation/types';
 type Props = NativeStackScreenProps<RootStackParamList, 'Splash'>;
 
 const STARTUP_ART = require('../../assets/editorial/startup-people-hero-v3.jpg');
+const LAUNCH_HANDOFF_MIN_MS = 520;
 
 const STARTUP_LINES = [
   'Short sessions still count.',
@@ -99,18 +101,6 @@ function NativeImageWarmup({
       ))}
     </View>
   );
-}
-
-function progressLabel(
-  ready: boolean,
-  finishing: boolean,
-  snapshot: MainAppPreloadSnapshot,
-) {
-  if (!ready) return 'Checking your account';
-  if (finishing || snapshot.phase === 'ready') return 'Opening FormBae';
-  if (snapshot.completed >= 4) return 'Finishing setup';
-  if (snapshot.completed >= 2) return 'Loading your progress';
-  return 'Loading your plan';
 }
 
 export function SplashScreen({ navigation }: Props) {
@@ -215,32 +205,41 @@ export function SplashScreen({ navigation }: Props) {
   ]);
 
   useEffect(() => {
-    if (!ready || navigated.current) return;
-    if (!token || !status) {
+    if (!ready || navigated.current || motionPreference === 'unknown') return;
+    const scheduleHandoff = (handoff: () => void) => {
+      let active = true;
       navigated.current = true;
-      navigation.replace('Auth');
-      return;
+      const elapsed = Date.now() - mountedAt;
+      const delay = motionPreference === 'full'
+        ? Math.max(0, LAUNCH_HANDOFF_MIN_MS - elapsed)
+        : 0;
+      const timer = setTimeout(() => {
+        if (active) handoff();
+      }, delay);
+      return () => {
+        active = false;
+        clearTimeout(timer);
+        navigated.current = false;
+      };
+    };
+
+    if (!token || !status) {
+      return scheduleHandoff(() => navigation.replace('Auth'));
     }
 
     const root = resolveRootRoute(status.recommendedNextScreen);
     if (root === 'Onboarding') {
-      navigated.current = true;
-      navigation.replace('Onboarding', {
+      return scheduleHandoff(() => navigation.replace('Onboarding', {
         screen: resolveOnboardingInitialRoute(status.recommendedNextScreen),
-      });
-      return;
+      }));
     }
     if (root === 'PaidTransition') {
-      navigated.current = true;
-      navigation.replace('PaidTransition', {
+      return scheduleHandoff(() => navigation.replace('PaidTransition', {
         screen: resolvePaidInitialRoute(status.recommendedNextScreen),
-      });
-      return;
+      }));
     }
     if (root !== 'Main') {
-      navigated.current = true;
-      navigation.replace(root);
-      return;
+      return scheduleHandoff(() => navigation.replace(root));
     }
 
     let active = true;
@@ -270,7 +269,7 @@ export function SplashScreen({ navigation }: Props) {
       active = false;
       completeImageWarmup();
     };
-  }, [completeImageWarmup, mountedAt, navigation, ready, status, token]);
+  }, [completeImageWarmup, motionPreference, mountedAt, navigation, ready, status, token]);
 
   const preloadReady = ready && mainPreloadStarted;
   const visibleSnapshot: MainAppPreloadSnapshot = mainPreloadStarted
@@ -286,7 +285,6 @@ export function SplashScreen({ navigation }: Props) {
     visibleSnapshot,
     finishing,
   );
-  const stage = progressLabel(ready, finishing, visibleSnapshot);
   const progressMeta = startupProgressMeta(
     preloadReady,
     finishing,
@@ -396,16 +394,12 @@ export function SplashScreen({ navigation }: Props) {
           <View style={styles.statusSection}>
             <View style={styles.stageRow}>
               <View style={styles.stageLabel}>
-                <View style={styles.statusDot} />
-                <Text
+                <GymLoadingMessage
                   style={styles.stageText}
                   numberOfLines={1}
                   adjustsFontSizeToFit
                   minimumFontScale={0.8}
-                  accessibilityLiveRegion="polite"
-                >
-                  {stage}
-                </Text>
+                />
               </View>
               <Text style={styles.progressMeta}>{progressMeta}</Text>
             </View>
@@ -538,15 +532,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.gold,
-  },
   stageText: {
     ...typography.label,
     color: colors.ink,
+    flexShrink: 1,
   },
   progressMeta: {
     ...typography.caption,

@@ -2,6 +2,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { WorkoutsScreen } from '../screens/main/WorkoutsScreen';
 import type { WorkoutStackParamList } from './types';
 import { colors } from '../theme/colors';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 const Stack = createNativeStackNavigator<WorkoutStackParamList>();
 const getWorkoutSummaryScreen = () => require('../screens/main/WorkoutSummaryScreen').WorkoutSummaryScreen;
@@ -11,10 +12,13 @@ const getTrainerScreen = () => require('../screens/main/TrainerScreen').TrainerS
 const getPlanRefreshScreen = () => require('../screens/main/PlanRefreshScreen').PlanRefreshScreen;
 
 export function WorkoutsNavigator() {
+  const reduceMotion = useReducedMotion();
   return (
     <Stack.Navigator
       screenOptions={{
         gestureEnabled: true,
+        animation: reduceMotion ? 'none' : 'slide_from_right',
+        animationDuration: 260,
         headerBackButtonDisplayMode: 'minimal',
         headerBackTitle: '',
         headerTintColor: colors.accentDark,

@@ -1,16 +1,21 @@
-import { Fragment, useContext, useEffect, useMemo, useState } from 'react';
-import { Alert, Image, LayoutChangeEvent, Linking, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { weeklyReportSchedule } from '../../utils/weeklyReportSchedule';
+import { WeeklyReportPending } from '../../components/WeeklyReportPending';
+import { useFocusEffect } from '@react-navigation/native';
+import { Fragment, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Alert, Image, LayoutChangeEvent, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
-import NativeLinearGradient from 'react-native-linear-gradient';
 import Svg, { Circle, Defs, LinearGradient as SvgLinearGradient, Line as SvgLine, Path, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { Card, ScreenContainer, ScreenTitle } from '../../components/Card';
 import { FormInput } from '../../components/FormInput';
 import { KeyboardScreen } from '../../components/KeyboardScreen';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
+import { WeeklyReportStory } from '../../components/WeeklyReportStory';
+import { ReportIllustration } from '../../components/ReportIllustration';
 import { ErrorState, LoadingState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { loadProgressBundleCached, peekProgressBundleCached } from '../../services/preloadService';
@@ -57,9 +62,32 @@ export function ProgressScreen({ route, navigation }: Props) {
   // The progress navigator is also rendered standalone while previewing this
   // flow, where no bottom-tab height provider exists.
   const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 0;
+  const insets = useSafeAreaInsets();
   const { data, loading, error, reload, refresh, refreshing, setData } = useAsync<Loaded>((mode) =>
     loadProgressBundleCached({ force: mode === 'refresh' }),
   [], { initialData: peekProgressBundleCached() });
+
+  // Only a user pull should reveal the native refresh control. Focus updates
+  // and report polling share the fetcher, but must not shift the scroll view.
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const onPullRefresh = useCallback(async () => {
+    setPullRefreshing(true);
+    try {
+      await refresh();
+    } finally {
+      setPullRefreshing(false);
+    }
+  }, [refresh]);
+
+  const analysisPending = Boolean(weeklyReportSchedule(data?.progress.weeklyReview).preparing || data?.progress.bodyForecast?.generationPending);
+
+  // Refresh on returning to the tab, including recovery from a failed first load.
+  useEffect(() => navigation.addListener('focus', () => { refresh().catch(() => undefined); }), [navigation, refresh]);
+  useFocusEffect(useCallback(() => {
+    if (!analysisPending || refreshing) return;
+    const timer = setInterval(() => { refresh().catch(() => undefined); }, 15000);
+    return () => clearInterval(timer);
+  }, [analysisPending, refresh, refreshing]));
 
   const [weight, setWeight] = useState('');
   const [chest, setChest] = useState('');
@@ -68,6 +96,7 @@ export function ProgressScreen({ route, navigation }: Props) {
   const [logMode, setLogMode] = useState<LogMode | null>(null);
   const [savingBody, setSavingBody] = useState(false);
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>('weight');
+  const [expandedHistoryReportId, setExpandedHistoryReportId] = useState<string | null>(null);
   const hasBodyEntry = [weight, chest, waist, biceps].some((value) => value.trim().length > 0);
 
   useEffect(() => subscribeToTrophySummary((trophies) => {
@@ -127,10 +156,25 @@ export function ProgressScreen({ route, navigation }: Props) {
     }
   };
 
+  const goBackFromReport = () => {
+    if (navigation.canGoBack?.()) {
+      navigation.goBack();
+      return;
+    }
+    navigation.navigate(route.name === 'ProgressReportHistory' ? 'ProgressReport' : 'ProgressMain');
+  };
+  const reportHeader = route.name === 'ProgressMain' ? null : (
+    <ReportNavigationHeader
+      history={route.name === 'ProgressReportHistory'}
+      onBack={goBackFromReport}
+      onHistory={() => navigation.navigate('ProgressReportHistory')}
+    />
+  );
+
   if (loading) {
     return (
       <ScreenContainer>
-        <ScreenTitle>Progress</ScreenTitle>
+        {reportHeader || <ScreenTitle>Progress</ScreenTitle>}
         <LoadingState message="Loading your progress..." />
       </ScreenContainer>
     );
@@ -139,7 +183,7 @@ export function ProgressScreen({ route, navigation }: Props) {
   if (error || !data) {
     return (
       <ScreenContainer>
-        <ScreenTitle>Progress</ScreenTitle>
+        {reportHeader || <ScreenTitle>Progress</ScreenTitle>}
         <ErrorState message={error || 'Could not load progress.'} onRetry={reload} />
       </ScreenContainer>
     );
@@ -150,11 +194,11 @@ export function ProgressScreen({ route, navigation }: Props) {
   const adherence = Number.isFinite(progress.adherencePct) ? Math.round(progress.adherencePct) : Math.round(completionRate * 100);
   const review = progress.weeklyReview;
   const currentUserId = user?.userId || status?.userId || '';
-  const reviewReady = review?.status === 'ready'
-    && Boolean(currentUserId)
+  const reviewOwned = Boolean(currentUserId)
     && progress.userId === currentUserId
-    && review.generatedForUserId === currentUserId;
-  const reviewStats = review?.stats ?? {
+    && review?.generatedForUserId === currentUserId;
+  const reviewReady = reviewOwned && review?.status === 'ready';
+  const reviewStats = review?.cycleStats ?? review?.stats ?? {
     workoutsCompleted: progress.completed,
     workoutsPlanned: progress.planned,
     adherencePct: adherence,
@@ -184,8 +228,8 @@ export function ProgressScreen({ route, navigation }: Props) {
   };
   const trophyBandSize = Math.max(1, trophies.nextMilestone - trophies.safeZone);
   const trophyBandProgress = Math.max(0, Math.min(1, (trophies.score - trophies.safeZone) / trophyBandSize));
-  const nextReviewDays = review?.nextInDays ?? 7;
-  const reportCycleProgress = Math.max(0, Math.min(1, (7 - nextReviewDays) / 7));
+  const schedule = weeklyReportSchedule(review);
+  const nextReviewDays = schedule.days;
   const workoutTarget = review?.requirements?.workouts ?? 3;
   const mealTarget = review?.requirements?.meals ?? 12;
   const workoutProgress = Math.min(reviewStats.workoutsCompleted, workoutTarget);
@@ -200,32 +244,29 @@ export function ProgressScreen({ route, navigation }: Props) {
   const activationTarget = workoutTarget + mealTarget;
   const activationProgress = activationTarget > 0 ? (workoutProgress + mealProgress) / activationTarget : 0;
   const showReportCountdown = reviewReady || activationGoalsComplete === activationGoalsTotal;
-  const nextReviewDayLabel = `${nextReviewDays} day${nextReviewDays === 1 ? '' : 's'}`;
+  const nextReviewDayLabel = schedule.dayLabel;
   const reportHeroTitle = reviewReady
     ? 'Your week, explained'
     : showReportCountdown
       ? `Next report in ${nextReviewDayLabel}`
       : 'Your week is taking shape';
   const reportHeroDetail = reviewReady
-    ? `Fresh insights · Updates in ${nextReviewDayLabel}`
-    : showReportCountdown
-      ? 'Your weekly inputs are complete'
-      : hasMealRequirement
-        ? `Workouts ${workoutGoalPercent}% · Meals ${mealGoalPercent}%`
-        : `Workouts ${workoutGoalPercent}%`;
-  const reportHeroProgress = reviewReady
-    ? 1
-    : showReportCountdown
-      ? reportCycleProgress
-      : activationProgress;
+    ? review?.lastCycleStatus === 'insufficient_activity'
+      ? 'Last report saved · New week in progress'
+      : schedule.preparing
+        ? 'Last report saved · Next review preparing'
+        : nextReviewDays > 0 ? `Saved report · Next review in ${nextReviewDayLabel}` : 'Your latest report is available'
+    : schedule.preparing
+      ? 'Your report is being prepared'
+      : review?.cycleState === 'retry_wait'
+        ? 'Your activity is saved. We’ll retry the review.'
+        : showReportCountdown
+          ? 'Goals met · Your review is scheduled'
+          : hasMealRequirement
+            ? `Workouts ${workoutGoalPercent}% · Meals ${mealGoalPercent}%`
+            : `Workouts ${workoutGoalPercent}%`;
+  const reportHeroProgress = reviewReady ? 1 : activationProgress;
   const reportCompletionPercent = Math.round(Math.max(0, Math.min(1, reportHeroProgress)) * 100);
-  const nextFocusDomain = review?.nextFocusDomain ?? 'workout';
-  const nextFocusCta = nextFocusDomain === 'diet'
-    ? 'Log your next meal'
-    : nextFocusDomain === 'body'
-      ? 'Add a body update'
-      : 'Open your workout plan';
-
   const measuredMetrics = METRICS.filter((metric) => series[metric.key].length > 0);
   const lastLogged = trend[trend.length - 1]?.date;
   const activeMetric = measuredMetrics.find((metric) => metric.key === selectedMetric) || measuredMetrics[0];
@@ -238,13 +279,13 @@ export function ProgressScreen({ route, navigation }: Props) {
   const activeDelta = seriesDelta(activeSeries);
   const activeLastLogged = activeSeries[activeSeries.length - 1]?.date;
 
-  const openNextFocus = () => {
-    if (nextFocusDomain === 'diet') {
-      navigation.getParent()?.navigate('Diet');
+  const openReportAction = (domain: 'workout' | 'diet' | 'body') => {
+    if (domain === 'diet') {
+      navigation.getParent()?.navigate('Diet', { action: 'log', requestId: Date.now() });
       return;
     }
-    if (nextFocusDomain === 'body') {
-      setLogMode('body');
+    if (domain === 'body') {
+      navigation.navigate('ProgressMain', { action: 'logBody', requestId: Date.now() });
       return;
     }
     navigation.getParent()?.navigate('Workouts', { screen: 'WorkoutList' });
@@ -254,119 +295,126 @@ export function ProgressScreen({ route, navigation }: Props) {
     navigation.getParent()?.navigate('Workouts', { screen: 'WorkoutList' });
   };
   const openMealTask = () => {
-    navigation.getParent()?.navigate('Diet');
+    navigation.getParent()?.navigate('Diet', { action: 'log', requestId: Date.now() });
   };
 
-  const reportHistory = reviewReady ? review?.history ?? [] : [];
-  const reportStats = reviewReady ? review?.reportStats ?? reviewStats : reviewStats;
-  const fallbackDailyActivity = buildFallbackDailyActivity(progress.completionHistory ?? []);
-  const fallbackActiveDays = fallbackDailyActivity.filter(day => day.workouts > 0 || day.foodLogs > 0).length;
-  const reportMetrics = review?.metrics ?? {
-    momentumScore: Math.round((Math.max(0, Math.min(100, reportStats.adherencePct)) * 0.75) + (Math.min(100, reportStats.currentStreak * 20) * 0.25)),
-    momentumLabel: reportStats.adherencePct >= 80 ? 'Strong week' : reportStats.adherencePct >= 50 ? 'Building' : 'Starting point',
-    dimensions: [
-      { key: 'training', label: 'Plan adherence', value: Math.max(0, Math.min(100, reportStats.adherencePct)), status: reportStats.adherencePct >= 80 ? 'strong' as const : reportStats.adherencePct >= 50 ? 'building' as const : 'attention' as const },
-      { key: 'consistency', label: 'Current streak', value: Math.min(100, reportStats.currentStreak * 20), status: reportStats.currentStreak >= 3 ? 'strong' as const : reportStats.currentStreak ? 'building' as const : 'attention' as const },
-    ],
-    dailyActivity: fallbackDailyActivity,
-    workoutFocus: [],
-    feedbackSignals: [],
-    bodyChanges: [],
-    coverage: {
-      activeDays: fallbackActiveDays,
-      workoutDays: fallbackDailyActivity.filter(day => day.workouts > 0).length,
-      foodDays: reportStats.dietDaysLogged,
-      totalSignals: reportStats.workoutsCompleted + reportStats.mealsLogged + reportStats.workoutFeedbackCount + reportStats.checkInCount + reportStats.bodyLogCount,
-    },
-    weeklyDeltas: [],
-  };
-  const reportCoverage = reportMetrics.coverage ?? {
-    activeDays: reportMetrics.dailyActivity.filter(day => day.workouts > 0 || day.foodLogs > 0).length,
-    workoutDays: reportMetrics.dailyActivity.filter(day => day.workouts > 0).length,
-    foodDays: reportStats.dietDaysLogged,
-    totalSignals: reportStats.workoutsCompleted + reportStats.mealsLogged + reportStats.workoutFeedbackCount + reportStats.checkInCount + reportStats.bodyLogCount,
-  };
-  const reportDeltas = reportMetrics.weeklyDeltas ?? [];
-  const reportHighlights = review?.highlights?.length
-    ? review.highlights
-    : (review?.wins ?? []).map(win => ({ title: win, evidence: '', whyItMatters: '' }));
-  const reportFindings = review?.keyFindings?.length
-    ? review.keyFindings.slice(0, 7)
-    : reportHighlights.slice(0, 6).map(item => ({
-        domain: 'progress',
-        title: item.title,
-        insight: item.whyItMatters || item.evidence,
-        evidence: item.evidence ? [item.evidence] : [],
-      }));
-  const reportActions = review?.actionPlan?.length
-    ? review.actionPlan
-    : review?.nextFocusTitle
-      ? [{ priority: 1, domain: review.nextFocusDomain || 'workout', title: review.nextFocusTitle, why: review.nextFocusReason || '', steps: [], successMeasure: '' }]
-      : [];
-
+  const reportHistory = reviewOwned ? review?.history ?? [] : [];
   if (route.name === 'ProgressReportHistory') {
     return (
-      <ScreenContainer withBottomInset>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.reportHistoryScroll}>
-          <View style={styles.reportHeader}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.reportBackButton} accessibilityRole="button" accessibilityLabel="Back to progress report">
-              <Feather name="chevron-left" size={22} color={colors.ink} />
-            </TouchableOpacity>
-            <View style={styles.reportHeaderText}>
-              <Text style={styles.reportHeaderEyebrow}>Progress</Text>
-              <Text style={styles.reportHeaderTitle}>Report history</Text>
+      <ScreenContainer style={styles.reportScreen}>
+        {reportHeader}
+        <ScrollView showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="never" contentContainerStyle={[styles.reportHistoryScroll, { paddingBottom: insets.bottom + spacing.xl }]}>
+          <View style={styles.reportHistoryIntro}>
+            <View style={styles.reportHistoryArtwork} accessible={false}>
+              <ReportIllustration kind="evidence" size={48} />
+            </View>
+            <View style={styles.reportHistoryIntroCopy}>
+              <Text style={styles.reportHistoryIntroTitle}>Week by week</Text>
+              <Text style={styles.reportHistoryIntroText}>Compare your strongest signal and the next move from every review.</Text>
             </View>
           </View>
 
-          <Text style={styles.reportHistoryCount}>
-            {reportHistory.length} generated report{reportHistory.length === 1 ? '' : 's'}
-          </Text>
+          {reportHistory.length ? (
+            <View style={styles.reportHistoryList}>
+              {reportHistory.map((item, index) => {
+                const snapshot = item.report;
+                const snapshotStats = snapshot.reportStats ?? snapshot.stats;
+                const reportKey = item.reportId || item.generatedAt;
+                const isExpanded = expandedHistoryReportId === reportKey;
+                const finding = snapshot.keyFindings?.[0];
+                const action = snapshot.actionPlan?.[0];
+                const start = snapshot.period?.start || item.weekStartDate;
+                const end = snapshot.period?.end;
+                const period = start
+                  ? `${formatShortDate(start)}${end ? ` – ${formatShortDate(end)}` : ''}`
+                  : `Generated ${formatDate(item.generatedAt)}`;
+                const insightTitle = finding?.title || snapshot.wins?.[0] || snapshot.workoutInsight || snapshot.nutritionInsight;
+                const actionTitle = action?.title || snapshot.nextFocusTitle || snapshot.workoutRecommendation || snapshot.nutritionRecommendation;
 
-          {reportHistory.length ? reportHistory.map((item, index) => {
-            const snapshot = item.report;
-            const snapshotStats = snapshot.stats;
-            return (
-              <Card key={item.reportId || item.generatedAt} style={styles.reportHistoryCard}>
-                <View style={styles.reportHistoryMeta}>
-                  <Text style={styles.reportHistoryDate}>{formatDate(item.generatedAt)}</Text>
-                  {index === 0 ? <Text style={styles.reportHistoryLatest}>Latest</Text> : null}
-                </View>
-                <Text style={styles.reportHistoryTitle}>{snapshot.headline || 'Weekly progress report'}</Text>
-                {snapshot.summary ? <Text style={styles.reportHistorySummary}>{snapshot.summary}</Text> : null}
-                {snapshotStats ? (
-                  <View style={styles.reportHistoryStats}>
-                    <Text style={styles.reportHistoryStat}>{snapshotStats.workoutsCompleted} workout{snapshotStats.workoutsCompleted === 1 ? '' : 's'}</Text>
-                    <View style={styles.reportHistoryStatDot} />
-                    <Text style={styles.reportHistoryStat}>{snapshotStats.mealsLogged} food log{snapshotStats.mealsLogged === 1 ? '' : 's'}</Text>
-                  </View>
-                ) : null}
-                {snapshot.wins?.length ? (
-                  <View style={styles.reportHistoryWins}>
-                    {snapshot.wins.slice(0, 3).map(win => (
-                      <View key={win} style={styles.reportHistoryWinRow}>
-                        <Feather name="check" size={14} color={colors.gold} />
-                        <Text style={styles.reportHistoryWinText}>{win}</Text>
+                return (
+                  <View key={reportKey} style={styles.reportHistoryTimelineRow}>
+                    <View style={styles.reportHistoryRail} accessible={false}>
+                      <View style={[styles.reportHistoryNode, index === 0 && styles.reportHistoryNodeActive]} />
+                      {index < reportHistory.length - 1 ? <View style={styles.reportHistoryRailLine} /> : null}
+                    </View>
+                    <TouchableOpacity
+                      activeOpacity={0.84}
+                      onPress={() => setExpandedHistoryReportId(current => current === reportKey ? null : reportKey)}
+                      style={[styles.reportHistoryCard, isExpanded && styles.reportHistoryCardExpanded]}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: isExpanded }}
+                      accessibilityLabel={`${period}. ${snapshot.headline || 'Weekly progress report'}`}
+                      accessibilityHint={isExpanded ? 'Collapses report details' : 'Shows report insight and action'}
+                    >
+                      <View style={styles.reportHistoryMeta}>
+                        <View style={styles.reportHistoryPeriodWrap}>
+                          <Text style={[styles.reportHistoryLatest, index !== 0 && styles.reportHistorySequence]}>
+                            {index === 0 ? 'Latest report' : `Report ${reportHistory.length - index}`}
+                          </Text>
+                          <Text style={styles.reportHistoryDate}>{period}</Text>
+                        </View>
+
                       </View>
-                    ))}
+
+                      <Text style={styles.reportHistoryTitle} numberOfLines={2}>{snapshot.headline || 'Weekly progress report'}</Text>
+
+                      {snapshotStats ? (
+                        <View style={styles.reportHistoryStats}>
+                          <View style={styles.reportHistoryStatChip}>
+                            <ReportIllustration kind="training" size={22} reportKey={start || item.generatedAt} />
+                            <Text style={styles.reportHistoryStat}>{snapshotStats.workoutsCompleted} workouts</Text>
+                          </View>
+                          <View style={styles.reportHistoryStatChip}>
+                            <ReportIllustration kind="nutrition" size={22} reportKey={start || item.generatedAt} />
+                            <Text style={styles.reportHistoryStat}>{snapshotStats.dietDaysLogged} food days</Text>
+                          </View>
+                        </View>
+                      ) : null}
+
+                      {insightTitle ? (
+                        <View style={styles.reportHistorySignalRow}>
+                          <View style={styles.reportHistorySignalIcon}><ReportIllustration kind="evidence" size={26} reportKey={start || item.generatedAt} /></View>
+                          <View style={styles.reportHistorySignalCopy}>
+                            <Text style={styles.reportHistorySignalLabel}>Major insight</Text>
+                            <Text style={styles.reportHistorySignalText} numberOfLines={isExpanded ? undefined : 2}>{insightTitle}</Text>
+                          </View>
+                        </View>
+                      ) : null}
+
+                      {isExpanded ? (
+                        <View style={styles.reportHistoryExpandedBody}>
+                          {snapshot.summary ? <Text style={styles.reportHistorySummary}>{snapshot.summary}</Text> : null}
+                          {finding?.whyItMatters ? (
+                            <Text style={styles.reportHistoryDetailText}><Text style={styles.reportHistoryDetailLabel}>Why it matters: </Text>{finding.whyItMatters}</Text>
+                          ) : null}
+                          {finding?.benefit ? (
+                            <Text style={styles.reportHistoryDetailText}><Text style={styles.reportHistoryDetailLabel}>Benefit: </Text>{finding.benefit}</Text>
+                          ) : null}
+                        </View>
+                      ) : null}
+
+                      {actionTitle ? (
+                        <View style={styles.reportHistoryActionRow}>
+                          <View style={styles.reportHistoryActionCopy}>
+                            <Text style={styles.reportHistoryActionLabel}>Next action</Text>
+                            <Text style={styles.reportHistoryActionText} numberOfLines={isExpanded ? undefined : 1}>{actionTitle}</Text>
+                          </View>
+                          <Feather name="arrow-up-right" size={17} color={colors.gold} />
+                        </View>
+                      ) : null}
+
+                      <View style={styles.reportHistoryExpandRow}>
+                        <Text style={styles.reportHistoryExpandText}>{isExpanded ? 'Show less' : 'Review details'}</Text>
+                        <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.inkMuted} />
+                      </View>
+                    </TouchableOpacity>
                   </View>
-                ) : null}
-                {snapshot.workoutInsight ? (
-                  <View style={styles.reportHistoryInsight}>
-                    <Text style={styles.reportHistoryInsightLabel}>Training</Text>
-                    <Text style={styles.reportHistoryInsightText}>{snapshot.workoutInsight}</Text>
-                  </View>
-                ) : null}
-                {snapshot.nutritionInsight ? (
-                  <View style={styles.reportHistoryInsight}>
-                    <Text style={styles.reportHistoryInsightLabel}>Nutrition</Text>
-                    <Text style={styles.reportHistoryInsightText}>{snapshot.nutritionInsight}</Text>
-                  </View>
-                ) : null}
-              </Card>
-            );
-          }) : (
+                );
+              })}
+            </View>
+          ) : (
             <Card style={styles.reportHistoryEmpty}>
-              <Feather name="file-text" size={24} color={colors.inkMuted} />
+              <ReportIllustration kind="evidence" size={48} />
               <Text style={styles.reportHistoryEmptyTitle}>No previous reports yet</Text>
               <Text style={styles.reportHistoryEmptyText}>Each generated weekly report will be saved here.</Text>
             </Card>
@@ -378,317 +426,17 @@ export function ProgressScreen({ route, navigation }: Props) {
 
   if (route.name === 'ProgressReport') {
     return (
-      <ScreenContainer withBottomInset>
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.reportScroll}>
-          <View style={styles.reportHeader}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.reportBackButton} accessibilityRole="button" accessibilityLabel="Back to progress">
-              <Feather name="chevron-left" size={22} color={colors.ink} />
-            </TouchableOpacity>
-            <View style={styles.reportHeaderText}>
-              <Text style={styles.reportHeaderEyebrow}>Progress</Text>
-              <Text style={styles.reportHeaderTitle}>Weekly report</Text>
-            </View>
-            <TouchableOpacity onPress={() => navigation.navigate('ProgressReportHistory')} style={styles.reportHistoryButton} accessibilityRole="button" accessibilityLabel="View previous reports">
-              <Feather name="clock" size={16} color={colors.gold} />
-              <Text style={styles.reportHistoryButtonText}>History</Text>
-            </TouchableOpacity>
-          </View>
-
-          {reviewReady ? (
-            <>
-              <View style={styles.reportLead}>
-                <View style={styles.reportLeadMeta}>
-                  <View style={styles.reportLeadStatus}>
-                    <View style={styles.reportLeadStatusDot} />
-                    <Text style={styles.reportLeadStatusText}>Latest report</Text>
-                  </View>
-                </View>
-                <Text style={styles.reportLeadTitle} numberOfLines={2} adjustsFontSizeToFit>{review?.headline}</Text>
-                <Text style={styles.reportLeadSummary}>{review?.summary}</Text>
-              </View>
-
-              <View style={styles.reportDataRow}>
-                <ReportDatum label="Workouts" value={`${reportStats.workoutsCompleted}`} />
-                <View style={styles.reportDataDivider} />
-                <ReportDatum label="Adherence" value={`${reportStats.adherencePct}%`} />
-                <View style={styles.reportDataDivider} />
-                <ReportDatum label="Food logs" value={`${reportStats.mealsLogged}`} />
-              </View>
-
-              <ReportSectionHeader kicker="Scorecard" title="Weekly momentum" />
-              <View style={styles.momentumCard}>
-                <View style={styles.momentumSummary}>
-                  <View style={styles.momentumScoreRow}>
-                    <Text style={styles.momentumScore}>{reportMetrics.momentumScore}</Text>
-                    <Text style={styles.momentumScoreMax}>/100</Text>
-                  </View>
-                  <Text style={styles.momentumLabel}>{reportMetrics.momentumLabel}</Text>
-                </View>
-                <View style={styles.momentumDimensions}>
-                  {reportMetrics.dimensions.map(dimension => {
-                    const value = Math.max(0, Math.min(100, Math.round(dimension.value)));
-                    return (
-                      <View key={dimension.key} style={styles.dimensionRow}>
-                        <View style={styles.dimensionTop}>
-                          <Text style={styles.dimensionLabel}>{dimension.label}</Text>
-                          <Text style={styles.dimensionValue}>{value}%</Text>
-                        </View>
-                        <View
-                          style={styles.dimensionTrack}
-                          accessible
-                          accessibilityRole="progressbar"
-                          accessibilityLabel={dimension.label}
-                          accessibilityValue={{ min: 0, max: 100, now: value }}
-                        >
-                          <View style={[styles.dimensionFill, { width: `${value}%` }]} />
-                        </View>
-                        <Text style={styles.dimensionStatus}>{dimension.status}</Text>
-                      </View>
-                    );
-                  })}
-                </View>
-                <Text style={styles.momentumMethod}>A directional score from plan adherence, food detail, streak and food pattern data when available.</Text>
-              </View>
-
-              <ReportSectionHeader kicker="Coverage" title="Signals behind this report" />
-              <View style={styles.signalMetricGrid}>
-                <ReportMetricTile value={`${reportCoverage.activeDays}/7`} label="Active days" detail="Workout or food activity" />
-                <ReportMetricTile value={`${reportCoverage.totalSignals}`} label="Saved signals" detail="Entries used this week" />
-                <ReportMetricTile value={`${reportStats.workoutFeedbackCount}`} label="Session ratings" detail="Workout feedback" />
-                <ReportMetricTile value={`${reportStats.checkInCount}`} label="Check-ins" detail={`${reportStats.bodyLogCount} body update${reportStats.bodyLogCount === 1 ? '' : 's'}`} />
-              </View>
-
-              {reportDeltas.length ? (
-                <>
-                  <ReportSectionHeader kicker="Comparison" title="Versus your last report" />
-                  <View style={styles.deltaGrid}>
-                    {reportDeltas.map(metric => (
-                      <View key={metric.key} style={styles.deltaCard} accessible accessibilityLabel={`${metric.label}: ${metric.current}${metric.unit === 'pp' ? ' percent' : ''}, change ${metric.change}`}>
-                        <Text style={styles.deltaLabel}>{metric.label}</Text>
-                        <Text style={styles.deltaCurrent}>{metric.current}{metric.unit === 'pp' ? '%' : ''}</Text>
-                        <Text style={[styles.deltaChange, metric.change < 0 && styles.deltaChangeDown]}>
-                          {metric.change === 0 ? 'No change' : `${metric.change > 0 ? '+' : ''}${metric.change}${metric.unit} from ${metric.previous}${metric.unit === 'pp' ? '%' : ''}`}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                </>
-              ) : null}
-
-              <ReportSectionHeader kicker="Observed" title="7-day record" />
-              <WeeklyActivityChart data={reportMetrics.dailyActivity} />
-
-              {reportMetrics.workoutFocus.length || reportMetrics.feedbackSignals.length ? (
-                <>
-                  <ReportSectionHeader kicker="Training" title="Session breakdown" />
-                  <View style={styles.reportChartPair}>
-                    {reportMetrics.workoutFocus.length ? <DistributionCard title="Workout focus" items={reportMetrics.workoutFocus} /> : null}
-                    {reportMetrics.feedbackSignals.length ? <DistributionCard title="How sessions felt" items={reportMetrics.feedbackSignals} /> : null}
-                  </View>
-                </>
-              ) : null}
-
-              {reportMetrics.bodyChanges.length ? (
-                <>
-                  <ReportSectionHeader kicker="Body data" title="Measured change" />
-                  <View style={styles.bodyChangeGrid}>
-                    {reportMetrics.bodyChanges.map(metric => (
-                      <View key={metric.key} style={styles.bodyChangeCard} accessible accessibilityLabel={`${metric.label}: ${metric.current} ${metric.unit}, change ${metric.change} ${metric.unit}`}>
-                        <Text style={styles.bodyChangeLabel}>{metric.label}</Text>
-                        <Text style={styles.bodyChangeValue}>{metric.current}<Text style={styles.bodyChangeUnit}> {metric.unit}</Text></Text>
-                        <Text style={styles.bodyChangeDelta}>{metric.change === 0 ? 'No change' : `${metric.change > 0 ? '+' : ''}${metric.change} ${metric.unit}`}</Text>
-                      </View>
-                    ))}
-                  </View>
-                  <Text style={styles.bodyChangeNote}>Changes compare measurements saved inside this seven-day reporting window.</Text>
-                </>
-              ) : null}
-
-              {review?.confidence ? (
-                <View style={styles.confidenceCard}>
-                  <View style={styles.confidenceTop}>
-                    <Feather name="shield" size={16} color={colors.gold} />
-                    <Text style={styles.confidenceLabel}>{review.confidence.level} confidence</Text>
-                  </View>
-                  <Text style={styles.confidenceReason}>{review.confidence.reason}</Text>
-                  {review.confidence.missingSignals?.length ? (
-                    <Text style={styles.confidenceMissing}>More useful next time: {review.confidence.missingSignals.join(' · ')}</Text>
-                  ) : null}
-                </View>
-              ) : null}
-
-              {reportHighlights.length ? (
-                <>
-                  <ReportSectionHeader kicker="Observations" title="What was recorded" />
-                  <View style={styles.observationList}>
-                    {reportHighlights.slice(0, 6).map((item, index) => (
-                      <View key={`${item.title}-${index}`} style={styles.observationRow}>
-                        <Text style={styles.observationIndex}>{String(index + 1).padStart(2, '0')}</Text>
-                        <View style={styles.observationCopy}>
-                          <Text style={styles.observationTitle}>{item.title}</Text>
-                          {item.evidence ? <Text style={styles.observationEvidence}>{item.evidence}</Text> : null}
-                          {item.whyItMatters ? <Text style={styles.observationScope}>{item.whyItMatters}</Text> : null}
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                </>
-              ) : null}
-
-              {reportFindings.length ? (
-                <>
-                  <ReportSectionHeader kicker="Interpretation" title="What the data supports" />
-                  <View style={styles.findingStack}>
-                    {reportFindings.map((finding, index) => (
-                      <View key={`${finding.title}-${index}`} style={styles.findingCard}>
-                        <Text style={styles.findingIndex}>{String(index + 1).padStart(2, '0')}</Text>
-                        <View style={styles.findingCopy}>
-                          <Text style={styles.findingDomain}>{finding.domain}</Text>
-                          <Text style={styles.findingTitle}>{finding.title}</Text>
-                          {finding.insight ? <Text style={styles.findingInsight}>{finding.insight}</Text> : null}
-                          {finding.evidence?.length ? <Text style={styles.findingEvidence}>{finding.evidence.join(' · ')}</Text> : null}
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                </>
-              ) : null}
-
-              {reportActions.length ? (
-                <>
-                  <ReportSectionHeader kicker="Protocol" title="Next 7 days" />
-                  <View style={styles.actionPlanStack}>
-                    {reportActions.slice(0, 5).map((action, index) => (
-                      <ActionPlanCard key={`${action.title}-${index}`} action={action} />
-                    ))}
-                  </View>
-                </>
-              ) : null}
-
-              {review?.watchouts?.length ? (
-                <>
-                  <ReportSectionHeader kicker="Caveats" title="Read this carefully" />
-                  <View style={styles.caveatList}>
-                    {review.watchouts.slice(0, 3).map((item, index) => (
-                      <View key={`${item.title}-${index}`} style={styles.caveatRow}>
-                        <Feather name="info" size={16} color={colors.gold} />
-                        <View style={styles.caveatCopy}>
-                          <Text style={styles.caveatTitle}>{item.title}</Text>
-                          {item.reason ? <Text style={styles.caveatText}>{item.reason}</Text> : null}
-                          {item.response ? <Text style={styles.caveatResponse}>{item.response}</Text> : null}
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                </>
-              ) : null}
-
-              {review?.coachNote ? (
-                <View style={styles.coachNote}>
-                  <Text style={styles.coachNoteLabel}>NOTE</Text>
-                  <Text style={styles.coachNoteText}>{review.coachNote}</Text>
-                </View>
-              ) : null}
-
-              {review?.evidenceBasis?.length ? (
-                <>
-                  <ReportSectionHeader kicker="References" title="Sources" />
-                  <View style={styles.reportSourceList}>
-                    {review.evidenceBasis.map((source, index) => {
-                      const canOpen = /^https:\/\//i.test(source.url);
-                      return (
-                        <TouchableOpacity
-                          key={source.id || `${source.title}-${index}`}
-                          style={styles.reportSourceRow}
-                          disabled={!canOpen}
-                          activeOpacity={0.7}
-                          onPress={canOpen ? () => Linking.openURL(source.url).catch(() => Alert.alert('Could not open source', 'Please try again.')) : undefined}
-                          accessibilityRole={canOpen ? 'link' : undefined}
-                        >
-                          <Text style={styles.reportSourceIndex}>{String(index + 1).padStart(2, '0')}</Text>
-                          <Text style={styles.reportSourceTitle}>{source.title}</Text>
-                          {canOpen ? <Feather name="external-link" size={14} color={colors.inkMuted} /> : null}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                  <Text style={styles.reportSourceNote}>Sources inform general guidance. Your saved activity remains the basis of this report.</Text>
-                </>
-              ) : null}
-              <PrimaryButton title={nextFocusCta} icon="arrow-right" onPress={openNextFocus} style={styles.reportPrimaryAction} />
-            </>
-          ) : (
-            <>
-              <View style={styles.pendingReportHero}>
-                <Image
-                  source={getProgressReportArtwork(profileGender)}
-                  style={styles.pendingReportArtwork}
-                  resizeMode="cover"
-                  accessible={false}
-                  testID="pending-progress-report-art"
-                />
-                <NativeLinearGradient
-                  colors={['rgba(5,6,10,0.22)', 'rgba(5,6,10,0.62)', 'rgba(5,6,10,0.98)']}
-                  locations={[0, 0.48, 0.88]}
-                  start={{ x: 0.5, y: 0 }}
-                  end={{ x: 0.5, y: 1 }}
-                  style={styles.pendingReportShade}
-                  pointerEvents="none"
-                />
-                <View style={styles.pendingReportContent}>
-                  <View style={styles.pendingReportMeta}>
-                    <Text style={styles.pendingReportEyebrow}>WEEKLY PROGRESS</Text>
-                    <View style={styles.pendingReportPercentChip}>
-                      <Text style={styles.pendingReportPercent}>{reportCompletionPercent}% ready</Text>
-                    </View>
-                  </View>
-                  <View style={styles.pendingReportBottom}>
-                    <View style={styles.pendingReportStatus}>
-                      <View style={styles.pendingReportStatusDot} />
-                      <Text style={styles.pendingReportStatusText}>{showReportCountdown ? 'REPORT QUEUED' : 'COLLECTING ACTIVITY'}</Text>
-                    </View>
-                    <Text style={styles.pendingReportTitle} accessibilityRole="header">
-                      {showReportCountdown ? 'Your weekly report is on its way' : 'Your week is taking shape'}
-                    </Text>
-                    <Text style={styles.pendingReportBody}>
-                      {showReportCountdown
-                        ? `You have enough activity. Your report arrives in ${nextReviewDayLabel}.`
-                        : hasMealRequirement
-                          ? 'Keep moving and logging meals. Your activity is saved automatically.'
-                          : 'Complete your first workout to unlock a useful weekly review.'}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={styles.reportRankingsCta}
-                onPress={() => navigation.navigate('TrophyDetails')}
-                activeOpacity={0.82}
-                accessibilityRole="button"
-                accessibilityLabel="View rankings"
-              >
-                <View style={styles.reportRankingsIcon}><MaterialCommunityIcon name="podium-gold" size={20} color={colors.gold} /></View>
-                <Text style={styles.reportRankingsText}>View rankings</Text>
-                <Feather name="arrow-right" size={19} color={colors.onPrimary} />
-              </TouchableOpacity>
-
-              <Card style={styles.activationStatusCard}>
-                <View style={styles.activationHeading}>
-                  <View style={styles.activationHeadingCopy}>
-                    <Text style={styles.activationStatusEyebrow}>{showReportCountdown ? 'Ready to generate' : 'Build your report'}</Text>
-                    <Text style={styles.activationStatusTitle}>{showReportCountdown ? 'Inputs complete' : 'Two simple signals'}</Text>
-                  </View>
-                  <Text style={styles.activationStatusLabel}>{activationGoalsComplete}/{activationGoalsTotal}</Text>
-                </View>
-                <View style={styles.activationGoals}>
-                  <ActivationGoalRow icon="activity" label="Workouts" noun="workout" current={workoutProgress} target={workoutTarget} complete={workoutGoalMet} onPress={openWorkoutTask} />
-                  {hasMealRequirement ? <><View style={styles.activationGoalDivider} /><ActivationGoalRow icon="coffee" label="Meal logs" noun="meal" current={mealProgress} target={mealTarget} complete={mealGoalMet} onPress={openMealTask} /></> : null}
-                </View>
-              </Card>
-            </>
-          )}
-        </ScrollView>
+      <ScreenContainer style={styles.reportScreen}>
+        {reportHeader}
+        {reviewReady && review ? (
+          <ScrollView showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="never" contentContainerStyle={[styles.reportScroll, { paddingBottom: insets.bottom + spacing.xl }]}>
+            <WeeklyReportStory report={review} onAction={openReportAction} />
+          </ScrollView>
+        ) : (
+          <WeeklyReportPending workouts={workoutProgress} workoutTarget={workoutTarget} meals={mealProgress} mealTarget={mealTarget}
+            generating={schedule.preparing} queued={showReportCountdown} nextInDays={nextReviewDays}
+            bottomInset={insets.bottom} onWorkout={openWorkoutTask} onMeal={openMealTask} onRankings={() => navigation.navigate('TrophyDetails')} />
+        )}
       </ScreenContainer>
     );
   }
@@ -711,7 +459,7 @@ export function ProgressScreen({ route, navigation }: Props) {
             <Card variant="outline" style={styles.formCard}>
               <View style={styles.formIntro}>
                 <View style={styles.formIcon}>
-                  <Feather name="edit-3" size={19} color={colors.gold} />
+                  <ReportIllustration kind="measurements" size={48} />
                 </View>
                 <View style={styles.formIntroText}>
                   <Text style={styles.cardTitle}>Add today’s measurements</Text>
@@ -749,15 +497,15 @@ export function ProgressScreen({ route, navigation }: Props) {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
+        refreshControl={<RefreshControl refreshing={pullRefreshing} onRefresh={onPullRefresh} tintColor={colors.accent} />}
       >
         <View style={styles.header}>
           <View style={styles.headerCopy}>
             <Text style={styles.progressScreenTitle} accessibilityRole="header">Progress</Text>
           </View>
-          <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.75} accessibilityRole="button" accessibilityLabel={`${nextReviewDayLabel} to next report. ${reportCompletionPercent}% complete`}>
+          <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.75} accessibilityRole="button" accessibilityLabel={`${schedule.countdown}. ${reportCompletionPercent}% complete`}>
             <View style={styles.reportCountdown}>
-              <Text style={styles.reportCountdownValue}>{nextReviewDayLabel} to next report</Text>
+              <Text style={styles.reportCountdownValue}>{schedule.countdown}</Text>
               <Feather name="chevron-right" size={17} color={colors.gold} />
             </View>
           </TouchableOpacity>
@@ -807,7 +555,7 @@ export function ProgressScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.88} accessibilityRole="button" accessibilityLabel={`Open progress report. ${nextReviewDayLabel} to next report. ${reportCompletionPercent}% complete`}>
+        <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.88} accessibilityRole="button" accessibilityLabel={`Open progress report. ${schedule.countdown}. ${reportCompletionPercent}% complete`}>
           {reviewReady ? (
             <View style={styles.reportCard}>
               <Image
@@ -817,21 +565,14 @@ export function ProgressScreen({ route, navigation }: Props) {
                 accessible={false}
                 testID="progress-report-art"
               />
-              <NativeLinearGradient
-                colors={['rgba(5,6,10,0.98)', 'rgba(5,6,10,0.9)', 'rgba(5,6,10,0.3)', 'rgba(5,6,10,0.02)']}
-                locations={[0, 0.48, 0.76, 1]}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 1, y: 0.5 }}
-                style={styles.reportArtworkShade}
-                pointerEvents="none"
-              />
+              <View style={styles.reportArtworkShade} pointerEvents="none" />
               <View style={styles.reportHeroContent}>
                 <View style={styles.reportHeroStatus}>
                   <View style={[styles.reportHeroStatusDot, styles.reportHeroStatusDotReady]} />
                   <Text style={styles.reportHeroKicker}>Latest ready</Text>
                 </View>
                 <Text style={styles.reportTitle} numberOfLines={2}>{reportHeroTitle}</Text>
-                <Text style={styles.reportHeroDetail} numberOfLines={1}>{reportHeroDetail}</Text>
+                <Text style={styles.reportHeroDetail} numberOfLines={2}>{reportHeroDetail}</Text>
                 <View style={styles.reportAction}>
                   <Text style={styles.reportActionText}>View report</Text>
                   <Feather name="arrow-right" size={16} color={colors.onPrimary} />
@@ -849,7 +590,7 @@ export function ProgressScreen({ route, navigation }: Props) {
                   <Text style={styles.reportPendingPercent}>{reportCompletionPercent}%</Text>
                 </View>
                 <Text style={styles.reportPendingDetail}>{reportHeroDetail}</Text>
-                <Text style={styles.reportPendingCountdown}>{nextReviewDayLabel} to next report</Text>
+                <Text style={styles.reportPendingCountdown}>{schedule.countdown}</Text>
                 <View style={styles.reportPendingTrack}>
                   <View style={[styles.reportTrackFill, { width: `${reportCompletionPercent}%` }]} />
                 </View>
@@ -961,6 +702,27 @@ export function ProgressScreen({ route, navigation }: Props) {
   );
 }
 
+export function ReportNavigationHeader({ history, onBack, onHistory }: { history: boolean; onBack: () => void; onHistory: () => void }) {
+  return (
+    <View style={styles.reportHeader} testID="weekly-report-navigation">
+      <TouchableOpacity
+        onPress={onBack}
+        style={styles.reportBackButton}
+        accessibilityRole="button"
+        accessibilityLabel={history ? 'Back to weekly report' : 'Back to progress'}
+      >
+        <Feather name="chevron-left" size={22} color={colors.ink} />
+      </TouchableOpacity>
+      <Text style={styles.reportHeaderTitle} numberOfLines={1} accessibilityRole="header">{history ? 'Report history' : 'Weekly report'}</Text>
+      {!history ? (
+        <TouchableOpacity onPress={onHistory} style={styles.reportHistoryButton} accessibilityRole="button" accessibilityLabel="View previous reports">
+          <Text style={styles.reportHistoryButtonText} numberOfLines={1}>History</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
 function MeasurementLogAction({ onPress, firstLog = false }: { onPress: () => void; firstLog?: boolean }) {
   return (
     <TouchableOpacity
@@ -972,7 +734,7 @@ function MeasurementLogAction({ onPress, firstLog = false }: { onPress: () => vo
       accessibilityHint="Opens the body measurement form"
     >
       <View style={styles.measurementLogIcon}>
-        <Feather name="plus" size={18} color={colors.gold} />
+        <ReportIllustration kind="measurements" size={36} />
       </View>
       <Text style={styles.measurementLogTitle}>{firstLog ? 'Add measurement' : 'Log measurement'}</Text>
       <Feather name="chevron-right" size={19} color={colors.inkSubtle} />
@@ -1006,146 +768,6 @@ function deltaIcon(dir: Delta['dir']) {
   return 'minus';
 }
 
-function buildFallbackDailyActivity(history: NonNullable<ProgressSummary['completionHistory']>) {
-  const today = new Date();
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(today);
-    date.setDate(today.getDate() - (6 - index));
-    const dateKey = date.toISOString().slice(0, 10);
-    return {
-      date: dateKey,
-      label: date.toLocaleDateString('en-IN', { weekday: 'narrow' }),
-      workouts: history.filter(item => item.date.slice(0, 10) === dateKey).length,
-      foodLogs: 0,
-    };
-  });
-}
-
-function ReportSectionHeader({ kicker, title }: { kicker: string; title: string }) {
-  return (
-    <View style={styles.reportSectionHead}>
-      <Text style={styles.reportSectionKicker}>{kicker}</Text>
-      <Text style={styles.reportSectionTitle}>{title}</Text>
-    </View>
-  );
-}
-
-function WeeklyActivityChart({ data }: { data: Array<{ date: string; label: string; workouts: number; foodLogs: number }> }) {
-  const hasActivity = data.some(item => item.workouts > 0 || item.foodLogs > 0);
-  const accessibleSummary = data.map(item => `${item.label}: ${item.workouts} workouts and ${item.foodLogs} food logs`).join('. ');
-  return (
-    <View style={styles.activityChart} accessible accessibilityLabel={`Seven day activity. ${accessibleSummary}`}>
-      <View style={styles.activityMatrixRow}>
-        <Text style={styles.activityMatrixAxis}>DAY</Text>
-        {data.map(item => <Text key={`day-${item.date}`} style={styles.activityMatrixDay}>{item.label}</Text>)}
-      </View>
-      <View style={styles.activityMatrixRule} />
-      <View style={styles.activityMatrixRow}>
-        <Text style={styles.activityMatrixLabel}>WORKOUT</Text>
-        {data.map(item => <Text key={`workout-${item.date}`} style={[styles.activityMatrixValue, item.workouts > 0 && styles.activityMatrixValueActive]}>{item.workouts || '–'}</Text>)}
-      </View>
-      <View style={styles.activityMatrixRow}>
-        <Text style={styles.activityMatrixLabel}>FOOD</Text>
-        {data.map(item => <Text key={`food-${item.date}`} style={[styles.activityMatrixValue, item.foodLogs > 0 && styles.activityMatrixFoodValue]}>{item.foodLogs || '–'}</Text>)}
-      </View>
-      <Text style={styles.activityMatrixNote}>{hasActivity ? 'Saved entries only. No activity is estimated.' : 'No saved activity in this reporting window.'}</Text>
-    </View>
-  );
-}
-
-function ActionPlanCard({ action }: { action: { priority: number; domain: string; title: string; why: string; steps?: string[]; successMeasure?: string } }) {
-  return (
-    <View style={styles.actionPlanCard}>
-      <Text style={styles.actionPriority}>{String(action.priority).padStart(2, '0')}</Text>
-      <View style={styles.actionPlanCopy}>
-        <Text style={styles.actionDomain}>{action.domain}</Text>
-        <Text style={styles.actionTitle}>{action.title}</Text>
-        {action.why ? <Text style={styles.actionWhy}>{action.why}</Text> : null}
-        {action.steps?.length ? (
-          <View style={styles.actionSteps}>
-            {action.steps.map((step, index) => (
-              <View key={`${step}-${index}`} style={styles.actionStepRow}>
-                <Text style={styles.actionStepBullet}>•</Text>
-                <Text style={styles.actionStepText}>{step}</Text>
-              </View>
-            ))}
-          </View>
-        ) : null}
-        {action.successMeasure ? (
-          <View style={styles.successMeasure}>
-            <Text style={styles.successMeasureLabel}>ENDPOINT</Text>
-            <Text style={styles.successMeasureText}>{action.successMeasure}</Text>
-          </View>
-        ) : null}
-      </View>
-    </View>
-  );
-}
-
-function ReportDatum({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.reportDatum}>
-      <Text style={styles.reportDatumValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
-      <Text style={styles.reportDatumLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function ReportMetricTile({ value, label, detail }: { value: string; label: string; detail: string }) {
-  return (
-    <View style={styles.signalMetricCard} accessible accessibilityLabel={`${label}: ${value}. ${detail}`}>
-      <Text style={styles.signalMetricValue}>{value}</Text>
-      <Text style={styles.signalMetricLabel}>{label}</Text>
-      <Text style={styles.signalMetricDetail}>{detail}</Text>
-    </View>
-  );
-}
-
-function DistributionCard({ title, items }: { title: string; items: Array<{ label: string; count: number }> }) {
-  const maximum = Math.max(1, ...items.map(item => item.count));
-  return (
-    <View style={styles.distributionCard}>
-      <Text style={styles.distributionTitle}>{title}</Text>
-      {items.map(item => {
-        const width = Math.max(5, Math.round((item.count / maximum) * 100));
-        return (
-          <View key={item.label} style={styles.distributionRow}>
-            <View style={styles.distributionTop}>
-              <Text style={styles.distributionLabel}>{item.label}</Text>
-              <Text style={styles.distributionValue}>{item.count}</Text>
-            </View>
-            <View style={styles.distributionTrack}>
-              <View style={[styles.distributionFill, { width: `${width}%` }]} />
-            </View>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-function ActivationGoalRow({ icon, label, noun, current, target, complete, onPress }: { icon: string; label: string; noun: string; current: number; target: number; complete: boolean; onPress: () => void }) {
-  const remaining = Math.max(0, target - current);
-  const progress = Math.min(100, Math.round((current / Math.max(1, target)) * 100));
-  const detail = complete ? 'Goal complete' : `${remaining} more ${noun}${remaining === 1 ? '' : 's'} to go`;
-
-  return (
-    <TouchableOpacity onPress={onPress} disabled={complete} activeOpacity={0.72} style={styles.activationGoal} accessibilityRole={complete ? undefined : 'button'} accessibilityLabel={`${label}. ${current} of ${target}. ${detail}`}>
-      <View style={[styles.activationGoalIcon, complete && styles.activationGoalIconComplete]}>
-        <Feather name={complete ? 'check' : icon} size={18} color={colors.gold} />
-      </View>
-      <View style={styles.activationGoalCopy}>
-        <View style={styles.activationGoalTitleRow}>
-          <Text style={styles.activationGoalLabel}>{label}</Text>
-          <Text style={[styles.activationGoalValue, complete && styles.activationGoalValueComplete]}>{current}/{target}</Text>
-        </View>
-        <Text style={[styles.activationGoalDetail, complete && styles.activationGoalDetailComplete]}>{detail}</Text>
-        <View style={styles.activationGoalTrack}><View style={[styles.activationGoalFill, complete && styles.activationGoalFillComplete, { width: `${progress}%` }]} /></View>
-      </View>
-      {!complete ? <Feather name="chevron-right" size={19} color={colors.inkSubtle} /> : null}
-    </TouchableOpacity>
-  );
-}
 
 function TrophyMetric({ icon, value, label, material = false }: { icon: string; value: string; label: string; material?: boolean }) {
   return (
@@ -1305,31 +927,67 @@ function TrendLineChart({
 
 const styles = StyleSheet.create({
   scroll: {},
+  reportScreen: { paddingBottom: 0 },
   reportScroll: { paddingBottom: spacing.xl },
-  reportHeader: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingBottom: spacing.sm, marginBottom: spacing.lg, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-  reportBackButton: { width: 38, height: 38, borderRadius: radius.pill, backgroundColor: colors.panel, alignItems: 'center', justifyContent: 'center' },
-  reportHeaderText: { flex: 1, minWidth: 0 },
-  reportHeaderEyebrow: { ...reportTypography.label, color: colors.gold, textTransform: 'uppercase', marginBottom: 1 },
-  reportHeaderTitle: { ...reportTypography.heading, color: colors.ink },
-  reportHistoryButton: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: radius.pill, paddingHorizontal: 10, backgroundColor: colors.panel },
-  reportHistoryButtonText: { fontSize: 12, lineHeight: 16, color: colors.gold, fontWeight: '700' },
-  reportHistoryScroll: { paddingBottom: spacing.xl, gap: spacing.md },
-  reportHistoryCount: { ...typography.caption, color: colors.inkMuted, marginBottom: spacing.xs },
-  reportHistoryCard: { padding: spacing.lg, gap: spacing.sm },
-  reportHistoryMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  reportHistoryDate: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
-  reportHistoryLatest: { fontSize: 10, lineHeight: 13, color: colors.gold, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.7 },
-  reportHistoryTitle: { fontSize: 19, lineHeight: 24, fontWeight: '800', color: colors.ink, letterSpacing: -0.2 },
+  reportHeader: { width: '100%', minHeight: 56, flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: spacing.sm, paddingBottom: spacing.sm, marginBottom: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, backgroundColor: colors.bg },
+  reportStickyHeader: { zIndex: 20, elevation: 4, backgroundColor: colors.bg },
+  reportBackButton: { width: 44, minHeight: 44, flexShrink: 0, borderRadius: radius.pill, backgroundColor: colors.panel, alignItems: 'center', justifyContent: 'center' },
+  reportBackText: { ...reportTypography.bodyStrong, fontSize: 14, lineHeight: 20, color: colors.ink },
+  reportHeaderLeading: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  reportHeaderTitle: { ...reportTypography.heading, flex: 1, minWidth: 0, color: colors.ink },
+  reportHistoryButton: { width: 60, minHeight: 44, flexShrink: 0, alignItems: 'flex-end', justifyContent: 'center' },
+  reportHistoryButtonText: { fontSize: 14, lineHeight: 20, color: colors.ink, fontWeight: '600' },
+  reportHistoryScroll: { paddingBottom: spacing.xl },
+  reportHistoryHeader: { marginBottom: spacing.md },
+  reportHistoryCountChip: { minWidth: 38, height: 32, paddingHorizontal: spacing.sm, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  reportHistoryCountValue: { ...reportTypography.data, color: colors.ink },
+  reportHistoryIntro: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, marginBottom: spacing.lg },
+  reportHistoryArtwork: { width: 54, height: 54, borderRadius: 18, backgroundColor: colors.panelRaised, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  reportHistoryArtworkBar: { width: 5, borderRadius: radius.pill, backgroundColor: colors.gold },
+  reportHistoryArtworkBarShort: { height: 10, opacity: 0.48 },
+  reportHistoryArtworkBarMedium: { height: 17, opacity: 0.72 },
+  reportHistoryArtworkBarTall: { height: 25 },
+  reportHistoryArtworkLine: { position: 'absolute', left: 10, right: 10, bottom: 9, height: 1, backgroundColor: colors.goldMuted, opacity: 0.45 },
+  reportHistoryIntroCopy: { flex: 1, minWidth: 0 },
+  reportHistoryIntroTitle: { ...typography.subtitle, color: colors.ink },
+  reportHistoryIntroText: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
+  reportHistoryList: { gap: 0 },
+  reportHistoryTimelineRow: { flexDirection: 'row', alignItems: 'stretch' },
+  reportHistoryRail: { width: 24, alignItems: 'center' },
+  reportHistoryNode: { width: 9, height: 9, borderRadius: radius.pill, marginTop: 22, borderWidth: 2, borderColor: colors.borderStrong, backgroundColor: colors.bg, zIndex: 1 },
+  reportHistoryNodeActive: { width: 11, height: 11, borderColor: colors.gold, backgroundColor: colors.gold },
+  reportHistoryRailLine: { position: 'absolute', top: 30, bottom: -22, width: StyleSheet.hairlineWidth, backgroundColor: colors.borderStrong },
+  reportHistoryCard: { flex: 1, minWidth: 0, marginBottom: spacing.md, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  reportHistoryCardExpanded: { borderColor: colors.borderStrong, backgroundColor: colors.panelMuted },
+  reportHistoryMeta: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.sm },
+  reportHistoryPeriodWrap: { flex: 1, minWidth: 0 },
+  reportHistoryDate: { ...reportTypography.data, color: colors.ink, marginTop: 2 },
+  reportHistoryLatest: { ...typography.label, color: colors.gold },
+  reportHistorySequence: { color: colors.inkMuted },
+  reportHistoryScoreWrap: { flexDirection: 'row', alignItems: 'baseline' },
+  reportHistoryScore: { ...reportTypography.dataLarge, fontSize: 22, lineHeight: 27, color: colors.ink },
+  reportHistoryScoreMax: { ...reportTypography.data, color: colors.inkSubtle },
+  reportHistoryDelta: { ...typography.caption, color: colors.inkMuted, marginLeft: 6 },
+  reportHistoryDeltaPositive: { color: colors.success },
+  reportHistoryTitle: { ...typography.title, fontSize: 19, lineHeight: 25, color: colors.ink, marginTop: spacing.md },
   reportHistorySummary: { ...typography.body, color: colors.inkMuted },
-  reportHistoryStats: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs },
-  reportHistoryStat: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
-  reportHistoryStatDot: { width: 3, height: 3, borderRadius: 2, backgroundColor: colors.inkSubtle },
-  reportHistoryWins: { gap: 6, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, marginTop: spacing.xs },
-  reportHistoryWinRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  reportHistoryWinText: { ...typography.caption, color: colors.ink, flex: 1 },
-  reportHistoryInsight: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, gap: 3 },
-  reportHistoryInsightLabel: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
-  reportHistoryInsightText: { ...typography.caption, color: colors.inkMuted },
+  reportHistoryStats: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.sm },
+  reportHistoryStatChip: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.sm, borderRadius: radius.pill, backgroundColor: colors.bgTint },
+  reportHistoryStat: { ...typography.caption, color: colors.inkMuted },
+  reportHistorySignalRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginTop: spacing.md },
+  reportHistorySignalIcon: { width: 28, height: 28, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
+  reportHistorySignalCopy: { flex: 1, minWidth: 0 },
+  reportHistorySignalLabel: { ...typography.label, fontSize: 11, lineHeight: 15, color: colors.gold },
+  reportHistorySignalText: { ...typography.bodyBold, color: colors.ink, marginTop: 1 },
+  reportHistoryExpandedBody: { gap: spacing.xs, marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  reportHistoryDetailText: { ...typography.caption, color: colors.inkMuted },
+  reportHistoryDetailLabel: { color: colors.ink, fontWeight: '600' },
+  reportHistoryActionRow: { minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.md, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs, borderRadius: radius.md, backgroundColor: colors.panelRaised },
+  reportHistoryActionCopy: { flex: 1, minWidth: 0 },
+  reportHistoryActionLabel: { ...typography.label, fontSize: 11, lineHeight: 15, color: colors.gold },
+  reportHistoryActionText: { ...typography.caption, color: colors.ink, marginTop: 1 },
+  reportHistoryExpandRow: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  reportHistoryExpandText: { ...typography.label, color: colors.inkMuted },
   reportHistoryEmpty: { minHeight: 180, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
   reportHistoryEmptyTitle: { ...typography.bodyBold, color: colors.ink },
   reportHistoryEmptyText: { ...typography.caption, color: colors.inkMuted, textAlign: 'center' },
@@ -1355,12 +1013,13 @@ const styles = StyleSheet.create({
   formCard: { gap: spacing.sm, padding: spacing.md },
   formIntro: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.xs },
   formIcon: {
-    width: 44,
-    height: 44,
+    width: 52,
+    height: 52,
+    flexShrink: 0,
     borderRadius: radius.md,
-    backgroundColor: colors.accentLight,
+    backgroundColor: colors.panelRaised,
     borderWidth: 1,
-    borderColor: colors.accentSurface,
+    borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1397,7 +1056,7 @@ const styles = StyleSheet.create({
   // All report artwork is 3:2. Preserve that ratio and anchor it to the top;
   // the wide card then trims only the lower scene instead of the subject's head.
   reportArtwork: { position: 'absolute', top: 0, left: 0, width: '100%', aspectRatio: 1.5 },
-  reportArtworkShade: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
+  reportArtworkShade: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(5,6,10,0.68)' },
   reportHeroContent: { width: '64%', minHeight: 190, justifyContent: 'center', alignItems: 'flex-start', paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
   reportHeroStatus: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   reportHeroStatusDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.inkSubtle },
@@ -1420,34 +1079,7 @@ const styles = StyleSheet.create({
   reportPendingCountdown: { fontSize: 11, lineHeight: 15, color: colors.inkSubtle, marginTop: 2 },
   reportPendingTrack: { height: 3, borderRadius: radius.pill, backgroundColor: colors.borderStrong, overflow: 'hidden', marginTop: spacing.sm },
 
-  pendingReportHero: {
-    minHeight: 430,
-    overflow: 'hidden',
-    borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.panel,
-    marginBottom: spacing.md,
-  },
-  // Report assets are 3:2 and place the subject on the right. Rendering at the
-  // hero's full height and pinning right keeps the full head/body composition
-  // instead of center-cropping it on narrow phones.
-  pendingReportArtwork: { position: 'absolute', top: 0, right: 0, height: '100%', aspectRatio: 1.5 },
-  pendingReportShade: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
-  pendingReportContent: { minHeight: 430, justifyContent: 'space-between', padding: spacing.lg },
-  pendingReportMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  pendingReportEyebrow: { ...reportTypography.label, color: colors.gold },
-  pendingReportPercentChip: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.pill, borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', backgroundColor: 'rgba(5,6,10,0.64)' },
-  pendingReportPercent: { ...reportTypography.data, fontSize: 10, lineHeight: 14, color: colors.ink },
-  pendingReportBottom: { maxWidth: 520, alignItems: 'flex-start' },
-  pendingReportStatus: { flexDirection: 'row', alignItems: 'center', gap: 7 },
-  pendingReportStatusDot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: colors.gold },
-  pendingReportStatusText: { ...reportTypography.label, color: colors.gold },
-  pendingReportTitle: { ...reportTypography.display, maxWidth: 470, marginTop: spacing.sm, color: colors.ink },
-  pendingReportBody: { ...reportTypography.body, maxWidth: 440, marginTop: spacing.sm, color: colors.onAccentMuted },
-  reportRankingsCta: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md, paddingHorizontal: spacing.md, borderRadius: radius.lg, backgroundColor: colors.gold },
-  reportRankingsIcon: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.onPrimary },
-  reportRankingsText: { ...typography.bodyBold, flex: 1, color: colors.onPrimary, fontWeight: '800' },
+
 
   overviewHead: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.lg },
   overviewKicker: { ...typography.overline, color: colors.inkMuted, fontWeight: '600', textTransform: 'uppercase' },
@@ -1455,149 +1087,6 @@ const styles = StyleSheet.create({
   overviewValue: { fontSize: 24, lineHeight: 29, fontWeight: '700', letterSpacing: -0.3, color: colors.ink },
   overviewBar: { marginTop: spacing.md },
 
-  reportLead: { paddingBottom: 20 },
-  reportLeadMeta: { flexDirection: 'row', alignItems: 'center' },
-  reportLeadStatus: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  reportLeadStatusDot: { width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.gold },
-  reportLeadStatusText: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
-  reportLeadTitle: { ...reportTypography.display, color: colors.ink, marginTop: spacing.sm },
-  reportLeadSummary: { ...reportTypography.body, color: colors.inkMuted, marginTop: spacing.sm, maxWidth: 520 },
-  reportDataRow: { minHeight: 74, flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border, marginBottom: spacing.lg },
-  reportDatum: { flex: 1, minWidth: 0, alignItems: 'center', paddingHorizontal: spacing.xs },
-  reportDatumValue: { ...reportTypography.dataLarge, fontSize: 20, lineHeight: 25, color: colors.ink, textAlign: 'center' },
-  reportDatumLabel: { ...reportTypography.label, color: colors.inkSubtle, marginTop: 3, textAlign: 'center', textTransform: 'uppercase' },
-  reportDataDivider: { width: StyleSheet.hairlineWidth, height: 36, backgroundColor: colors.borderStrong },
-  reportHighlights: { borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: spacing.lg, marginBottom: spacing.xl, gap: spacing.sm },
-  reportSectionHead: { marginTop: spacing.md, marginBottom: spacing.sm },
-  reportSectionKicker: { ...reportTypography.label, color: colors.gold, textTransform: 'uppercase' },
-  reportSectionTitle: { ...reportTypography.heading, fontSize: 18, lineHeight: 24, color: colors.ink, marginTop: 2 },
-  activityChart: { marginBottom: spacing.lg, paddingVertical: spacing.sm, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
-  activityMatrixRow: { minHeight: 32, flexDirection: 'row', alignItems: 'center' },
-  activityMatrixAxis: { ...reportTypography.label, width: 76, color: colors.inkSubtle },
-  activityMatrixDay: { ...reportTypography.data, flex: 1, fontSize: 10, lineHeight: 14, color: colors.inkMuted, textAlign: 'center' },
-  activityMatrixRule: { height: StyleSheet.hairlineWidth, marginLeft: 76, backgroundColor: colors.border },
-  activityMatrixLabel: { ...reportTypography.label, width: 76, color: colors.inkMuted, letterSpacing: 0.65 },
-  activityMatrixValue: { ...reportTypography.data, flex: 1, fontSize: 12, lineHeight: 16, color: colors.inkSubtle, textAlign: 'center' },
-  activityMatrixValueActive: { color: colors.gold, fontWeight: '800' },
-  activityMatrixFoodValue: { color: colors.ink, fontWeight: '800' },
-  activityMatrixNote: { marginTop: spacing.xs, fontSize: 10, lineHeight: 15, color: colors.inkSubtle },
-  observationList: { marginBottom: spacing.lg, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
-  observationRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, paddingVertical: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-  observationIndex: { ...reportTypography.data, width: 24, fontSize: 10, lineHeight: 15, color: colors.gold },
-  observationCopy: { flex: 1, minWidth: 0 },
-  observationTitle: { ...reportTypography.bodyStrong, fontSize: 15, lineHeight: 21, color: colors.ink },
-  observationEvidence: { ...reportTypography.data, fontSize: 11, lineHeight: 17, color: colors.gold, marginTop: 3 },
-  observationScope: { ...reportTypography.body, fontSize: 12, lineHeight: 18, color: colors.inkMuted, marginTop: 3 },
-  dimensionCard: { padding: spacing.md, gap: spacing.md, marginBottom: spacing.md },
-  momentumCard: { padding: spacing.md, gap: spacing.md, marginBottom: spacing.lg, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panel },
-  momentumSummary: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: spacing.sm, paddingBottom: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-  momentumScoreRow: { flexDirection: 'row', alignItems: 'baseline' },
-  momentumScore: { ...reportTypography.dataLarge, fontSize: 30, lineHeight: 35, color: colors.ink },
-  momentumScoreMax: { ...reportTypography.data, fontSize: 11, lineHeight: 16, color: colors.inkSubtle, marginLeft: 2 },
-  momentumLabel: { ...reportTypography.bodyStrong, color: colors.gold },
-  momentumDimensions: { gap: spacing.md },
-  momentumMethod: { ...reportTypography.body, fontSize: 10, lineHeight: 15, color: colors.inkSubtle },
-  dimensionRow: { gap: 6 },
-  dimensionTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  dimensionLabel: { ...typography.bodyBold, color: colors.ink },
-  dimensionValue: { ...typography.bodyBold, color: colors.gold },
-  dimensionTrack: { height: 7, borderRadius: radius.pill, backgroundColor: colors.panelRaised, overflow: 'hidden' },
-  dimensionFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
-  dimensionStatus: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', textTransform: 'capitalize' },
-  signalMetricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
-  signalMetricCard: { width: '48%', minHeight: 104, padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
-  signalMetricValue: { ...reportTypography.dataLarge, fontSize: 22, lineHeight: 27, color: colors.ink },
-  signalMetricLabel: { ...reportTypography.bodyStrong, fontSize: 12, lineHeight: 18, color: colors.ink, marginTop: 2 },
-  signalMetricDetail: { ...reportTypography.body, fontSize: 10, lineHeight: 15, color: colors.inkSubtle, marginTop: 2 },
-  deltaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
-  deltaCard: { width: '48%', minHeight: 96, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.panelMuted, borderWidth: 1, borderColor: colors.border },
-  deltaLabel: { ...reportTypography.label, color: colors.inkSubtle, textTransform: 'uppercase' },
-  deltaCurrent: { ...reportTypography.dataLarge, fontSize: 20, lineHeight: 25, color: colors.ink, marginTop: 3 },
-  deltaChange: { ...reportTypography.data, fontSize: 10, lineHeight: 15, color: colors.gold, marginTop: 2 },
-  deltaChangeDown: { color: colors.inkMuted },
-  reportChartPair: { gap: spacing.sm, marginBottom: spacing.xl },
-  distributionCard: { padding: spacing.md, gap: spacing.sm },
-  distributionTitle: { ...typography.bodyBold, color: colors.ink, marginBottom: 2 },
-  distributionRow: { gap: 4 },
-  distributionTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  distributionLabel: { ...typography.caption, color: colors.inkMuted, flex: 1 },
-  distributionValue: { ...typography.caption, color: colors.ink, fontWeight: '800' },
-  distributionTrack: { height: 5, borderRadius: radius.pill, backgroundColor: colors.panelRaised, overflow: 'hidden' },
-  distributionFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
-  highlightGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.lg },
-  highlightCard: { width: '48%', minHeight: 108, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.md },
-  highlightNumber: { width: 26, height: 26, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelWarm, marginBottom: spacing.sm },
-  highlightNumberText: { fontSize: 12, lineHeight: 15, color: colors.gold, fontWeight: '900' },
-  highlightTitle: { ...typography.bodyBold, color: colors.ink },
-  highlightEvidence: { ...typography.caption, color: colors.gold, fontWeight: '700', marginTop: 5 },
-  highlightMeaning: { fontSize: 11, lineHeight: 16, color: colors.inkMuted, marginTop: 4 },
-  findingStack: { marginBottom: spacing.lg, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
-  findingCard: { minHeight: 92, flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, paddingVertical: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-  findingIndex: { ...reportTypography.data, width: 24, paddingTop: 1, fontSize: 10, lineHeight: 15, color: colors.gold },
-  findingCopy: { flex: 1, minWidth: 0 },
-  findingDomain: { ...reportTypography.label, color: colors.inkSubtle, letterSpacing: 0.9, textTransform: 'uppercase' },
-  findingTitle: { ...reportTypography.bodyStrong, fontSize: 16, lineHeight: 22, color: colors.ink, marginTop: 3 },
-  findingInsight: { ...reportTypography.body, fontSize: 13, lineHeight: 19, color: colors.inkMuted, marginTop: 3 },
-  findingEvidence: { fontSize: 10, lineHeight: 15, color: colors.inkSubtle, marginTop: spacing.sm },
-  domainStack: { gap: spacing.sm, marginBottom: spacing.lg },
-  domainCard: { borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.md },
-  domainHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  domainIcon: { width: 36, height: 36, borderRadius: radius.pill, backgroundColor: colors.panelWarm, alignItems: 'center', justifyContent: 'center' },
-  domainTitle: { ...typography.subtitle, color: colors.ink, flex: 1 },
-  domainStatus: { fontSize: 10, lineHeight: 13, color: colors.gold, fontWeight: '800', textTransform: 'uppercase' },
-  domainSummary: { fontSize: 13, lineHeight: 19, color: colors.inkMuted, marginTop: spacing.sm },
-  domainEvidence: { gap: 4, marginTop: spacing.sm },
-  domainEvidenceText: { ...typography.caption, color: colors.inkMuted },
-  domainActions: { borderTopWidth: 1, borderTopColor: colors.border, gap: 5, paddingTop: spacing.sm, marginTop: spacing.md },
-  domainActionsLabel: { ...typography.overline, color: colors.gold },
-  domainActionText: { ...typography.caption, color: colors.ink, lineHeight: 18 },
-  bodyChangeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.xl },
-  bodyChangeCard: { width: '48%', borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.md },
-  bodyChangeLabel: { ...typography.caption, color: colors.inkMuted },
-  bodyChangeValue: { fontSize: 22, lineHeight: 28, color: colors.ink, fontWeight: '900', marginTop: 3 },
-  bodyChangeUnit: { fontSize: 12, color: colors.inkMuted, fontWeight: '700' },
-  bodyChangeDelta: { ...typography.caption, color: colors.gold, fontWeight: '700', marginTop: 2 },
-  bodyChangeNote: { ...reportTypography.body, fontSize: 10, lineHeight: 15, color: colors.inkSubtle, marginTop: -spacing.md, marginBottom: spacing.lg },
-  confidenceCard: { marginBottom: spacing.lg, paddingVertical: spacing.md, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
-  confidenceTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  confidenceLabel: { ...reportTypography.label, color: colors.gold, textTransform: 'uppercase' },
-  confidenceReason: { ...reportTypography.body, fontSize: 12, lineHeight: 18, color: colors.inkMuted, marginTop: spacing.xs },
-  confidenceMissing: { ...reportTypography.data, fontSize: 10, lineHeight: 16, color: colors.inkSubtle, marginTop: spacing.xs },
-  watchoutStack: { gap: spacing.sm, marginBottom: spacing.xl },
-  watchoutCard: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted, padding: spacing.md },
-  watchoutCopy: { flex: 1, minWidth: 0 },
-  watchoutTitle: { ...typography.bodyBold, color: colors.ink },
-  watchoutReason: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: 3 },
-  watchoutResponse: { ...typography.caption, color: colors.gold, lineHeight: 18, fontWeight: '700', marginTop: 5 },
-  actionPlanStack: { marginBottom: spacing.lg, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.md, overflow: 'hidden', backgroundColor: colors.panel },
-  actionPlanCard: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, padding: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-  actionPriority: { ...reportTypography.data, width: 24, paddingTop: 1, fontSize: 10, lineHeight: 15, color: colors.gold },
-  actionPlanCopy: { flex: 1, minWidth: 0 },
-  actionDomain: { ...reportTypography.label, color: colors.gold, letterSpacing: 0.9, textTransform: 'uppercase' },
-  actionTitle: { ...reportTypography.bodyStrong, fontSize: 16, lineHeight: 22, color: colors.ink, marginTop: 3 },
-  actionWhy: { ...reportTypography.body, fontSize: 12, lineHeight: 18, color: colors.inkMuted, marginTop: 3 },
-  actionSteps: { gap: 4, marginTop: spacing.sm },
-  actionStepRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs },
-  actionStepBullet: { ...reportTypography.body, color: colors.gold, lineHeight: 18 },
-  actionStepText: { ...reportTypography.body, flex: 1, fontSize: 12, lineHeight: 18, color: colors.ink },
-  successMeasure: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm, marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
-  successMeasureLabel: { ...reportTypography.label, fontSize: 8, lineHeight: 11, color: colors.inkSubtle, letterSpacing: 0.75 },
-  successMeasureText: { ...reportTypography.data, flex: 1, fontSize: 11, lineHeight: 16, color: colors.ink },
-  coachNote: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, marginBottom: spacing.lg, paddingVertical: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
-  coachNoteLabel: { ...reportTypography.label, width: 38, fontSize: 8, lineHeight: 15, color: colors.gold, letterSpacing: 0.8 },
-  coachNoteText: { ...reportTypography.body, flex: 1, fontSize: 12, lineHeight: 18, color: colors.inkMuted },
-  caveatList: { marginBottom: spacing.lg, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
-  caveatRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-  caveatCopy: { flex: 1, minWidth: 0 },
-  caveatTitle: { ...reportTypography.bodyStrong, fontSize: 14, lineHeight: 20, color: colors.ink },
-  caveatText: { ...reportTypography.body, fontSize: 12, lineHeight: 18, color: colors.inkMuted, marginTop: 3 },
-  caveatResponse: { ...reportTypography.bodyStrong, fontSize: 12, lineHeight: 18, color: colors.gold, marginTop: 4 },
-  reportSourceList: { marginBottom: spacing.sm, borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
-  reportSourceRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-  reportSourceIndex: { ...reportTypography.data, width: 24, fontSize: 9, lineHeight: 14, color: colors.inkSubtle },
-  reportSourceTitle: { ...reportTypography.bodyStrong, flex: 1, fontSize: 13, lineHeight: 19, color: colors.ink },
-  reportSourceNote: { ...reportTypography.body, fontSize: 10, lineHeight: 15, color: colors.inkSubtle, marginBottom: spacing.lg },
-  reportPrimaryAction: { marginBottom: spacing.lg },
   reportMethodology: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md, marginTop: spacing.sm },
   reportMethodologyText: { fontSize: 10, lineHeight: 15, color: colors.inkSubtle, flex: 1 },
   reviewHero: { padding: 20, marginBottom: spacing.md, backgroundColor: colors.panelWarm, borderColor: colors.accentSurface },
@@ -1653,27 +1142,7 @@ const styles = StyleSheet.create({
   bodyInvestment: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
   bodyInvestmentText: { ...typography.caption, color: colors.ink, fontWeight: '800', textAlign: 'center' },
 
-  activationStatusCard: { padding: 0, overflow: 'hidden', backgroundColor: colors.panel, borderColor: colors.borderStrong },
-  activationHeading: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: 20, paddingVertical: spacing.md },
-  activationHeadingCopy: { flex: 1, minWidth: 0 },
-  activationStatusEyebrow: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
-  activationStatusTitle: { fontSize: 19, lineHeight: 24, fontWeight: '800', color: colors.ink, letterSpacing: -0.2, marginTop: 2 },
-  activationStatusLabel: { ...typography.caption, color: colors.gold, fontWeight: '800' },
-  activationGoals: { borderTopWidth: 1, borderColor: colors.border },
-  activationGoal: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: 20, paddingVertical: spacing.sm },
-  activationGoalDivider: { height: 1, backgroundColor: colors.border, marginLeft: 76 },
-  activationGoalIcon: { width: 42, height: 42, borderRadius: radius.md, backgroundColor: colors.panelRaised, alignItems: 'center', justifyContent: 'center' },
-  activationGoalIconComplete: { backgroundColor: colors.panelWarm },
-  activationGoalCopy: { flex: 1, minWidth: 0 },
-  activationGoalTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  activationGoalLabel: { ...typography.bodyBold, color: colors.ink },
-  activationGoalValue: { ...typography.caption, color: colors.ink, fontWeight: '800' },
-  activationGoalValueComplete: { color: colors.gold },
-  activationGoalDetail: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
-  activationGoalDetailComplete: { color: colors.gold },
-  activationGoalTrack: { height: 4, borderRadius: radius.pill, backgroundColor: colors.panelRaised, overflow: 'hidden', marginTop: spacing.sm },
-  activationGoalFill: { height: '100%', borderRadius: radius.pill, backgroundColor: colors.gold },
-  activationGoalFillComplete: { backgroundColor: colors.gold },
+
 
   trendCard: { gap: 10, padding: spacing.md, backgroundColor: colors.panel },
   metricChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
@@ -1743,14 +1212,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.panel,
   },
   measurementLogIcon: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
+    flexShrink: 0,
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accentLight,
+    backgroundColor: colors.panelRaised,
     borderWidth: 1,
-    borderColor: colors.accentSurface,
+    borderColor: colors.border,
   },
   measurementLogTitle: { ...typography.bodyBold, color: colors.ink, fontWeight: '600', flex: 1, minWidth: 0 },
 

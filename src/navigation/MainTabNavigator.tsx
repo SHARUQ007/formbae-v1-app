@@ -13,9 +13,8 @@ import { shadows } from '../theme/shadows';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-// Keep the first workout surface eager, but defer the large secondary tab
-// modules until the user actually opens them. React Navigation caches each
-// resolved component after the first visit.
+// Resolve tab modules on demand. React Navigation caches each component
+// after its first visit.
 const getDietScreen = () => require('../screens/main/DietScreen').DietScreen;
 const getActionHubScreen = () => require('../screens/main/ActionHubScreen').ActionHubScreen;
 const getProgressNavigator = () => require('./ProgressNavigator').ProgressNavigator;
@@ -66,9 +65,16 @@ function renderContextualActionButton(props: BottomTabBarButtonProps) {
 export function MainTabNavigator() {
   return (
     <Tab.Navigator
+      initialRouteName="Action"
+      // Keep visited native views attached across fast switches. Lazy mounting
+      // still defers each tab until its first visit and preserves its state.
+      detachInactiveScreens={false}
       screenOptions={{
         headerShown: false,
         lazy: true,
+        // An interrupted fade can leave the selected scene transparent.
+        animation: 'none',
+        freezeOnBlur: false,
         tabBarActiveTintColor: colors.gold,
         tabBarInactiveTintColor: colors.inkSubtle,
         tabBarStyle: appTabBarStyle,

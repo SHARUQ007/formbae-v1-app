@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ImageBackground, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Image, ImageBackground, PixelRatio, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image-picker';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -10,6 +10,9 @@ import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIc
 import { ScreenContainer } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState } from '../../components/States';
+import { TrophyIllustration } from '../../components/TrophyIllustration';
+import { AccountabilityViewArt } from '../../components/AccountabilityViewArt';
+import { DailyReadingRoom } from '../../components/DailyReadingRoom';
 import {
   accountabilityBaeProofSource,
   fetchAccountability,
@@ -29,12 +32,13 @@ import { subscribeToTrophySummary } from '../../services/trophyRealtime';
 import type { AccountabilityBaeSummary, AccountabilitySummary, TrophySummary } from '../../types/api';
 import {
   currentMealType,
-  isUsableDietEntry,
-  isMealWindow,
   isToday,
   nextPlanDay,
   peekContextualSnapshot,
   resolveContextualSnapshot,
+  resolveTargetFromSnapshot,
+  suggestedMealToLog,
+  shouldOfferAccountabilityFoodShortcut,
   workoutTitle,
   type ContextualSnapshot,
 } from '../../utils/contextualAction';
@@ -42,6 +46,7 @@ import {
   canCreateAccountabilityCommitment,
   getAccountabilityTaskArtwork,
   getAccountabilityTaskLabel,
+  accountabilityArtworkFrame,
 } from '../../utils/accountabilityArtwork';
 import { getAccountabilityBaeArtwork, getAccountabilityBaeModeCaption } from '../../utils/accountabilityBaeArtwork';
 import type { MainTabParamList } from '../../navigation/types';
@@ -84,6 +89,7 @@ export function ActionHubScreen({ navigation }: Props) {
   const [savingCommitment, setSavingCommitment] = useState(false);
   const [startingTaskKey, setStartingTaskKey] = useState('');
   const [activeView, setActiveView] = useState<'today' | 'bae'>('today');
+  const [contextNow, setContextNow] = useState(() => new Date());
   const [accountabilityUnavailable, setAccountabilityUnavailable] = useState(false);
   const [baeUnavailable, setBaeUnavailable] = useState(false);
   const autoCompletedDate = useRef('');
@@ -145,12 +151,19 @@ export function ActionHubScreen({ navigation }: Props) {
   }, []);
 
   useFocusEffect(useCallback(() => {
+    setContextNow(new Date());
     load().catch(() => undefined);
-    if (!partnerStatus || partnerStatus === 'locked' || partnerStatus === 'inactive') return undefined;
-    const partnerRefresh = setInterval(() => {
+    const contextTimer = setInterval(() => setContextNow(new Date()), 60_000);
+    const foreground = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        setContextNow(new Date());
+        load().catch(() => undefined);
+      }
+    });
+    const partnerRefresh = partnerStatus && partnerStatus !== 'locked' && partnerStatus !== 'inactive' ? setInterval(() => {
       fetchAccountabilityBae({ force: true }).then(applyBaeSummary).catch(() => setBaeUnavailable(true));
-    }, 30_000);
-    return () => clearInterval(partnerRefresh);
+    }, 30_000) : null;
+    return () => { clearInterval(contextTimer); if (partnerRefresh) clearInterval(partnerRefresh); foreground.remove(); };
   }, [applyBaeSummary, load, partnerStatus]));
 
   useEffect(() => {
@@ -179,19 +192,12 @@ export function ActionHubScreen({ navigation }: Props) {
 
   const openTarget = () => {
     if (!snapshot) return;
-    const target = snapshot.target;
+    const target = resolveTargetFromSnapshot(snapshot);
     if (target.kind === 'diet') {
-      navigation.navigate('Diet', { mealType: target.mealType });
+      navigation.navigate('Diet', { action: 'log', requestId: Date.now(), mealType: target.mealType });
       return;
     }
     if (target.kind === 'workout') {
-      if (target.day?.planDayId) {
-        navigation.navigate('Workouts', {
-          screen: 'WorkoutSummary',
-          params: { planDayId: target.day.planDayId, title: workoutTitle(target.day), mode: 'standard' },
-        });
-        return;
-      }
       navigation.navigate('Workouts', { screen: 'WorkoutList' });
       return;
     }
@@ -203,37 +209,23 @@ export function ActionHubScreen({ navigation }: Props) {
   };
 
   const openWorkout = () => {
-    if (!snapshot) return;
-    const plan = snapshot.workoutData?.plan || snapshot.workoutData?.today?.plan;
-    const day = nextPlanDay(plan);
-    if (day?.planDayId) {
-      navigation.navigate('Workouts', {
-        screen: 'WorkoutSummary',
-        params: { planDayId: day.planDayId, title: workoutTitle(day), mode: 'standard' },
-      });
-      return;
-    }
     navigation.navigate('Workouts', { screen: 'WorkoutList' });
   };
 
-  const openFoodMemory = () => {
-    navigation.navigate('Diet', { mealType: currentMealType() });
+  const openFoodMemory = (mealType: ReturnType<typeof currentMealType>) => {
+    navigation.navigate('Diet', { action: 'log', requestId: Date.now(), mealType });
   };
 
   const openCommitment = () => {
     const commitment = accountability?.today;
     if (!commitment || !snapshot) return openTarget();
     if (commitment.targetKind === 'diet') {
-      navigation.navigate('Diet', { mealType: commitment.targetId as ReturnType<typeof currentMealType> });
+      navigation.navigate('Diet', { action: 'log', requestId: Date.now(), mealType: commitment.targetId as ReturnType<typeof currentMealType> });
       return;
     }
     if (commitment.targetKind === 'workout') {
-      const plan = snapshot.workoutData?.plan || snapshot.workoutData?.today?.plan;
-      const day = plan?.days?.find((item) => item.planDayId === commitment.targetId);
-      if (day) {
-        navigation.navigate('Workouts', { screen: 'WorkoutSummary', params: { planDayId: day.planDayId, title: workoutTitle(day), mode: 'standard' } });
-        return;
-      }
+      openWorkout();
+      return;
     }
     if (commitment.targetKind === 'refresh') {
       navigation.navigate('Workouts', { screen: 'PlanRefresh' });
@@ -393,39 +385,39 @@ export function ActionHubScreen({ navigation }: Props) {
   }
 
   const plan = snapshot.workoutData?.plan || snapshot.workoutData?.today?.plan;
-  const dateLabel = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
+  const dateLabel = contextNow.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
   const commitment = accountability?.today;
-  const commitmentActive = commitment?.status === 'active';
+  const commitmentActive = commitment?.status === 'active' && !commitmentMet(commitment.targetKind, commitment.targetId, snapshot);
   const nextWorkout = nextPlanDay(plan);
-  const mealType = currentMealType();
-  const usableDietEntries = snapshot.dietEntries.filter(isUsableDietEntry);
-  const currentMealLogged = usableDietEntries.some(
-    (entry) => isToday(entry.createdAt)
-      && entry.mealType === mealType
-  );
+  const mealType = suggestedMealToLog(snapshot.dietEntries, contextNow) || currentMealType(contextNow);
   const todayTasks: TodayTask[] = [];
   if (commitmentActive) {
+    const isDietCommitment = commitment.targetKind === 'diet';
     todayTasks.push({
       key: `active:${commitment.targetKind}:${commitment.targetId}`,
       kind: commitment.targetKind,
       targetId: commitment.targetId,
-      title: commitment.title,
-      detail: 'Ready to continue',
-      action: 'Continue',
+      title: isDietCommitment ? 'Log food' : commitment.title,
+      detail: isDietCommitment ? 'Add what you ate while it is fresh' : 'Ready to continue',
+      action: isDietCommitment ? 'Add a meal' : 'Continue',
       onOpen: openCommitment,
       active: true,
     });
   }
-  if ((isMealWindow() || usableDietEntries.length === 0) && !currentMealLogged) {
-    const firstMeal = usableDietEntries.length === 0;
+  if (shouldOfferAccountabilityFoodShortcut(
+    snapshot.dietEntries,
+    commitmentActive ? commitment.targetKind : undefined,
+    contextNow,
+  )) {
     todayTasks.push({
       key: `diet:${mealType}`,
       kind: 'diet',
       targetId: mealType,
-      title: firstMeal ? 'Log your first meal' : `Replay your ${mealType.toLowerCase()}`,
-      detail: firstMeal ? 'Start building your food memory' : 'Recall it one item at a time',
-      action: firstMeal ? 'Add' : 'Play',
-      onOpen: openFoodMemory,
+      title: 'Log food',
+      detail: `Remember your ${mealType === 'Evening' ? 'evening snack' : mealType.toLowerCase()}`,
+      action: 'Add a meal',
+      onOpen: () => openFoodMemory(mealType),
+      committable: false,
     });
   }
   if (nextWorkout?.planDayId && !nextWorkout.completed) {
@@ -483,13 +475,13 @@ export function ActionHubScreen({ navigation }: Props) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
         contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
       >
-        <View style={styles.pageHeader}>
+        <View style={[styles.pageHeader, compactLayout && styles.pageHeaderCompact]}>
           <View style={styles.pageHeaderCopy}>
             <Text style={styles.kicker}>{dateLabel}</Text>
             <Text style={styles.pageTitle}>Accountability</Text>
           </View>
           <TouchableOpacity style={styles.trophyButton} onPress={() => navigation.navigate('Progress')} activeOpacity={0.76} accessibilityRole="button" accessibilityLabel={trophies ? `${trophies.score} trophies. View trophy progress` : 'Trophy score unavailable. View trophy progress'}>
-            <MaterialCommunityIcon name="trophy-outline" size={20} color={colors.gold} />
+            <TrophyIllustration size={28} />
             <View style={styles.trophyButtonCopy}>
               <Text style={styles.trophyButtonValue}>{trophies?.score ?? '—'}</Text>
             </View>
@@ -526,7 +518,6 @@ export function ActionHubScreen({ navigation }: Props) {
                 <TodayTaskCard
                   key={task.key}
                   task={task}
-                  featured={uniqueTodayTasks.length === 1}
                   loading={startingTaskKey === task.key}
                   onPress={() => startTodayTask(task)}
                 />
@@ -556,7 +547,7 @@ export function ActionHubScreen({ navigation }: Props) {
             />
           </>
         )}
-
+        {activeView === 'today' ? <DailyReadingRoom /> : null}
       </ScrollView>
     </ScreenContainer>
   );
@@ -577,7 +568,7 @@ export function AccountabilityModeSwitch({ activeView, partnerStatus, partnerLoa
     <View style={styles.accountabilityTabs} accessibilityRole="tablist" accessibilityLabel="Accountability views">
       <AccountabilityModeOption
         active={activeView === 'today'}
-        icon="sun"
+        art="day"
         label="My day"
         caption="Your focus"
         compact={compact}
@@ -585,7 +576,7 @@ export function AccountabilityModeSwitch({ activeView, partnerStatus, partnerLoa
       />
       <AccountabilityModeOption
         active={activeView === 'bae'}
-        icon="users"
+        art="partner"
         label="Partner"
         caption={partnerCaption}
         compact={compact}
@@ -595,9 +586,9 @@ export function AccountabilityModeSwitch({ activeView, partnerStatus, partnerLoa
   );
 }
 
-function AccountabilityModeOption({ active, icon, label, caption, compact, onPress }: {
+function AccountabilityModeOption({ active, art, label, caption, compact, onPress }: {
   active: boolean;
-  icon: string;
+  art: 'day' | 'partner';
   label: string;
   caption: string;
   compact: boolean;
@@ -616,11 +607,10 @@ function AccountabilityModeOption({ active, icon, label, caption, compact, onPre
         style={[
           styles.accountabilityTabIcon,
           compact && styles.accountabilityTabIconCompact,
-          active && styles.accountabilityTabIconActive,
         ]}
         accessible={false}
       >
-        <Feather name={icon} size={compact ? 20 : 22} color={active ? colors.onPrimary : colors.gold} />
+        <AccountabilityViewArt kind={art} size={compact ? 26 : 30} />
       </View>
       <View style={styles.accountabilityTabCopy}>
         <Text style={[styles.accountabilityTabText, active && styles.accountabilityTabTextActive]} numberOfLines={1}>{label}</Text>
@@ -946,8 +936,14 @@ function commitmentMet(kind: string, targetId: string, snapshot: ContextualSnaps
   return false;
 }
 
-function TodayTaskCard({ task, featured, loading, onPress }: { task: TodayTask; featured: boolean; loading: boolean; onPress: () => void }) {
-  const title = String(task.title || '').trim() || 'Open today\'s task';
+function TodayTaskCard({ task, loading, onPress }: { task: TodayTask; loading: boolean; onPress: () => void }) {
+  const { width, fontScale } = useWindowDimensions();
+  const compact = width < 360 || fontScale >= 1.3;
+  const [artworkLayout, setArtworkLayout] = useState({ width: 0, height: 0 });
+  const artwork = getAccountabilityTaskArtwork(task.kind);
+  const artworkSize = Image.resolveAssetSource(artwork);
+  const artworkFrame = artworkSize ? accountabilityArtworkFrame(artworkLayout, artworkSize, PixelRatio.get()) : undefined;
+  const title = String(task.title || '').trim() || "Open today's task";
   const detail = String(task.detail || '').trim() || 'Ready when you are';
   const action = String(task.action || '').trim() || 'Open';
   return (
@@ -960,46 +956,29 @@ function TodayTaskCard({ task, featured, loading, onPress }: { task: TodayTask; 
       accessibilityLabel={`${title}. ${detail}. ${action}`}
       accessibilityState={{ busy: loading }}
     >
-      <ImageBackground
-        source={getAccountabilityTaskArtwork(task.kind)}
-        style={[styles.todayTaskArtwork, featured && styles.todayTaskArtworkFeatured]}
-        resizeMode="cover"
-        accessible={false}
-      >
-        <LinearGradient
-          colors={['rgba(4,5,8,0.98)', 'rgba(4,5,8,0.88)', 'rgba(4,5,8,0.18)']}
-          locations={[0, 0.56, 1]}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-        <View style={styles.todayTaskCardContent}>
-          <View style={styles.todayTaskCardTop}>
-            <View style={styles.todayTaskCategory}>
-              <View style={styles.todayTaskCategoryDot} />
-              <Text style={styles.todayTaskCategoryText} numberOfLines={1}>{getAccountabilityTaskLabel(task.kind)}</Text>
-            </View>
-          </View>
-
-          <View style={styles.todayTaskCardBottom}>
-            <View style={styles.todayTaskCardCopy}>
-              <Text style={styles.todayTaskCardTitle} numberOfLines={2} ellipsizeMode="tail">{title}</Text>
-              <Text style={styles.todayTaskCardDetail} numberOfLines={1} ellipsizeMode="tail">{detail}</Text>
-            </View>
+      <View style={[styles.todayTaskArtwork, compact && styles.todayTaskArtworkCompact]}>
+        <View pointerEvents="none" style={styles.todayTaskImageWindow}
+          onLayout={({ nativeEvent: { layout } }) => setArtworkLayout({ width: layout.width, height: layout.height })}>
+          <Image source={artwork} resizeMode="contain" resizeMethod="scale" accessible={false}
+            style={[styles.todayTaskImage, artworkFrame]} />
+        </View>
+        <LinearGradient colors={[colors.bg, 'rgba(5,6,10,0.74)', 'rgba(5,6,10,0)']}
+          locations={[0, 0.53, 0.94]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }}
+          style={StyleSheet.absoluteFill} pointerEvents="none" />
+        <View style={styles.todayTaskContent}>
+          <Text style={styles.todayTaskCategoryText}>{getAccountabilityTaskLabel(task.kind)}</Text>
+          <View style={[styles.todayTaskCardCopy, compact && styles.todayTaskCardCopyCompact]}>
+            <Text style={styles.todayTaskCardTitle}>{title}</Text>
+            <Text style={styles.todayTaskCardDetail}>{detail}</Text>
             <View style={styles.todayTaskCardAction}>
-              {loading ? (
-                <ActivityIndicator size="small" color={colors.onPrimary} />
-              ) : (
-                <>
-                  <Text style={styles.todayTaskCardActionText} numberOfLines={1}>{action}</Text>
-                  <Feather name="arrow-right" size={16} color={colors.onPrimary} />
-                </>
-              )}
+              {loading ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <>
+                <Text style={styles.todayTaskCardActionText}>{action}</Text>
+                <Feather name="arrow-right" size={16} color={colors.onPrimary} />
+              </>}
             </View>
           </View>
         </View>
-      </ImageBackground>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -1007,10 +986,11 @@ function TodayTaskCard({ task, featured, loading, onPress }: { task: TodayTask; 
 const styles = StyleSheet.create({
   scroll: { flexGrow: 1 },
   pageHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
-  pageHeaderCopy: { flex: 1, minWidth: 0 },
+  pageHeaderCompact: { flexWrap: 'wrap' },
+  pageHeaderCopy: { flexGrow: 1, flexShrink: 1, minWidth: 200 },
   kicker: { ...typography.overline, color: colors.inkSubtle, textTransform: 'uppercase' },
-  pageTitle: { ...typography.display, color: colors.inkStrong, marginTop: 2 },
-  trophyButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, paddingHorizontal: spacing.sm },
+  pageTitle: { ...typography.hero, color: colors.inkStrong, marginTop: 5 },
+  trophyButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.xs, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, paddingHorizontal: 10 },
   trophyButtonCopy: { minWidth: 24 },
   trophyButtonValue: { fontSize: 17, lineHeight: 19, color: colors.ink, fontWeight: '900' },
   trophyButtonLabel: { fontSize: 9, lineHeight: 11, color: colors.inkMuted, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -1022,18 +1002,17 @@ const styles = StyleSheet.create({
   inlineNoticeBody: { ...typography.caption, color: colors.inkMuted, lineHeight: 17, marginTop: 1 },
   inlineNoticeAction: { minHeight: 36, justifyContent: 'center', paddingHorizontal: spacing.sm },
   inlineNoticeActionText: { ...typography.caption, color: colors.gold, fontWeight: '900' },
-  accountabilityTabs: { flexDirection: 'row', gap: spacing.xs, borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.lg, backgroundColor: colors.bg, padding: spacing.xs, marginTop: spacing.lg },
-  accountabilityTab: { flex: 1, minWidth: 0, minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: 'transparent', borderRadius: radius.md, padding: 5 },
-  accountabilityTabActive: { borderColor: colors.gold, backgroundColor: colors.gold },
-  accountabilityTabIcon: { width: 48, height: 48, flexShrink: 0, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panelRaised },
-  accountabilityTabIconCompact: { width: 40, height: 40 },
-  accountabilityTabIconActive: { borderColor: 'rgba(0,0,0,0.22)', backgroundColor: 'rgba(8,9,12,0.08)' },
+  accountabilityTabs: { flexDirection: 'row', gap: 4, borderWidth: 1, borderColor: colors.border, borderRadius: 18, backgroundColor: colors.panel, padding: 4, marginTop: 20 },
+  accountabilityTab: { flex: 1, minWidth: 0, minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: 'transparent', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 8 },
+  accountabilityTabActive: { borderColor: colors.borderStrong, backgroundColor: colors.panelRaised },
+  accountabilityTabIcon: { width: 30, height: 32, flexShrink: 0, alignItems: 'center', justifyContent: 'center' },
+  accountabilityTabIconCompact: { width: 26 },
   accountabilityTabCopy: { flex: 1, minWidth: 0 },
-  accountabilityTabText: { ...typography.label, color: colors.ink, fontWeight: '800' },
-  accountabilityTabTextActive: { color: colors.onPrimary },
-  accountabilityTabCaption: { fontSize: 10, lineHeight: 12, color: colors.inkMuted, fontWeight: '600', marginTop: 1 },
-  accountabilityTabCaptionActive: { color: 'rgba(8,9,12,0.68)' },
-  todayDashboard: { flex: 1 },
+  accountabilityTabText: { ...typography.label, color: colors.inkMuted, fontWeight: '700' },
+  accountabilityTabTextActive: { color: colors.gold },
+  accountabilityTabCaption: { fontSize: 10, lineHeight: 14, color: colors.inkSubtle, fontWeight: '500', marginTop: 1 },
+  accountabilityTabCaptionActive: { color: colors.inkMuted },
+  todayDashboard: { gap: 10 },
   todayHero: { marginTop: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.md },
   todayHeroTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   todayHeroKicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
@@ -1044,25 +1023,24 @@ const styles = StyleSheet.create({
   todayHeroRule: { height: 5, flexDirection: 'row', gap: 5, marginTop: spacing.md },
   todayHeroSegment: { flex: 1, borderRadius: radius.pill, backgroundColor: colors.borderStrong },
   todayHeroSegmentActive: { backgroundColor: colors.gold },
-  todayQueueHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.xs, marginTop: spacing.md },
+  todayQueueHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 2, marginTop: 14 },
   todayQueueTitle: { ...typography.bodyBold, color: colors.ink },
-  todayQueueCount: { ...typography.caption, color: colors.inkMuted, fontWeight: '700' },
+  todayQueueCount: { ...typography.caption, color: colors.inkMuted, backgroundColor: colors.panel, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 4 },
   todayTaskList: { gap: spacing.sm },
-  todayTaskCard: { overflow: 'hidden', borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panel },
+  todayTaskCard: { overflow: 'hidden', borderRadius: 22, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.bg },
   todayTaskCardActive: { borderColor: colors.gold },
-  todayTaskArtwork: { minHeight: 204 },
-  todayTaskArtworkFeatured: { minHeight: 292 },
-  todayTaskCardContent: { flex: 1, minHeight: 204, justifyContent: 'space-between', padding: spacing.md },
-  todayTaskCardTop: { minHeight: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
-  todayTaskCategory: { maxWidth: '76%', flexDirection: 'row', alignItems: 'center', gap: 7 },
-  todayTaskCategoryDot: { width: 7, height: 7, borderRadius: radius.pill, backgroundColor: colors.gold },
-  todayTaskCategoryText: { ...typography.overline, flexShrink: 1, color: colors.gold },
-  todayTaskCardBottom: { alignItems: 'flex-start', marginTop: spacing.lg },
-  todayTaskCardCopy: { width: '72%', minWidth: 0 },
-  todayTaskCardTitle: { fontSize: 22, lineHeight: 26, color: colors.inkStrong, fontWeight: '800', letterSpacing: -0.3 },
-  todayTaskCardDetail: { ...typography.caption, color: colors.inkMuted, marginTop: spacing.xs },
-  todayTaskCardAction: { minWidth: 88, minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, borderRadius: radius.pill, backgroundColor: colors.gold, paddingHorizontal: spacing.md, marginTop: spacing.md },
-  todayTaskCardActionText: { ...typography.label, color: colors.onPrimary, fontWeight: '900' },
+  todayTaskArtwork: { minHeight: 208, overflow: 'hidden' },
+  todayTaskArtworkCompact: { minHeight: 228 },
+  todayTaskImageWindow: { position: 'absolute', top: 0, right: 0, bottom: 0, width: '78%', overflow: 'hidden' },
+  todayTaskImage: { position: 'absolute', bottom: 0, width: '100%', height: '100%' },
+  todayTaskContent: { flexGrow: 1, minHeight: 208, justifyContent: 'space-between', padding: 16, gap: 24 },
+  todayTaskCardCopy: { width: '76%', minWidth: 0, gap: 8 },
+  todayTaskCardCopyCompact: { width: '100%' },
+  todayTaskCategoryText: { ...typography.overline, fontSize: 10, letterSpacing: 1.5, color: colors.gold },
+  todayTaskCardTitle: { fontSize: 22, lineHeight: 28, color: colors.inkStrong, fontWeight: '800', letterSpacing: -0.3, textShadowColor: 'rgba(0,0,0,0.7)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 5 },
+  todayTaskCardDetail: { ...typography.caption, color: colors.inkMuted },
+  todayTaskCardAction: { alignSelf: 'flex-start', minWidth: 104, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: radius.pill, backgroundColor: colors.gold, paddingHorizontal: 18, paddingVertical: 10, marginTop: 8 },
+  todayTaskCardActionText: { ...typography.label, color: colors.onPrimary, fontWeight: '800' },
   partnerSection: { paddingBottom: spacing.sm, marginTop: spacing.lg },
   baeHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, marginBottom: spacing.sm, paddingHorizontal: 2 },
   baeHeaderCopy: { flex: 1, minWidth: 0 },

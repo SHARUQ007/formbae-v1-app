@@ -1,0 +1,150 @@
+{
+  "method": "built-in imagegen",
+  "created": "2026-09-09",
+  "assets": [
+    {
+      "id": "diet-cover-1",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: An overhead composition of a matte ceramic bowl of dal, folded roti, cucumber and tomato salad; an ordinary balanced Indian home meal. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-f51c0269-fa08-45d0-abab-0805d677b4eb.png",
+      "asset": "app/src/assets/editorial/report-library/diet-cover-1.jpg"
+    },
+    {
+      "id": "diet-cover-2",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: A three-quarter still life of a bowl of chickpeas with spinach, brown rice and roasted carrots, arranged on dark linen. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-2bb0e03e-991c-4689-83a3-15a12400cd15.png",
+      "asset": "app/src/assets/editorial/report-library/diet-cover-2.jpg"
+    },
+    {
+      "id": "diet-cover-3",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: An overhead composition of savory vegetable oats, a small bowl of plain curd, guava wedges and a steel spoon on a stone tabletop. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-3e735c65-a979-4f8f-80c3-305b0678baf0.png",
+      "asset": "app/src/assets/editorial/report-library/diet-cover-3.jpg"
+    },
+    {
+      "id": "weekly-cover-1",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: A pair of black adjustable dumbbells, a folded cotton towel and an open blank ruled training journal with a pencil, photographed from above. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-b0859d04-1809-4c67-9cef-1e2ca34580c7.png",
+      "asset": "app/src/assets/editorial/report-library/weekly-cover-1.jpg"
+    },
+    {
+      "id": "weekly-cover-2",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: A rolled slate exercise mat, a single kettlebell and a loosely coiled resistance band, photographed at a low three-quarter angle. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-0e803bfd-16aa-4bd4-984d-80699a7d3e9b.png",
+      "asset": "app/src/assets/editorial/report-library/weekly-cover-2.jpg"
+    },
+    {
+      "id": "weekly-cover-3",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: Clean neutral running shoes, a dark water bottle and a folded training towel beside an open blank paper planner, overhead composition. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-afb21b51-34d3-43ae-b3b9-cd5cd061ede8.png",
+      "asset": "app/src/assets/editorial/report-library/weekly-cover-3.jpg"
+    },
+    {
+      "id": "nutrition-article-1",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: A market basket of broccoli, red bell pepper, cucumber and leafy greens, carefully composed close-up. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-f27b8306-e972-480c-a7ec-0b28dc0b3c21.png",
+      "asset": "app/src/assets/editorial/report-library/nutrition-article-1.jpg"
+    },
+    {
+      "id": "nutrition-article-2",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: Guava halves, papaya slices and an orange in a shallow handmade ceramic bowl, still life. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-4e9e76c9-0a78-4ab2-a15b-4041f774931b.png",
+      "asset": "app/src/assets/editorial/report-library/nutrition-article-2.jpg"
+    },
+    {
+      "id": "nutrition-article-3",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: Dry lentils, chickpeas and mung beans in three small stoneware dishes with a wooden scoop, overhead still life. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-4ed553ab-e155-4ba1-a96c-e403c947ba01.png",
+      "asset": "app/src/assets/editorial/report-library/nutrition-article-3.jpg"
+    },
+    {
+      "id": "nutrition-article-4",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: A bowl of plain curd with almonds alongside a small plate of boiled eggs, close three-quarter composition. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-237a60bf-71d2-4290-b75c-31bb37aa3e90.png",
+      "asset": "app/src/assets/editorial/report-library/nutrition-article-4.jpg"
+    },
+    {
+      "id": "nutrition-article-5",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: Uncooked oats, a small bowl of quinoa and whole wheat grains on folded natural linen, overhead composition. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-37f2c3a4-5fcd-48cd-b830-8d2b59d0cde8.png",
+      "asset": "app/src/assets/editorial/report-library/nutrition-article-5.jpg"
+    },
+    {
+      "id": "nutrition-article-6",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: A clear glass of water, lime wedges and mint sprigs beside an unmarked dark pitcher, crisp neutral light. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-2a4a046d-534f-4004-af13-8dea6a9b630b.png",
+      "asset": "app/src/assets/editorial/report-library/nutrition-article-6.jpg"
+    },
+    {
+      "id": "nutrition-article-7",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: A home preparation of chopped tomato, cucumber and carrots on a dark cutting board, one ordinary kitchen knife resting safely alongside. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-8e971b0f-bde1-4169-b049-9715ca3f6542.png",
+      "asset": "app/src/assets/editorial/report-library/nutrition-article-7.jpg"
+    },
+    {
+      "id": "nutrition-article-8",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: Peanuts, almonds, sesame seeds and a spoon of peanut butter in separate small dishes, close tactile still life. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-58ae880f-22bd-4527-863f-65da8b7c9b09.png",
+      "asset": "app/src/assets/editorial/report-library/nutrition-article-8.jpg"
+    },
+    {
+      "id": "nutrition-article-9",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: A simple packed lunch in an open unbranded steel lunchbox: rice, dal and green vegetables, photographed overhead. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-56c9f167-d533-4f3a-b5e8-9993e24b435b.png",
+      "asset": "app/src/assets/editorial/report-library/nutrition-article-9.jpg"
+    },
+    {
+      "id": "training-article-1",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: Close-up of a black dumbbell and a pair of lifting straps on a textured rubber gym floor, quiet focused composition. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-30627772-784b-4ca6-a3aa-ba4ebf642784.png",
+      "asset": "app/src/assets/editorial/report-library/training-article-1.jpg"
+    },
+    {
+      "id": "training-article-2",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: A looped sage resistance band draped beside a wooden exercise block and a rolled mat, three-quarter angle. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-bc459cc9-211a-4e06-ac89-67e547c024b8.png",
+      "asset": "app/src/assets/editorial/report-library/training-article-2.jpg"
+    },
+    {
+      "id": "training-article-3",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: A plain workout bench edge, a dark kettlebell and a folded towel, tightly composed still life without people. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-b63f850d-937a-461d-ac06-6953cc75e1b7.png",
+      "asset": "app/src/assets/editorial/report-library/training-article-3.jpg"
+    },
+    {
+      "id": "recovery-article-1",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: A foam roller, cork massage ball and folded ivory towel on slate linen, calm natural light. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-3c042d4d-e0d7-4d75-a2e7-0aa73cc6518c.png",
+      "asset": "app/src/assets/editorial/report-library/recovery-article-1.jpg"
+    },
+    {
+      "id": "recovery-article-2",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: A soft folded blanket and an eye mask next to a glass of water on a dark bedside table, neutral diffused daylight. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-bcee7b7b-1308-489d-b7a3-05a6aa3dbc7f.png",
+      "asset": "app/src/assets/editorial/report-library/recovery-article-2.jpg"
+    },
+    {
+      "id": "recovery-article-3",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: A loosely draped stretching strap, yoga bolster and folded mat in quiet charcoal tones, close-up still life. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-d83e0333-1a55-43de-920c-6b5a267aa5e2.png",
+      "asset": "app/src/assets/editorial/report-library/recovery-article-3.jpg"
+    },
+    {
+      "id": "habits-article-1",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: An open blank ruled notebook with a pencil, small unmarked paper calendar cards and a simple glass of water, overhead. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-c1df2684-19b9-4492-9138-f769129bb284.png",
+      "asset": "app/src/assets/editorial/report-library/habits-article-1.jpg"
+    },
+    {
+      "id": "habits-article-2",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: A fabric tape measure loosely coiled beside a blank journal and pencil, no readable numerals, quiet tracking still life. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-c6b9cb0d-97c3-4de1-b6b6-735397260c1f.png",
+      "asset": "app/src/assets/editorial/report-library/habits-article-2.jpg"
+    },
+    {
+      "id": "habits-article-3",
+      "prompt": "Use case: photorealistic-natural. Generate one wide landscape editorial photograph for a premium fitness and nutrition report. Subject: A pair of neutral walking shoes beside a small blank pocket notebook and unbranded water bottle, grounded everyday still life. Flat near-black charcoal backdrop with tactile stone, ceramic, rubber or linen as appropriate. Soft neutral window light, restrained natural colors, ivory and muted sage accents. Professional magazine composition with recognizable objects at small mobile-card size. Subject fills the middle of a landscape crop with generous dark edges. No people, no text, no letters, no numbers, no logos, no watermarks, no yellow lighting, no golden haze, no glows or artificial gradients. This is illustrative editorial artwork, not a photo of a user's logged meal. Create this single scene only, not a collage or contact sheet.",
+      "original": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-7b9b209f-6052-4adf-9d74-7239f124676a.png",
+      "asset": "app/src/assets/editorial/report-library/habits-article-3.jpg"
+    }
+  ]
+}

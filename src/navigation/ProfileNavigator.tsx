@@ -2,6 +2,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ProfileScreen } from '../screens/main/ProfileScreen';
 import type { ProfileStackParamList } from './types';
 import { colors } from '../theme/colors';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
 const getEditProfileScreen = () => require('../screens/profile/EditProfileScreen').EditProfileScreen;
@@ -11,9 +12,13 @@ const getLegalScreen = () => require('../screens/legal/LegalScreen').LegalScreen
 const getDeleteAccountScreen = () => require('../screens/profile/DeleteAccountScreen').DeleteAccountScreen;
 
 export function ProfileNavigator() {
+  const reduceMotion = useReducedMotion();
   return (
     <Stack.Navigator
       screenOptions={{
+        gestureEnabled: true,
+        animation: reduceMotion ? 'none' : 'slide_from_right',
+        animationDuration: 260,
         headerTitle: '',
         headerBackButtonDisplayMode: 'minimal',
         headerBackTitle: '',
@@ -21,6 +26,7 @@ export function ProfileNavigator() {
         headerStyle: { backgroundColor: colors.bg },
         headerShadowVisible: false,
         headerTitleStyle: { color: colors.ink },
+        contentStyle: { backgroundColor: colors.bg },
       }}
     >
       <Stack.Screen name="ProfileMain" component={ProfileScreen} options={{ headerShown: false }} />

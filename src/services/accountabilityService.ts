@@ -2,6 +2,7 @@ import type { Asset } from 'react-native-image-picker';
 import { apiRequest, getApiUrl, getAuthToken } from './apiClient';
 import { getCachedResource, peekCachedResource, setCachedResource } from './appCache';
 import type { AccountabilityBaeSummary, AccountabilitySummary } from '../types/api';
+import { formatWorkoutTitle } from '../utils/workoutTitle';
 
 const ACCOUNTABILITY_CACHE_KEY = 'accountability:summary:v1';
 const ACCOUNTABILITY_BAE_CACHE_KEY = 'accountability:bae:v1';
@@ -91,16 +92,22 @@ function requireBaeSummary(value: unknown) {
   return summary;
 }
 
+function normalizeAccountabilitySummary(summary: AccountabilitySummary): AccountabilitySummary {
+  if (summary.today?.targetKind !== 'workout') return summary;
+  return { ...summary, today: { ...summary.today, title: formatWorkoutTitle(summary.today.title) } };
+}
+
 export function fetchAccountability(options?: { force?: boolean }) {
   return getCachedResource(
     ACCOUNTABILITY_CACHE_KEY,
     () => apiRequest<AccountabilitySummary>('/accountability'),
     { force: options?.force },
-  );
+  ).then(normalizeAccountabilitySummary);
 }
 
 export function peekAccountability() {
-  return peekCachedResource<AccountabilitySummary>(ACCOUNTABILITY_CACHE_KEY);
+  const summary = peekCachedResource<AccountabilitySummary>(ACCOUNTABILITY_CACHE_KEY);
+  return summary ? normalizeAccountabilitySummary(summary) : null;
 }
 
 export function updateAccountability(body: {
@@ -109,7 +116,10 @@ export function updateAccountability(body: {
   targetId?: string;
   title?: string;
 }) {
-  return apiRequest<AccountabilitySummary>('/accountability', { method: 'POST', body }).then((summary) => {
+  const requestBody = body.targetKind === 'workout' && typeof body.title === 'string'
+    ? { ...body, title: formatWorkoutTitle(body.title) }
+    : body;
+  return apiRequest<AccountabilitySummary>('/accountability', { method: 'POST', body: requestBody }).then(normalizeAccountabilitySummary).then((summary) => {
     setCachedResource(ACCOUNTABILITY_CACHE_KEY, summary);
     return summary;
   });

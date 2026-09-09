@@ -1,0 +1,41 @@
+{
+  "generator": "Built-in image_gen",
+  "images": [
+    {
+      "key": "snack-1",
+      "prompt": "Use case: photorealistic-natural. Asset type: original editorial thumbnail for a practical nutrition action card in a premium dark mobile app. A small charcoal plate with sliced guava and a separate tiny ceramic bowl of roasted chickpeas, loose linen napkin. Square photograph, close still-life, whole subjects contained in the central 80 percent, attractive elevated three-quarter view. Matte near-black charcoal backdrop matching #111217, soft neutral daylight, crisp food and glass textures, restrained natural colors. Authentic everyday objects, contemporary food magazine photography, no glow, no yellow gradients, no text, no logos, no people, no hands. This is a standalone image, not a UI mockup. No eggs, meat, fish, dairy, nuts, supplements, printed labels or prescriptions.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-2682f92b-ecd3-4002-8a98-b007ab7f2842.png",
+      "destination": "app/src/assets/editorial/actions/snack-1.jpg"
+    },
+    {
+      "key": "snack-2",
+      "prompt": "Use case: photorealistic-natural. Asset type: original editorial thumbnail for a practical nutrition action card in a premium dark mobile app. A matte charcoal ceramic bowl of mandarin segments with a small open glass jar of roasted chickpeas beside it, folded slate napkin. Square photograph, close still-life, whole subjects contained in the central 80 percent, attractive elevated three-quarter view. Matte near-black charcoal backdrop matching #111217, soft neutral daylight, crisp food and glass textures, restrained natural colors. Authentic everyday objects, contemporary food magazine photography, no glow, no yellow gradients, no text, no logos, no people, no hands. This is a standalone image, not a UI mockup. No eggs, meat, fish, dairy, nuts, supplements, printed labels or prescriptions.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-6bc8b30c-3ee7-4903-8ced-0ccf8fe979fc.png",
+      "destination": "app/src/assets/editorial/actions/snack-2.jpg"
+    },
+    {
+      "key": "snack-3",
+      "prompt": "Use case: photorealistic-natural. Asset type: original editorial thumbnail for a practical nutrition action card in a premium dark mobile app. Fresh apple wedges on a charcoal plate beside a tiny bowl of dry roasted lentils, soft grey linen corner. Square photograph, close still-life, whole subjects contained in the central 80 percent, attractive elevated three-quarter view. Matte near-black charcoal backdrop matching #111217, soft neutral daylight, crisp food and glass textures, restrained natural colors. Authentic everyday objects, contemporary food magazine photography, no glow, no yellow gradients, no text, no logos, no people, no hands. This is a standalone image, not a UI mockup. No eggs, meat, fish, dairy, nuts, supplements, printed labels or prescriptions.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-10e7781a-896b-4aac-a526-dd4e4165e77a.png",
+      "destination": "app/src/assets/editorial/actions/snack-3.jpg"
+    },
+    {
+      "key": "water-1",
+      "prompt": "Use case: photorealistic-natural. Asset type: original editorial thumbnail for a practical nutrition action card in a premium dark mobile app. A clear low water glass beside a smoke-grey glass carafe with fresh condensation and a folded charcoal dinner napkin. Square photograph, close still-life, whole subjects contained in the central 80 percent, attractive elevated three-quarter view. Matte near-black charcoal backdrop matching #111217, soft neutral daylight, crisp food and glass textures, restrained natural colors. Authentic everyday objects, contemporary food magazine photography, no glow, no yellow gradients, no text, no logos, no people, no hands. This is a standalone image, not a UI mockup. No eggs, meat, fish, dairy, nuts, supplements, printed labels or prescriptions.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-ed509ada-69e3-43df-b9bd-1e2ff9675efd.png",
+      "destination": "app/src/assets/editorial/actions/water-1.jpg"
+    },
+    {
+      "key": "water-2",
+      "prompt": "Use case: photorealistic-natural. Asset type: original editorial thumbnail for a practical nutrition action card in a premium dark mobile app. A transparent drinking-water bottle and a clear water tumbler on a dark stone coaster, folded slate dinner napkin. Square photograph, close still-life, whole subjects contained in the central 80 percent, attractive elevated three-quarter view. Matte near-black charcoal backdrop matching #111217, soft neutral daylight, crisp food and glass textures, restrained natural colors. Authentic everyday objects, contemporary food magazine photography, no glow, no yellow gradients, no text, no logos, no people, no hands. This is a standalone image, not a UI mockup. No eggs, meat, fish, dairy, nuts, supplements, printed labels or prescriptions.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-af5d0914-d8af-43bb-bbf2-26e0263c59bc.png",
+      "destination": "app/src/assets/editorial/actions/water-2.jpg"
+    },
+    {
+      "key": "water-3",
+      "prompt": "Use case: photorealistic-natural. Asset type: original editorial thumbnail for a practical nutrition action card in a premium dark mobile app. A clear faceted water glass and a small transparent water jug on a charcoal tabletop, soft grey linen corner. Square photograph, close still-life, whole subjects contained in the central 80 percent, attractive elevated three-quarter view. Matte near-black charcoal backdrop matching #111217, soft neutral daylight, crisp food and glass textures, restrained natural colors. Authentic everyday objects, contemporary food magazine photography, no glow, no yellow gradients, no text, no logos, no people, no hands. This is a standalone image, not a UI mockup. No eggs, meat, fish, dairy, nuts, supplements, printed labels or prescriptions.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-b3d68651-80ab-4e58-ad6e-8f0592d25972.png",
+      "destination": "app/src/assets/editorial/actions/water-3.jpg"
+    }
+  ]
+}

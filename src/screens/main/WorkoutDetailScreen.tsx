@@ -33,6 +33,7 @@ import {
   saveWorkoutProgress,
   clearWorkoutProgress,
 } from '../../store/workoutStore';
+import { WorkoutRestDock } from '../../components/WorkoutRestDock';
 import { useRestTimer } from '../../hooks/useRestTimer';
 import { deriveWorkoutResumeIndex, remainingRestSeconds } from '../../hooks/useWorkoutSession';
 import { WorkoutPrimaryCTA } from '../../features/workout/components/WorkoutPrimaryCTA';
@@ -647,6 +648,15 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     setMovementStarted(true);
     setSetPaused(false);
     setSetElapsed(0);
+    saveWorkoutProgress({
+      planDayId,
+      completedExerciseIds: Array.from(completed),
+      setProgressByExercise: setProgress,
+      setLogsByExercise: setLogs,
+      selectedAlternatesByExercise: selectedAlternates,
+      activeExerciseId,
+      updatedAt: new Date().toISOString(),
+    }).catch(() => undefined);
   };
 
   const completeActiveSet = () => {
@@ -1072,7 +1082,14 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       </ScrollView>
 
       <View style={[styles.actionDock, { paddingBottom: insets.bottom + spacing.sm }]}>
-        {movementStarted && !timer.running ? (
+        {timer.running ? (
+          <WorkoutRestDock
+            remaining={timer.remaining}
+            nextLabel={restTargetLabel}
+            onAddTime={addRestTime}
+            onSkip={skipRest}
+          />
+        ) : movementStarted ? (
           <View style={styles.activeActionRow}>
             <TouchableOpacity
               activeOpacity={0.86}
@@ -1120,13 +1137,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         }}
         onClose={() => setFlowOpen(false)}
       />
-      <RestSheet
-        visible={timer.running}
-        remaining={timer.remaining}
-        nextLabel={restTargetLabel}
-        onAddTime={addRestTime}
-        onSkip={skipRest}
-      />
+
 
       <SetEntryModal
         visible={setEntryOpen}
@@ -1653,44 +1664,6 @@ function WorkoutCompleteScreen({
   );
 }
 
-function RestSheet({
-  visible,
-  remaining,
-  nextLabel,
-  onAddTime,
-  onSkip,
-}: {
-  visible: boolean;
-  remaining: number;
-  nextLabel: string;
-  onAddTime: () => void;
-  onSkip: () => void;
-}) {
-  if (!visible) return null;
-  return (
-    <View style={styles.restSheetLayer}>
-      <View style={styles.restSheet}>
-        <View style={styles.sheetHandle} />
-        <View style={styles.restSheetHeader}>
-          <View>
-            <Text style={styles.restKicker}>Recover</Text>
-            <Text style={styles.restSheetTitle}>{formatTimer(remaining)}</Text>
-          </View>
-          <TouchableOpacity onPress={onSkip} style={styles.restSkipButton} accessibilityRole="button" accessibilityLabel="Skip rest">
-            <Text style={styles.restSkipText}>Skip</Text>
-            <Feather name="arrow-right" size={16} color={colors.white} />
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.restSheetNext}>Up next: {nextLabel}</Text>
-        <TouchableOpacity onPress={onAddTime} style={styles.restAddTimeButton} accessibilityRole="button" accessibilityLabel="Add fifteen seconds">
-          <Feather name="plus" size={16} color={colors.accentDark} />
-          <Text style={styles.restAddTimeText}>Add 15 seconds</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
 function SetEntryModal({
   visible,
   exerciseName,
@@ -2126,46 +2099,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.24)',
   },
   restSmallButtonText: { ...typography.bodyBold, color: colors.white },
-  restSheetLayer: {
-    ...StyleSheet.absoluteFill,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(20,20,18,0.18)',
-  },
-  restSheet: {
-    backgroundColor: colors.panel,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xxl,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  restSheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm },
-  restSheetTitle: { fontSize: 42, lineHeight: 48, fontWeight: '900', color: colors.ink, marginTop: 2 },
-  restSheetNext: { ...typography.body, color: colors.inkMuted, marginTop: spacing.sm },
-  restSkipButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentFill,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  restSkipText: { ...typography.bodyBold, color: colors.white },
-  restAddTimeButton: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    marginTop: spacing.md,
-    borderRadius: radius.pill,
-    backgroundColor: colors.panelMuted,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  restAddTimeText: { ...typography.bodyBold, color: colors.accentDark },
   movementHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',

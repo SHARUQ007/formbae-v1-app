@@ -1,17 +1,20 @@
+import { formatWorkoutTitle } from '../../utils/workoutTitle';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import LinearGradient from 'react-native-linear-gradient';
-import Feather from 'react-native-vector-icons/Feather';
-import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { Badge } from '../../components/Badge';
+import { WeeklyBodyMap } from '../../components/WeeklyBodyMap';
+import { WorkoutOverviewArt } from '../../features/workout/components/WorkoutOverviewArt';
+import { useProfileBodyGender } from '../../hooks/useProfileBodyGender';
+import { deriveWorkoutMuscles } from '../../utils/weeklyMuscles';
+import { workoutOverviewVisuals } from '../../utils/workoutOverviewVisuals';
+import { useDailyReadingDate } from '../../hooks/useDailyReadingDate';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { WorkoutPrimaryCTA } from '../../features/workout/components/WorkoutPrimaryCTA';
 import { WorkoutScreenHeader } from '../../features/workout/components/WorkoutScreenHeader';
 import { loadWorkoutDayCached } from '../../services/preloadService';
-import { loadWorkoutProgress } from '../../store/workoutStore';
+import { hasWorkoutStarted, loadWorkoutProgress } from '../../store/workoutStore';
 import type { WorkoutStackParamList } from '../../navigation/types';
 import { hiddenTabBarStyle } from '../../navigation/tabBarStyle';
 import type { WorkoutDayDetail, WorkoutExerciseDetail } from '../../types/api';
@@ -42,15 +45,16 @@ function exerciseMeta(exercise: WorkoutExerciseDetail) {
   return parts.join(' · ');
 }
 
-const CTA_BASE_HEIGHT = 158;
-
 export function WorkoutSummaryScreen({ route, navigation }: Props) {
   const { planDayId, mode = 'standard', initialDetail } = route.params;
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, spacing.sm);
-  const ctaSpace = CTA_BASE_HEIGHT + bottomInset;
+  const { fontScale } = useWindowDimensions();
+  const bodyGender = useProfileBodyGender();
+  const dateKey = useDailyReadingDate();
   const [detail, setDetail] = useState<WorkoutDayDetail | null>(initialDetail || null);
   const [selectedAlternates, setSelectedAlternates] = useState<Record<string, number>>({});
+  const [startedDayId, setStartedDayId] = useState('');
   const [loading, setLoading] = useState(!initialDetail);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,7 +84,10 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
     let active = true;
     loadWorkoutProgress(planDayId)
       .then((progress) => {
-        if (active) setSelectedAlternates(progress.selectedAlternatesByExercise || {});
+        if (active) {
+          setSelectedAlternates(progress.selectedAlternatesByExercise || {});
+          setStartedDayId(hasWorkoutStarted(progress) ? planDayId : '');
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -97,11 +104,8 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
     [detail],
   );
   const canStartWorkout = Boolean(!loading && !error && detail && exercises.length);
-  const headerSubtitle = detail
-    ? `Day ${detail.dayNumber} - ${detail.focus || detail.planTitle}`
-    : route.params.title
-      ? `Day workout - ${route.params.title}`
-      : undefined;
+  const muscles = useMemo(() => deriveWorkoutMuscles(detail), [detail]);
+  const visuals = workoutOverviewVisuals(planDayId, mode, dateKey, detail?.focus);
   const startWorkout = () => {
     if (!canStartWorkout || !detail) return;
     navigation.navigate('WorkoutDetail', {
@@ -114,19 +118,20 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
 
   if (loading) {
     return (
-      <View style={[styles.root, styles.centerStateRoot, { paddingTop: insets.top + spacing.md, paddingBottom: bottomInset + spacing.lg }]}>
-        <LoadingState message="Preparing workout summary..." />
+      <View style={[styles.root, { paddingTop: insets.top + spacing.md, paddingBottom: bottomInset + spacing.lg }]}>
+        <WorkoutScreenHeader title={modeLabel(mode)} onBack={() => navigation.goBack()} largeText />
+        <View style={styles.centerStateRoot}><LoadingState message="Preparing workout summary..." /></View>
       </View>
     );
   }
 
   return (
     <View style={[styles.root, { paddingTop: insets.top + spacing.md }]}>
-      <WorkoutScreenHeader eyebrow={mode === 'quick' ? 'Short on time' : 'Your session'} title={modeLabel(mode)} subtitle={headerSubtitle} onBack={() => navigation.goBack()} largeText />
+      <WorkoutScreenHeader eyebrow="Your session" title={modeLabel(mode)} onBack={() => navigation.goBack()} largeText />
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, { paddingBottom: ctaSpace }]}
+        contentContainerStyle={[styles.scroll, { paddingBottom: canStartWorkout ? spacing.lg : bottomInset + spacing.lg }]}
       >
         {error || !detail ? (
           <View style={styles.statePanel}>
@@ -147,46 +152,54 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
         ) : (
           <>
             <View style={styles.summarySurface}>
-              <View style={styles.heroTop}>
-                <View style={styles.heroCopy}>
-                  <Badge label={mode === 'quick' ? 'Quick' : 'Full'} tone="accent" icon={mode === 'quick' ? 'clock' : 'activity'} />
-                  <Text style={styles.heroTitle}>{detail.focus || detail.planTitle}</Text>
-                  <Text style={styles.heroSubline}>{exercises.length} moves · {summary.intensity}</Text>
+              <View style={styles.heroArtworkFrame}>
+                <Image source={visuals.artwork} style={styles.heroImage} resizeMode="cover" accessible={false} testID="workout-summary-artwork" />
+                <View style={styles.heroBadges}>
+                  <Text style={styles.dayBadge}>DAY {detail.dayNumber}</Text>
+                  <Text style={styles.modeBadge}>{mode === 'quick' ? 'Short workout' : 'Full session'}</Text>
                 </View>
               </View>
-              <View style={styles.metricStrip}>
-                <Metric icon="timer-outline" label="Time" value={summary.duration} />
-                <View style={styles.metricDivider} />
-                <Metric icon="fire" label="Burn" value={summary.calories} />
+              <View style={styles.heroCopy}>
+                <Text style={styles.heroTitle}>{formatWorkoutTitle(detail.focus || detail.planTitle)}</Text>
+                <View style={styles.heroFacts}><Text style={styles.heroSubline}>{exercises.length} movements</Text><View style={styles.factDot} /><Text style={styles.heroSubline}>{summary.intensity}</Text></View>
               </View>
-              <View style={styles.summaryDivider} />
-              <View style={styles.insightBlock}>
-                <Text style={styles.insightLabel}>Target areas</Text>
-                <View style={styles.chips}>
-                  {summary.muscles.slice(0, 5).map((muscle) => (
-                    <View key={muscle} style={styles.muscleChip}>
-                      <Text style={styles.muscleText}>{muscle}</Text>
-                    </View>
-                  ))}
+              <View style={styles.sessionDetails}>
+                <View style={[styles.metricStrip, fontScale >= 1.3 && styles.metricsStacked]}>
+                  <Metric kind="time" variant={visuals.variant} label="Session time" value={summary.duration} />
+                  <View style={[styles.metricDivider, fontScale >= 1.3 && styles.metricDividerHorizontal]} />
+                  <Metric kind="energy" variant={visuals.variant} label="Estimated burn" value={summary.calories} />
                 </View>
-              </View>
-              <View style={styles.insightDivider} />
-              <View style={styles.insightBlock}>
-                <Text style={styles.insightLabel}>What this builds</Text>
-                <View style={styles.benefitList}>
-                  {summary.benefits.slice(0, 2).map((benefit) => (
-                    <View key={benefit} style={styles.benefitRow}>
-                      <Feather name="check" size={15} color={colors.gold} />
-                      <Text style={styles.benefitText}>{benefit}</Text>
+                <View style={styles.targetSection}>
+                  <Text style={styles.targetTitle}>Target areas</Text>
+                  {muscles.length ? <View style={styles.bodyMap}><WeeklyBodyMap gender={bodyGender} muscles={muscles} mini showLabels={false} /></View> : null}
+                    <View style={styles.chips}>
+                      {summary.muscles.map((muscle) => (
+                        <View key={muscle} style={styles.muscleChip}>
+                          <Text style={styles.muscleText}>{muscle}</Text>
+                        </View>
+                      ))}
                     </View>
-                  ))}
+                </View>
+                <View style={styles.benefitSection}>
+                  <View style={styles.benefitHeading}>
+                    <WorkoutOverviewArt kind="growth" variant={visuals.variant} size={26} />
+                    <Text style={styles.insightLabel}>What this builds</Text>
+                  </View>
+                    <View style={styles.benefitList}>
+                      {summary.benefits.slice(0, 2).map((benefit) => (
+                        <View key={benefit} style={styles.benefitRow}>
+                          <View style={styles.benefitDot} />
+                          <Text style={styles.benefitText}>{benefit}</Text>
+                        </View>
+                      ))}
+                    </View>
                 </View>
               </View>
             </View>
-
             <View style={styles.planSection}>
               <View style={styles.planHeader}>
-                <View>
+                <WorkoutOverviewArt kind="flow" variant={visuals.variant} size={38} />
+                <View style={styles.exerciseCopy}>
                   <Text style={styles.planEyebrow}>Session flow</Text>
                   <Text style={styles.planTitle}>Movement plan</Text>
                 </View>
@@ -204,7 +217,7 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
                     ]}
                   >
                     <View style={styles.exerciseIndex}>
-                      <Text style={styles.exerciseIndexText}>{index + 1}</Text>
+                      <Text style={styles.exerciseIndexText}>{String(index + 1).padStart(2, '0')}</Text>
                     </View>
                     <View style={styles.exerciseCopy}>
                       <Text style={styles.exerciseName}>{activeChoice.exerciseName}</Text>
@@ -219,21 +232,9 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
       </ScrollView>
 
       {canStartWorkout ? (
-        <View
-          pointerEvents="box-none"
-          style={[
-            styles.fixedCtaLayer,
-            { height: CTA_BASE_HEIGHT + bottomInset, paddingBottom: bottomInset },
-          ]}
-        >
-          <LinearGradient
-            pointerEvents="none"
-            colors={['rgba(5,6,10,0)', 'rgba(5,6,10,0.94)', colors.bg]}
-            locations={[0, 0.42, 1]}
-            style={StyleSheet.absoluteFill}
-          />
+        <View style={[styles.fixedCtaLayer, { paddingBottom: bottomInset }]}>
           <WorkoutPrimaryCTA
-            title="Start workout"
+            title={startedDayId === planDayId ? 'Continue workout' : 'Start workout'}
             subtitle={`${exercises.length} movements · ${summary?.duration || 'Ready when you are'}`}
             icon="play"
             onPress={startWorkout}
@@ -246,143 +247,71 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
   );
 }
 
-function Metric({ icon, label, value }: { icon: string; label: string; value: string }) {
+function Metric({ kind, variant, label, value }: { kind: 'time' | 'energy'; variant: number; label: string; value: string }) {
   return (
     <View style={styles.metric}>
-      <MaterialCommunityIcon name={icon} size={20} color={colors.accentDark} />
-      <View style={styles.metricCopy}>
+      <View style={styles.metricHeading}>
+        <WorkoutOverviewArt kind={kind} variant={variant} size={22} />
         <Text style={styles.metricLabel}>{label}</Text>
-        <Text style={styles.metricValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>{value}</Text>
       </View>
+      <Text style={styles.metricValue}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: colors.bg,
-    paddingHorizontal: spacing.lg,
-  },
-  centerStateRoot: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scrollView: { flex: 1, minHeight: 0 },
-  scroll: { flexGrow: 1, gap: spacing.md, paddingTop: spacing.md },
-  statePanel: {
-    flexGrow: 1,
-    minHeight: 420,
-    borderRadius: radius.lg,
-    backgroundColor: colors.panel,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.lg,
-  },
-  summarySurface: {
-    borderRadius: radius.lg,
-    backgroundColor: colors.panel,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    padding: spacing.lg,
-  },
-  heroTop: { flexDirection: 'row', alignItems: 'flex-start' },
-  heroCopy: { flex: 1 },
-  heroTitle: { fontSize: 26, lineHeight: 33, fontWeight: '700', color: colors.ink, marginTop: spacing.sm },
-  heroSubline: { fontSize: 17, lineHeight: 25, fontWeight: '400', color: colors.inkMuted, marginTop: spacing.xs },
-  metricStrip: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    marginTop: spacing.lg,
-    borderRadius: radius.md,
-    backgroundColor: colors.panelMuted,
-    paddingVertical: spacing.sm,
-  },
-  metric: {
-    flex: 1,
-    minHeight: 48,
-    paddingHorizontal: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  metricDivider: { width: StyleSheet.hairlineWidth, backgroundColor: colors.borderStrong },
-  metricCopy: { flex: 1, minWidth: 0 },
-  metricLabel: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.inkMuted, textTransform: 'uppercase' },
-  metricValue: { fontSize: 16, lineHeight: 22, fontWeight: '600', color: colors.ink, marginTop: 1 },
-  summaryDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: spacing.lg },
-  insightBlock: { gap: spacing.sm },
-  insightLabel: { ...typography.overline, color: colors.inkMuted, textTransform: 'uppercase' },
-  insightDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: spacing.md },
-  planSection: {
-    borderRadius: radius.lg,
-    backgroundColor: colors.panel,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.sm,
-  },
-  planHeader: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.sm },
-  planEyebrow: { ...typography.overline, fontSize: 12, lineHeight: 17, color: colors.accentDark, textTransform: 'uppercase' },
-  planTitle: { fontSize: 18, lineHeight: 25, fontWeight: '600', color: colors.ink, marginTop: 3 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  muscleChip: {
-    minHeight: 30,
-    borderRadius: radius.pill,
-    backgroundColor: colors.panelMuted,
-    paddingHorizontal: 11,
-    paddingVertical: 5,
-    alignItems: 'center',
-  },
-  muscleText: { fontSize: 13, lineHeight: 18, color: colors.ink, fontWeight: '600' },
-  benefitList: { gap: spacing.sm },
-  benefitRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    alignItems: 'flex-start',
-  },
-  benefitText: { fontSize: 14, lineHeight: 20, fontWeight: '500', color: colors.inkMuted, flex: 1 },
-  exerciseCount: { fontSize: 14, lineHeight: 20, color: colors.inkSubtle, fontWeight: '800' },
+  root: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: spacing.lg },
+  centerStateRoot: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  scrollView: { flex: 1, minHeight: 0, marginTop: 16 },
+  scroll: { flexGrow: 1, gap: 16, paddingTop: 8, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  statePanel: { flexGrow: 1, minHeight: 300, borderRadius: radius.lg, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+  summarySurface: { borderRadius: 24, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  heroArtworkFrame: { width: '100%', aspectRatio: 2.6, backgroundColor: colors.panelRaised, overflow: 'hidden' },
+  // Explicit dimensions override a bundled image's intrinsic size on native.
+  heroImage: { width: '100%', height: '100%' },
+  heroBadges: { position: 'absolute', top: 0, left: 0, right: 0, padding: 14, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 },
+  dayBadge: { ...typography.label, fontSize: 11, color: colors.onPrimary, backgroundColor: colors.gold, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  modeBadge: { ...typography.caption, color: colors.ink, backgroundColor: colors.panel, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  heroCopy: { padding: 18, paddingBottom: 14, gap: 6, backgroundColor: colors.panel },
+  heroTitle: { fontSize: 23, lineHeight: 30, fontWeight: '700', color: colors.ink },
+  heroFacts: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 9 },
+  heroSubline: { ...typography.body, fontSize: 14, lineHeight: 20, color: colors.inkMuted },
+  factDot: { width: 3, height: 3, borderRadius: 2, backgroundColor: colors.inkSubtle },
+  sessionDetails: { paddingHorizontal: 18, paddingBottom: 18 },
+  metricStrip: { flexDirection: 'row', gap: 12, alignItems: 'stretch', paddingVertical: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  metricDivider: { width: StyleSheet.hairlineWidth, backgroundColor: colors.border },
+  metricDividerHorizontal: { width: '100%', height: StyleSheet.hairlineWidth },
+  metricsStacked: { flexDirection: 'column' },
+  metric: { flex: 1, minWidth: 0, gap: 5 },
+  metricHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 7 },
+  metricLabel: { ...typography.caption, fontSize: 11, lineHeight: 16, color: colors.inkMuted, flexShrink: 1 },
+  metricValue: { fontSize: 18, lineHeight: 24, fontWeight: '600', color: colors.ink },
+  targetSection: { paddingVertical: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  targetTitle: { fontSize: 17, lineHeight: 23, fontWeight: '600', color: colors.ink },
+  bodyMap: { marginTop: 4 },
+  insightLabel: { ...typography.overline, color: colors.ink, textTransform: 'uppercase', fontSize: 11, lineHeight: 16 },
+  benefitSection: { gap: 8, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  benefitHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  benefitDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: colors.gold, marginTop: 8 },
+  benefitList: { gap: 6 },
+  benefitRow: { flexDirection: 'row', gap: 9, alignItems: 'flex-start' },
+  benefitText: { fontSize: 13, lineHeight: 19, color: colors.inkMuted, flex: 1 },
+  planSection: { borderRadius: 22, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, padding: 18, paddingBottom: 4 },
+  planHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 8 },
+  planEyebrow: { ...typography.overline, fontSize: 10, lineHeight: 15, color: colors.gold, textTransform: 'uppercase' },
+  planTitle: { fontSize: 19, lineHeight: 26, fontWeight: '600', color: colors.ink, marginTop: 3 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  muscleChip: { minHeight: 25, borderRadius: 7, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 8, paddingVertical: 3, alignItems: 'center' },
+  muscleText: { fontSize: 11, lineHeight: 17, color: colors.inkMuted, fontWeight: '500' },
+  exerciseCount: { ...typography.caption, color: colors.inkMuted },
   exerciseList: {},
-  exerciseRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    paddingVertical: 18,
-  },
+  exerciseRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, paddingVertical: 12 },
   exerciseRowLast: { borderBottomWidth: 0 },
-  exerciseIndex: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accentLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 1,
-  },
-  exerciseIndexText: { fontSize: 14, lineHeight: 19, color: colors.accentDark, fontWeight: '800' },
-  exerciseCopy: { flex: 1 },
-  exerciseName: { fontSize: 18, lineHeight: 25, fontWeight: '600', color: colors.ink },
-  exerciseMeta: { fontSize: 15, lineHeight: 21, fontWeight: '500', color: colors.inkMuted, marginTop: 3 },
-  fixedCtaLayer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingTop: spacing.xl,
-    paddingHorizontal: spacing.lg,
-    justifyContent: 'flex-end',
-    zIndex: 50,
-    elevation: 20,
-    overflow: 'visible',
-  },
-  startWorkoutCta: {
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.72)',
-  },
+  exerciseIndex: { minWidth: 28, minHeight: 28, padding: 4, borderRadius: 8, backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  exerciseIndexText: { fontSize: 12, lineHeight: 18, color: colors.gold, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  exerciseCopy: { flex: 1, minWidth: 0 },
+  exerciseName: { fontSize: 16, lineHeight: 22, fontWeight: '600', color: colors.ink },
+  exerciseMeta: { fontSize: 13, lineHeight: 19, color: colors.inkMuted, marginTop: 3 },
+  fixedCtaLayer: { paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, backgroundColor: colors.bg, width: '100%', maxWidth: 680, alignSelf: 'center' },
+  startWorkoutCta: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.72)' },
 });

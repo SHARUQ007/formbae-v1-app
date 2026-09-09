@@ -13,6 +13,8 @@ import type { AccountabilityBaeSummary, CoachHubPayload, TrainerInfo } from '../
 import { getAccountabilityBaeArtwork } from '../utils/accountabilityBaeArtwork';
 import { getAccountabilityTaskArtwork } from '../utils/accountabilityArtwork';
 import { getCoachArtworkSource } from '../utils/coachArtwork';
+import { REPORT_IMAGE_POOLS } from '../utils/reportArtworkLibrary';
+import { WEEKLY_GOAL_ARTWORK } from '../utils/weeklyGoalArtwork';
 import {
   getBodyProfileArtwork,
   getGymProfileArtwork,
@@ -93,14 +95,43 @@ async function preloadImageSource(source: ImageSourcePropType) {
   return true;
 }
 
+const MAX_IMAGE_LOADS = 4;
+const pendingImages = new Map<string, Promise<boolean>>();
+const imageQueue: Array<() => void> = [];
+let activeImages = 0;
+
+function drainImageQueue() {
+  while (activeImages < MAX_IMAGE_LOADS && imageQueue.length) imageQueue.shift()!();
+}
+
+function scheduleImage(source: ImageSourcePropType) {
+  const key = sourceKey(source);
+  const pending = pendingImages.get(key);
+  if (pending) return pending;
+  const promise = new Promise<boolean>((resolve, reject) => {
+    imageQueue.push(() => {
+      activeImages += 1;
+      preloadImageSource(source).then(resolve, reject).finally(() => {
+        pendingImages.delete(key);
+        activeImages -= 1;
+        drainImageQueue();
+      });
+    });
+  });
+  pendingImages.set(key, promise);
+  drainImageQueue();
+  return promise;
+}
+
 /**
  * Warms sources independently: one unavailable photo must never prevent the
- * rest of the app artwork from reaching the native image cache.
+ * rest of the app artwork from reaching the native image cache. Share pending
+ * sources across callers and bound concurrent native loads to avoid startup spikes.
  */
 export async function preloadImageSources(
   sources: Array<ImageSourcePropType | null | undefined>,
 ) {
-  return Promise.allSettled(uniqueSources(sources).map(preloadImageSource));
+  return Promise.allSettled(uniqueSources(sources).map(scheduleImage));
 }
 
 /** Every bundled image a signed-in user can encounter across the main tabs. */
@@ -123,6 +154,9 @@ export function getMainAppArtworkSources(profileGender?: string) {
     getPlanProfileArtwork(profileGender),
     getGymProfileArtwork(profileGender),
     getProgressReportArtwork(profileGender),
+    REPORT_IMAGE_POOLS.weeklyCover[0].source,
+    WEEKLY_GOAL_ARTWORK.training,
+    WEEKLY_GOAL_ARTWORK.nutrition,
     getDietReportEmptyArtwork(profileGender),
     ...MEMBERSHIP_ARTWORK[membershipGender],
   ]);

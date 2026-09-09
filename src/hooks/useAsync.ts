@@ -24,6 +24,7 @@ export function useAsync<T>(
     refreshing: false,
   });
   const mounted = useRef(true);
+  const requestId = useRef(0);
   const fnRef = useRef(fn);
   fnRef.current = fn;
 
@@ -31,10 +32,12 @@ export function useAsync<T>(
     mounted.current = true;
     return () => {
       mounted.current = false;
+      requestId.current += 1;
     };
   }, []);
 
   const run = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
+    const currentRequest = ++requestId.current;
     setState((prev) => ({
       ...prev,
       // Keep already-rendered content visible while revalidating it. A tab
@@ -45,10 +48,10 @@ export function useAsync<T>(
     }));
     try {
       const data = await fnRef.current(mode);
-      if (!mounted.current) return;
+      if (!mounted.current || currentRequest !== requestId.current) return;
       setState({ data, loading: false, error: null, refreshing: false });
     } catch (error) {
-      if (!mounted.current) return;
+      if (!mounted.current || currentRequest !== requestId.current) return;
       const message =
         error instanceof ApiError
           ? error.message

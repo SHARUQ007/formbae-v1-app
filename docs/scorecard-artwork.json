@@ -1,0 +1,151 @@
+{
+  "generator": "Built-in image_gen.imagegen",
+  "created": "2026-09-09",
+  "processing": "JPEG thumbnails, 288px, quality 78, using sips; originals retained.",
+  "assets": [
+    {
+      "key": "foodVariety",
+      "variant": 1,
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-438a6b47-4e2f-4806-b02c-bd0b84725003.png",
+      "scene": "A carefully arranged small collection of a tomato, broccoli floret, pear, a tiny charcoal bowl of lentils, an egg and a folded roti. Each ingredient visibly separate, varied food groups.",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as a 76px thumbnail. Subject: A carefully arranged small collection of a tomato, broccoli floret, pear, a tiny charcoal bowl of lentils, an egg and a folded roti. Each ingredient visibly separate, varied food groups. Style: tactile miniature food still life, refined realistic 3D clay and ceramic textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: single centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/foodVariety-1.jpg"
+    },
+    {
+      "key": "plantFoods",
+      "variant": 1,
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-9be22bd7-f832-48f4-bf33-b70400922add.png",
+      "scene": "A sculptural still life of broccoli, spinach leaves, a small charcoal bowl of chickpeas, and a few oats. Plant foods and fibre, unmistakable natural ingredients.",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as a 76px thumbnail. Subject: A sculptural still life of broccoli, spinach leaves, a small charcoal bowl of chickpeas, and a few oats. Plant foods and fibre, unmistakable natural ingredients. Style: tactile miniature food still life, refined realistic 3D clay and ceramic textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: single centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/plantFoods-1.jpg"
+    },
+    {
+      "key": "proteinCoverage",
+      "variant": 1,
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-28202252-793d-4eae-aa53-533d2eb35196.png",
+      "scene": "A small charcoal ceramic plate holding a halved boiled egg, two tofu cubes and a simple cooked chicken piece, arranged separately. A tiny bowl of lentils beside it. Clearly recognizable protein foods.",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as a 76px thumbnail. Subject: A small charcoal ceramic plate holding a halved boiled egg, two tofu cubes and a simple cooked chicken piece, arranged separately. A tiny bowl of lentils beside it. Clearly recognizable protein foods. Style: tactile miniature food still life, refined realistic 3D clay and ceramic textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: single centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/proteinCoverage-1.jpg"
+    },
+    {
+      "key": "mealBalance",
+      "variant": 1,
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-134d2a1c-3024-400c-85e4-8ac58c790e60.png",
+      "scene": "One compact charcoal thali-like dinner plate holding a small bowl of dal, cooked rice, and a cucumber tomato salad arranged together. A composed everyday meal, no portion graphics.",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as a 76px thumbnail. Subject: One compact charcoal thali-like dinner plate holding a small bowl of dal, cooked rice, and a cucumber tomato salad arranged together. A composed everyday meal, no portion graphics. Style: tactile miniature food still life, refined realistic 3D clay and ceramic textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: single centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/mealBalance-1.jpg"
+    },
+    {
+      "key": "wholeFoodPattern",
+      "variant": 1,
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-12759403-d1f1-4015-a9ce-8b0bcc1f30e2.png",
+      "scene": "A dark wooden chopping board with cut tomato, onion and a few chopped vegetables beside a small charcoal cooking pot. Food preparation through ingredients and cookware, no hands or knives.",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as a 76px thumbnail. Subject: A dark wooden chopping board with cut tomato, onion and a few chopped vegetables beside a small charcoal cooking pot. Food preparation through ingredients and cookware, no hands or knives. Style: tactile miniature food still life, refined realistic 3D clay and ceramic textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: single centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/wholeFoodPattern-1.jpg"
+    },
+    {
+      "key": "goalAlignment",
+      "variant": 1,
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-8a93f165-e8a2-4867-a92d-64e68aefb4f8.png",
+      "scene": "An open charcoal lunch container holding rice, vegetables and lentils, next to a small plain dark water bottle and neatly folded linen napkin. A practical prepared meal, no exercise equipment, tape measures or body imagery.",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as a 76px thumbnail. Subject: An open charcoal lunch container holding rice, vegetables and lentils, next to a small plain dark water bottle and neatly folded linen napkin. A practical prepared meal, no exercise equipment, tape measures or body imagery. Style: tactile miniature food still life, refined realistic 3D clay and ceramic textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: single centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/goalAlignment-1.jpg"
+    },
+    {
+      "key": "foodVariety",
+      "variant": 2,
+      "scene": "A small woven charcoal-toned market basket holding an aubergine, carrot and guava, with a tiny ceramic bowl of chickpeas and two folded rotis beside it.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-9bd44e62-4ea0-4962-8d68-2fba997bc8a7.png",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as an 84px thumbnail. Subject: A small woven charcoal-toned market basket holding an aubergine, carrot and guava, with a tiny ceramic bowl of chickpeas and two folded rotis beside it. Style: tactile food still life, refined realistic ceramic and food textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: one centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/foodVariety-2.jpg"
+    },
+    {
+      "key": "foodVariety",
+      "variant": 3,
+      "scene": "Three small charcoal ceramic bowls holding peas, red lentils and curd, with a small orange, sliced cucumber and a handful of almonds arranged in a loose semicircle.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-85bae12c-38ed-46ca-a944-ebcddbfee5df.png",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as an 84px thumbnail. Subject: Three small charcoal ceramic bowls holding peas, red lentils and curd, with a small orange, sliced cucumber and a handful of almonds arranged in a loose semicircle. Style: tactile food still life, refined realistic ceramic and food textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: one centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/foodVariety-3.jpg"
+    },
+    {
+      "key": "plantFoods",
+      "variant": 2,
+      "scene": "A small charcoal ceramic bowl of lentils with a carrot, fresh okra and a cut guava beside it. An appealing simple cluster of plants and fibre foods.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-71221288-fd78-4604-a43d-b8dbe46e639d.png",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as an 84px thumbnail. Subject: A small charcoal ceramic bowl of lentils with a carrot, fresh okra and a cut guava beside it. An appealing simple cluster of plants and fibre foods. Style: tactile food still life, refined realistic ceramic and food textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: one centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/plantFoods-2.jpg"
+    },
+    {
+      "key": "plantFoods",
+      "variant": 3,
+      "scene": "A small pile of green beans and pea pods with a cut apple, a few almonds and a tiny charcoal bowl of oats.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-882dcc87-fa93-4a06-bb21-4b646f2315ec.png",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as an 84px thumbnail. Subject: A small pile of green beans and pea pods with a cut apple, a few almonds and a tiny charcoal bowl of oats. Style: tactile food still life, refined realistic ceramic and food textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: one centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/plantFoods-3.jpg"
+    },
+    {
+      "key": "proteinCoverage",
+      "variant": 2,
+      "scene": "A small charcoal plate of browned paneer cubes, a halved boiled egg and a small bowl of chickpeas, arranged separately.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-701474d2-f641-4324-afef-7ce521beb3e3.png",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as an 84px thumbnail. Subject: A small charcoal plate of browned paneer cubes, a halved boiled egg and a small bowl of chickpeas, arranged separately. Style: tactile food still life, refined realistic ceramic and food textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: one centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/proteinCoverage-2.jpg"
+    },
+    {
+      "key": "proteinCoverage",
+      "variant": 3,
+      "scene": "A charcoal ceramic plate of a small cooked fish fillet with two plain tofu cubes, and a small bowl of kidney beans beside it.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-610b420c-0448-495f-afc6-4cfc231b2788.png",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as an 84px thumbnail. Subject: A charcoal ceramic plate of a small cooked fish fillet with two plain tofu cubes, and a small bowl of kidney beans beside it. Style: tactile food still life, refined realistic ceramic and food textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: one centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/proteinCoverage-3.jpg"
+    },
+    {
+      "key": "mealBalance",
+      "variant": 2,
+      "scene": "A compact charcoal dinner plate with folded roti, a small chicken curry bowl and a tomato cucumber salad arranged together. No portion graphics.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-29cd7cc8-35f8-4ee8-9ccb-7b9acc327e5a.png",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as an 84px thumbnail. Subject: A compact charcoal dinner plate with folded roti, a small chicken curry bowl and a tomato cucumber salad arranged together. No portion graphics. Style: tactile food still life, refined realistic ceramic and food textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: one centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/mealBalance-2.jpg"
+    },
+    {
+      "key": "mealBalance",
+      "variant": 3,
+      "scene": "A low charcoal bowl holding quinoa, chickpeas and roasted carrot, courgette and bell pepper, each ingredient visibly recognizable in a composed everyday meal.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-e70a5d4f-c40b-47df-8dfe-8ae45d7f3df6.png",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as an 84px thumbnail. Subject: A low charcoal bowl holding quinoa, chickpeas and roasted carrot, courgette and bell pepper, each ingredient visibly recognizable in a composed everyday meal. Style: tactile food still life, refined realistic ceramic and food textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: one centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/mealBalance-3.jpg"
+    },
+    {
+      "key": "wholeFoodPattern",
+      "variant": 2,
+      "scene": "An open charcoal pot of dal beside a wooden spoon and small bowls of dry lentils and chopped onion. A simple home cooking ingredient still life. No hands or knives.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-ddc99848-6c44-4383-ba25-c1cc08c1fe5c.png",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as an 84px thumbnail. Subject: An open charcoal pot of dal beside a wooden spoon and small bowls of dry lentils and chopped onion. A simple home cooking ingredient still life. No hands or knives. Style: tactile food still life, refined realistic ceramic and food textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: one centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/wholeFoodPattern-2.jpg"
+    },
+    {
+      "key": "wholeFoodPattern",
+      "variant": 3,
+      "scene": "A charcoal mortar and pestle with herbs, a small bowl of soaking chickpeas, a carrot and tomato arranged on a compact dark wooden board. No hands or knives.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-080008b5-3014-4934-9d37-9b2327413c1c.png",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as an 84px thumbnail. Subject: A charcoal mortar and pestle with herbs, a small bowl of soaking chickpeas, a carrot and tomato arranged on a compact dark wooden board. No hands or knives. Style: tactile food still life, refined realistic ceramic and food textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: one centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/wholeFoodPattern-3.jpg"
+    },
+    {
+      "key": "goalAlignment",
+      "variant": 2,
+      "scene": "A practical clear glass lunch container with cooked rice, kidney beans and carrots, its charcoal lid beside it, and a neatly folded linen napkin with a spoon. No text or body imagery.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-1f5fec71-b8c6-4ede-b5c5-a3cb0be9a749.png",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as an 84px thumbnail. Subject: A practical clear glass lunch container with cooked rice, kidney beans and carrots, its charcoal lid beside it, and a neatly folded linen napkin with a spoon. No text or body imagery. Style: tactile food still life, refined realistic ceramic and food textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: one centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/goalAlignment-2.jpg"
+    },
+    {
+      "key": "goalAlignment",
+      "variant": 3,
+      "scene": "Two compact stacked charcoal meal-prep containers, the top one open with lentils, rice and vegetables, beside a plain dark flask. A practical ready-for-the-day meal. No body imagery.",
+      "source": "/Users/sharuq/.codex/generated_images/01a08276-092c-76b0-a06c-3a866230a293/exec-4bccb970-4760-4da6-ada6-87182fbde246.png",
+      "prompt": "Use case: stylized-concept. Asset type: original square nutrition-scorecard illustration for a premium dark mobile report, displayed as an 84px thumbnail. Subject: Two compact stacked charcoal meal-prep containers, the top one open with lentils, rice and vegetables, beside a plain dark flask. A practical ready-for-the-day meal. No body imagery. Style: tactile food still life, refined realistic ceramic and food textures, editorial art direction, recognizable food silhouettes rather than a generic icon. Composition: one centered cluster within middle 76% of square, generous clean margin, close three-quarter overhead angle. Scene: perfectly plain near-black charcoal background #111217. Soft neutral side lighting, restrained natural food color, charcoal crockery, ivory details. Match a black, white, grey and muted gold app palette; no green-tinted background, no yellow gradients. No text, letters, numbers, labels, logos, watermark, border, UI, collage or multiple panels. Crisp forms readable at small size. Generate one square artwork.",
+      "destination": "app/src/assets/editorial/scorecard/goalAlignment-3.jpg"
+    }
+  ]
+}

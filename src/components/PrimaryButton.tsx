@@ -19,6 +19,7 @@ type Props = {
   size?: Size;
   icon?: string;
   iconPosition?: 'leading' | 'trailing';
+  centerTitle?: boolean;
   style?: ViewStyle;
   contentStyle?: ViewStyle;
 };
@@ -34,6 +35,7 @@ export function PrimaryButton({
   size = 'md',
   icon,
   iconPosition = 'leading',
+  centerTitle = false,
   style,
   contentStyle,
 }: Props) {
@@ -72,10 +74,22 @@ export function PrimaryButton({
       {loading ? (
         <ActivityIndicator color={fg} />
       ) : (
-        <View style={[styles.content, contentStyle]}>
-          {icon && iconPosition === 'leading' ? <Feather name={icon} size={18} color={fg} /> : null}
+        <View style={[styles.content, centerTitle && styles.centeredContent, contentStyle]}>
+          {icon && iconPosition === 'leading' ? (
+            centerTitle ? (
+              <View style={[styles.anchoredIcon, styles.anchoredIconLeading]}>
+                <Feather name={icon} size={18} color={fg} />
+              </View>
+            ) : <Feather name={icon} size={18} color={fg} />
+          ) : null}
           <Text style={[styles.text, { color: fg }]}>{title}</Text>
-          {icon && iconPosition === 'trailing' ? <Feather name={icon} size={18} color={fg} /> : null}
+          {icon && iconPosition === 'trailing' ? (
+            centerTitle ? (
+              <View style={[styles.anchoredIcon, styles.anchoredIconTrailing]}>
+                <Feather name={icon} size={18} color={fg} />
+              </View>
+            ) : <Feather name={icon} size={18} color={fg} />
+          ) : null}
         </View>
       )}
     </TouchableOpacity>
@@ -100,6 +114,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   content: { maxWidth: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  centeredContent: { width: '100%', position: 'relative' },
+  anchoredIcon: { position: 'absolute', top: 0, bottom: 0, justifyContent: 'center' },
+  anchoredIconLeading: { left: 0 },
+  anchoredIconTrailing: { right: 0 },
   disabled: { opacity: 0.5 },
   text: { ...typography.button, flexShrink: 1, textAlign: 'center' },
 });

@@ -1,3 +1,4 @@
+import { normalizeWorkoutBundle, normalizeWorkoutPlan, normalizeWorkoutDetail } from '../utils/workoutTitle';
 import { ApiError, apiRequest } from './apiClient';
 import { invalidateCachedResource } from './appCache';
 import { publishOrRefreshTrophySummary } from './trophyRealtime';
@@ -7,11 +8,12 @@ import {ensureEquipmentFreeQuickWorkout} from '../utils/quickWorkout';
 export const PENDING_AI_PLAN_BUILD_KEY = 'formbae_pending_ai_plan_build';
 
 export async function fetchWorkoutPlan() {
-  return apiRequest<{ today: TodayPayload; plan: TodayPayload['plan']; aiPlanRefresh?: AiPlanRefresh }>('/workouts/plan');
+  return normalizeWorkoutBundle(await apiRequest<{ today: TodayPayload; plan: TodayPayload['plan']; aiPlanRefresh?: AiPlanRefresh }>('/workouts/plan'));
 }
 
 export async function fetchUserPlans() {
-  return apiRequest<{ plans: UserPlanSummary[] }>('/user/plans');
+  const data = await apiRequest<{ plans: UserPlanSummary[] }>('/user/plans');
+  return { ...data, plans: data.plans.map(normalizeWorkoutPlan) };
 }
 
 export async function selectWorkoutPlan(planId: string) {
@@ -26,20 +28,21 @@ export async function selectWorkoutPlan(planId: string) {
 }
 
 export async function fetchToday() {
-  return apiRequest<TodayPayload>('/workouts/today');
+  const data = await apiRequest<TodayPayload>('/workouts/today');
+  return { ...data, plan: data.plan ? normalizeWorkoutPlan(data.plan) : data.plan };
 }
 
 export async function fetchWorkoutDay(planDayId: string, mode: 'standard' | 'quick' = 'standard'): Promise<WorkoutDayDetail> {
   const path = `/workouts/day/${encodeURIComponent(planDayId)}`;
   try {
     const detail = await apiRequest<WorkoutDayDetail>(`${path}?mode=${mode}`);
-    return mode === 'quick' ? ensureEquipmentFreeQuickWorkout(detail) : detail;
+    return normalizeWorkoutDetail(mode === 'quick' ? ensureEquipmentFreeQuickWorkout(detail) : detail);
   } catch (error) {
     if (mode !== 'quick') throw error;
     const status = error instanceof ApiError ? error.status : 0;
     if (status && status !== 404 && status < 500) throw error;
     const fallback = await apiRequest<WorkoutDayDetail>(`${path}?mode=standard`);
-    return ensureEquipmentFreeQuickWorkout(fallback, true);
+    return normalizeWorkoutDetail(ensureEquipmentFreeQuickWorkout(fallback, true));
   }
 }
 

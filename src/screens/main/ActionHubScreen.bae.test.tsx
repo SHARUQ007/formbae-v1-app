@@ -44,7 +44,7 @@ const matchedBase: AccountabilityBaeSummary = {
 };
 
 describe('Accountability Bae UI states', () => {
-  it('uses lightweight icon navigation with concise, accurate query states', async () => {
+  it('keeps view selection and unavailable partner status accessible', async () => {
     const onChange = jest.fn();
     let renderer!: ReactTestRenderer.ReactTestRenderer;
     await ReactTestRenderer.act(() => {
@@ -60,8 +60,8 @@ describe('Accountability Bae UI states', () => {
       );
     });
     expect(copy(renderer)).toContain('Unavailable');
-    expect(renderer.root.findAll(node => node.props.name === 'sun')).toHaveLength(1);
-    expect(renderer.root.findAll(node => node.props.name === 'users')).toHaveLength(1);
+    expect(renderer.root.findByProps({ accessibilityLabel: 'Partner. Unavailable', accessibilityRole: 'tab' }).props.accessibilityState).toEqual({ selected: true });
+    expect(renderer.root.findByProps({ accessibilityLabel: 'My day. Your focus', accessibilityRole: 'tab' }).props.accessibilityState).toEqual({ selected: false });
     expect(renderer.root.findAllByType(Image)).toHaveLength(0);
     const partnerCaption = renderer.root
       .findAllByType(Text)

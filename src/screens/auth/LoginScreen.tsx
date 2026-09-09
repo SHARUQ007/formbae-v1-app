@@ -1,7 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
+  Animated,
   Alert,
+  Easing,
   InputAccessoryView,
   Keyboard,
   Linking,
@@ -35,6 +37,7 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 const PHONE_ACCESSORY_ID = 'formbae-phone-keyboard';
 const TERMS_URL = 'https://formbae.in/terms-of-use';
 const PRIVACY_URL = 'https://formbae.in/privacy-policy';
+type MotionPreference = 'unknown' | 'full' | 'reduce';
 
 export function LoginScreen({ navigation, route }: Props) {
   const { login, loading } = useAuthStore();
@@ -42,10 +45,83 @@ export function LoginScreen({ navigation, route }: Props) {
   const compact = height < 700 || fontScale > 1.15;
   const phoneRef = useRef<TextInput>(null);
   const submittingRef = useRef(false);
+  const headerReveal = useRef(new Animated.Value(route.params?.reduceMotion ? 1 : 0)).current;
+  const bodyReveal = useRef(new Animated.Value(route.params?.reduceMotion ? 1 : 0)).current;
+  const exitOpacity = useRef(new Animated.Value(1)).current;
   const [mobile, setMobile] = useState('');
   const [name, setName] = useState('');
   const [phoneError, setPhoneError] = useState('');
+  const [motionPreference, setMotionPreference] = useState<MotionPreference>(
+    route.params?.reduceMotion === true
+      ? 'reduce'
+      : route.params?.reduceMotion === false
+        ? 'full'
+        : 'unknown',
+  );
   const isSignup = route.params?.mode === 'signup';
+
+  useEffect(() => {
+    if (route.params?.reduceMotion !== undefined) return undefined;
+    let active = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then(enabled => {
+        if (active) setMotionPreference(enabled ? 'reduce' : 'full');
+      })
+      .catch(() => {
+        if (active) setMotionPreference('full');
+      });
+    return () => {
+      active = false;
+    };
+  }, [route.params?.reduceMotion]);
+
+  useEffect(() => {
+    if (motionPreference === 'unknown') return undefined;
+    headerReveal.stopAnimation();
+    bodyReveal.stopAnimation();
+    if (motionPreference === 'reduce') {
+      headerReveal.setValue(1);
+      bodyReveal.setValue(1);
+      return undefined;
+    }
+
+    const entrance = Animated.parallel([
+      Animated.timing(headerReveal, {
+        toValue: 1,
+        duration: 240,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(bodyReveal, {
+        toValue: 1,
+        duration: 320,
+        delay: 55,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]);
+    entrance.start();
+    return () => entrance.stop();
+  }, [bodyReveal, headerReveal, motionPreference]);
+
+  useEffect(() => () => {
+    headerReveal.stopAnimation();
+    bodyReveal.stopAnimation();
+    exitOpacity.stopAnimation();
+  }, [bodyReveal, exitOpacity, headerReveal]);
+
+  const finishScreenTransition = () => new Promise<void>(resolve => {
+    if (motionPreference !== 'full') {
+      resolve();
+      return;
+    }
+    Animated.timing(exitOpacity, {
+      toValue: 0,
+      duration: 150,
+      easing: Easing.in(Easing.quad),
+      useNativeDriver: true,
+    }).start(() => resolve());
+  });
 
   const handleMobileChange = (value: string) => {
     setMobile(toNationalMobileInput(value));
@@ -68,6 +144,7 @@ export function LoginScreen({ navigation, route }: Props) {
     setPhoneError('');
     try {
       const response = await login(digits, name.trim() || undefined, true);
+      await finishScreenTransition();
       const rootNav = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
       const root = resolveRootRoute(response.status.recommendedNextScreen);
       if (root === 'Onboarding') {
@@ -116,117 +193,137 @@ export function LoginScreen({ navigation, route }: Props) {
         pointerEvents="none"
       />
 
-      <View style={styles.topBar}>
-        <TouchableOpacity
-          onPress={returnToWelcome}
-          style={styles.backButton}
-          activeOpacity={0.78}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-          accessibilityHint="Returns to the welcome screen"
-          hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+      <Animated.View style={[styles.interface, { opacity: exitOpacity }]}>
+        <Animated.View
+          style={[
+            styles.topBar,
+            {
+              opacity: headerReveal,
+              transform: [{ translateY: headerReveal.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] }) }],
+            },
+          ]}
         >
-          <Feather name="chevron-left" size={25} color={colors.ink} />
-        </TouchableOpacity>
-        <View style={styles.brand}>
-          <Logo height={compact ? 31 : 34} showTagline={false} />
-        </View>
-        <View style={styles.topBarSpacer} />
-      </View>
-
-      <KeyboardScreen
-        scroll
-        style={styles.keyboard}
-        contentContainerStyle={[styles.scrollContent, compact && styles.scrollContentCompact]}
-      >
-        <View style={styles.content}>
-          <View style={styles.intro}>
-            <View style={styles.accentRule} />
-            <Text style={styles.title} accessibilityRole="header">
-              {isSignup ? 'Start your analysis' : 'Welcome back'}
-            </Text>
-            <Text style={styles.subtitle}>
-              {isSignup
-                ? 'Enter your details to create your FormBae profile.'
-                : 'Enter the mobile number linked to your FormBae profile.'}
-            </Text>
+          <TouchableOpacity
+            onPress={returnToWelcome}
+            style={styles.backButton}
+            activeOpacity={0.78}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+            accessibilityHint="Returns to the welcome screen"
+            hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+          >
+            <Feather name="chevron-left" size={25} color={colors.ink} />
+          </TouchableOpacity>
+          <View style={styles.brand}>
+            <Logo height={compact ? 31 : 34} showTagline={false} />
           </View>
+          <View style={styles.topBarSpacer} />
+        </Animated.View>
 
-          <View style={styles.form}>
-            {isSignup ? (
-              <FormInput
-                label="First name"
-                icon="user"
-                value={name}
-                onChangeText={setName}
-                placeholder="Your first name"
-                autoCapitalize="words"
-                autoComplete="name"
-                textContentType="givenName"
-                returnKeyType="next"
-                maxLength={50}
-                editable={!loading}
-                blurOnSubmit={false}
-                onSubmitEditing={() => phoneRef.current?.focus()}
-              />
-            ) : null}
+        <Animated.View
+          style={[
+            styles.keyboardStage,
+            {
+              opacity: bodyReveal,
+              transform: [{ translateY: bodyReveal.interpolate({ inputRange: [0, 1], outputRange: [16, 0] }) }],
+            },
+          ]}
+        >
+          <KeyboardScreen
+            scroll
+            style={styles.keyboard}
+            contentContainerStyle={[styles.scrollContent, compact && styles.scrollContentCompact]}
+          >
+            <View style={styles.content}>
+              <View style={styles.intro}>
+                <View style={styles.accentRule} />
+                <Text style={styles.title} accessibilityRole="header">
+                  {isSignup ? 'Start your analysis' : 'Welcome back'}
+                </Text>
+                <Text style={styles.subtitle}>
+                  {isSignup
+                    ? 'Enter your details to create your FormBae profile.'
+                    : 'Enter the mobile number linked to your FormBae profile.'}
+                </Text>
+              </View>
 
-            <FormInput
-              ref={phoneRef}
-              label="Mobile number"
-              prefix="+91"
-              value={mobile}
-              onChangeText={handleMobileChange}
-              placeholder="98765 43210"
-              keyboardType="phone-pad"
-              autoComplete="tel"
-              textContentType="telephoneNumber"
-              returnKeyType="done"
-              maxLength={14}
-              editable={!loading}
-              autoCorrect={false}
-              spellCheck={false}
-              inputAccessoryViewID={Platform.OS === 'ios' ? PHONE_ACCESSORY_ID : undefined}
-              onSubmitEditing={onSubmit}
-              accessibilityHint="Enter the 10 digits after plus 91"
-              error={phoneError || undefined}
-            />
+              <View style={styles.form}>
+                {isSignup ? (
+                  <FormInput
+                    label="First name"
+                    icon="user"
+                    value={name}
+                    onChangeText={setName}
+                    placeholder="Your first name"
+                    autoCapitalize="words"
+                    autoComplete="name"
+                    textContentType="givenName"
+                    returnKeyType="next"
+                    maxLength={50}
+                    editable={!loading}
+                    blurOnSubmit={false}
+                    onSubmitEditing={() => phoneRef.current?.focus()}
+                  />
+                ) : null}
 
-            <PrimaryButton
-              title={isSignup ? 'Continue to analysis' : 'Sign in'}
-              icon="arrow-right"
-              iconPosition="trailing"
-              onPress={onSubmit}
-              loading={loading}
-              size="lg"
-              style={styles.cta}
-              contentStyle={styles.ctaContent}
-            />
+                <FormInput
+                  ref={phoneRef}
+                  label="Mobile number"
+                  prefix="+91"
+                  value={mobile}
+                  onChangeText={handleMobileChange}
+                  placeholder="98765 43210"
+                  keyboardType="phone-pad"
+                  autoComplete="tel"
+                  textContentType="telephoneNumber"
+                  returnKeyType="done"
+                  maxLength={14}
+                  editable={!loading}
+                  autoCorrect={false}
+                  spellCheck={false}
+                  inputAccessoryViewID={Platform.OS === 'ios' ? PHONE_ACCESSORY_ID : undefined}
+                  onSubmitEditing={onSubmit}
+                  accessibilityHint="Enter the 10 digits after plus 91"
+                  error={phoneError || undefined}
+                />
 
-            <Text style={styles.legal}>
-              By continuing, you agree to our{' '}
-              <Text
-                style={styles.legalLink}
-                onPress={() => openLegalPage(TERMS_URL, 'Terms of Use')}
-                accessibilityRole="link"
-                accessibilityLabel="Read FormBae Terms of Use"
-              >
-                Terms of Use
-              </Text>{' '}
-              and{' '}
-              <Text
-                style={styles.legalLink}
-                onPress={() => openLegalPage(PRIVACY_URL, 'Privacy Policy')}
-                accessibilityRole="link"
-                accessibilityLabel="Read FormBae Privacy Policy"
-              >
-                Privacy Policy
-              </Text>
-              .
-            </Text>
-          </View>
-        </View>
-      </KeyboardScreen>
+                <PrimaryButton
+                  title={isSignup ? 'Continue to analysis' : 'Sign in'}
+                  icon="arrow-right"
+                  iconPosition="trailing"
+                  centerTitle
+                  onPress={onSubmit}
+                  loading={loading}
+                  size="lg"
+                  style={styles.cta}
+                />
+
+                <Text style={styles.legal}>
+                  By continuing, you agree to our{' '}
+                  <Text
+                    style={styles.legalLink}
+                    onPress={() => openLegalPage(TERMS_URL, 'Terms of Use')}
+                    accessibilityRole="link"
+                    accessibilityLabel="Read FormBae Terms of Use"
+                  >
+                    Terms of Use
+                  </Text>{' '}
+                  and{' '}
+                  <Text
+                    style={styles.legalLink}
+                    onPress={() => openLegalPage(PRIVACY_URL, 'Privacy Policy')}
+                    accessibilityRole="link"
+                    accessibilityLabel="Read FormBae Privacy Policy"
+                  >
+                    Privacy Policy
+                  </Text>
+                  .
+                </Text>
+              </View>
+            </View>
+          </KeyboardScreen>
+        </Animated.View>
+      </Animated.View>
 
       {Platform.OS === 'ios' ? (
         <InputAccessoryView nativeID={PHONE_ACCESSORY_ID}>
@@ -268,6 +365,7 @@ function toNationalMobileInput(value: string) {
 
 const styles = StyleSheet.create({
   screen: { backgroundColor: colors.bg },
+  interface: { flex: 1 },
   topBar: { minHeight: 52, flexDirection: 'row', alignItems: 'center' },
   backButton: {
     width: 44,
@@ -281,6 +379,7 @@ const styles = StyleSheet.create({
   },
   brand: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   topBarSpacer: { width: 44, height: 44 },
+  keyboardStage: { flex: 1 },
   keyboard: { backgroundColor: 'transparent' },
   scrollContent: { justifyContent: 'center', paddingTop: spacing.lg, paddingBottom: spacing.xxl },
   scrollContentCompact: { justifyContent: 'flex-start', paddingTop: spacing.xl, paddingBottom: spacing.lg },
@@ -291,7 +390,6 @@ const styles = StyleSheet.create({
   subtitle: { ...typography.body, fontSize: 16, lineHeight: 24, color: colors.inkMuted, marginTop: spacing.sm, maxWidth: 410 },
   form: { width: '100%' },
   cta: { minHeight: 62, borderRadius: radius.xl, marginTop: spacing.xs, paddingHorizontal: 20 },
-  ctaContent: { width: '100%', justifyContent: 'space-between' },
   legal: {
     ...typography.caption,
     maxWidth: 390,

@@ -22,6 +22,19 @@ export function getAccountabilityTaskArtwork(kind: string) {
   return ACCOUNTABILITY_TASK_ARTWORK[knownTaskKind(kind) ? kind : 'progress'];
 }
 
+export function accountabilityArtworkFrame(window: { width: number; height: number }, source: { width: number; height: number; scale?: number }, pixelRatio: number) {
+  if (window.width <= 0 || window.height <= 0 || source.width <= 0 || source.height <= 0) return undefined;
+  const density = Math.max(1, pixelRatio);
+  const aspect = source.width / source.height;
+  const nativeWidth = source.width * (source.scale || 1) / density;
+  const width = Math.floor(Math.min(Math.max(window.width, window.height * aspect), nativeWidth) * density) / density;
+  return {
+    width,
+    height: Math.floor(width / aspect * density) / density,
+    left: Math.round((window.width - width) * 0.88 * density) / density,
+  };
+}
+
 export function getAccountabilityTaskLabel(kind: string) {
   return ACCOUNTABILITY_TASK_LABELS[knownTaskKind(kind) ? kind : 'progress'];
 }

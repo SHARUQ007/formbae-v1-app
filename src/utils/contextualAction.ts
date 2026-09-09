@@ -1,7 +1,8 @@
 import { loadWorkoutPlanCached, peekWorkoutPlanCached } from '../services/preloadService';
 import { loadDietDiaryEntries, peekDietDiaryEntries, type DietDiaryEntry, type MealType } from '../store/dietDiaryStore';
 import type { PlanDay, TodayPayload } from '../types/api';
-import { mealForCurrentTime } from './dietDiaryTime';
+import { formatWorkoutTitle } from './workoutTitle';
+import { mealForCurrentTime, mealOrder } from './dietDiaryTime';
 
 export type ContextualTarget =
   | { kind: 'diet'; label: string; detail: string; icon: string; mealType: MealType }
@@ -19,11 +20,6 @@ export function currentMealType(date = new Date()): MealType {
   return mealForCurrentTime(date);
 }
 
-export function isMealWindow(date = new Date()) {
-  const hour = date.getHours();
-  return hour >= 5 && hour < 23;
-}
-
 export function isToday(value: string, reference = new Date()) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return false;
@@ -34,17 +30,27 @@ export function isUsableDietEntry(entry: DietDiaryEntry) {
   return entry.kind !== 'skip' && entry.status !== 'skipped';
 }
 
+export function suggestedMealToLog(entries: DietDiaryEntry[], date = new Date()): MealType | undefined {
+  const logged = new Set(entries.filter(entry => isUsableDietEntry(entry) && isToday(entry.createdAt, date)).map(entry => entry.mealType));
+  // Offer the current meal first, then the most recent missing meal today.
+  // Historical entries and clock cutoffs must not hide today's food logging.
+  return mealOrder.slice(0, mealOrder.indexOf(currentMealType(date)) + 1).reverse().find(meal => !logged.has(meal));
+}
+
 export function shouldOfferMealTask(entries: DietDiaryEntry[], date = new Date()) {
-  const usableEntries = entries.filter(isUsableDietEntry);
-  const mealType = currentMealType(date);
-  const currentMealLogged = usableEntries.some(
-    (entry) => isToday(entry.createdAt, date) && entry.mealType === mealType,
-  );
-  return !currentMealLogged && (isMealWindow(date) || usableEntries.length === 0);
+  return Boolean(suggestedMealToLog(entries, date));
+}
+
+export function shouldOfferAccountabilityFoodShortcut(
+  entries: DietDiaryEntry[],
+  activeCommitmentKind?: string,
+  date = new Date(),
+) {
+  return activeCommitmentKind !== 'diet' && shouldOfferMealTask(entries, date);
 }
 
 export function workoutTitle(day?: PlanDay) {
-  const focus = String(day?.focus || '').trim();
+  const focus = formatWorkoutTitle(day?.focus);
   return focus || "Today's workout";
 }
 
@@ -56,9 +62,9 @@ export function nextPlanDay(plan?: TodayPayload['plan']) {
 export function resolveTargetFromSnapshot(snapshot: Omit<ContextualSnapshot, 'target'>): ContextualTarget {
   const { workoutData, dietEntries } = snapshot;
   const now = new Date();
-  const mealType = currentMealType(now);
+  const mealType = suggestedMealToLog(dietEntries, now);
 
-  if (shouldOfferMealTask(dietEntries, now)) {
+  if (mealType) {
     return {
       kind: 'diet',
       label: mealType,
