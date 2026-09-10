@@ -16,6 +16,7 @@ import {
   peekTrophyLeaderboardCached,
 } from '../../services/preloadService';
 import { acceptTrophyInvite, fetchTrophyInvite } from '../../services/progressService';
+import { subscribeToInviteAccepted } from '../../services/trophyInviteService';
 import { subscribeToTrophySummary } from '../../services/trophyRealtime';
 import { useAuthStore } from '../../store/authStore';
 import type { ProgressSummary, TrophyLeaderboard } from '../../types/api';
@@ -150,6 +151,8 @@ export function TrophyDetailsScreen({ navigation, route }: Props) {
       };
     });
   }), [setData]);
+
+  useEffect(() => subscribeToInviteAccepted(() => { refresh().catch(() => undefined); }), [refresh]);
 
   const hasFocused = useRef(false);
   useFocusEffect(useCallback(() => {

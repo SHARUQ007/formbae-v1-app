@@ -1,6 +1,7 @@
 import { DarkTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { TrophyInviteGate } from '../components/TrophyInviteGate';
 import { SplashScreen } from '../screens/auth/SplashScreen';
 import { useAuthStore } from '../store/authStore';
 import { trackMobileActivity } from '../services/activityService';
@@ -57,6 +58,7 @@ export function RootNavigator() {
   const pageViewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTrackedPathRef = useRef('');
   const [navigationReady, setNavigationReady] = useState(false);
+  const [activeRoot, setActiveRoot] = useState('Splash');
   const { ready, token, status } = useAuthStore();
 
   const queuePageView = useCallback((path: string) => {
@@ -108,37 +110,50 @@ export function RootNavigator() {
   }, []);
 
   return (
-    <NavigationContainer
-      theme={navigationTheme}
-      ref={navigationRef}
-      onReady={() => {
-        setNavigationReady(true);
-        if (token) {
-          queuePageView(getActiveRoutePath(navigationRef.current?.getRootState()));
-        }
-      }}
-      onStateChange={(state) => {
-        if (token) {
-          queuePageView(getActiveRoutePath(state));
-        }
-      }}
-    >
-      <Stack.Navigator
-        screenOptions={{
-          headerShown: false,
-          animation: reduceMotion ? 'none' : 'fade',
-          animationDuration: 260,
-          gestureEnabled: false,
-          contentStyle: { backgroundColor: colors.bg },
+    <>
+      <NavigationContainer
+        theme={navigationTheme}
+        ref={navigationRef}
+        onReady={() => {
+          setNavigationReady(true);
+          const state = navigationRef.current?.getRootState();
+          setActiveRoot(state?.routes[state.index ?? 0]?.name || 'Splash');
+          if (token) {
+            queuePageView(getActiveRoutePath(navigationRef.current?.getRootState()));
+          }
+        }}
+        onStateChange={(state) => {
+          setActiveRoot(state?.routes[state.index ?? 0]?.name || 'Splash');
+          if (token) {
+            queuePageView(getActiveRoutePath(state));
+          }
         }}
       >
-        <Stack.Screen name="Splash" component={SplashScreen} />
-        <Stack.Screen name="Auth" getComponent={getAuthNavigator} />
-        <Stack.Screen name="Onboarding" getComponent={getOnboardingNavigator} />
-        <Stack.Screen name="PaidTransition" getComponent={getPaidTransitionNavigator} />
-        <Stack.Screen name="Main" getComponent={getMainSubscriptionScreen} />
-        <Stack.Screen name="Renewal" getComponent={getSubscriptionRenewalScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: false,
+            animation: reduceMotion ? 'none' : 'fade',
+            animationDuration: 260,
+            gestureEnabled: false,
+            contentStyle: { backgroundColor: colors.bg },
+          }}
+        >
+          <Stack.Screen name="Splash" component={SplashScreen} />
+          <Stack.Screen name="Auth" getComponent={getAuthNavigator} />
+          <Stack.Screen name="Onboarding" getComponent={getOnboardingNavigator} />
+          <Stack.Screen name="PaidTransition" getComponent={getPaidTransitionNavigator} />
+          <Stack.Screen name="Main" getComponent={getMainSubscriptionScreen} />
+          <Stack.Screen name="Renewal" getComponent={getSubscriptionRenewalScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
+      <TrophyInviteGate
+        token={token}
+        userId={status?.userId}
+        active={ready && navigationReady && activeRoot !== 'Splash'}
+        canViewLeaderboard={status?.recommendedNextScreen === 'home'}
+        onSignIn={() => navigationRef.current?.navigate('Auth', { screen: 'Login', params: { mode: 'login' } })}
+        onViewLeaderboard={() => navigationRef.current?.navigate('Main', { screen: 'Progress', params: { screen: 'TrophyDetails' } })}
+      />
+    </>
   );
 }

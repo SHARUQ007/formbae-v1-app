@@ -3,10 +3,10 @@ import type { WorkoutDayDetail } from '../types/api';
 
 export type RootStackParamList = {
   Splash: undefined;
-  Auth: undefined;
+  Auth: NavigatorScreenParams<AuthStackParamList> | undefined;
   Onboarding: { screen?: keyof OnboardingStackParamList } | undefined;
   PaidTransition: { screen?: keyof PaidStackParamList } | undefined;
-  Main: undefined;
+  Main: NavigatorScreenParams<MainTabParamList> | undefined;
   Renewal: undefined;
 };
 
