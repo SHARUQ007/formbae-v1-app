@@ -1,5 +1,7 @@
 import { Image } from 'react-native';
-import { preloadImageSources } from './imagePreloadService';
+import { getAccountabilityArtworkSources, imageWarmupSize, preloadImageSources } from './imagePreloadService';
+
+import { getAccountabilityTaskArtwork } from '../utils/accountabilityArtwork';
 
 afterEach(() => jest.restoreAllMocks());
 
@@ -38,4 +40,26 @@ test('a failed image releases its slot and can be retried', async () => {
   expect(results.slice(1).every(result => result.status === 'fulfilled')).toBe(true);
   await expect(preloadImageSources([sources[0]])).resolves.toEqual([{ status: 'fulfilled', value: true }]);
   expect(prefetch).toHaveBeenCalledTimes(7);
+});
+
+
+test('queues the visible workout and meal artwork ahead of other bundled art', () => {
+  jest.spyOn(Image, 'resolveAssetSource').mockImplementation(source => ({
+    uri: String((source as { testUri?: string }).testUri || source), width: 1200, height: 800, scale: 1,
+  }));
+  const sources = getAccountabilityArtworkSources();
+  expect(sources.slice(0, 2)).toEqual([
+    getAccountabilityTaskArtwork('workout'), getAccountabilityTaskArtwork('diet'),
+  ]);
+  expect(sources).toHaveLength(6);
+});
+
+test('native warm-up decodes useful card dimensions while bounding tablet memory', () => {
+  jest.spyOn(Image, 'resolveAssetSource').mockReturnValue({ uri: 'file:///art.jpg', width: 1200, height: 800, scale: 1 });
+  expect(imageWarmupSize({ uri: 'file:///art.jpg' }, 390)).toEqual({ width: 342, height: 228 });
+  const tablet = imageWarmupSize({ uri: 'file:///art.jpg' }, 1024);
+  expect(tablet.width).toBeLessThanOrEqual(400);
+  expect(tablet.height).toBeLessThanOrEqual(280);
+  jest.spyOn(Image, 'resolveAssetSource').mockReturnValue({ uri: 'file:///portrait.jpg', width: 800, height: 1600, scale: 1 });
+  expect(imageWarmupSize({ uri: 'file:///portrait.jpg' }, 390).height).toBe(280);
 });

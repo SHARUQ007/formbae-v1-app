@@ -671,7 +671,7 @@ function BaeArtworkHero({ eyebrow, title, body, loading = false }: {
   loading?: boolean;
 }) {
   return (
-    <ImageBackground source={getAccountabilityBaeArtwork('inactive')} style={styles.baeArtworkHero} imageStyle={styles.baeArtworkImage} resizeMode="cover">
+    <ImageBackground source={getAccountabilityBaeArtwork('inactive')} defaultSource={getAccountabilityBaeArtwork('inactive')} fadeDuration={0} style={styles.baeArtworkHero} imageStyle={styles.baeArtworkImage} resizeMode="cover">
       <LinearGradient colors={['rgba(4,5,8,0.98)', 'rgba(4,5,8,0.82)', 'rgba(4,5,8,0.08)']} locations={[0, 0.58, 1]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
       <View style={styles.baeArtworkContent}>
         <View style={styles.baeArtworkEyebrowRow}>
@@ -837,7 +837,7 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
   return (
     <View style={styles.partnerSection}>
       {header}
-      <ImageBackground source={getAccountabilityBaeArtwork('matched')} style={styles.baeConnectedHero} imageStyle={styles.baeArtworkImage} resizeMode="cover">
+      <ImageBackground source={getAccountabilityBaeArtwork('matched')} defaultSource={getAccountabilityBaeArtwork('matched')} fadeDuration={0} style={styles.baeConnectedHero} imageStyle={styles.baeArtworkImage} resizeMode="cover">
         <LinearGradient colors={['rgba(4,5,8,0.98)', 'rgba(4,5,8,0.74)', 'rgba(4,5,8,0.06)']} locations={[0, 0.52, 1]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
         <View style={styles.baeConnectedContent}>
           <View style={styles.baeConnectedTop}>
@@ -1038,7 +1038,7 @@ function TodayTaskCard({ task, loading, onPress }: { task: TodayTask; loading: b
       <View style={[styles.todayTaskArtwork, compact && styles.todayTaskArtworkCompact]}>
         <View pointerEvents="none" style={styles.todayTaskImageWindow}
           onLayout={({ nativeEvent: { layout } }) => setArtworkLayout({ width: layout.width, height: layout.height })}>
-          <Image source={artwork} resizeMode="contain" resizeMethod="scale" accessible={false}
+          <Image source={artwork} defaultSource={artwork} fadeDuration={0} resizeMode="contain" resizeMethod="scale" accessible={false}
             style={[styles.todayTaskImage, artworkFrame]} />
         </View>
         <LinearGradient colors={[colors.bg, 'rgba(5,6,10,0.74)', 'rgba(5,6,10,0)']}

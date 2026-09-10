@@ -1,10 +1,10 @@
-import type { ImageSourcePropType } from 'react-native';
+import type { ImageRequireSource } from 'react-native';
 import type { AccountabilityBaeSummary } from '../types/api';
 
 const DISCOVERY_ARTWORK = require('../assets/editorial/accountability-bae-discovery.jpg');
 const CONNECTED_ARTWORK = require('../assets/editorial/accountability-bae-connected.jpg');
 
-export function getAccountabilityBaeArtwork(status?: AccountabilityBaeSummary['status']): ImageSourcePropType {
+export function getAccountabilityBaeArtwork(status?: AccountabilityBaeSummary['status']): ImageRequireSource {
   return status === 'matched' ? CONNECTED_ARTWORK : DISCOVERY_ARTWORK;
 }
 

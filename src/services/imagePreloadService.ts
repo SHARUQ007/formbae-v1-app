@@ -134,12 +134,33 @@ export async function preloadImageSources(
   return Promise.allSettled(uniqueSources(sources).map(scheduleImage));
 }
 
+/** Above-the-fold artwork must not wait for profile or remote image requests. */
+export function getAccountabilityArtworkSources() {
+  return uniqueSources([
+    getAccountabilityTaskArtwork('workout'),
+    getAccountabilityTaskArtwork('diet'),
+    getAccountabilityBaeArtwork('inactive'),
+    getAccountabilityBaeArtwork('matched'),
+    getAccountabilityTaskArtwork('refresh'),
+    getAccountabilityTaskArtwork('progress'),
+  ]);
+}
+
+/** Decode a useful card-sized bitmap instead of a 2px thumbnail. Bound memory on tablets. */
+export function imageWarmupSize(source: ImageSourcePropType, screenWidth: number) {
+  const resolved = Image.resolveAssetSource(source);
+  const width = Math.min(400, Math.max(1, screenWidth - 48));
+  const aspect = resolved?.width && resolved?.height ? resolved.width / resolved.height : 1.5;
+  return { width, height: Math.min(280, width / aspect) };
+}
+
 /** Every bundled image a signed-in user can encounter across the main tabs. */
 export function getMainAppArtworkSources(profileGender?: string) {
   const gender = String(profileGender || '').trim().toLowerCase();
   const membershipGender = gender === 'female' ? 'female' : 'male';
 
   return uniqueSources([
+    ...getAccountabilityArtworkSources(),
     APP_ICON,
     BRAND_MARK,
     COACH_DISCOVERY_ART,

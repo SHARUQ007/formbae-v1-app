@@ -5,6 +5,7 @@ import {
   Easing,
   Image,
   ImageBackground,
+  useWindowDimensions,
   View,
   Text,
   StyleSheet,
@@ -13,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { getAccountabilityArtworkSources, imageWarmupSize } from '../../services/imagePreloadService';
 import { Logo } from '../../components/Logo';
 import { GymLoadingMessage } from '../../components/GymLoadingMessage';
 import {
@@ -61,6 +63,7 @@ function NativeImageWarmup({
   sources: ImageSourcePropType[];
   onComplete: () => void;
 }) {
+  const { width } = useWindowDimensions();
   const settled = useRef(new Set<number>());
   const completed = useRef(false);
 
@@ -92,7 +95,7 @@ function NativeImageWarmup({
         <Image
           key={`startup-image-${index}`}
           source={source}
-          style={styles.imageWarmupItem}
+          style={[styles.imageWarmupItem, imageWarmupSize(source, width)]}
           resizeMode="cover"
           fadeDuration={0}
           onLoadEnd={() => markSettled(index)}
@@ -114,7 +117,8 @@ export function SplashScreen({ navigation }: Props) {
   const [snapshot, setSnapshot] = useState(getMainAppPreloadSnapshot);
   const [finishing, setFinishing] = useState(false);
   const [mainPreloadStarted, setMainPreloadStarted] = useState(false);
-  const [imageWarmupSources, setImageWarmupSources] = useState<ImageSourcePropType[]>([]);
+  const [imageWarmupGeneration, setImageWarmupGeneration] = useState(0);
+  const [imageWarmupSources, setImageWarmupSources] = useState<ImageSourcePropType[]>(getAccountabilityArtworkSources);
   const [motionPreference, setMotionPreference] =
     useState<MotionPreference>('unknown');
   const bridgeOpacity = useRef(new Animated.Value(1)).current;
@@ -256,6 +260,7 @@ export function SplashScreen({ navigation }: Props) {
       }
       imageWarmupResolver.current = resolve;
       setImageWarmupSources(sources);
+      setImageWarmupGeneration(generation => generation + 1);
     }));
     setSnapshot(getMainAppPreloadSnapshot());
     setMainPreloadStarted(true);
@@ -322,6 +327,7 @@ export function SplashScreen({ navigation }: Props) {
       accessible={false}
     >
       <NativeImageWarmup
+        key={imageWarmupGeneration}
         sources={imageWarmupSources}
         onComplete={completeImageWarmup}
       />

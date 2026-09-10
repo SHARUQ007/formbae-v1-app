@@ -1,6 +1,6 @@
-import type { ImageSourcePropType } from 'react-native';
+import type { ImageRequireSource } from 'react-native';
 
-const ACCOUNTABILITY_TASK_ARTWORK: Record<'diet' | 'workout' | 'refresh' | 'progress', ImageSourcePropType> = {
+const ACCOUNTABILITY_TASK_ARTWORK: Record<'diet' | 'workout' | 'refresh' | 'progress', ImageRequireSource> = {
   diet: require('../assets/editorial/accountability-food-memory.jpg'),
   workout: require('../assets/editorial/accountability-workout-card.jpg'),
   refresh: require('../assets/editorial/accountability-plan.jpg'),

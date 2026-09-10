@@ -14,6 +14,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    // The 1200–1440px editorial cards exceed RN's default 2MB decoded-image
+    // entry limit. Keep them cacheable, with a bounded total memory budget.
+    RCTSetImageCacheLimits(8 * 1024 * 1024, 48 * 1024 * 1024)
+
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()

@@ -5,6 +5,7 @@ import { fetchAccountability, fetchAccountabilityBae } from './accountabilitySer
 import { DIET_DIARY_CACHE_KEY, fetchDietDiary } from './dietDiaryService';
 import {
   getAccountabilityProofSources,
+  getAccountabilityArtworkSources,
   getCoachImageSources,
   getDietDiaryImageSources,
   getMainAppArtworkSources,
@@ -15,8 +16,8 @@ import { fetchProgress, fetchTrophyLeaderboard, flushPendingProgressLogs } from 
 import { fetchSettings } from './settingsService';
 import { fetchCoachHub } from './trainerService';
 import { fetchWorkoutDay, fetchWorkoutPlan } from './workoutService';
-import { loadDietDiaryEntries, peekDietDiaryEntries } from '../store/dietDiaryStore';
-import { preloadReadingPage } from './readingFeedService';
+import { loadDietDiaryEntries } from '../store/dietDiaryStore';
+import { peekReadingPage, preloadReadingPage } from './readingFeedService';
 
 export const CACHE_KEYS = {
   // Bump when the plan presentation contract changes so persisted legacy
@@ -208,6 +209,7 @@ function startMainAppPreload(): PreloadRun {
     lastCompletedLabel: '',
   });
 
+  const firstScreenArtwork = preloadImageSources(getAccountabilityArtworkSources());
   const workoutPlanRequest = loadWorkoutPlanCached();
   // Public reading content warms alongside startup without holding the splash.
   const readingRoom = preloadReadingPage()
@@ -236,9 +238,12 @@ function startMainAppPreload(): PreloadRun {
     runId,
     'Artwork',
     true,
-    profileSettingsRequest
-      .catch(() => null)
-      .then(settings => preloadImageSources(getMainAppArtworkSources(settings?.profile?.gender))),
+    Promise.all([
+      firstScreenArtwork,
+      profileSettingsRequest
+        .catch(() => null)
+        .then(settings => preloadImageSources(getMainAppArtworkSources(settings?.profile?.gender))),
+    ]),
   );
   const accountability = trackPreloadTask(runId, 'Accountability', true, fetchAccountability());
   const localDietDiary = trackPreloadTask(
@@ -346,16 +351,15 @@ export function preloadMainAppCriticalData() {
  * prefetching—finishes before Main is revealed.
  */
 export function getMainAppImageSourcesSnapshot(): ImageSourcePropType[] {
-  const settings = peekProfileSettingsCached();
   const workout = peekWorkoutPlanCached();
   const coach = peekCoachBundleCached();
-  const diaryEntries = peekDietDiaryEntries() || [];
+  const readingImage = peekReadingPage(1)?.articles[0]?.imageUrl;
   return dedupeImageSources([
-    ...getMainAppArtworkSources(settings?.profile?.gender),
+    ...getAccountabilityArtworkSources(),
     ...(coach?.coachHub
-      ? getCoachImageSources(coach.coachHub, workout?.today?.assignedTrainer)
+      ? getCoachImageSources(coach.coachHub, workout?.today?.assignedTrainer).slice(0, 1)
       : []),
-    ...getDietDiaryImageSources(diaryEntries.slice(0, 8)),
+    ...(readingImage ? [{ uri: readingImage }] : []),
   ]);
 }
 
