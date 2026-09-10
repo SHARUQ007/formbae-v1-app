@@ -572,7 +572,7 @@ export function ActionHubScreen({ navigation }: Props) {
               onLeave={leaveBae}
               onViewPartner={() => setSelectedPartner(accountabilityBae?.partner?.userId || null)}
               onRetry={() => load(true)}
-              onViewTrophies={() => navigation.navigate('Progress')}
+              onViewTrophies={() => navigation.navigate('Progress', { screen: 'TrophyDetails' })}
             />
           </>
         )}
@@ -744,16 +744,18 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
           body={forceLocked ? 'FormBae support manages this access.' : `${remaining} more ${remaining === 1 ? 'trophy' : 'trophies'} to start shared challenges.`}
         />
         <View style={styles.baeAccessCard}>
+          <View style={styles.baeLockHeading}><View style={styles.baeLockIcon}><Feather name="lock" size={20} color={colors.gold}/></View><View style={styles.matchStageCopy}><Text style={styles.matchStageTitle}>{forceLocked ? 'Access paused' : `Unlock at ${threshold} trophies`}</Text><Text style={styles.baeSafetyText}>{forceLocked ? 'Your existing connection is kept safe.' : 'Keep showing up. Get there together.'}</Text></View></View>
           {!forceLocked ? (
             <>
               <View style={styles.baeTrophyProgressHead}>
                 <Text style={styles.baeTrophyProgressValue}>{score} trophies</Text>
                 <Text style={styles.baeTrophyProgressTarget}>Unlocks at {threshold}</Text>
               </View>
-              <View style={styles.baeTrophyTrack}><View style={[styles.baeTrophyFill, { width: progress }]} /></View>
+              <View style={styles.baeTrophyTrack} accessible accessibilityRole="progressbar" accessibilityLabel="Partner mode unlock progress" accessibilityValue={{ min: 0, max: threshold, now: Math.min(score, threshold), text: `${score} of ${threshold} trophies. ${remaining} to go.` }}><View style={[styles.baeTrophyFill, { width: progress }]} /></View>
             </>
           ) : null}
-          <PrimaryButton title="View trophy progress" variant="secondary" onPress={onViewTrophies} style={styles.baeTrophyButton} />
+          {!forceLocked ? <View style={styles.baeUnlockBenefits}><View style={styles.baeUnlockBenefit}><Feather name="users" size={16} color={colors.gold}/><Text style={styles.baeSafetyText}>A partner & shared daily challenges</Text></View><View style={styles.baeUnlockBenefit}><Feather name="image" size={16} color={colors.gold}/><Text style={styles.baeSafetyText}>Private photo check-ins, revealed together</Text></View></View> : null}
+          <PrimaryButton title="View trophy progress" variant={forceLocked ? 'secondary' : 'primary'} onPress={onViewTrophies} style={styles.baeTrophyButton} />
         </View>
       </View>
     );
@@ -1061,6 +1063,10 @@ function TodayTaskCard({ task, loading, onPress }: { task: TodayTask; loading: b
 }
 
 const styles = StyleSheet.create({
+  baeLockHeading: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 },
+  baeLockIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.accentFill, alignItems: 'center', justifyContent: 'center' },
+  baeUnlockBenefits: { gap: 12, paddingVertical: 12 },
+  baeUnlockBenefit: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   matchJourney: { padding: 20, gap: 22, borderRadius: 22, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
   matchStage: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   matchStageCopy: { flex: 1, gap: 4 },

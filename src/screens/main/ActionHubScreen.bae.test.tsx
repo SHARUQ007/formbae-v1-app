@@ -5,6 +5,7 @@ import type { AccountabilityBaeSummary } from '../../types/api';
 import { AccountabilityBaeCard, AccountabilityModeSwitch } from './ActionHubScreen';
 
 const noop = () => undefined;
+const unlockedAccess = { unlocked: true, override: 'default' as const, trophyScore: 50, trophyThreshold: 50, trophiesRemaining: 0 };
 
 function copy(renderer: ReactTestRenderer.ReactTestRenderer) {
   return JSON.stringify(renderer.toJSON());
@@ -36,7 +37,7 @@ async function renderCard(data: AccountabilityBaeSummary | null, overrides: Part
 }
 
 const matchedBase: AccountabilityBaeSummary = {
-  status: 'matched',
+  status: 'matched', access: unlockedAccess,
   preference: 'female',
   inviteCode: '',
   partner: { userId: 'partner-1', displayName: 'Priya K.' },
@@ -73,7 +74,7 @@ describe('Accountability Bae UI states', () => {
 
   it('keeps partner selection compact and discloses reciprocal privacy before matching', async () => {
     const onStart = jest.fn();
-    const renderer = await renderCard({ status: 'inactive', preference: '', inviteCode: '' }, { onStart });
+    const renderer = await renderCard({ status: 'inactive', access: unlockedAccess, preference: '', inviteCode: '' }, { onStart });
     const text = copy(renderer);
     expect(text).toContain('Better together');
     expect(text).toContain('Only your first name and initial are shown.');
@@ -137,7 +138,7 @@ describe('Accountability Bae UI states', () => {
 
   it('does not expose an invite action until the friend code is ready', async () => {
     const renderer = await renderCard({
-      status: 'waiting',
+      status: 'waiting', access: unlockedAccess,
       preference: 'friend',
       inviteCode: '',
     });
@@ -186,7 +187,7 @@ it('keeps both trophy counts and partnership visible when no challenge is open',
 
 it('keeps a friend invite prominent while automatic matching is active without simulated progress', async () => {
   const onStart = jest.fn();
-  const renderer = await renderCard({ status: 'waiting', preference: 'female', inviteCode: '' }, { onStart });
+  const renderer = await renderCard({ status: 'waiting', access: unlockedAccess, preference: 'female', inviteCode: '' }, { onStart });
   expect(copy(renderer)).toContain('Preference saved');
   expect(copy(renderer)).toContain('Finding your fit');
   expect(copy(renderer)).toContain('Meet your partner');
@@ -201,4 +202,16 @@ it('opens partner details and keeps the friend alternative available after a mat
   renderer.root.findByProps({ accessibilityLabel: 'View partner details' }).props.onPress();
   expect(onViewPartner).toHaveBeenCalledTimes(1);
   expect(copy(renderer)).toContain('Invite a friend instead');
+});
+
+
+it('honours an admin threshold and hides all matching actions while locked', async () => {
+  const renderer = await renderCard({ ...matchedBase, access: { ...unlockedAccess, unlocked: false, trophyScore: 74, trophyThreshold: 75, trophiesRemaining: 1 } });
+  const text = copy(renderer);
+  expect(text).toContain('Unlock at 75 trophies');
+  expect(text).toContain('1 more trophy');
+  expect(text).not.toContain('Invite a friend instead');
+  expect(text).not.toContain('Complete with a photo');
+  expect(text).not.toContain('Priya');
+  expect(renderer.root.findByProps({ accessibilityLabel: 'Partner mode unlock progress' }).props.accessibilityValue.now).toBe(74);
 });

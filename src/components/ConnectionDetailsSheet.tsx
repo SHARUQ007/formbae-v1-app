@@ -110,7 +110,7 @@ export function ConnectionDetailsSheet({
             </TouchableOpacity>
           </View>
           <ScrollView
-            style={{ flexGrow: 0, flexShrink: 1 }}
+            style={styles.scroll}
             contentContainerStyle={[
               styles.content,
               { paddingBottom: insets.bottom + 24 },
@@ -245,6 +245,7 @@ function ManageRow({
   );
 }
 const styles = StyleSheet.create({
+  scroll: { flexGrow: 0, flexShrink: 1 },
   backdrop: {
     flex: 1,
     justifyContent: 'flex-end',

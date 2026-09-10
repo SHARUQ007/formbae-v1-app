@@ -58,7 +58,7 @@ another day.
   paginated member/task rows and seven-day shared completion rates.
 - Task library: add/edit forms, active/paused status, context and eligibility
   controls. Changes affect future assignment snapshots only.
-- Member access: existing 50-trophy rule and per-user access overrides.
+- Member access: configurable trophy requirement (default 50) and per-user access overrides.
 
 Metrics count actual assigned pair-days, not all matched accounts. Unvisited
 days are not manufactured as missed assignments. Admins see names and submission
@@ -144,3 +144,18 @@ Details and mutations require an authenticated relationship with the target.
 Leaderboard removal is mutual; it does not end Partner mode. Ending Partner mode
 does not remove an existing leaderboard connection. These controls are not a
 block/report system, and removed users can reconnect through a fresh invite.
+
+## Configurable unlock requirement
+
+Partner mode defaults to 50 trophies. Admins can set a whole-number requirement
+from 1 to 10,000 under Partner mode → Member access. The setting is stored as
+`mobile_accountability_bae_trophy_threshold`; invalid/missing values fall back
+to 50. Per-user force-locked and force-unlocked settings still take precedence.
+The access overview reads users and settings once per load so its threshold,
+remaining trophies and eligibility counts use the same configuration snapshot.
+
+Backend checks apply to summary, matching, friend-code joins, uploads and photo
+reads. Raising the threshold pauses access for members below it without deleting
+connections. The mobile locked view displays the server threshold and progress;
+missing or contradictory access data hides matching, invitations and photos.
+A cache version change prevents older access payloads being reused on upgrade.

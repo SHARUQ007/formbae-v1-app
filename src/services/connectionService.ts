@@ -22,5 +22,5 @@ export async function removeConnection(userId: string, scope: RemovalScope) {
     { method: 'POST' },
   );
   invalidateCachedResource('trophyLeaderboard:v2');
-  invalidateCachedResource('accountability:bae:v2');
+  invalidateCachedResource('accountability:bae:v3');
 }

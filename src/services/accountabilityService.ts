@@ -5,7 +5,7 @@ import type { AccountabilityBaeSummary, AccountabilitySummary } from '../types/a
 import { formatWorkoutTitle } from '../utils/workoutTitle';
 
 const ACCOUNTABILITY_CACHE_KEY = 'accountability:summary:v1';
-const ACCOUNTABILITY_BAE_CACHE_KEY = 'accountability:bae:v2';
+const ACCOUNTABILITY_BAE_CACHE_KEY = 'accountability:bae:v3';
 const DEFAULT_BAE_TROPHY_THRESHOLD = 50;
 
 function recordValue(value: unknown): Record<string, unknown> | null {
@@ -30,19 +30,23 @@ export function normalizeAccountabilityBaeSummary(value: unknown): Accountabilit
 
   const rawAccess = recordValue(raw.access);
   const suppliedThreshold = finiteNonNegative(rawAccess?.trophyThreshold, DEFAULT_BAE_TROPHY_THRESHOLD);
-  const threshold = suppliedThreshold > 0 ? suppliedThreshold : DEFAULT_BAE_TROPHY_THRESHOLD;
+  const threshold = Number.isInteger(suppliedThreshold) && suppliedThreshold > 0 && suppliedThreshold <= 10000 ? suppliedThreshold : DEFAULT_BAE_TROPHY_THRESHOLD;
   const score = finiteNonNegative(rawAccess?.trophyScore, 0);
   const remainingFallback = Math.max(0, threshold - score);
   const override = rawAccess?.override === 'locked' || rawAccess?.override === 'unlocked'
     ? rawAccess.override
     : 'default';
   const access = {
-    unlocked: rawAccess?.unlocked === true || override === 'unlocked',
+    unlocked: raw.status !== 'locked' && override !== 'locked' && rawAccess?.unlocked === true && (override === 'unlocked' || score >= threshold),
     override,
     trophyScore: score,
     trophyThreshold: threshold,
-    trophiesRemaining: finiteNonNegative(rawAccess?.trophiesRemaining, remainingFallback),
+    trophiesRemaining: remainingFallback,
   } as NonNullable<AccountabilityBaeSummary['access']>;
+
+  if (!access.unlocked) {
+    return { status: 'locked', preference: '', inviteCode: '', access, partner: null, challenge: null, history: [], youSubmitted: false, partnerSubmitted: false, bothSubmitted: false, photosRevealed: false };
+  }
 
   const validStatus = raw.status === 'locked' || raw.status === 'inactive' || raw.status === 'waiting' || raw.status === 'matched';
   const status: AccountabilityBaeSummary['status'] = validStatus
