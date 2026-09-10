@@ -295,6 +295,19 @@ export type AccountabilitySummary = {
   commitmentCount: number;
 };
 
+export type PartnerDay = {
+  date: string;
+  challenge?: { id: string; title: string; prompt: string } | null;
+  state: string;
+  revealAt: string;
+  timezone: string;
+  youSubmitted: boolean;
+  partnerSubmitted: boolean;
+  photosRevealed: boolean;
+  yourProofUrl?: string;
+  partnerProofUrl?: string;
+};
+
 export type AccountabilityBaeSummary = {
   status: 'locked' | 'inactive' | 'waiting' | 'matched';
   preference: 'male' | 'female' | 'friend' | '';
@@ -306,7 +319,7 @@ export type AccountabilityBaeSummary = {
     trophyThreshold: number;
     trophiesRemaining: number;
   };
-  partner?: { userId: string; displayName: string } | null;
+  partner?: { userId: string; displayName: string; trophyCount?: number } | null;
   challenge?: {
     id: string;
     title: string;
@@ -314,10 +327,19 @@ export type AccountabilityBaeSummary = {
     icon: string;
     date: string;
     dueLabel: string;
+    assignmentId?: string;
+    revealAt?: string;
+    minutes?: number;
   } | null;
   youSubmitted?: boolean;
   partnerSubmitted?: boolean;
   bothSubmitted?: boolean;
+  photosRevealed?: boolean;
+  revealAt?: string;
+  timezone?: string;
+  reason?: string;
+  state?: string;
+  history?: PartnerDay[];
   yourProofUrl?: string;
   partnerProofUrl?: string;
 };

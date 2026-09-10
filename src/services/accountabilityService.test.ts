@@ -65,3 +65,15 @@ describe('Partner accountability response normalization', () => {
     });
   });
 });
+
+it('keeps both current photos hidden until the server explicitly reveals them', () => {
+  const value = { status: 'matched', youSubmitted: true, partnerSubmitted: true, bothSubmitted: true, yourProofUrl: '/mine', partnerProofUrl: '/theirs' };
+  expect(normalizeAccountabilityBaeSummary(value)).toMatchObject({ photosRevealed: false, yourProofUrl: undefined, partnerProofUrl: undefined });
+  expect(normalizeAccountabilityBaeSummary({ ...value, photosRevealed: true })).toMatchObject({ photosRevealed: true, yourProofUrl: '/mine', partnerProofUrl: '/theirs' });
+});
+
+it('past days cannot leak a one-sided photo from a malformed payload', () => {
+  const result = normalizeAccountabilityBaeSummary({ status: 'matched', history: [null, { date: '2026-09-09', youSubmitted: true, partnerSubmitted: false, photosRevealed: true, yourProofUrl: '/private', partnerProofUrl: '/private-other' }] });
+  expect(result?.history).toHaveLength(1);
+  expect(result?.history?.[0]).toMatchObject({ photosRevealed: false, yourProofUrl: undefined, partnerProofUrl: undefined });
+});

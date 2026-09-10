@@ -5,7 +5,7 @@ import type { AccountabilityBaeSummary, AccountabilitySummary } from '../types/a
 import { formatWorkoutTitle } from '../utils/workoutTitle';
 
 const ACCOUNTABILITY_CACHE_KEY = 'accountability:summary:v1';
-const ACCOUNTABILITY_BAE_CACHE_KEY = 'accountability:bae:v1';
+const ACCOUNTABILITY_BAE_CACHE_KEY = 'accountability:bae:v2';
 const DEFAULT_BAE_TROPHY_THRESHOLD = 50;
 
 function recordValue(value: unknown): Record<string, unknown> | null {
@@ -66,7 +66,7 @@ export function normalizeAccountabilityBaeSummary(value: unknown): Accountabilit
     inviteCode: stringValue(raw.inviteCode),
     access,
     partner: partnerName
-      ? { userId: stringValue(rawPartner?.userId), displayName: partnerName }
+      ? { userId: stringValue(rawPartner?.userId), displayName: partnerName, trophyCount: finiteNonNegative(rawPartner?.trophyCount, 0) }
       : null,
     challenge: challengeTitle
       ? {
@@ -76,13 +76,28 @@ export function normalizeAccountabilityBaeSummary(value: unknown): Accountabilit
           icon: stringValue(rawChallenge?.icon) || 'walk',
           date: stringValue(rawChallenge?.date),
           dueLabel: stringValue(rawChallenge?.dueLabel) || 'Today',
+          assignmentId: stringValue(rawChallenge?.assignmentId),
+          revealAt: stringValue(rawChallenge?.revealAt),
+          minutes: finiteNonNegative(rawChallenge?.minutes, 0),
         }
       : null,
     youSubmitted,
     partnerSubmitted,
     bothSubmitted: raw.bothSubmitted === true && youSubmitted && partnerSubmitted,
-    yourProofUrl: youSubmitted ? stringValue(raw.yourProofUrl) || undefined : undefined,
-    partnerProofUrl: partnerSubmitted ? stringValue(raw.partnerProofUrl) || undefined : undefined,
+    photosRevealed: raw.photosRevealed === true && youSubmitted && partnerSubmitted,
+    revealAt: stringValue(raw.revealAt),
+    timezone: stringValue(raw.timezone),
+    reason: stringValue(raw.reason),
+    state: stringValue(raw.state),
+    history: Array.isArray(raw.history) ? raw.history.slice(0, 31).flatMap(entry => {
+      const day = recordValue(entry);
+      if (!day || !stringValue(day.date)) return [];
+      const task = recordValue(day.challenge);
+      const revealed = day.photosRevealed === true && day.youSubmitted === true && day.partnerSubmitted === true;
+      return [{ date: stringValue(day.date), challenge: task ? { id: stringValue(task.id), title: stringValue(task.title), prompt: stringValue(task.prompt) } : null, state: stringValue(day.state), revealAt: stringValue(day.revealAt), timezone: stringValue(day.timezone), youSubmitted: day.youSubmitted === true, partnerSubmitted: day.partnerSubmitted === true, photosRevealed: revealed, yourProofUrl: revealed ? stringValue(day.yourProofUrl) : undefined, partnerProofUrl: revealed ? stringValue(day.partnerProofUrl) : undefined }];
+    }) : [],
+    yourProofUrl: raw.photosRevealed === true && youSubmitted && partnerSubmitted ? stringValue(raw.yourProofUrl) || undefined : undefined,
+    partnerProofUrl: raw.photosRevealed === true && youSubmitted && partnerSubmitted ? stringValue(raw.partnerProofUrl) || undefined : undefined,
   };
 }
 
@@ -157,12 +172,12 @@ export function leaveAccountabilityBae() {
   return apiRequest<unknown>('/accountability/bae/leave', { method: 'POST' }).then(cacheBae);
 }
 
-export function uploadAccountabilityBaeProof(asset: Asset) {
+export function uploadAccountabilityBaeProof(asset: Asset, assignment: { assignmentId: string; date: string }) {
   if (!asset.base64) throw new Error('Photo data is unavailable.');
   return apiRequest<unknown>('/accountability/bae/proof', {
     method: 'POST',
     timeoutMs: 30000,
-    body: { imageBase64: asset.base64, imageMime: asset.type || 'image/jpeg' },
+    body: { imageBase64: asset.base64, imageMime: asset.type || 'image/jpeg', ...assignment },
   }).then(cacheBae);
 }
 

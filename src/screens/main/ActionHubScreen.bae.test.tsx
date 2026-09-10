@@ -77,8 +77,8 @@ describe('Accountability Bae UI states', () => {
     const text = copy(renderer);
     expect(text).toContain('Better together');
     expect(text).toContain('Only your first name and initial are shown.');
-    expect(text).toContain('Photos unlock after you both check in');
-    expect(text).toContain('showing your face is optional');
+    expect(text).toContain('Photos unlock after midnight');
+    expect(text).toContain('Showing your face is optional');
     renderer.root.findByProps({ accessibilityLabel: 'Female. Auto-match' }).props.onPress();
     expect(onStart).toHaveBeenCalledWith('female');
   });
@@ -93,8 +93,8 @@ describe('Accountability Bae UI states', () => {
     });
     const text = copy(renderer);
     expect(text).toContain('Priya K. checked in');
-    expect(text).toContain('Check in with a photo');
-    expect(renderer.root.findByProps({ accessibilityLabel: 'Priya K., locked until both people check in' })).toBeTruthy();
+    expect(text).toContain('Complete with a photo');
+    expect(renderer.root.findByProps({ accessibilityLabel: 'Priya K., locked until after midnight and both people check in' })).toBeTruthy();
     const sources = renderer.root.findAllByType(Image).map((node) => JSON.stringify(node.props.source));
     expect(sources.some((source) => source.includes('/accountability/bae/proof/partner'))).toBe(false);
   });
@@ -110,9 +110,10 @@ describe('Accountability Bae UI states', () => {
     });
     const text = copy(renderer);
     expect(text).toContain('You both showed up');
-    expect(text).not.toContain('Check in with a photo');
+    expect(text).not.toContain('Complete with a photo');
     const sources = renderer.root.findAllByType(Image).map((node) => JSON.stringify(node.props.source));
-    expect(sources.some((source) => source.includes('/accountability/bae/proof/partner'))).toBe(true);
+    expect(sources.some((source) => source.includes('/accountability/bae/proof/partner'))).toBe(false);
+    expect(text).toContain('after midnight');
   });
 
   it('renders a safe locked state for partial or invalid access data', async () => {
@@ -155,8 +156,30 @@ describe('Accountability Bae UI states', () => {
     });
     const text = copy(renderer);
     expect(text).not.toContain('You both showed up');
-    expect(text).toContain('Waiting for Priya K.');
+    expect(text).toContain('Priya K. has until midnight to check in.');
     const sources = renderer.root.findAllByType(Image).map((node) => JSON.stringify(node.props.source));
     expect(sources.some((source) => source.includes('/accountability/bae/proof/partner'))).toBe(false);
   });
+});
+
+it('shows revealed past-day photos while today remains locked', async () => {
+  const renderer = await renderCard({ ...matchedBase, youSubmitted: true, partnerSubmitted: true, bothSubmitted: true,
+    history: [{ date: '2026-09-05', state: 'revealed', revealAt: '2026-09-06T00:00:00+05:30', timezone: 'Asia/Kolkata', challenge: { id: 'past', title: 'A quiet break', prompt: '' }, youSubmitted: true, partnerSubmitted: true, photosRevealed: true, yourProofUrl: '/accountability/bae/proof/me/2026-09-05', partnerProofUrl: '/accountability/bae/proof/partner/2026-09-05' }] });
+  expect(copy(renderer)).toContain('Past days');
+  expect(copy(renderer)).toContain('A quiet break');
+  const sources = renderer.root.findAllByType(Image).map(node => JSON.stringify(node.props.source));
+  expect(sources.some(source => source.includes('/partner/2026-09-05'))).toBe(true);
+});
+
+it('keeps both trophy counts and partnership visible when no challenge is open', async () => {
+  const renderer = await renderCard({ ...matchedBase, challenge: null,
+    partner: { userId: 'partner-1', displayName: 'Priya K.', trophyCount: 87 },
+    access: { unlocked: true, override: 'default', trophyScore: 132, trophyThreshold: 50, trophiesRemaining: 0 } });
+  const text = copy(renderer);
+  expect(text).toContain('No open challenges');
+  expect(text).toContain('Priya K.');
+  expect(text).toContain('132');
+  expect(text).toContain('87');
+  expect(text).not.toContain('Complete with a photo');
+  expect(text).not.toContain('Today’s proof');
 });

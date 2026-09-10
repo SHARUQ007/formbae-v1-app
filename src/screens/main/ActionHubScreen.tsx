@@ -160,11 +160,15 @@ export function ActionHubScreen({ navigation }: Props) {
         load().catch(() => undefined);
       }
     });
-    const partnerRefresh = partnerStatus && partnerStatus !== 'locked' && partnerStatus !== 'inactive' ? setInterval(() => {
-      fetchAccountabilityBae({ force: true }).then(applyBaeSummary).catch(() => setBaeUnavailable(true));
+    let partnerPollActive = true;
+    let partnerPollBusy = false;
+    const partnerRefresh = activeView === 'bae' && partnerStatus && partnerStatus !== 'locked' && partnerStatus !== 'inactive' ? setInterval(() => {
+      if (!partnerPollActive || partnerPollBusy || AppState.currentState !== 'active') return;
+      partnerPollBusy = true;
+      fetchAccountabilityBae({ force: true }).then(value => { if (partnerPollActive) applyBaeSummary(value); }).catch(() => { if (partnerPollActive) setBaeUnavailable(true); }).finally(() => { partnerPollBusy = false; });
     }, 30_000) : null;
-    return () => { clearInterval(contextTimer); if (partnerRefresh) clearInterval(partnerRefresh); foreground.remove(); };
-  }, [applyBaeSummary, load, partnerStatus]));
+    return () => { partnerPollActive = false; clearInterval(contextTimer); if (partnerRefresh) clearInterval(partnerRefresh); foreground.remove(); };
+  }, [applyBaeSummary, load, partnerStatus, activeView]));
 
   useEffect(() => {
     const commitment = accountability?.today;
@@ -300,7 +304,7 @@ export function ActionHubScreen({ navigation }: Props) {
     if (!code) return;
     await Share.share({
       title: 'Be my FormBae accountability partner',
-      message: `Want to keep each other consistent on FormBae? We’ll get one daily challenge, check in privately, and unlock each other’s proof only after we both show up.\n\nUse my partner code: ${code}`,
+      message: `Want to keep each other consistent on FormBae? We’ll get one daily challenge, check in privately, and unlock each other’s proof after midnight, once we both check in before the day ends.\n\nUse my partner code: ${code}`,
     });
   };
 
@@ -312,7 +316,9 @@ export function ActionHubScreen({ navigation }: Props) {
     }
     setBaeBusy(true);
     try {
-      applyBaeSummary(await uploadAccountabilityBaeProof(asset));
+      const challenge = accountabilityBae?.challenge;
+      if (!challenge?.assignmentId) throw new Error('Refresh Partner mode to load today’s task.');
+      applyBaeSummary(await uploadAccountabilityBaeProof(asset, { assignmentId: challenge.assignmentId, date: challenge.date }));
     } catch (error) {
       Alert.alert('Could not submit proof', error instanceof Error ? error.message : 'Please try another photo.');
     } finally {
@@ -740,7 +746,7 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
           <BaePreference kind="friend" label="Friend" detail="Use a code" compact={compact} onPress={() => onStart('friend')} disabled={busy} />
         </View>
         {busy ? <ActivityIndicator color={colors.gold} /> : null}
-        <View style={styles.baeSafety}><Feather name="lock" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>Only your first name and initial are shown. Photos unlock after you both check in, and showing your face is optional.</Text></View>
+        <View style={styles.baeSafety}><Feather name="lock" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>Only your first name and initial are shown. Photos unlock after midnight only if you both check in before the day ends. Showing your face is optional.</Text></View>
       </View>
     );
   }
@@ -788,11 +794,13 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
   const challenge = data.challenge;
   const partnerName = data.partner?.displayName || 'Your partner';
   const proofCount = Number(Boolean(data.youSubmitted)) + Number(Boolean(data.partnerSubmitted));
-  const proofGuidance = data.youSubmitted
-    ? `Waiting for ${partnerName}.`
-    : data.partnerSubmitted
-      ? `${partnerName} checked in. Add yours to unlock both.`
-      : 'Check in to start today’s challenge.';
+  const proofGuidance = data.bothSubmitted
+    ? 'Both photos are saved. They’ll unlock together after midnight.'
+    : data.youSubmitted
+      ? `Your photo is saved. ${partnerName} has until midnight to check in.`
+      : data.partnerSubmitted
+        ? `${partnerName} checked in. Complete your task and add a photo before midnight.`
+        : 'Complete the task, then add a photo before midnight.';
   return (
     <View style={styles.partnerSection}>
       {header}
@@ -810,6 +818,22 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
           </View>
         </View>
       </ImageBackground>
+      <View style={styles.baePairSummary}>
+        <View style={styles.baePairScores}>
+          <View style={styles.baePairMember}>
+            <Text style={styles.baePairName}>You</Text>
+            <View style={styles.baePairScore}><TrophyIllustration size={22}/><Text style={styles.baePairNumber}>{data.access?.trophyScore ?? 0}</Text></View>
+            <Text style={styles.baeSafetyText}>trophies</Text>
+          </View>
+          <View style={styles.baePairDivider}/>
+          <View style={styles.baePairMember}>
+            <Text style={styles.baePairName}>{partnerName}</Text>
+            <View style={styles.baePairScore}><TrophyIllustration size={22}/><Text style={styles.baePairNumber}>{data.partner?.trophyCount ?? 0}</Text></View>
+            <Text style={styles.baeSafetyText}>trophies</Text>
+          </View>
+        </View>
+        <Text style={styles.baePairRecap}>{(data.history || []).filter(day => day.photosRevealed).length} shared days completed in the last 31 days</Text>
+      </View>
       {challenge ? (
         <View style={styles.baeChallenge}>
           <View style={styles.baeChallengeTop}>
@@ -819,10 +843,12 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
           <View style={styles.baeChallengeCopy}>
             <Text style={styles.baeChallengeTitle}>{challenge.title}</Text>
             <Text style={styles.baeChallengePrompt}>{challenge.prompt}</Text>
+            {data.reason ? <Text style={styles.baeSafetyText}>{data.reason}</Text> : null}
+            {data.timezone ? <Text style={styles.baeSafetyText}>Daily deadline: midnight ({data.timezone})</Text> : null}
           </View>
         </View>
-      ) : null}
-      <View style={styles.proofCard}>
+      ) : <View style={styles.baeChallenge}><Text style={styles.baeChallengeTitle}>No open challenges</Text><Text style={styles.baeChallengePrompt}>You’re still connected. Enjoy your day and check back for your next shared task.</Text></View>}
+      {challenge ? <View style={styles.proofCard}>
         <View style={styles.proofSectionHead}>
           <Text style={styles.proofSectionTitle}>Today’s proof</Text>
           <Text style={styles.proofSectionCount}>{proofCount} of 2 checked in</Text>
@@ -832,19 +858,20 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
           <View style={[styles.proofProgressStep, proofCount >= 2 && styles.proofProgressStepDone]} />
         </View>
         <View style={styles.proofGrid}>
-          <ProofTile label="You" submitted={Boolean(data.youSubmitted)} imageUrl={data.yourProofUrl} locked={false} />
-          <ProofTile label={partnerName} submitted={Boolean(data.partnerSubmitted)} imageUrl={data.partnerProofUrl} locked={Boolean(data.partnerSubmitted && !data.bothSubmitted)} />
+          <ProofTile label="You" submitted={Boolean(data.youSubmitted)} imageUrl={data.yourProofUrl} locked={!data.photosRevealed && Boolean(data.youSubmitted)} />
+          <ProofTile label={partnerName} submitted={Boolean(data.partnerSubmitted)} imageUrl={data.partnerProofUrl} locked={!data.photosRevealed && Boolean(data.partnerSubmitted)} />
         </View>
         {data.bothSubmitted ? (
-          <View style={styles.baeCompleteBanner}><View style={styles.baeCompleteIcon}><Feather name="check" size={18} color={colors.onPrimary} /></View><View style={styles.baeCompleteCopy}><Text style={styles.baeCompleteTitle}>You both showed up</Text><Text style={styles.baeCompleteText}>Done for today. Come back tomorrow.</Text></View></View>
+          <View style={styles.baeCompleteBanner}><View style={styles.baeCompleteIcon}><Feather name="check" size={18} color={colors.onPrimary} /></View><View style={styles.baeCompleteCopy}><Text style={styles.baeCompleteTitle}>You both showed up</Text><Text style={styles.baeCompleteText}>Both photos are saved. View them in Past days after midnight.</Text></View></View>
         ) : (
           <>
             <Text style={styles.proofGuidance}>{proofGuidance}</Text>
-            <PrimaryButton title={data.youSubmitted ? 'Update my check-in' : 'Check in with a photo'} icon="camera" onPress={onSubmitProof} loading={busy} style={styles.baeProofButton} />
+            {!data.youSubmitted ? <PrimaryButton title="Complete with a photo" icon="camera" onPress={onSubmitProof} loading={busy} style={styles.baeProofButton} /> : null}
           </>
         )}
-      </View>
-      <View style={styles.baeSafety}><Feather name="eye-off" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>Photos unlock together—never one-sided.</Text></View>
+      </View> : null}
+      <PartnerDayHistory history={data.history || []} partnerName={partnerName} />
+      <View style={styles.baeSafety}><Feather name="eye-off" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>Photos unlock after midnight only when both people submitted before the deadline. Missed days stay private.</Text></View>
     </View>
   );
 }
@@ -903,9 +930,27 @@ function PartnerChoiceMark({ kind }: { kind: 'male' | 'female' | 'friend' }) {
   );
 }
 
+function PartnerDayHistory({ history, partnerName }: { history: NonNullable<AccountabilityBaeSummary['history']>; partnerName: string }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!history.length) return null;
+  return <View style={styles.proofCard}>
+    <Text style={styles.proofSectionTitle}>Past days</Text>
+    <Text style={styles.baeSafetyText}>Your recent shared tasks. Photos stay available for 31 days while you’re matched.</Text>
+    {history.slice(0, expanded ? 31 : 3).map(day => <View key={day.date} style={styles.baeHistoryDay}>
+      <Text style={styles.baeDue}>{day.date}</Text>
+      <Text style={styles.baeChallengeTitle}>{day.challenge?.title || 'Shared task'}</Text>
+      {day.photosRevealed ? <View style={styles.proofGrid}>
+        <ProofTile label="You" submitted imageUrl={day.yourProofUrl} locked={false}/>
+        <ProofTile label={partnerName} submitted imageUrl={day.partnerProofUrl} locked={false}/>
+      </View> : <Text style={styles.baeSafetyText}>This day closed without both check-ins. Photos remain private.</Text>}
+    </View>)}
+    {history.length > 3 ? <TouchableOpacity onPress={() => setExpanded(value => !value)} accessibilityRole="button" style={styles.baeHistoryMore}><Text style={styles.baeDue}>{expanded ? 'Show fewer days' : 'See more days'}</Text></TouchableOpacity> : null}
+  </View>;
+}
+
 function ProofTile({ label, submitted, imageUrl, locked }: { label: string; submitted: boolean; imageUrl?: string; locked: boolean }) {
   const source = locked ? undefined : accountabilityBaeProofSource(imageUrl);
-  const stateLabel = locked ? 'locked until both people check in' : submitted ? 'submitted' : 'waiting';
+  const stateLabel = locked ? 'locked until after midnight and both people check in' : submitted ? 'submitted' : 'waiting';
   return (
     <View style={styles.proofTile} accessible accessibilityRole="image" accessibilityLabel={`${label}, ${stateLabel}`}>
       <View style={styles.proofImageWrap}>
@@ -914,7 +959,7 @@ function ProofTile({ label, submitted, imageUrl, locked }: { label: string; subm
       </View>
       <View style={styles.proofMeta}>
         <Text style={styles.proofLabel} numberOfLines={1}>{label}</Text>
-        <Text style={[styles.proofStatus, submitted && styles.proofStatusDone]}>{locked ? 'Unlocks together' : submitted ? 'Submitted' : 'Waiting'}</Text>
+        <Text style={[styles.proofStatus, submitted && styles.proofStatusDone]}>{locked ? 'Saved · locked' : submitted ? 'Submitted' : 'Waiting'}</Text>
       </View>
     </View>
   );
@@ -1131,6 +1176,16 @@ const styles = StyleSheet.create({
   proofStatus: { fontSize: 10, lineHeight: 13, color: colors.inkMuted, fontWeight: '700', marginTop: 1 },
   proofStatusDone: { color: colors.inkMuted },
   proofGuidance: { ...typography.caption, color: colors.inkMuted, lineHeight: 18, marginTop: spacing.md },
+  baePairSummary: { padding: 18, gap: 14, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  baePairScores: { flexDirection: 'row', gap: 16 },
+  baePairMember: { flex: 1, minWidth: 0, gap: 5 },
+  baePairName: { ...typography.bodyBold, color: colors.ink },
+  baePairScore: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  baePairNumber: { fontSize: 25, lineHeight: 32, color: colors.gold, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  baePairDivider: { width: StyleSheet.hairlineWidth, backgroundColor: colors.border },
+  baePairRecap: { ...typography.caption, color: colors.inkMuted, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 12 },
+  baeHistoryDay: { gap: 10, paddingTop: 16, marginTop: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  baeHistoryMore: { paddingVertical: 14, alignItems: 'center' },
   baeProofButton: { marginTop: spacing.md, backgroundColor: colors.gold, borderColor: colors.gold },
   baeCompleteBanner: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radius.md, backgroundColor: colors.gold, borderWidth: 1, borderColor: colors.gold, paddingHorizontal: spacing.md, marginTop: spacing.md },
   baeCompleteIcon: { width: 34, height: 34, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(8,9,12,0.10)' },
