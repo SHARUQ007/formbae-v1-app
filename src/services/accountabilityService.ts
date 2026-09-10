@@ -1,6 +1,6 @@
 import type { Asset } from 'react-native-image-picker';
 import { apiRequest, getApiUrl, getAuthToken } from './apiClient';
-import { getCachedResource, peekCachedResource, setCachedResource } from './appCache';
+import { getCachedResource, invalidateCachedResource, peekCachedResource, setCachedResource } from './appCache';
 import type { AccountabilityBaeSummary, AccountabilitySummary } from '../types/api';
 import { formatWorkoutTitle } from '../utils/workoutTitle';
 
@@ -157,6 +157,7 @@ export function peekAccountabilityBae() {
 function cacheBae(value: unknown) {
   const summary = requireBaeSummary(value);
   setCachedResource(ACCOUNTABILITY_BAE_CACHE_KEY, summary);
+  if (summary.status === 'matched') invalidateCachedResource('trophyLeaderboard:v2');
   return summary;
 }
 

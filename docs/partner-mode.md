@@ -121,3 +121,26 @@ missed days, unauthorized photo access, concurrent member fields, stale uploads,
 retry idempotency, metadata stripping, admin authorization/validation and mobile
 locked/revealed history. Test on two real accounts around the configured midnight
 before enabling a broad rollout; automated tests do not measure user adherence.
+
+## Matching and connection controls
+
+Auto-match ranks the currently eligible queue by shared fitness goal, training
+setting and weekly training frequency. Gender preferences must be reciprocal;
+preferences and access are checked again while holding member matching leases.
+Ties prefer older requests. A waiting member's next status refresh also checks
+new candidates. This is selection from the available queue, not a prediction of
+relationship success. There is no artificial delay or simulated progress timer.
+
+The app presents preference saved, finding your fit, and connected states. A
+friend invite remains available during matching and after connection. Switching
+an existing pair requires confirmation before ending that pair and its photos.
+Accepting a partner friend code also adds both members to each other's leaderboard.
+
+Tap a partner or leaderboard friend to see their first name/initial, trophy count,
+connection status, shared completed days and connection date where available.
+The sheet offers separate leaderboard and Partner mode removal, plus removal
+from both when applicable. Each action explains the effect before confirmation.
+Details and mutations require an authenticated relationship with the target.
+Leaderboard removal is mutual; it does not end Partner mode. Ending Partner mode
+does not remove an existing leaderboard connection. These controls are not a
+block/report system, and removed users can reconnect through a fresh invite.

@@ -31,7 +31,7 @@ export const CACHE_KEYS = {
   // reference the image endpoint before that endpoint reached production.
   coachBundle: 'coachBundle:v2',
   workoutDay: 'workoutDay',
-  trophyLeaderboard: 'trophyLeaderboard',
+  trophyLeaderboard: 'trophyLeaderboard:v2',
 } as const;
 
 export async function loadWorkoutPlanCached(options?: { force?: boolean }) {

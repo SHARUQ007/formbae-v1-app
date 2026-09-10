@@ -183,3 +183,22 @@ it('keeps both trophy counts and partnership visible when no challenge is open',
   expect(text).not.toContain('Complete with a photo');
   expect(text).not.toContain('Today’s proof');
 });
+
+it('keeps a friend invite prominent while automatic matching is active without simulated progress', async () => {
+  const onStart = jest.fn();
+  const renderer = await renderCard({ status: 'waiting', preference: 'female', inviteCode: '' }, { onStart });
+  expect(copy(renderer)).toContain('Preference saved');
+  expect(copy(renderer)).toContain('Finding your fit');
+  expect(copy(renderer)).toContain('Meet your partner');
+  expect(copy(renderer)).not.toContain('MATCHING NOW');
+  renderer.root.findByProps({ title: 'Invite a friend instead' }).props.onPress();
+  expect(onStart).toHaveBeenCalledWith('friend');
+});
+
+it('opens partner details and keeps the friend alternative available after a match', async () => {
+  const onViewPartner = jest.fn();
+  const renderer = await renderCard(matchedBase, { onViewPartner });
+  renderer.root.findByProps({ accessibilityLabel: 'View partner details' }).props.onPress();
+  expect(onViewPartner).toHaveBeenCalledTimes(1);
+  expect(copy(renderer)).toContain('Invite a friend instead');
+});

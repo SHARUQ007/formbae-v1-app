@@ -3,8 +3,11 @@ import { Modal, ScrollView, Text, TextInput, TouchableOpacity } from 'react-nati
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { TrophyDetailsScreen } from './TrophyDetailsScreen';
 import { loadProgressBundleCached, loadTrophyLeaderboardCached } from '../../services/preloadService';
+import { ConnectionDetailsSheet } from '../../components/ConnectionDetailsSheet';
 import { TrophyInfoSheet } from '../../components/TrophyInfoSheet';
 
+jest.mock('../../services/connectionService', () => ({ fetchConnection: jest.fn().mockResolvedValue({ userId: 'friend', displayName: 'Priya K.', trophyCount: 87, onLeaderboard: true, isPartner: false, sharedDays: 0, connectedSince: '' }), removeConnection: jest.fn() }));
+jest.mock('@react-navigation/native', () => ({ useFocusEffect: jest.fn() }));
 jest.mock('@react-navigation/bottom-tabs', () => ({ useBottomTabBarHeight: () => 90 }));
 jest.mock('../../services/preloadService', () => ({ loadProgressBundleCached: jest.fn(), loadTrophyLeaderboardCached: jest.fn(), peekProgressBundleCached: jest.fn(), peekTrophyLeaderboardCached: jest.fn() }));
 jest.mock('../../services/trophyRealtime', () => ({ subscribeToTrophySummary: () => () => {} }));
@@ -67,4 +70,13 @@ it('keeps a solo member in the ranking table and pins Join and Invite outside th
   const join = actions.find(node => node.props.accessibilityLabel === 'Join leaderboard with a code')!;
   await act(() => join.props.onPress());
   expect(tree.root.findAllByType(Modal).some(node => node.props.visible && node.findAllByType(TextInput).length === 1)).toBe(true);
+});
+
+
+it('opens connection details when a friend row is tapped', async () => {
+  jest.mocked(loadTrophyLeaderboardCached).mockResolvedValueOnce({ leaders: [{ userId: 'friend', rank: 1, displayName: 'Priya K.', score: 87, isCurrentUser: false }, current], currentUser: current, participantCount: 2 });
+  await render();
+  const row = tree.root.findAllByType(TouchableOpacity).find(node => String(node.props.accessibilityLabel).includes('View friend details'))!;
+  await act(() => { row.props.onPress(); });
+  expect(tree.root.findByType(ConnectionDetailsSheet).props.userId).toBe('friend');
 });

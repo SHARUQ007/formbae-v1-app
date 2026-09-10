@@ -271,8 +271,8 @@ export type TrophySummary = {
 };
 
 export type TrophyLeaderboard = {
-  leaders: Array<{ rank: number; displayName: string; score: number; isCurrentUser: boolean }>;
-  currentUser?: { rank: number; displayName: string; score: number; isCurrentUser: boolean } | null;
+  leaders: Array<{ userId?: string; rank: number; displayName: string; score: number; isCurrentUser: boolean }>;
+  currentUser?: { userId?: string; rank: number; displayName: string; score: number; isCurrentUser: boolean } | null;
   participantCount: number;
 };
 

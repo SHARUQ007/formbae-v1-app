@@ -7,6 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { ConnectionDetailsSheet } from '../../components/ConnectionDetailsSheet';
 import { ScreenContainer } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState } from '../../components/States';
@@ -82,6 +83,7 @@ export function ActionHubScreen({ navigation }: Props) {
   const [warmBae] = useState<AccountabilityBaeSummary | null>(() => peekAccountabilityBae());
   const [accountabilityBae, setAccountabilityBae] = useState<AccountabilityBaeSummary | null>(warmBae);
   const [baeLoading, setBaeLoading] = useState(!warmBae);
+  const [selectedPartner, setSelectedPartner] = useState<string | null>(null);
   const [baeBusy, setBaeBusy] = useState(false);
   const [friendCode, setFriendCode] = useState('');
   const [initialLoading, setInitialLoading] = useState(!warmSnapshot);
@@ -162,13 +164,13 @@ export function ActionHubScreen({ navigation }: Props) {
     });
     let partnerPollActive = true;
     let partnerPollBusy = false;
-    const partnerRefresh = activeView === 'bae' && partnerStatus && partnerStatus !== 'locked' && partnerStatus !== 'inactive' ? setInterval(() => {
+    const partnerRefresh = !selectedPartner && activeView === 'bae' && partnerStatus && partnerStatus !== 'locked' && partnerStatus !== 'inactive' ? setInterval(() => {
       if (!partnerPollActive || partnerPollBusy || AppState.currentState !== 'active') return;
       partnerPollBusy = true;
       fetchAccountabilityBae({ force: true }).then(value => { if (partnerPollActive) applyBaeSummary(value); }).catch(() => { if (partnerPollActive) setBaeUnavailable(true); }).finally(() => { partnerPollBusy = false; });
     }, 30_000) : null;
     return () => { partnerPollActive = false; clearInterval(contextTimer); if (partnerRefresh) clearInterval(partnerRefresh); foreground.remove(); };
-  }, [applyBaeSummary, load, partnerStatus, activeView]));
+  }, [applyBaeSummary, load, partnerStatus, activeView, selectedPartner]));
 
   useEffect(() => {
     const commitment = accountability?.today;
@@ -265,10 +267,13 @@ export function ActionHubScreen({ navigation }: Props) {
     }
   };
 
-  const startBaeMatch = async (preference: 'male' | 'female' | 'friend') => {
+  const runBaeMatch = async (preference: 'male' | 'female' | 'friend') => {
     if (baeBusy) return;
     setBaeBusy(true);
     try {
+      if (accountabilityBae?.status === 'matched') {
+        applyBaeSummary(await leaveAccountabilityBae());
+      }
       applyBaeSummary(await startAccountabilityBaeMatch(preference));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Please try again.';
@@ -283,6 +288,14 @@ export function ActionHubScreen({ navigation }: Props) {
     } finally {
       setBaeBusy(false);
     }
+  };
+
+  const startBaeMatch = (preference: 'male' | 'female' | 'friend') => {
+    if (accountabilityBae?.status !== 'matched') { runBaeMatch(preference).catch(() => undefined); return; }
+    Alert.alert('Invite a friend instead?', 'This ends your current match and deletes its shared photos. Any leaderboard connection stays. You can then share a partner code with your friend.', [
+      { text: 'Keep my partner', style: 'cancel' },
+      { text: 'Switch to a friend', onPress: () => { runBaeMatch(preference).catch(() => undefined); } },
+    ]);
   };
 
   const joinFriend = async () => {
@@ -301,11 +314,16 @@ export function ActionHubScreen({ navigation }: Props) {
 
   const shareFriendCode = async () => {
     const code = accountabilityBae?.inviteCode;
-    if (!code) return;
-    await Share.share({
-      title: 'Be my FormBae accountability partner',
-      message: `Want to keep each other consistent on FormBae? We’ll get one daily challenge, check in privately, and unlock each other’s proof after midnight, once we both check in before the day ends.\n\nUse my partner code: ${code}`,
-    });
+    if (!code || baeBusy) return;
+    setBaeBusy(true);
+    try {
+      await Share.share({
+        title: 'Be my FormBae accountability partner',
+        message: `Join me on FormBae for shared daily challenges and a place on each other’s leaderboard. Complete the task, add a photo, and unlock both photos after midnight when we both check in.\n\nUse my partner code: ${code}`,
+      });
+    } catch {
+      Alert.alert('Could not open your invite', 'Your code is still ready. Please try sharing again.');
+    } finally { setBaeBusy(false); }
   };
 
   const uploadProof = async (asset?: Asset) => {
@@ -341,8 +359,7 @@ export function ActionHubScreen({ navigation }: Props) {
   };
 
   const openProofPicker = () => {
-    const replacing = Boolean(accountabilityBae?.youSubmitted);
-    Alert.alert(replacing ? 'Replace today’s proof?' : 'Submit today’s proof', 'Your partner sees it only after you both submit. Faces are optional.', [
+    Alert.alert('Complete with a photo', 'Photos unlock after midnight only when you both submit before the deadline. Faces are optional.', [
       { text: 'Take photo', onPress: () => { takeProofPhoto().catch(() => undefined); } },
       { text: 'Choose from library', onPress: () => { chooseProofPhoto().catch(() => undefined); } },
       { text: 'Cancel', style: 'cancel' },
@@ -351,6 +368,11 @@ export function ActionHubScreen({ navigation }: Props) {
 
   const leaveBae = () => {
     if (baeBusy) return;
+    if (accountabilityBae?.status === 'waiting') {
+      setBaeBusy(true);
+      leaveAccountabilityBae().then(applyBaeSummary).catch(error => Alert.alert('Could not update matching', error instanceof Error ? error.message : 'Try again.')).finally(() => setBaeBusy(false));
+      return;
+    }
     Alert.alert('Leave match?', 'This ends the match for both of you and permanently deletes its proof photos.', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -533,7 +555,7 @@ export function ActionHubScreen({ navigation }: Props) {
         ) : (
           <>
             {baeUnavailable && accountabilityBae ? (
-              <InlineNotice icon="refresh-cw" title="Partner status may be out of date" body="Your saved match is still available." action="Refresh" onPress={() => load(true)} />
+              <InlineNotice icon="refresh-cw" title="Partner status may be out of date" body="Your saved partner space is still available." action="Refresh" onPress={() => load(true)} />
             ) : null}
 
             <AccountabilityBaeCard
@@ -548,6 +570,7 @@ export function ActionHubScreen({ navigation }: Props) {
               onShareFriendCode={shareFriendCode}
               onSubmitProof={openProofPicker}
               onLeave={leaveBae}
+              onViewPartner={() => setSelectedPartner(accountabilityBae?.partner?.userId || null)}
               onRetry={() => load(true)}
               onViewTrophies={() => navigation.navigate('Progress')}
             />
@@ -555,6 +578,7 @@ export function ActionHubScreen({ navigation }: Props) {
         )}
         {activeView === 'today' ? <DailyReadingRoom /> : null}
       </ScrollView>
+      <ConnectionDetailsSheet userId={selectedPartner} onClose={() => setSelectedPartner(null)} onChanged={() => { load(true).catch(() => undefined); }}/>
     </ScreenContainer>
   );
 }
@@ -675,11 +699,12 @@ type AccountabilityBaeCardProps = {
   onShareFriendCode: () => void;
   onSubmitProof: () => void;
   onLeave: () => void;
+  onViewPartner?: () => void;
   onRetry: () => void;
   onViewTrophies: () => void;
 };
 
-export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, friendCode, onFriendCodeChange, onStart, onJoinFriend, onShareFriendCode, onSubmitProof, onLeave, onRetry, onViewTrophies }: AccountabilityBaeCardProps) {
+export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, friendCode, onFriendCodeChange, onStart, onJoinFriend, onShareFriendCode, onSubmitProof, onLeave, onRetry, onViewTrophies, onViewPartner }: AccountabilityBaeCardProps) {
   const data = normalizeAccountabilityBaeSummary(rawData);
   if (loading && !data) {
     return <BaeLoadingState />;
@@ -691,7 +716,7 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
   const headerCaption = data.status === 'matched'
     ? 'One shared challenge each day'
     : data.status === 'waiting'
-      ? 'We’ll keep matching in the background'
+      ? data.preference === 'friend' ? 'Your shared space starts with an invite' : 'A shared rhythm starts here'
       : data.status === 'locked'
         ? 'Unlock shared daily challenges'
         : 'A little support goes a long way';
@@ -738,7 +763,7 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
     return (
       <View style={styles.partnerSection}>
         {header}
-        <BaeArtworkHero eyebrow="PARTNER MODE" title="Better together" body="Choose how you’d like to connect." />
+        <BaeArtworkHero eyebrow={busy ? "SETTING UP" : "PARTNER MODE"} title={busy ? "Saving your preference" : "Better together"} body={busy ? "Getting your shared space ready." : "Choose how you’d like to connect."} loading={busy} />
         <Text style={styles.baeChoicePrompt}>Match with</Text>
         <View style={[styles.baePreferenceRow, compact && styles.baePreferenceRowCompact]}>
           <BaePreference kind="male" label="Male" detail="Auto-match" compact={compact} onPress={() => onStart('male')} disabled={busy} />
@@ -758,11 +783,16 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
       <View style={styles.partnerSection}>
         {header}
         <BaeArtworkHero
-          eyebrow={friendMode ? 'INVITE READY' : 'MATCHING NOW'}
-          title={friendMode ? 'Bring a friend along' : 'Finding your person'}
-          body={friendMode ? 'Share your private code to connect.' : data.preference ? `Looking for a compatible ${data.preference} partner.` : 'Looking for a compatible training partner.'}
-          loading={!friendMode || busy}
+          eyebrow={friendMode ? 'INVITE READY' : 'AUTO-MATCH ACTIVE'}
+          title={friendMode ? 'Bring a friend along' : 'Finding your fit'}
+          body={friendMode ? 'One code. Shared challenges. A place on each other’s leaderboard.' : 'Shared goals. A similar rhythm. Your next chapter.'}
+          loading={busy}
         />
+        {!friendMode ? <View style={styles.matchJourney} accessibilityLiveRegion="polite">
+          <View style={styles.matchStage}><View style={styles.matchStageDone}><Feather name="check" size={16} color={colors.onPrimary}/></View><View style={styles.matchStageCopy}><Text style={styles.matchStageTitle}>Preference saved</Text><Text style={styles.baeSafetyText}>{data.preference === 'female' ? 'Female' : 'Male'} partner · Auto-match</Text></View></View>
+          <View style={styles.matchStage}><View style={styles.matchStageActive}><Feather name="search" size={17} color={colors.gold}/></View><View style={styles.matchStageCopy}><Text style={styles.matchStageTitle}>Finding your fit</Text><Text style={styles.baeSafetyText}>Your space is ready for the right connection.</Text></View><View style={styles.baeConnectedDot}/></View>
+          <View style={styles.matchStage}><View style={styles.matchStageNext}><Feather name="users" size={16} color={colors.inkSubtle}/></View><View style={styles.matchStageCopy}><Text style={styles.baeSafetyText}>Meet your partner</Text><Text style={styles.baeSafetyText}>Shared daily challenges come next</Text></View></View>
+        </View> : null}
         {friendMode ? (
           <>
             <View style={styles.friendInviteBox}>
@@ -786,7 +816,8 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
             </View>
           </>
         ) : null}
-        <PrimaryButton title="Cancel matching" variant="ghost" size="sm" onPress={onLeave} disabled={busy} style={styles.baeTextButton} />
+        {!friendMode ? <View style={styles.matchFriendCard}><View style={styles.matchFriendCopy}><Feather name="user-plus" size={23} color={colors.gold}/><View style={styles.matchStageCopy}><Text style={styles.matchStageTitle}>Already have your person?</Text><Text style={styles.baeSafetyText}>Bring a friend into your shared space.</Text></View></View><PrimaryButton title="Invite a friend instead" style={{ backgroundColor: colors.gold }} icon="user-plus" onPress={() => onStart('friend')} disabled={busy}/></View> : null}
+        <PrimaryButton title={friendMode ? 'Back to match options' : 'Change match preference'} variant="ghost" size="sm" onPress={onLeave} disabled={busy} style={styles.baeTextButton} />
       </View>
     );
   }
@@ -809,13 +840,13 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
         <View style={styles.baeConnectedContent}>
           <View style={styles.baeConnectedTop}>
             <View style={styles.baeConnectedStatus}><View style={styles.baeConnectedDot} /><Text style={styles.baeConnectedStatusText}>CONNECTED</Text></View>
-            <TouchableOpacity onPress={onLeave} disabled={busy} style={[styles.baeMoreButton, busy && styles.baeDisabled]} accessibilityRole="button" accessibilityLabel="Leave Accountability Bae match" accessibilityState={{ disabled: busy }}><Feather name="more-horizontal" size={20} color={colors.ink} /></TouchableOpacity>
+            <TouchableOpacity onPress={onViewPartner} disabled={busy} style={[styles.baeMoreButton, busy && styles.baeDisabled]} accessibilityRole="button" accessibilityLabel="View partner details" accessibilityState={{ disabled: busy }}><Feather name="more-horizontal" size={20} color={colors.ink} /></TouchableOpacity>
           </View>
-          <View style={styles.baeConnectedCopy}>
+          <TouchableOpacity onPress={onViewPartner} style={styles.baeConnectedCopy} accessibilityRole="button" accessibilityLabel={`View ${partnerName} details`}>
             <Text style={styles.baePartnerLabel}>YOUR PARTNER</Text>
             <Text style={styles.baePartnerName} numberOfLines={1} ellipsizeMode="tail">{partnerName}</Text>
-            <Text style={styles.baeConnectedCaption}>Show up. Check in. Unlock together.</Text>
-          </View>
+            <Text style={styles.baeConnectedCaption}>View partner & connection settings →</Text>
+          </TouchableOpacity>
         </View>
       </ImageBackground>
       <View style={styles.baePairSummary}>
@@ -871,6 +902,7 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
         )}
       </View> : null}
       <PartnerDayHistory history={data.history || []} partnerName={partnerName} />
+      <PrimaryButton title="Invite a friend instead" variant="secondary" icon="user-plus" onPress={() => onStart('friend')} disabled={busy}/>
       <View style={styles.baeSafety}><Feather name="eye-off" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>Photos unlock after midnight only when both people submitted before the deadline. Missed days stay private.</Text></View>
     </View>
   );
@@ -1029,6 +1061,15 @@ function TodayTaskCard({ task, loading, onPress }: { task: TodayTask; loading: b
 }
 
 const styles = StyleSheet.create({
+  matchJourney: { padding: 20, gap: 22, borderRadius: 22, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  matchStage: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  matchStageCopy: { flex: 1, gap: 4 },
+  matchStageTitle: { color: colors.ink, fontSize: 16, fontWeight: '700' },
+  matchStageDone: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center' },
+  matchStageActive: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: colors.gold, alignItems: 'center', justifyContent: 'center' },
+  matchStageNext: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  matchFriendCard: { padding: 20, gap: 18, borderRadius: 22, backgroundColor: colors.panel },
+  matchFriendCopy: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   scroll: { flexGrow: 1 },
   pageHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   pageHeaderCompact: { flexWrap: 'wrap' },

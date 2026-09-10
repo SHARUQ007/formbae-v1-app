@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Modal, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -20,6 +21,7 @@ import { useAuthStore } from '../../store/authStore';
 import type { ProgressSummary, TrophyLeaderboard } from '../../types/api';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
+import { ConnectionDetailsSheet } from '../../components/ConnectionDetailsSheet';
 import { TrophyInfoSheet } from '../../components/TrophyInfoSheet';
 import { TrophyIllustration } from '../../components/TrophyIllustration';
 import { spacing } from '../../theme/spacing';
@@ -94,6 +96,7 @@ export function TrophyDetailsScreen({ navigation, route }: Props) {
   const compact = width < 360 || fontScale >= 1.3;
   const currentUserName = leaderboardDisplayName(user?.name || status?.name);
   const [infoOpen, setInfoOpen] = useState(Boolean(route.params?.openInfo));
+  const [selectedFriend, setSelectedFriend] = useState<string | null>(null);
   const [joinOpen, setJoinOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [sharing, setSharing] = useState(false);
@@ -147,6 +150,12 @@ export function TrophyDetailsScreen({ navigation, route }: Props) {
       };
     });
   }), [setData]);
+
+  const hasFocused = useRef(false);
+  useFocusEffect(useCallback(() => {
+    if (hasFocused.current) { refresh().catch(() => undefined); }
+    hasFocused.current = true;
+  }, [refresh]));
 
   const shareInvite = async () => {
     if (sharing) return;
@@ -250,7 +259,7 @@ export function TrophyDetailsScreen({ navigation, route }: Props) {
             <Text style={[styles.columnLabel, styles.memberColumn]}>MEMBER</Text>
             <Text style={styles.columnLabel}>TROPHIES</Text>
           </View>
-          {leaders.map((row) => <LeaderboardRow key={`${row.rank}-${row.displayName}`} {...row} compact={compact} />)}
+          {leaders.map((row) => <LeaderboardRow key={row.userId || `${row.rank}-${row.displayName}`} {...row} compact={compact} onPress={!row.isCurrentUser && row.userId ? () => setSelectedFriend(row.userId!) : undefined} />)}
           {currentOutsideTop ? <><View style={styles.ellipsis}><Text style={styles.ellipsisText}>Your position</Text></View><LeaderboardRow {...currentOutsideTop} compact={compact} /></> : null}
         </View> : null}
         {!data.leaderboardAvailable ? (
@@ -287,6 +296,7 @@ export function TrophyDetailsScreen({ navigation, route }: Props) {
           </View>
         </View>
       </Modal>
+      <ConnectionDetailsSheet userId={selectedFriend} onClose={() => setSelectedFriend(null)} onChanged={refresh}/>
     </ScreenContainer>
   );
 }
@@ -301,12 +311,12 @@ function TrophyHeader({ onBack, onInfo }: { onBack: () => void; onInfo?: () => v
   </View>;
 }
 
-function LeaderboardRow({ rank, displayName, score, isCurrentUser, compact }: { rank: number; displayName: string; score: number; isCurrentUser: boolean; compact: boolean }) {
+function LeaderboardRow({ rank, displayName, score, isCurrentUser, compact, onPress }: { onPress?: () => void; rank: number; displayName: string; score: number; isCurrentUser: boolean; compact: boolean }) {
   const name = leaderboardDisplayName(displayName);
   const medalColor = rank === 1 ? colors.gold : rank === 2 ? '#b9bec8' : '#bf865b';
   const initials = name.split(' ').slice(0, 2).map(word => word.charAt(0).toUpperCase()).join('');
-  return <View style={[styles.leaderRow, isCurrentUser && styles.leaderRowCurrent]} accessible
-    accessibilityLabel={`Rank ${rank}. ${name}${isCurrentUser ? '. You' : ''}. ${score} trophies`}>
+  return <TouchableOpacity onPress={onPress} disabled={!onPress} accessibilityRole={onPress ? "button" : undefined} style={[styles.leaderRow, isCurrentUser && styles.leaderRowCurrent]} accessible
+    accessibilityLabel={`Rank ${rank}. ${name}${isCurrentUser ? '. You' : ''}. ${score} trophies${onPress ? ". View friend details" : ""}`}>
     {isCurrentUser ? <View style={styles.currentAccent} /> : null}
     <View style={[styles.rankSlot, rank <= 3 && styles.topRankSlot]}>
       <Text style={[styles.rankText, rank <= 3 && { color: medalColor }]}>{rank}</Text>
@@ -320,7 +330,8 @@ function LeaderboardRow({ rank, displayName, score, isCurrentUser, compact }: { 
       <TrophyIllustration size={24} />
       <Text style={[styles.leaderScore, isCurrentUser && styles.leaderScoreCurrent]}>{score}</Text>
     </View>
-  </View>;
+    {onPress ? <Feather name="chevron-right" size={16} color={colors.inkSubtle}/> : null}
+  </TouchableOpacity>;
 }
 
 const styles = StyleSheet.create({
