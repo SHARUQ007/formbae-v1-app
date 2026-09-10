@@ -7,6 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import Feather from 'react-native-vector-icons/Feather';
 import MaterialCommunityIcon from 'react-native-vector-icons/MaterialCommunityIcons';
+import { PartnerMatchWaitingCard } from '../../components/PartnerMatchWaitingCard';
 import { ConnectionDetailsSheet } from '../../components/ConnectionDetailsSheet';
 import { ScreenContainer } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
@@ -781,20 +782,28 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
   if (data.status === 'waiting') {
     const friendMode = data.preference === 'friend';
     const inviteCodeReady = Boolean(data.inviteCode);
+    if (!friendMode) {
+      return (
+        <View style={styles.partnerSection}>
+          {header}
+          <PartnerMatchWaitingCard
+            preference={data.preference === 'female' ? 'female' : 'male'}
+            compact={compact} busy={busy}
+            onChangePreference={onLeave}
+            onInviteFriend={() => onStart('friend')}
+          />
+        </View>
+      );
+    }
     return (
       <View style={styles.partnerSection}>
         {header}
         <BaeArtworkHero
-          eyebrow={friendMode ? 'INVITE READY' : 'AUTO-MATCH ACTIVE'}
-          title={friendMode ? 'Bring a friend along' : 'Finding your fit'}
-          body={friendMode ? 'One code. Shared challenges. A place on each other’s leaderboard.' : 'Shared goals. A similar rhythm. Your next chapter.'}
+          eyebrow="INVITE READY"
+          title="Bring a friend along"
+          body="One code. Shared challenges. A place on each other’s leaderboard."
           loading={busy}
         />
-        {!friendMode ? <View style={styles.matchJourney} accessibilityLiveRegion="polite">
-          <View style={styles.matchStage}><View style={styles.matchStageDone}><Feather name="check" size={16} color={colors.onPrimary}/></View><View style={styles.matchStageCopy}><Text style={styles.matchStageTitle}>Preference saved</Text><Text style={styles.baeSafetyText}>{data.preference === 'female' ? 'Female' : 'Male'} partner · Auto-match</Text></View></View>
-          <View style={styles.matchStage}><View style={styles.matchStageActive}><Feather name="search" size={17} color={colors.gold}/></View><View style={styles.matchStageCopy}><Text style={styles.matchStageTitle}>Finding your fit</Text><Text style={styles.baeSafetyText}>Your space is ready for the right connection.</Text></View><View style={styles.baeConnectedDot}/></View>
-          <View style={styles.matchStage}><View style={styles.matchStageNext}><Feather name="users" size={16} color={colors.inkSubtle}/></View><View style={styles.matchStageCopy}><Text style={styles.baeSafetyText}>Meet your partner</Text><Text style={styles.baeSafetyText}>Shared daily challenges come next</Text></View></View>
-        </View> : null}
         {friendMode ? (
           <>
             <View style={styles.friendInviteBox}>
@@ -818,8 +827,8 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
             </View>
           </>
         ) : null}
-        {!friendMode ? <View style={styles.matchFriendCard}><View style={styles.matchFriendCopy}><Feather name="user-plus" size={23} color={colors.gold}/><View style={styles.matchStageCopy}><Text style={styles.matchStageTitle}>Already have your person?</Text><Text style={styles.baeSafetyText}>Bring a friend into your shared space.</Text></View></View><PrimaryButton title="Invite a friend instead" style={{ backgroundColor: colors.gold }} icon="user-plus" onPress={() => onStart('friend')} disabled={busy}/></View> : null}
-        <PrimaryButton title={friendMode ? 'Back to match options' : 'Change match preference'} variant="ghost" size="sm" onPress={onLeave} disabled={busy} style={styles.baeTextButton} />
+
+        <PrimaryButton title="Back to match options" variant="ghost" size="sm" onPress={onLeave} disabled={busy} style={styles.baeTextButton} />
       </View>
     );
   }
@@ -1067,15 +1076,8 @@ const styles = StyleSheet.create({
   baeLockIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.accentFill, alignItems: 'center', justifyContent: 'center' },
   baeUnlockBenefits: { gap: 12, paddingVertical: 12 },
   baeUnlockBenefit: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  matchJourney: { padding: 20, gap: 22, borderRadius: 22, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
-  matchStage: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   matchStageCopy: { flex: 1, gap: 4 },
   matchStageTitle: { color: colors.ink, fontSize: 16, fontWeight: '700' },
-  matchStageDone: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.gold, alignItems: 'center', justifyContent: 'center' },
-  matchStageActive: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: colors.gold, alignItems: 'center', justifyContent: 'center' },
-  matchStageNext: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
-  matchFriendCard: { padding: 20, gap: 18, borderRadius: 22, backgroundColor: colors.panel },
-  matchFriendCopy: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   scroll: { flexGrow: 1 },
   pageHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
   pageHeaderCompact: { flexWrap: 'wrap' },
