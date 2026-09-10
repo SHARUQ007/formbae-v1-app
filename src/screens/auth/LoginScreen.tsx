@@ -24,6 +24,7 @@ import { FormInput } from '../../components/FormInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { KeyboardScreen } from '../../components/KeyboardScreen';
 import { Logo } from '../../components/Logo';
+import { ApiError } from '../../services/apiClient';
 import { useAuthStore } from '../../store/authStore';
 import { resolveOnboardingInitialRoute, resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
 import { colors } from '../../theme/colors';
@@ -48,7 +49,7 @@ export function LoginScreen({ navigation, route }: Props) {
   const headerReveal = useRef(new Animated.Value(route.params?.reduceMotion ? 1 : 0)).current;
   const bodyReveal = useRef(new Animated.Value(route.params?.reduceMotion ? 1 : 0)).current;
   const exitOpacity = useRef(new Animated.Value(1)).current;
-  const [mobile, setMobile] = useState('');
+  const [mobile, setMobile] = useState(() => toNationalMobileInput(route.params?.mobile || ''));
   const [name, setName] = useState('');
   const [phoneError, setPhoneError] = useState('');
   const [motionPreference, setMotionPreference] = useState<MotionPreference>(
@@ -143,7 +144,7 @@ export function LoginScreen({ navigation, route }: Props) {
     submittingRef.current = true;
     setPhoneError('');
     try {
-      const response = await login(digits, name.trim() || undefined, true);
+      const response = await login(digits, isSignup ? name.trim() || undefined : undefined, isSignup);
       await finishScreenTransition();
       const rootNav = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
       const root = resolveRootRoute(response.status.recommendedNextScreen);
@@ -159,6 +160,15 @@ export function LoginScreen({ navigation, route }: Props) {
       // first Main frame is hydrated instead of immediately showing loaders.
       rootNav?.replace(root === 'Main' ? 'Splash' : root);
     } catch (submitError) {
+      if (!isSignup && submitError instanceof ApiError && submitError.status === 404
+        && (submitError.payload as { code?: string } | undefined)?.code === 'ACCOUNT_NOT_FOUND') {
+        navigation.replace('Login', {
+          mode: 'signup',
+          mobile: digits,
+          reduceMotion: motionPreference === 'reduce',
+        });
+        return;
+      }
       const message = submitError instanceof Error ? submitError.message : 'We could not sign you in. Please try again.';
       setPhoneError(message);
       AccessibilityInfo.announceForAccessibility(message);

@@ -2,6 +2,7 @@ import React from 'react';
 import { AccessibilityInfo, Text } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { LoginScreen, normalizeIndianMobile } from './LoginScreen';
+import { ApiError } from '../../services/apiClient';
 
 const mockLogin = jest.fn();
 const mockReplace = jest.fn();
@@ -28,7 +29,7 @@ function createNavigation(canGoBack = true) {
   };
 }
 
-function renderLogin(mode: LoginMode, canGoBack = true) {
+function renderLogin(mode: LoginMode, canGoBack = true, mobile?: string) {
   const navigation = createNavigation(canGoBack);
   let renderer: ReactTestRenderer;
 
@@ -39,7 +40,7 @@ function renderLogin(mode: LoginMode, canGoBack = true) {
         route={{
           key: `Login-${mode}`,
           name: 'Login',
-          params: { mode, reduceMotion: true },
+          params: { mode, reduceMotion: true, mobile },
         }}
       />,
     );
@@ -176,8 +177,45 @@ describe('LoginScreen', () => {
     });
 
     expect(mockLogin).toHaveBeenCalledTimes(1);
-    expect(mockLogin).toHaveBeenCalledWith('9876543210', undefined, true);
+    expect(mockLogin).toHaveBeenCalledWith('9876543210', undefined, false);
     expect(mockReplace).toHaveBeenCalledWith('Splash');
+  });
+
+  it('redirects an unknown number to signup without creating an account', async () => {
+    mockLogin.mockRejectedValue(new ApiError('Create an account', 404, { code: 'ACCOUNT_NOT_FOUND' }));
+    const { navigation, renderer } = renderLogin('login');
+    renderers.push(renderer);
+    act(() => renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('+91 98765 43210'));
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Sign in' }).props.onPress());
+    expect(mockLogin).toHaveBeenCalledWith('9876543210', undefined, false);
+    expect(navigation.replace).toHaveBeenCalledWith('Login', { mode: 'signup', mobile: '9876543210', reduceMotion: true });
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('prefills signup and lets the user edit the phone before submitting', async () => {
+    mockLogin.mockResolvedValue({ status: { recommendedNextScreen: 'questionnaire' } });
+    const { renderer } = renderLogin('signup', true, '9876543210');
+    renderers.push(renderer);
+    expect(renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.value).toBe('9876543210');
+    expect(mockLogin).not.toHaveBeenCalled();
+    act(() => renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('9876543211'));
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Continue to analysis' }).props.onPress());
+    expect(mockLogin).toHaveBeenCalledWith('9876543211', undefined, true);
+  });
+
+  it.each([
+    new ApiError('Network unavailable', 0, undefined, true),
+    new ApiError('Service unavailable', 503),
+    new ApiError('Route not found', 404),
+    new ApiError('Account disabled', 403),
+  ])('keeps ordinary sign-in failures on the sign-in page: %s', async error => {
+    mockLogin.mockRejectedValue(error);
+    const { navigation, renderer } = renderLogin('login');
+    renderers.push(renderer);
+    act(() => renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('9876543210'));
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Sign in' }).props.onPress());
+    expect(navigation.replace).not.toHaveBeenCalled();
+    expect(renderedText(renderer)).toContain(error.message);
   });
 
   it('submits a trimmed optional name from the analysis path', async () => {
