@@ -367,29 +367,6 @@ export function ActionHubScreen({ navigation }: Props) {
     ]);
   };
 
-  const leaveBae = () => {
-    if (baeBusy) return;
-    if (accountabilityBae?.status === 'waiting') {
-      setBaeBusy(true);
-      leaveAccountabilityBae().then(applyBaeSummary).catch(error => Alert.alert('Could not update matching', error instanceof Error ? error.message : 'Try again.')).finally(() => setBaeBusy(false));
-      return;
-    }
-    Alert.alert('Leave match?', 'This ends the match for both of you and permanently deletes its proof photos.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Leave match',
-        style: 'destructive',
-        onPress: () => {
-          setBaeBusy(true);
-          leaveAccountabilityBae()
-            .then(applyBaeSummary)
-            .catch((error) => Alert.alert('Could not leave match', error instanceof Error ? error.message : 'Please try again.'))
-            .finally(() => setBaeBusy(false));
-        },
-      },
-    ]);
-  };
-
   if (!snapshot && initialLoading) {
     return (
       <ScreenContainer>
@@ -570,7 +547,6 @@ export function ActionHubScreen({ navigation }: Props) {
               onJoinFriend={joinFriend}
               onShareFriendCode={shareFriendCode}
               onSubmitProof={openProofPicker}
-              onLeave={leaveBae}
               onViewPartner={() => setSelectedPartner(accountabilityBae?.partner?.userId || null)}
               onRetry={() => load(true)}
               onViewTrophies={() => navigation.navigate('Progress', { screen: 'TrophyDetails' })}
@@ -699,14 +675,21 @@ type AccountabilityBaeCardProps = {
   onJoinFriend: () => void;
   onShareFriendCode: () => void;
   onSubmitProof: () => void;
-  onLeave: () => void;
   onViewPartner?: () => void;
   onRetry: () => void;
   onViewTrophies: () => void;
 };
 
-export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, friendCode, onFriendCodeChange, onStart, onJoinFriend, onShareFriendCode, onSubmitProof, onLeave, onRetry, onViewTrophies, onViewPartner }: AccountabilityBaeCardProps) {
+export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, friendCode, onFriendCodeChange, onStart, onJoinFriend, onShareFriendCode, onSubmitProof, onRetry, onViewTrophies, onViewPartner }: AccountabilityBaeCardProps) {
   const data = normalizeAccountabilityBaeSummary(rawData);
+  const [editingPreferences, setEditingPreferences] = useState(false);
+  useEffect(() => { setEditingPreferences(false); }, [data?.status]);
+  const showingPreferences = data?.status === 'waiting' && editingPreferences;
+  const selectPreference = (preference: 'male' | 'female' | 'friend') => {
+    if (busy) return;
+    setEditingPreferences(false);
+    onStart(preference);
+  };
   if (loading && !data) {
     return <BaeLoadingState />;
   }
@@ -762,18 +745,24 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
     );
   }
 
-  if (data.status === 'inactive') {
+  if (data.status === 'inactive' || showingPreferences) {
     return (
       <View style={styles.partnerSection}>
         {header}
-        <BaeArtworkHero eyebrow={busy ? "SETTING UP" : "PARTNER MODE"} title={busy ? "Saving your preference" : "Better together"} body={busy ? "Getting your shared space ready." : "Choose how you’d like to connect."} loading={busy} />
+        <BaeArtworkHero
+          eyebrow={busy ? 'SETTING UP' : showingPreferences ? 'MATCH PREFERENCES' : 'PARTNER MODE'}
+          title={busy ? 'Saving your preference' : showingPreferences ? 'Choose your connection' : 'Better together'}
+          body={busy ? 'Getting your shared space ready.' : showingPreferences ? data.preference === 'friend' ? 'Your current invite stays ready until you choose another option.' : 'Your current auto-match stays active until you choose another option.' : 'Choose how you’d like to connect.'}
+          loading={busy}
+        />
         <Text style={styles.baeChoicePrompt}>Match with</Text>
         <View style={[styles.baePreferenceRow, compact && styles.baePreferenceRowCompact]}>
-          <BaePreference kind="male" label="Male" detail="Auto-match" compact={compact} onPress={() => onStart('male')} disabled={busy} />
-          <BaePreference kind="female" label="Female" detail="Auto-match" compact={compact} onPress={() => onStart('female')} disabled={busy} />
-          <BaePreference kind="friend" label="Friend" detail="Use a code" compact={compact} onPress={() => onStart('friend')} disabled={busy} />
+          <BaePreference kind="male" label="Male" detail="Auto-match" compact={compact} onPress={() => selectPreference('male')} disabled={busy} />
+          <BaePreference kind="female" label="Female" detail="Auto-match" compact={compact} onPress={() => selectPreference('female')} disabled={busy} />
+          <BaePreference kind="friend" label="Friend" detail="Use a code" compact={compact} onPress={() => selectPreference('friend')} disabled={busy} />
         </View>
         {busy ? <ActivityIndicator color={colors.gold} /> : null}
+        {showingPreferences ? <PrimaryButton title={data.preference === 'friend' ? 'Back to your invite' : 'Back to current match'} variant="ghost" size="sm" onPress={() => setEditingPreferences(false)} disabled={busy} style={styles.baeTextButton} /> : null}
         <View style={styles.baeSafety}><Feather name="lock" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>Only your first name and initial are shown. Photos unlock after midnight only if you both check in before the day ends. Showing your face is optional.</Text></View>
       </View>
     );
@@ -789,7 +778,7 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
           <PartnerMatchWaitingCard
             preference={data.preference === 'female' ? 'female' : 'male'}
             compact={compact} busy={busy}
-            onChangePreference={onLeave}
+            onChangePreference={() => setEditingPreferences(true)}
             onInviteFriend={() => onStart('friend')}
           />
         </View>
@@ -828,7 +817,7 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
           </>
         ) : null}
 
-        <PrimaryButton title="Back to match options" variant="ghost" size="sm" onPress={onLeave} disabled={busy} style={styles.baeTextButton} />
+        <PrimaryButton title="Back to match options" variant="ghost" size="sm" onPress={() => setEditingPreferences(true)} disabled={busy} style={styles.baeTextButton} />
       </View>
     );
   }

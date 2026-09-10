@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, Text } from 'react-native';
+import { Alert, Image, Text } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import type { AccountabilityBaeSummary } from '../../types/api';
 import { AccountabilityBaeCard, AccountabilityModeSwitch } from './ActionHubScreen';
@@ -26,7 +26,6 @@ async function renderCard(data: AccountabilityBaeSummary | null, overrides: Part
         onJoinFriend={noop}
         onShareFriendCode={noop}
         onSubmitProof={noop}
-        onLeave={noop}
         onRetry={noop}
         onViewTrophies={noop}
         {...overrides}
@@ -214,4 +213,24 @@ it('honours an admin threshold and hides all matching actions while locked', asy
   expect(text).not.toContain('Complete with a photo');
   expect(text).not.toContain('Priya');
   expect(renderer.root.findByProps({ accessibilityLabel: 'Partner mode unlock progress' }).props.accessibilityValue.now).toBe(74);
+});
+
+
+it.each(['female', 'friend'] as const)('opens preferences without cancelling the current %s connection', async preference => {
+  const onStart = jest.fn();
+  const alert = jest.spyOn(Alert, 'alert');
+  const renderer = await renderCard({ status: 'waiting', access: unlockedAccess, preference, inviteCode: 'FRIEND123' }, { onStart });
+  await ReactTestRenderer.act(() => {
+    if (preference === 'friend') renderer.root.findByProps({ title: 'Back to match options' }).props.onPress();
+    else renderer.root.findByProps({ accessibilityLabel: 'Change match preference' }).props.onPress();
+  });
+  expect(copy(renderer)).toContain('Choose your connection');
+  expect(copy(renderer)).toContain(preference === 'friend' ? 'Your current invite stays ready' : 'Your current auto-match stays active');
+  expect(onStart).not.toHaveBeenCalled();
+  expect(alert).not.toHaveBeenCalled();
+  await ReactTestRenderer.act(() => renderer.root.findByProps({ title: preference === 'friend' ? 'Back to your invite' : 'Back to current match' }).props.onPress());
+  expect(copy(renderer)).toContain(preference === 'friend' ? 'FRIEND123' : 'Finding your fit');
+  expect(copy(renderer)).not.toContain('Choose your connection');
+  expect(onStart).not.toHaveBeenCalled();
+  alert.mockRestore();
 });
