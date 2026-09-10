@@ -1,21 +1,21 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const DRAFT_KEY = 'formbae_questionnaire_draft';
+const draftKey = (userId: string) => `formbae_questionnaire_draft_v2:${userId}`;
 
-export async function loadQuestionnaireDraft(): Promise<Record<string, string>> {
-  const raw = await AsyncStorage.getItem(DRAFT_KEY);
-  if (!raw) return {};
+export async function loadQuestionnaireDraft(userId: string): Promise<Record<string, string>> {
+  if (!userId) return {};
+  const raw = await AsyncStorage.getItem(draftKey(userId));
   try {
-    return JSON.parse(raw) as Record<string, string>;
-  } catch {
-    return {};
-  }
+    const parsed: unknown = JSON.parse(raw || '{}');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === 'string'));
+  } catch { return {}; }
 }
 
-export async function saveQuestionnaireDraft(answers: Record<string, string>) {
-  await AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(answers));
+export async function saveQuestionnaireDraft(userId: string, answers: Record<string, string>) {
+  if (userId) await AsyncStorage.setItem(draftKey(userId), JSON.stringify(answers));
 }
 
-export async function clearQuestionnaireDraft() {
-  await AsyncStorage.removeItem(DRAFT_KEY);
+export async function clearQuestionnaireDraft(userId: string) {
+  if (userId) await AsyncStorage.removeItem(draftKey(userId));
 }

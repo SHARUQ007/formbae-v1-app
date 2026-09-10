@@ -345,7 +345,7 @@ export function WelcomeScreen({ navigation }: Props) {
                 accessibilityState={{ disabled: transitioning, busy: transitioningTo === 'login' }}
               >
                 <View style={styles.ctaCopy}>
-                  <Text style={styles.primaryCtaLabel}>CONTINUE YOUR PLAN</Text>
+                  <Text style={styles.primaryCtaLabel}>ALREADY A MEMBER?</Text>
                   <Text style={styles.ctaTitle}>Sign in</Text>
                 </View>
                 <View style={styles.ctaArrowArea}>
@@ -390,6 +390,7 @@ export function WelcomeScreen({ navigation }: Props) {
                 </View>
               </TouchableOpacity>
             </Animated.View>
+            <Text style={styles.webMemberNote}>Paid on the web? Sign in with the same phone number to finish your setup.</Text>
           </Animated.View>
         </Animated.View>
       </Animated.ScrollView>
@@ -398,6 +399,7 @@ export function WelcomeScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  webMemberNote: { color: colors.inkMuted, fontSize: 12, lineHeight: 18, textAlign: 'center', paddingHorizontal: 12 },
   screen: { flex: 1, backgroundColor: colors.bg },
   artwork: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, width: '100%', height: '100%' },
   content: { flexGrow: 1, justifyContent: 'space-between', paddingHorizontal: spacing.md },

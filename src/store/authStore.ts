@@ -9,7 +9,7 @@ import { preloadMainAppData } from '../services/preloadService';
 import { flushWorkoutQueue } from '../store/workoutStore';
 import type { SessionUser, UserStatus } from '../types/api';
 
-const STATUS_CACHE_PREFIX = 'formbae_auth_status_v2:';
+const STATUS_CACHE_PREFIX = 'formbae_auth_status_v3:';
 let initializedUserId = '';
 let mainPreloadedUserId = '';
 let statusRefreshInFlight: { token: string; promise: Promise<UserStatus> } | null = null;

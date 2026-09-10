@@ -1,57 +1,37 @@
-import { ScrollView, View, StyleSheet } from 'react-native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import Feather from 'react-native-vector-icons/Feather';
-import { ScreenContainer } from '../../components/Card';
-import { PrimaryButton } from '../../components/PrimaryButton';
-import { GradientHero } from '../../components/GradientHero';
+import { useState } from 'react';
+import type { NativeStackScreenProps, NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { SetupOverview } from '../../components/SetupOverview';
 import { useAuthStore } from '../../store/authStore';
-import { colors } from '../../theme/colors';
-import { spacing } from '../../theme/spacing';
-import { radius } from '../../theme/radius';
-import type { PaidStackParamList } from '../../navigation/types';
+import { nextPaidSetupStep } from '../../utils/onboarding';
+import type { PaidStackParamList, RootStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<PaidStackParamList, 'PaidWelcome'>;
 
 export function PaidWelcomeScreen({ navigation }: Props) {
-  const { status } = useAuthStore();
-
-  return (
-    <ScreenContainer withBottomInset>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-        <View style={styles.top}>
-          <View style={styles.check}>
-            <Feather name="check" size={34} color={colors.onPrimary} />
-          </View>
-        </View>
-
-        <GradientHero
-          eyebrow="Payment confirmed"
-          title="Welcome to FormBae"
-          subtitle="Your trainer-backed plan is being set up. We're matching you with the right coach for your goal."
-        />
-
-        <View style={styles.spacer} />
-
-        <PrimaryButton
-          title={status?.trainerAssigned ? 'View plan status' : 'Find my trainer'}
-          icon="arrow-right"
-          onPress={() => navigation.navigate(status?.trainerAssigned ? 'PlanPreparing' : 'FindingTrainer')}
-        />
-      </ScrollView>
-    </ScreenContainer>
-  );
+  const { status, refreshStatus, logout } = useAuthStore();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const step = status ? nextPaidSetupStep(status) : 'PaymentSync';
+  const labels = { PaymentSync: 'Check membership', ProfileSetup: 'Complete my profile', FindingTrainer: 'Choose my coach', PlanPreparing: 'Create my workout plan', Main: 'Enter FormBae' };
+  const proceed = async () => {
+    setBusy(true); setError('');
+    try {
+      const fresh = await refreshStatus();
+      if (!fresh) throw new Error('Status unavailable');
+      const next = nextPaidSetupStep(fresh);
+      if (next === 'Main') navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Main');
+      else navigation.navigate(next);
+    } catch { setError('We couldn’t check your setup. Please try again.'); }
+    finally { setBusy(false); }
+  };
+  return <SetupOverview paid={!!status?.hasPaid} title="Your next chapter starts here."
+    subtitle="Let’s finish your setup and turn your membership into a routine that fits you."
+    steps={[
+      { title: 'Your membership', detail: 'Confirm your existing payment', icon: 'credit-card', complete: status?.hasPaid },
+      { title: 'Your starting point', detail: 'Goals and a schedule that works for you', icon: 'sliders', complete: status?.questionnaireCompleted },
+      { title: 'Your coach', detail: 'Choose from the coaches included in your plan', icon: 'user', complete: status?.trainerAssigned, onChange: status?.hasPaid && status.questionnaireCompleted && status.trainerAssigned && !status.planReady ? () => navigation.navigate('FindingTrainer') : undefined },
+      { title: 'Your first workout plan', detail: 'Built from your profile and coach selection', icon: 'activity', complete: status?.planReady },
+    ]}
+    action={labels[step]} onContinue={proceed} busy={busy} error={error}
+    onLogout={async () => { await logout(); navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Auth'); }} />;
 }
-
-const styles = StyleSheet.create({
-  scroll: { flexGrow: 1, paddingBottom: spacing.lg },
-  top: { alignItems: 'center', marginTop: spacing.xl, marginBottom: spacing.lg },
-  check: {
-    width: 76,
-    height: 76,
-    borderRadius: radius.pill,
-    backgroundColor: colors.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  spacer: { flex: 1 },
-});

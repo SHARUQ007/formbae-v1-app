@@ -45,9 +45,10 @@ export function PaymentRequiredScreen({ navigation }: Props) {
 
   useEffect(() => {
     fetchPaymentStatus()
-      .then((data) => {
+      .then(async (data) => {
         if (data.hasPaid) {
-          routeAfterPaid('home');
+          const fresh = await refreshStatus();
+          routeAfterPaid(fresh?.recommendedNextScreen || 'payment_sync');
           return;
         }
         setPlans(data.plans || []);
@@ -56,7 +57,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
       })
       .catch(() => setPlans([]))
       .finally(() => setLoading(false));
-  }, [routeAfterPaid]);
+  }, [routeAfterPaid, refreshStatus]);
 
   useEffect(() => {
     fetchRecommendedTrainer()
@@ -84,9 +85,9 @@ export function PaymentRequiredScreen({ navigation }: Props) {
       });
       if (result.cancelled) return;
       if (result.success) {
-        await refreshStatus();
+        const fresh = await refreshStatus();
         displayBehavioralNotification('paymentConfirmed').catch(() => undefined);
-        routeAfterPaid(result.status?.recommendedNextScreen || 'paid_welcome');
+        routeAfterPaid(fresh?.recommendedNextScreen || 'payment_sync');
         return;
       }
       Alert.alert('Payment issue', result.error || 'Payment could not be completed. Please try again.');

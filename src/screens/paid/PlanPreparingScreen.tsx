@@ -1,127 +1,107 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, ScrollView, View, Text, StyleSheet } from 'react-native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { AppState, ScrollView, StyleSheet, Text, View } from 'react-native';
+import type { NativeStackScreenProps, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
-import { ScreenContainer, ScreenTitle, ScreenSubtitle, Card } from '../../components/Card';
+import { ScreenContainer, ScreenHeader } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
+import { LoadingState } from '../../components/States';
 import { useAuthStore } from '../../store/authStore';
-import { displayBehavioralNotification } from '../../services/notificationService';
-import { colors } from '../../theme/colors';
-import { spacing } from '../../theme/spacing';
-import { radius } from '../../theme/radius';
-import { typography } from '../../theme/typography';
+import { createOnboardingPlan, fetchOnboardingPlanState, type OnboardingPlanState } from '../../services/onboardingService';
 import type { PaidStackParamList, RootStackParamList } from '../../navigation/types';
+import { colors } from '../../theme/colors';
 
-type Props = NativeStackScreenProps<PaidStackParamList, 'PlanPreparing'>;
-
-export function PlanPreparingScreen({ navigation }: Props) {
-  const { status, refreshStatus } = useAuthStore();
-  const activeRef = useRef(true);
+export function PlanPreparingScreen({ navigation }: NativeStackScreenProps<PaidStackParamList, 'PlanPreparing'>) {
+  const { refreshStatus } = useAuthStore();
+  const [state, setState] = useState<OnboardingPlanState['status']>('idle');
+  const [checking, setChecking] = useState(true);
+  const [error, setError] = useState('');
+  const alive = useRef(true);
+  const requestRunning = useRef(false);
   const checkingRef = useRef(false);
-  const [checking, setChecking] = useState(false);
-  const [checkError, setCheckError] = useState<string | null>(null);
-
   const check = useCallback(async () => {
     if (checkingRef.current) return;
     checkingRef.current = true;
-    setChecking(true);
-    setCheckError(null);
     try {
-      const next = await refreshStatus();
-      if (activeRef.current && next.planReady) {
-        displayBehavioralNotification('planReady').catch(() => undefined);
-        navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Main');
-      }
-    } catch (error) {
-      if (activeRef.current) setCheckError(error instanceof Error ? error.message : 'We could not check the latest status.');
+      const result = await fetchOnboardingPlanState();
+      if (alive.current) { setState(result.status); setError(''); }
+    } catch {
+      if (alive.current) setError('We couldn’t check your plan. Your setup is saved.');
     } finally {
       checkingRef.current = false;
-      if (activeRef.current) setChecking(false);
+      if (alive.current) setChecking(false);
     }
-  }, [navigation, refreshStatus]);
-
+  }, []);
   useEffect(() => {
-    activeRef.current = true;
+    alive.current = true;
     check();
-    const interval = setInterval(() => check(), 20000);
-    return () => {
-      activeRef.current = false;
-      clearInterval(interval);
-    };
+    const subscription = AppState.addEventListener('change', next => { if (next === 'active') check(); });
+    return () => { alive.current = false; subscription.remove(); };
   }, [check]);
-
-  const steps = [
-    { label: 'Payment confirmed', done: true },
-    { label: 'Trainer assigned', done: !!status?.trainerAssigned },
-    { label: 'Workout plan ready', done: !!status?.planReady },
-  ];
-
-  return (
-    <ScreenContainer withBottomInset>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-        <View style={styles.heroIcon}><ActivityIndicator size="small" color={colors.accent} /></View>
-        <Text style={styles.kicker}>Personal plan setup</Text>
-        <ScreenTitle>Your plan is taking shape</ScreenTitle>
-        <ScreenSubtitle>Your trainer is turning your goals and schedule into your first workout week. You can safely leave—this keeps updating.</ScreenSubtitle>
-
-        <Card style={styles.statusCard}>
-          <View style={styles.cardHeader}>
-            <View>
-              <Text style={styles.cardKicker}>Setup progress</Text>
-              <Text style={styles.cardTitle}>{steps.filter((step) => step.done).length} of {steps.length} complete</Text>
-            </View>
-            {checking ? <ActivityIndicator size="small" color={colors.accent} /> : <Feather name="clock" size={20} color={colors.inkSubtle} />}
-          </View>
-          {steps.map((step, i) => (
-            <View key={step.label} style={[styles.step, i > 0 && styles.stepGap]}>
-              <View style={[styles.stepIcon, step.done ? styles.stepDone : styles.stepPending]}>
-                {step.done ? (
-                  <Feather name="check" size={16} color={colors.onPrimary} />
-                ) : i === steps.findIndex((entry) => !entry.done) ? (
-                  <ActivityIndicator size="small" color={colors.accent} />
-                ) : (
-                  <Feather name="circle" size={14} color={colors.inkSubtle} />
-                )}
-              </View>
-              <Text style={[styles.stepLabel, step.done && styles.stepLabelDone]}>{step.label}</Text>
-            </View>
-          ))}
-        </Card>
-
-        {checkError ? (
-          <View style={styles.errorCard}>
-            <Feather name="wifi-off" size={18} color={colors.error} />
-            <View style={styles.errorText}><Text style={styles.errorTitle}>Status check paused</Text><Text style={styles.errorDetail}>{checkError}</Text></View>
-          </View>
-        ) : null}
-
-        <PrimaryButton title={checking ? 'Checking status' : 'Check now'} icon="refresh-cw" onPress={check} loading={checking} variant="secondary" style={styles.checkButton} />
-        <Text style={styles.waitNote}>We check automatically every 20 seconds and open your workouts as soon as the plan is ready.</Text>
-      </ScrollView>
-    </ScreenContainer>
-  );
+  useEffect(() => {
+    if (state !== 'building') return;
+    const timer = setInterval(() => { if (AppState.currentState === 'active') check(); }, 15000);
+    return () => clearInterval(timer);
+  }, [state, check]);
+  const build = async () => {
+    if (requestRunning.current) return;
+    requestRunning.current = true;
+    setError(''); setState('building');
+    try {
+      const fresh = await refreshStatus();
+      if (!fresh?.hasPaid || !fresh.questionnaireCompleted || !fresh.trainerAssigned) {
+        navigation.replace('PaidWelcome'); return;
+      }
+      if (fresh.planReady) { if (alive.current) setState('completed'); return; }
+      const result = await createOnboardingPlan();
+      if (alive.current) setState(result.status);
+    } catch {
+      // A lost response doesn't mean the server failed. Reconcile before offering a retry.
+      try {
+        const latest = await fetchOnboardingPlanState();
+        if (alive.current) {
+          setState(latest.status);
+          if (latest.status !== 'building' && latest.status !== 'completed') setError('Your plan couldn’t finish. Please try again.');
+        }
+      } catch { if (alive.current) setError('Connection interrupted. Check your plan status before trying again.'); }
+    } finally { requestRunning.current = false; }
+  };
+  const enter = async () => {
+    setChecking(true); setError('');
+    try {
+      const fresh = await refreshStatus();
+      if (fresh?.recommendedNextScreen === 'home') navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Main');
+      else { await check(); setError('Your plan is still syncing. Please check again.'); }
+    } catch { setError('We couldn’t open your plan. Please try again.'); }
+    finally { if (alive.current) setChecking(false); }
+  };
+  const building = state === 'building';
+  const ready = state === 'completed';
+  return <ScreenContainer withBottomInset>
+    <ScreenHeader title="Your first plan" onBack={() => navigation.navigate('PaidWelcome')} />
+    <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <View style={styles.card}>
+        <View style={styles.icon}><Feather name={ready ? 'check' : 'activity'} size={36} color={colors.gold} /></View>
+        <Text style={styles.eyebrow}>{ready ? 'READY FOR YOU' : building ? 'CREATING YOUR ROUTINE' : 'THE LAST SETUP STEP'}</Text>
+        <Text style={styles.title}>{ready ? 'Your first chapter is ready.' : building ? 'A routine that fits your life.' : 'Let’s put your plan together.'}</Text>
+        <Text style={styles.subtitle}>{ready ? 'Your workouts are ready. Start with My day, then explore your plan at your own pace.' : building ? 'We’re creating your sessions from your profile and coach selection. You can return here to check on your plan.' : 'We’ll use your goals, starting point and weekly schedule to build your first workouts.'}</Text>
+        {(checking || building) && !error ? <LoadingState message={checking ? 'Checking your saved setup…' : 'Building your sessions…'} /> : null}
+      </View>
+      <View style={styles.detail}><Feather name="save" size={19} color={colors.gold} /><Text style={styles.detailText}>Your membership, profile and coach selection are saved to your account.</Text></View>
+    </ScrollView>
+    {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    {building || (checking && !ready) ? <PrimaryButton title="Check plan status" onPress={check} loading={checking} variant="secondary" /> :
+      <PrimaryButton title={ready ? 'Enter FormBae' : state === 'failed' ? 'Try creating my plan again' : 'Create my workout plan'} onPress={ready ? enter : build} loading={checking} icon="arrow-right" iconPosition="trailing" style={styles.cta} />}
+  </ScreenContainer>;
 }
-
 const styles = StyleSheet.create({
-  scroll: { flexGrow: 1, paddingBottom: spacing.lg },
-  heroIcon: { width: 56, height: 56, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface, marginBottom: spacing.md },
-  kicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase', marginBottom: spacing.xs },
-  statusCard: { marginTop: spacing.lg },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: spacing.lg, marginBottom: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.border },
-  cardKicker: { ...typography.overline, color: colors.accent, textTransform: 'uppercase' },
-  cardTitle: { ...typography.subtitle, color: colors.ink, marginTop: spacing.xs },
-  step: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  stepGap: { marginTop: spacing.lg },
-  stepIcon: { width: 32, height: 32, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
-  stepDone: { backgroundColor: colors.gold },
-  stepPending: { backgroundColor: colors.panelMuted },
-  stepLabel: { ...typography.body, color: colors.inkMuted, flex: 1, minWidth: 0 },
-  stepLabelDone: { color: colors.ink, fontWeight: '600' },
-  errorCard: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, backgroundColor: colors.errorLight, borderWidth: 1, borderColor: 'rgba(255,129,140,0.28)', padding: spacing.md, borderRadius: radius.lg, marginTop: spacing.md },
-  errorText: { flex: 1 },
-  errorTitle: { ...typography.bodyBold, color: colors.error },
-  errorDetail: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  checkButton: { marginTop: spacing.lg },
-  waitNote: { ...typography.body, color: colors.inkMuted, textAlign: 'center', marginTop: spacing.lg, paddingHorizontal: spacing.md },
+  scroll: { flexGrow: 1, justifyContent: 'center', paddingBottom: 24, gap: 20 },
+  card: { borderRadius: 24, borderWidth: 1, borderColor: colors.border, padding: 24, backgroundColor: colors.panel, gap: 18 },
+  icon: { width: 76, height: 76, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentFill },
+  eyebrow: { fontSize: 10, letterSpacing: 1.5, fontWeight: '800', color: colors.gold },
+  title: { fontSize: 30, lineHeight: 36, fontWeight: '800', color: colors.ink },
+  subtitle: { fontSize: 15, lineHeight: 23, color: colors.inkMuted },
+  detail: { flexDirection: 'row', gap: 12, alignItems: 'center', paddingHorizontal: 10 },
+  detailText: { flex: 1, fontSize: 13, lineHeight: 20, color: colors.inkMuted },
+  error: { color: colors.error, fontSize: 14, lineHeight: 21, marginBottom: 16 },
+  cta: { backgroundColor: colors.gold, borderColor: colors.gold },
 });

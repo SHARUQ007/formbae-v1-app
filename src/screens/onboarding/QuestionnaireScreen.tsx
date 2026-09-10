@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Alert, ScrollView, Text, TouchableOpacity, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, TouchableOpacity, StyleSheet, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -11,7 +11,7 @@ import { FormInput } from '../../components/FormInput';
 import { ProgressBar } from '../../components/ProgressBar';
 import { LoadingState } from '../../components/States';
 import { fetchQuestionnaire, saveQuestionnaireDraft, submitQuestionnaire } from '../../services/questionnaireService';
-import { loadQuestionnaireDraft, saveQuestionnaireDraft as saveLocalDraft } from '../../store/onboardingStore';
+import { clearQuestionnaireDraft, loadQuestionnaireDraft, saveQuestionnaireDraft as saveLocalDraft } from '../../store/onboardingStore';
 import { useAuthStore } from '../../store/authStore';
 import type { MobileQuestion } from '../../types/api';
 import type { OnboardingStackParamList, RootStackParamList } from '../../navigation/types';
@@ -23,28 +23,40 @@ import { typography } from '../../theme/typography';
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'Questionnaire'>;
 
 export function QuestionnaireScreen({ navigation }: Props) {
+  return <QuestionnaireFlow onComplete={() => navigation.replace('AnalysisLoading')}
+    onLogout={() => navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Auth')} />;
+}
+
+export function QuestionnaireFlow({ onComplete, onLogout }: {
+  onComplete: () => void | Promise<void>;
+  onLogout: () => void;
+}) {
   const insets = useSafeAreaInsets();
-  const { logout } = useAuthStore();
+  const { logout, user } = useAuthStore();
+  const userId = user?.userId || '';
+  const [error, setError] = useState('');
   const [questions, setQuestions] = useState<MobileQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      const local = await loadQuestionnaireDraft();
-      try {
-        const data = await fetchQuestionnaire();
-        setQuestions(data.questions);
-        setAnswers({ ...local, ...data.answers });
-      } catch {
-        setQuestions([]);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [local, data] = await Promise.all([loadQuestionnaireDraft(userId), fetchQuestionnaire()]);
+      const merged = { ...data.answers, ...local };
+      if (!data.questions.length) throw new Error('No questions');
+      setQuestions(data.questions);
+      setAnswers(merged);
+      const nextIndex = data.questions.findIndex(question => !merged[question.id]?.trim());
+      setIndex(nextIndex < 0 ? 0 : nextIndex);
+    } catch {
+      setError('We couldn’t load your setup. Please try again.');
+    } finally { setLoading(false); }
+  }, [userId]);
+  useEffect(() => { load(); }, [load]);
 
   const current = questions[index];
   const progress = questions.length ? (index + 1) / questions.length : 0;
@@ -52,7 +64,7 @@ export function QuestionnaireScreen({ navigation }: Props) {
   const setAnswer = async (value: string) => {
     const next = { ...answers, [current.id]: value };
     setAnswers(next);
-    await saveLocalDraft(next);
+    await saveLocalDraft(userId, next).catch(() => undefined);
     try {
       await saveQuestionnaireDraft(next);
     } catch {
@@ -70,20 +82,23 @@ export function QuestionnaireScreen({ navigation }: Props) {
     setSubmitting(true);
     try {
       await submitQuestionnaire(answers);
-      navigation.replace('AnalysisLoading');
+      await clearQuestionnaireDraft(userId).catch(() => undefined);
+      await onComplete();
+    } catch {
+      setError('Your answers couldn’t be submitted. Please try again.');
     } finally {
       setSubmitting(false);
     }
   };
 
   const exitFlow = () => {
-    Alert.alert('Leave setup?', 'Your progress is saved. You can continue building your report when you sign back in.', [
+    Alert.alert('Leave setup?', 'Your progress is saved. You can continue your setup when you sign back in.', [
       { text: 'Stay', style: 'cancel' },
       {
         text: 'Log out',
         onPress: async () => {
           await logout();
-          navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Auth');
+          onLogout();
         },
       },
     ]);
@@ -126,6 +141,14 @@ export function QuestionnaireScreen({ navigation }: Props) {
     );
   };
 
+  if (!loading && !current) {
+    return <ScreenContainer withBottomInset>
+      <Text style={styles.title}>Let’s try that again</Text>
+      <Text style={styles.subtitle}>{error}</Text>
+      <PrimaryButton title="Retry" onPress={load} />
+      <PrimaryButton title="Log out" variant="ghost" onPress={exitFlow} />
+    </ScreenContainer>;
+  }
   if (loading || !current) {
     return (
       <ScreenContainer>
@@ -138,7 +161,7 @@ export function QuestionnaireScreen({ navigation }: Props) {
 
   return (
     <LinearGradient colors={['#05070c', '#02040a']} style={styles.root}>
-      <View style={[styles.safeArea, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.md }]}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.safeArea, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.md }]}>
       <View style={styles.progressHeader}>
         <View style={styles.progressTop}>
           <TouchableOpacity
@@ -164,6 +187,7 @@ export function QuestionnaireScreen({ navigation }: Props) {
 
       <ScrollView
         style={styles.questionScroll}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scroll, current.type === 'single' && styles.scrollSingle]}
       >
@@ -181,14 +205,16 @@ export function QuestionnaireScreen({ navigation }: Props) {
         ) : null}
       </ScrollView>
 
+      {error ? <Text accessibilityRole="alert" style={styles.subtitle}>{error}</Text> : null}
       <PrimaryButton
+        disabled={current.required !== false && !answers[current.id]?.trim()}
         title={index === questions.length - 1 ? 'Submit answers' : 'Continue'}
         icon={index === questions.length - 1 ? 'check' : 'arrow-right'}
         onPress={onNext}
         loading={submitting}
         variant="inverted"
       />
-      </View>
+      </KeyboardAvoidingView>
     </LinearGradient>
   );
 }

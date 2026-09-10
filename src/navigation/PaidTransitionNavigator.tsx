@@ -23,6 +23,7 @@ export function PaidTransitionNavigator() {
       initialRouteName="PaymentSync"
     >
       <Stack.Screen name="PaymentSync" component={PaymentSyncScreen} />
+      <Stack.Screen name="ProfileSetup" getComponent={() => require('../screens/paid/ProfileSetupScreen').ProfileSetupScreen} />
       <Stack.Screen name="PaidWelcome" component={PaidWelcomeScreen} />
       <Stack.Screen name="FindingTrainer" component={FindingTrainerScreen} />
       <Stack.Screen name="PlanPreparing" component={PlanPreparingScreen} />

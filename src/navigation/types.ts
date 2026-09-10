@@ -16,6 +16,7 @@ export type AuthStackParamList = {
 };
 
 export type OnboardingStackParamList = {
+  SetupWelcome: undefined;
   Questionnaire: undefined;
   AnalysisLoading: undefined;
   AnalysisReport: undefined;
@@ -24,6 +25,7 @@ export type OnboardingStackParamList = {
 };
 
 export type PaidStackParamList = {
+  ProfileSetup: undefined;
   PaymentSync: undefined;
   PaidWelcome: undefined;
   FindingTrainer: undefined;

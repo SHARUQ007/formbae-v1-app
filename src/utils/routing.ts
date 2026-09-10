@@ -33,7 +33,7 @@ export function resolveOnboardingInitialRoute(screen: RecommendedNextScreen): ke
       return 'TrainerMatch';
     case 'questionnaire':
     default:
-      return 'Questionnaire';
+      return 'SetupWelcome';
   }
 }
 

@@ -201,6 +201,6 @@ describe('LoginScreen', () => {
     });
 
     expect(mockLogin).toHaveBeenCalledWith('9876543210', 'Maya', true);
-    expect(mockReplace).toHaveBeenCalledWith('Onboarding', { screen: 'Questionnaire' });
+    expect(mockReplace).toHaveBeenCalledWith('Onboarding', { screen: 'SetupWelcome' });
   });
 });

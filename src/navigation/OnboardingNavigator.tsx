@@ -22,6 +22,7 @@ export function OnboardingNavigator() {
         contentStyle: { backgroundColor: colors.bg },
       }}
     >
+      <Stack.Screen name="SetupWelcome" getComponent={() => require('../screens/onboarding/SetupWelcomeScreen').SetupWelcomeScreen} />
       <Stack.Screen name="Questionnaire" component={QuestionnaireScreen} />
       <Stack.Screen name="AnalysisLoading" getComponent={getAnalysisLoadingScreen} options={{ animation: reduceMotion ? 'none' : 'fade' }} />
       <Stack.Screen name="AnalysisReport" getComponent={getAnalysisReportScreen} options={{ animation: reduceMotion ? 'none' : 'fade' }} />
