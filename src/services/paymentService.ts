@@ -1,5 +1,7 @@
 import RazorpayCheckout from 'react-native-razorpay';
-import { apiRequest } from './apiClient';
+import { apiRequest, getAuthToken } from './apiClient';
+import * as Keychain from 'react-native-keychain';
+import { getActiveCacheSessionId } from './appCache';
 import type { PaymentPlan, UserStatus } from '../types/api';
 
 export async function fetchPaymentStatus() {
@@ -15,6 +17,8 @@ export async function fetchPaymentStatus() {
 }
 
 export async function syncPayment() {
+  const recovered = await recoverPendingPayment();
+  if (recovered) return { ok: true, status: recovered.status };
   return apiRequest<{ ok: boolean; status: UserStatus }>('/payment/sync', {
     method: 'POST',
   });
@@ -25,7 +29,7 @@ export async function createPaymentOrder(params: {
   paywallId?: string;
   planId?: string;
   selectedTrainerId?: string;
-}) {
+}, token = getAuthToken()) {
   return apiRequest<{
     keyId: string;
     order_id: string;
@@ -33,14 +37,14 @@ export async function createPaymentOrder(params: {
     currency: string;
     planName: string;
     note: string;
-  }>('/payment/create-order', { method: 'POST', body: params });
+  }>('/payment/create-order', { method: 'POST', body: params, token });
 }
 
 export async function createPaymentSubscription(params: {
   paywallId?: string;
   planId: string;
   selectedTrainerId?: string;
-}) {
+}, token = getAuthToken()) {
   return apiRequest<{
     keyId: string;
     subscriptionId: string;
@@ -48,7 +52,7 @@ export async function createPaymentSubscription(params: {
     currency: string;
     planName: string;
     note: string;
-  }>('/payment/create-subscription', { method: 'POST', body: params });
+  }>('/payment/create-subscription', { method: 'POST', body: params, token });
 }
 
 export async function verifyPayment(body: {
@@ -79,6 +83,7 @@ export type CheckoutResult = {
   success: boolean;
   status?: UserStatus;
   cancelled?: boolean;
+  pendingVerification?: boolean;
   error?: string;
 };
 
@@ -95,14 +100,14 @@ function normalizeCheckoutContact(value: string): string {
 /**
  * Full native checkout: create order -> open Razorpay SDK -> verify -> return synced status.
  */
-export async function runNativeCheckout(params: {
+async function performNativeCheckout(params: {
   plan: PaymentPlan;
   user: { name: string; mobile: string; email?: string };
   paywallId?: string;
   selectedTrainerId?: string;
   /** Prevent renewal flows from ever falling back to a one-time Razorpay order. */
   requireRecurring?: boolean;
-}): Promise<CheckoutResult> {
+}, identity: string, token: string): Promise<CheckoutResult> {
   const paywallId = params.paywallId || params.plan.paywallId;
   const isRecurring = params.plan.billing === 'recurring';
   if (params.requireRecurring && !isRecurring) {
@@ -120,7 +125,7 @@ export async function runNativeCheckout(params: {
         paywallId,
         planId: params.plan.planId,
         selectedTrainerId: params.selectedTrainerId,
-      });
+      }, token);
       checkoutTarget = {
         type: 'subscription',
         keyId: subscription.keyId,
@@ -135,7 +140,7 @@ export async function runNativeCheckout(params: {
         paywallId,
         planId: params.plan.planId,
         selectedTrainerId: params.selectedTrainerId,
-      });
+      }, token);
       checkoutTarget = {
         type: 'order',
         keyId: order.keyId,
@@ -200,6 +205,10 @@ export async function runNativeCheckout(params: {
     theme: { color: '#F0CE78', backdrop_color: '#05060A' },
   } as unknown as Parameters<typeof RazorpayCheckout.open>[0];
 
+  if (getAuthToken() !== token || getActiveCacheSessionId() !== identity) {
+    return { success: false, error: 'Your account changed. Please reopen checkout.' };
+  }
+
   let checkout: {
     razorpay_payment_id: string;
     razorpay_order_id?: string;
@@ -216,26 +225,89 @@ export async function runNativeCheckout(params: {
     return { success: false, error: err?.description || 'Payment failed' };
   }
 
+  const receipt: PendingPayment = {
+    type: checkoutTarget.type,
+    body: {
+      razorpay_payment_id: checkout.razorpay_payment_id,
+      razorpay_signature: checkout.razorpay_signature,
+      ...(checkoutTarget.type === 'subscription'
+        ? { razorpay_subscription_id: checkoutTarget.subscriptionId }
+        : { razorpay_order_id: checkoutTarget.orderId }),
+      paywallId,
+    },
+  };
+  pendingReceipts.set(identity, receipt);
   try {
-    const result =
-      checkoutTarget.type === 'subscription'
-        ? await verifySubscription({
-            razorpay_payment_id: checkout.razorpay_payment_id,
-            razorpay_subscription_id: checkout.razorpay_subscription_id || checkoutTarget.subscriptionId,
-            razorpay_signature: checkout.razorpay_signature,
-            paywallId,
-          })
-        : await verifyPayment({
-            razorpay_payment_id: checkout.razorpay_payment_id,
-            razorpay_order_id: checkout.razorpay_order_id || checkoutTarget.orderId,
-            razorpay_signature: checkout.razorpay_signature,
-            paywallId,
-          });
-    return { success: result.success, status: result.status };
+    await Keychain.setGenericPassword('payment-receipt', JSON.stringify(receipt), { service: paymentServiceKey(identity) });
+  } catch {
+    // Keep the proof in memory and still attempt verification if secure storage is unavailable.
+  }
+  try {
+    if (getAuthToken() !== token || getActiveCacheSessionId() !== identity) {
+      throw new Error('Return to the account used for this payment to finish verification.');
+    }
+    const result = await recoverPendingPayment();
+    return { success: true, status: result?.status };
+  } catch {
+    return { success: false, pendingVerification: true,
+      error: 'Payment received. Refresh payment status to finish verification; please do not pay again.' };
+  }
+}
+
+type PendingPayment = {
+  type: 'order' | 'subscription';
+  body: {
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+    razorpay_order_id?: string;
+    razorpay_subscription_id?: string;
+    paywallId?: string;
+  };
+};
+const pendingReceipts = new Map<string, PendingPayment>();
+const paymentServiceKey = (identity: string) => `com.formbae.payment.${identity}`;
+let checkoutInProgress = false;
+
+async function recoverPendingPayment() {
+  const identity = getActiveCacheSessionId();
+  const token = getAuthToken();
+  if (!token || identity === 'signed-out') return null;
+  let receipt = pendingReceipts.get(identity);
+  if (!receipt) {
+    const saved = await Keychain.getGenericPassword({ service: paymentServiceKey(identity) });
+    if (saved) receipt = JSON.parse(saved.password) as PendingPayment;
+  }
+  if (!receipt) return null;
+  if (!receipt.body?.razorpay_payment_id || !receipt.body.razorpay_signature
+    || !['order', 'subscription'].includes(receipt.type)) {
+    throw new Error('Your saved payment needs review. Please contact support before paying again.');
+  }
+  const result = await apiRequest<{ success: boolean; status: UserStatus }>(
+    receipt.type === 'subscription' ? '/payment/verify-subscription' : '/payment/verify',
+    { method: 'POST', body: receipt.body, token },
+  );
+  if (!result.success) throw new Error('Payment verification is still pending.');
+  pendingReceipts.delete(identity);
+  await Keychain.resetGenericPassword({ service: paymentServiceKey(identity) }).catch(() => undefined);
+  if (getAuthToken() !== token || getActiveCacheSessionId() !== identity) {
+    throw new Error('Your account changed. Refresh payment status after signing in again.');
+  }
+  return result;
+}
+
+export async function runNativeCheckout(params: Parameters<typeof performNativeCheckout>[0]): Promise<CheckoutResult> {
+  if (checkoutInProgress) return { success: false, error: 'A payment is already in progress.' };
+  const token = getAuthToken();
+  const identity = getActiveCacheSessionId();
+  if (!token || identity === 'signed-out') return { success: false, error: 'Please sign in before paying.' };
+  checkoutInProgress = true;
+  try {
+    const recovered = await recoverPendingPayment();
+    if (recovered) return { success: true, status: recovered.status };
+    return await performNativeCheckout(params, identity, token);
   } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Payment captured but verification failed. It will sync shortly.',
-    };
+    return { success: false, error: error instanceof Error ? error.message : 'Could not check your payment status. Please try again.' };
+  } finally {
+    checkoutInProgress = false;
   }
 }

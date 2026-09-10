@@ -75,6 +75,7 @@ export function RootNavigator() {
     const nav = navigationRef.current;
     if (!nav?.isReady()) return;
     const rootState = nav.getRootState();
+    if (!rootState) return;
     const currentRoot = rootState.routes[rootState.index ?? 0]?.name as keyof RootStackParamList | undefined;
     if (!token) {
       // Splash owns the cold-start handoff so the first transition is timed

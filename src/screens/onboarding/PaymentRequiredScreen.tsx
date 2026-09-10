@@ -7,7 +7,6 @@ import { ScreenContainer, ScreenTitle, ScreenSubtitle } from '../../components/C
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState } from '../../components/States';
 import { fetchPaymentStatus, runNativeCheckout } from '../../services/paymentService';
-import { fetchRecommendedTrainer } from '../../services/trainerService';
 import { displayBehavioralNotification } from '../../services/notificationService';
 import { useAuthStore } from '../../store/authStore';
 import { resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
@@ -25,7 +24,6 @@ export function PaymentRequiredScreen({ navigation }: Props) {
   const [plans, setPlans] = useState<PaymentPlan[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [paywallId, setPaywallId] = useState<string>('monsoon-offer');
-  const [recommendedTrainerId, setRecommendedTrainerId] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
 
@@ -59,12 +57,6 @@ export function PaymentRequiredScreen({ navigation }: Props) {
       .finally(() => setLoading(false));
   }, [routeAfterPaid, refreshStatus]);
 
-  useEffect(() => {
-    fetchRecommendedTrainer()
-      .then((data) => setRecommendedTrainerId(data.trainer?.trainerId))
-      .catch(() => undefined);
-  }, []);
-
   const onPayNative = async () => {
     const plan = plans.find((p) => p.planId === selectedId) || plans[0];
     if (!plan) {
@@ -81,7 +73,6 @@ export function PaymentRequiredScreen({ navigation }: Props) {
           email: status?.email,
         },
         paywallId: plan.paywallId || paywallId,
-        selectedTrainerId: recommendedTrainerId,
       });
       if (result.cancelled) return;
       if (result.success) {
