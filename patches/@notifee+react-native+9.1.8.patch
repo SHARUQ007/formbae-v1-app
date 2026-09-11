@@ -2,7 +2,7 @@ diff --git a/node_modules/@notifee/react-native/android/src/main/java/io/inverta
 index d5e4185..61ca7f8 100644
 --- a/node_modules/@notifee/react-native/android/src/main/java/io/invertase/notifee/NotifeeApiModule.java
 +++ b/node_modules/@notifee/react-native/android/src/main/java/io/invertase/notifee/NotifeeApiModule.java
-@@ -35,17 +35,10 @@ public class NotifeeApiModule extends ReactContextBaseJavaModule implements Perm
+@@ -35,16 +35,9 @@ public class NotifeeApiModule extends ReactContextBaseJavaModule implements Perm
      return Notifee.getInstance().getMainComponent(defaultComponent);
    }
  

@@ -60,13 +60,14 @@ export function MotionAnimation({ kind, size = 96, style }: MotionAnimationProps
       return () => emptyLoop.stop();
     }
 
-    Animated.timing(reveal, {
+    const successAnimation = Animated.timing(reveal, {
       toValue: 1,
       duration: SUCCESS_MS,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
-    }).start();
-    return undefined;
+    });
+    successAnimation.start();
+    return () => successAnimation.stop();
   }, [kind, reveal, spin]);
 
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });

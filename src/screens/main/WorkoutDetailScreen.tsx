@@ -1590,11 +1590,13 @@ function WorkoutCompleteScreen({
     cardOpacity.setValue(0);
     cardLift.setValue(24);
     rewardScale.setValue(0.7);
-    Animated.parallel([
+    const animation = Animated.parallel([
       Animated.timing(cardOpacity, { toValue: 1, duration: 260, useNativeDriver: true }),
       Animated.timing(cardLift, { toValue: 0, duration: 320, useNativeDriver: true }),
       Animated.spring(rewardScale, { toValue: 1, friction: 5, tension: 90, delay: 100, useNativeDriver: true }),
-    ]).start();
+    ]);
+    animation.start();
+    return () => animation.stop();
   }, [cardLift, cardOpacity, rewardScale, visible]);
 
   if (!visible) return null;
@@ -1729,6 +1731,8 @@ function SetEntryModal({
   const successScale = useRef(new Animated.Value(0.65)).current;
   const successOpacity = useRef(new Animated.Value(0)).current;
   const successLift = useRef(new Animated.Value(16)).current;
+  const successAnimation = useRef<Animated.CompositeAnimation | null>(null);
+  const saveGeneration = useRef(0);
 
   useEffect(() => {
     if (!visible) return;
@@ -1737,6 +1741,11 @@ function SetEntryModal({
     successScale.setValue(0.65);
     successOpacity.setValue(0);
     successLift.setValue(16);
+    return () => {
+      saveGeneration.current += 1;
+      successAnimation.current?.stop();
+      successAnimation.current = null;
+    };
   }, [successLift, successOpacity, successScale, visible]);
 
   const handleClose = () => {
@@ -1745,16 +1754,18 @@ function SetEntryModal({
 
   const handleSave = async () => {
     if (savePhase !== 'idle' && savePhase !== 'error') return;
+    const generation = saveGeneration.current;
     setSavePhase('saving');
     try {
       const result = await onSave();
+      if (generation !== saveGeneration.current) return;
       if (!result) throw new Error('Set could not be saved');
       setSaveResult(result);
       setSavePhase('success');
       successScale.setValue(0.65);
       successOpacity.setValue(0);
       successLift.setValue(16);
-      Animated.sequence([
+      const animation = Animated.sequence([
         Animated.parallel([
           Animated.spring(successScale, { toValue: 1, friction: 5, tension: 100, useNativeDriver: true }),
           Animated.timing(successOpacity, { toValue: 1, duration: 170, useNativeDriver: true }),
@@ -1762,11 +1773,16 @@ function SetEntryModal({
         ]),
         Animated.delay(result.workoutComplete ? 1100 : 850),
         Animated.timing(successOpacity, { toValue: 0, duration: 160, useNativeDriver: true }),
-      ]).start(({ finished }) => {
-        if (finished) onCelebrationComplete(result);
+      ]);
+      successAnimation.current = animation;
+      animation.start(({ finished }) => {
+        if (finished && generation === saveGeneration.current) {
+          successAnimation.current = null;
+          onCelebrationComplete(result);
+        }
       });
     } catch {
-      setSavePhase('error');
+      if (generation === saveGeneration.current) setSavePhase('error');
     }
   };
 
@@ -1989,7 +2005,7 @@ function RewardOverlay({ reward, onDone }: { reward: RewardState; onDone: () => 
     opacity.setValue(0);
     lift.setValue(24);
 
-    Animated.sequence([
+    const animation = Animated.sequence([
       Animated.parallel([
         Animated.spring(scale, { toValue: 1, friction: 5, tension: 90, useNativeDriver: true }),
         Animated.timing(opacity, { toValue: 1, duration: 160, useNativeDriver: true }),
@@ -1997,9 +2013,11 @@ function RewardOverlay({ reward, onDone }: { reward: RewardState; onDone: () => 
       ]),
       Animated.delay(reward.type === 'set' ? 420 : 760),
       Animated.timing(opacity, { toValue: 0, duration: 220, useNativeDriver: true }),
-    ]).start(({ finished }) => {
+    ]);
+    animation.start(({ finished }) => {
       if (finished) onDone();
     });
+    return () => animation.stop();
   }, [lift, onDone, opacity, reward, scale]);
 
   if (!reward) return null;

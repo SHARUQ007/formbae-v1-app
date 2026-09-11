@@ -202,16 +202,23 @@ function GoldenStreakBadge({ streak, celebrationNonce }: { streak: number; celeb
   const pop = useRef(new Animated.Value(1)).current; // number bump
   const previousStreak = useRef<number | null>(null);
   const hasMounted = useRef(false);
+  const celebration = useRef<Animated.CompositeAnimation | null>(null);
+
+  useEffect(() => () => {
+    celebration.current?.stop();
+    celebration.current = null;
+  }, []);
 
   // The flame sits completely static; the whole animation only plays on a
   // streak win, then settles back to rest.
   const playFire = useCallback(() => {
+    celebration.current?.stop();
     setBurning(true);
     flicker.setValue(0);
     flare.setValue(0);
     ember.setValue(0);
     pop.setValue(1);
-    Animated.parallel([
+    const animation = Animated.parallel([
       Animated.sequence([
         Animated.timing(flicker, { toValue: 1, duration: 180, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
         Animated.loop(
@@ -232,7 +239,14 @@ function GoldenStreakBadge({ streak, celebrationNonce }: { streak: number; celeb
         Animated.spring(pop, { toValue: 1.32, friction: 4, tension: 160, useNativeDriver: true }),
         Animated.spring(pop, { toValue: 1, friction: 5, tension: 140, useNativeDriver: true }),
       ]),
-    ]).start(() => setBurning(false));
+    ]);
+    celebration.current = animation;
+    animation.start(({ finished }) => {
+      if (finished && celebration.current === animation) {
+        celebration.current = null;
+        setBurning(false);
+      }
+    });
   }, [flicker, flare, ember, pop]);
 
   useEffect(() => {

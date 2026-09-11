@@ -1,0 +1,53 @@
+diff --git a/node_modules/react-native/Libraries/Animated/nodes/AnimatedValue.js b/node_modules/react-native/Libraries/Animated/nodes/AnimatedValue.js
+index 8650912..0708245 100644
+--- a/node_modules/react-native/Libraries/Animated/nodes/AnimatedValue.js
++++ b/node_modules/react-native/Libraries/Animated/nodes/AnimatedValue.js
+@@ -21,6 +21,7 @@ import type {AnimatedNodeConfig} from './AnimatedNode';
+ import type AnimatedTracking from './AnimatedTracking';
+ 
+ import NativeAnimatedHelper from '../../../src/private/animated/NativeAnimatedHelper';
++import Platform from '../../Utilities/Platform';
+ import AnimatedInterpolation from './AnimatedInterpolation';
+ import AnimatedWithChildren from './AnimatedWithChildren';
+ 
+@@ -164,26 +165,35 @@ export default class AnimatedValue extends AnimatedWithChildren {
+       return;
+     }
+     const nativeTag = this.__getNativeTag();
+-    NativeAnimatedAPI.startListeningToAnimatedNodeValue(nativeTag);
++    let listening = true;
+     const subscription: EventSubscription =
+       NativeAnimatedHelper.nativeEventEmitter.addListener(
+         'onAnimatedValueUpdate',
+         data => {
+-          if (data.tag === nativeTag) {
++          if (listening && data.tag === nativeTag) {
+             this.__onAnimatedValueUpdateReceived(data.value, data.offset);
+           }
+         },
+       );
++    // Register the event receiver before native observation can emit a frame.
++    NativeAnimatedAPI.startListeningToAnimatedNodeValue(nativeTag);
+ 
+     this._updateSubscription = {
+       remove: () => {
+-        // Only this function assigns to `this.#updateSubscription`.
+-        if (this._updateSubscription == null) {
++        if (!listening) {
+           return;
+         }
++        listening = false;
+         this._updateSubscription = null;
+-        subscription.remove();
+         NativeAnimatedAPI.stopListeningToAnimatedNodeValue(nativeTag);
++        if (Platform.OS === 'ios') {
++          // iOS queues the stop on the UI thread, but NativeEventEmitter removes
++          // its native listener immediately. Keep the receiver until that stop
++          // has run. getValue is queued before __detach drops this value node.
++          NativeAnimatedAPI.getValue(nativeTag, () => subscription.remove());
++        } else {
++          subscription.remove();
++        }
+       },
+     };
+   }

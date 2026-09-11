@@ -1306,6 +1306,17 @@ function DietScreenContent({ route, navigation }: Props) {
   const [selectedPreviousReport, setSelectedPreviousReport] = useState<DietCoachFeedback | null>(null);
   const saveToastOpacity = useRef(new Animated.Value(0)).current;
   const saveToastScale = useRef(new Animated.Value(0.86)).current;
+  const saveToastAnimation = useRef<Animated.CompositeAnimation | null>(null);
+  const toastMounted = useRef(false);
+
+  useEffect(() => {
+    toastMounted.current = true;
+    return () => {
+      toastMounted.current = false;
+      saveToastAnimation.current?.stop();
+      saveToastAnimation.current = null;
+    };
+  }, []);
   const handledCameraRequestRef = useRef<number | null>(null);
   const memoryDraftsRef = useRef(new Map<string, string>());
   const memoryTimesRef = useRef(new Map<string, Date>());
@@ -1776,10 +1787,12 @@ function DietScreenContent({ route, navigation }: Props) {
 
   const showSavedMealAnimation = useCallback(
     (mealType: MealType, note: string) => {
+      if (!toastMounted.current) return;
+      saveToastAnimation.current?.stop();
       setSavedMeal({ mealType, note });
       saveToastOpacity.setValue(0);
       saveToastScale.setValue(0.86);
-      Animated.sequence([
+      const animation = Animated.sequence([
         Animated.parallel([
           Animated.timing(saveToastOpacity, {
             toValue: 1,
@@ -1809,7 +1822,14 @@ function DietScreenContent({ route, navigation }: Props) {
             useNativeDriver: true,
           }),
         ]),
-      ]).start(() => setSavedMeal(null));
+      ]);
+      saveToastAnimation.current = animation;
+      animation.start(({ finished }) => {
+        if (finished && toastMounted.current && saveToastAnimation.current === animation) {
+          saveToastAnimation.current = null;
+          setSavedMeal(null);
+        }
+      });
     },
     [saveToastOpacity, saveToastScale],
   );

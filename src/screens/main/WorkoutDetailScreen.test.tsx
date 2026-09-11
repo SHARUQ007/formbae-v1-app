@@ -1,5 +1,7 @@
 import { act, create } from 'react-test-renderer';
+import { Animated, TouchableOpacity } from 'react-native';
 import { WorkoutDetailScreen } from './WorkoutDetailScreen';
+import { WorkoutPrimaryCTA } from '../../features/workout/components/WorkoutPrimaryCTA';
 import { completeWithQueue, loadWorkoutProgress, clearWorkoutProgress } from '../../store/workoutStore';
 import type { WorkoutDayDetail } from '../../types/api';
 
@@ -19,6 +21,61 @@ const detail: WorkoutDayDetail = {
     alternatives: [{ exerciseName: 'Goblet Squat', reps: '10–12' }],
   }],
 };
+
+const mountedTrees: ReturnType<typeof create>[] = [];
+
+beforeEach(() => {
+  jest.mocked(completeWithQueue).mockReset().mockResolvedValue({ synced: true });
+});
+afterEach(() => {
+  act(() => mountedTrees.splice(0).forEach(tree => tree.unmount()));
+  jest.restoreAllMocks();
+});
+
+async function openSetEntry() {
+  jest.mocked(loadWorkoutProgress).mockResolvedValue({ planDayId: 'day', completedExerciseIds: [], updatedAt: '' });
+  const navigation = { getParent: () => ({ setOptions: jest.fn(), navigate: jest.fn() }), popToTop: jest.fn(), goBack: jest.fn() };
+  let tree!: ReturnType<typeof create>;
+  await act(async () => {
+    tree = create(<WorkoutDetailScreen {...({ route: { params: { planDayId: 'day', mode: 'standard', initialDetail: detail } }, navigation } as unknown as React.ComponentProps<typeof WorkoutDetailScreen>)} />);
+  });
+  mountedTrees.push(tree);
+  await act(async () => { tree.root.findByType(WorkoutPrimaryCTA).props.onPress(); });
+  await act(async () => {
+    tree.root.findAllByType(TouchableOpacity).find(node => node.props.accessibilityLabel === 'Complete set')!.props.onPress();
+  });
+  return tree;
+}
+
+it('stops the set celebration when leaving the workout before it finishes', async () => {
+  const tree = await openSetEntry();
+  const animation: Animated.CompositeAnimation = { start: jest.fn(), stop: jest.fn(), reset: jest.fn() };
+  const sequence = jest.spyOn(Animated, 'sequence').mockReturnValue(animation);
+  await act(async () => {
+    await tree.root.findAllByType(TouchableOpacity).find(node => node.props.accessibilityLabel === 'Save set')!.props.onPress();
+  });
+  expect(sequence).toHaveBeenCalledTimes(1);
+  expect(animation.start).toHaveBeenCalledTimes(1);
+  act(() => tree.unmount());
+  expect(animation.stop).toHaveBeenCalledTimes(1);
+});
+
+it('does not start a celebration when saving resolves after leaving the workout', async () => {
+  let resolveSave!: (value: { synced: boolean }) => void;
+  jest.mocked(completeWithQueue).mockImplementationOnce(() => new Promise(resolve => { resolveSave = resolve; }));
+  const tree = await openSetEntry();
+  const sequence = jest.spyOn(Animated, 'sequence');
+  let saving!: Promise<void>;
+  await act(async () => {
+    saving = tree.root.findAllByType(TouchableOpacity).find(node => node.props.accessibilityLabel === 'Save set')!.props.onPress();
+  });
+  act(() => tree.unmount());
+  await act(async () => {
+    resolveSave({ synced: true });
+    await saving;
+  });
+  expect(sequence).not.toHaveBeenCalled();
+});
 
 it('sends the selected movement and the final logged set on both exercise and finish actions', async () => {
   jest.mocked(loadWorkoutProgress).mockResolvedValue({ planDayId: 'day', completedExerciseIds: [], selectedAlternatesByExercise: { slot: 0 }, updatedAt: '' });
