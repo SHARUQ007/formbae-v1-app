@@ -6,6 +6,7 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { WorkoutHistoryArtwork } from '../../components/WorkoutHistoryArtwork';
 import { WorkoutHistoryCalendar } from '../../components/WorkoutHistoryCalendar';
 import { ScreenContainer } from '../../components/Card';
+import { CoachingFeature } from '../../components/CoachingFeature';
 import { fetchProgress, fetchTrophyLeaderboard } from '../../services/progressService';
 import type { ProgressSummary, TrophyLeaderboard, WorkoutHistoryEntry } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
@@ -123,16 +124,19 @@ export function WorkoutHistoryScreen({ navigation }: NativeStackScreenProps<Work
           {!previousWorkouts.length ? <View style={styles.empty}><Text style={styles.emptyTitle}>Your log starts here.</Text><Text style={styles.caption}>Completed workouts will appear here with the exercises and muscle groups you trained.</Text></View> : null}
         </> : null}
       </View>}
-      ListFooterComponent={progress && history.length ? <View style={styles.footer}>
-        <Text style={styles.eyebrow}>FROM YOUR LOG</Text>
-        <View style={styles.insightRow}><Text style={styles.caption}>Most active day</Text><Text style={styles.insightValue}>{stats.favouriteDay}</Text></View>
-        <View style={styles.insightRow}><Text style={styles.caption}>Quick sessions</Text><Text style={styles.insightValue}>{stats.quick}</Text></View>
-        {community && community.participantCount > 1 ? <View style={styles.community}>
-          <Text style={styles.caption}>{community.participantCount} people on your leaderboard</Text>
-          {community.currentUser ? <Text style={styles.insightValue}>Your rank #{community.currentUser.rank} · {community.currentUser.score} trophies</Text> : null}
+      ListFooterComponent={<View>
+        {progress && history.length ? <View style={styles.footer}>
+          <Text style={styles.eyebrow}>FROM YOUR LOG</Text>
+          <View style={styles.insightRow}><Text style={styles.caption}>Most active day</Text><Text style={styles.insightValue}>{stats.favouriteDay}</Text></View>
+          <View style={styles.insightRow}><Text style={styles.caption}>Quick sessions</Text><Text style={styles.insightValue}>{stats.quick}</Text></View>
+          {community && community.participantCount > 1 ? <View style={styles.community}>
+            <Text style={styles.caption}>{community.participantCount} people on your leaderboard</Text>
+            {community.currentUser ? <Text style={styles.insightValue}>Your rank #{community.currentUser.rank} · {community.currentUser.score} trophies</Text> : null}
+          </View> : null}
+          <Text style={styles.footnote}>Streaks count consecutive workout days.</Text>
         </View> : null}
-        <Text style={styles.footnote}>Streaks count consecutive workout days.</Text>
-      </View> : null}
+        <CoachingFeature showHeader={false} onPress={() => navigation.navigate('Coach', { initialView: 'browse' })} />
+      </View>}
     />
   </ScreenContainer>;
 }
