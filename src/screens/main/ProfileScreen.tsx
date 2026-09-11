@@ -1,5 +1,6 @@
+import { StableImage } from '../../components/StableImage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Image, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -294,7 +295,7 @@ export function ProfileScreen({ navigation }: Props) {
             style={[styles.bodyArtworkFrame, largeText && styles.bodyArtworkFrameLarge]}
             onLayout={({ nativeEvent }) => setBodyArtworkWidth(nativeEvent.layout.width)}
           >
-            <Image
+            <StableImage
               source={bodyArtwork}
               defaultSource={bodyArtwork}
               fadeDuration={0}
@@ -371,7 +372,7 @@ export function ProfileScreen({ navigation }: Props) {
             style={[styles.planArtworkFrame, { height: artworkHeight }]}
             onLayout={({ nativeEvent }) => setPlanArtworkWidth(nativeEvent.layout.width)}
           >
-            <Image
+            <StableImage
               source={planArtwork}
               defaultSource={planArtwork}
               fadeDuration={0}
@@ -415,7 +416,7 @@ export function ProfileScreen({ navigation }: Props) {
             <Text style={styles.planEmpty}>Add your goal and routine preferences.</Text>
           )}
           {workoutSetting === 'Gym' ? (
-            <ProfileGymSection gym={selectedGym} saved={Boolean(selectedGymPlaceId)} loading={gymLoading}
+            <ProfileGymSection gym={selectedGym} saved={Boolean(selectedGymPlaceId)} loading={gymLoading} membership={lifestyle.gymMembership} provider={lifestyle.gymMembershipProvider}
               onSelect={() => navigation.navigate('GymPicker')} />
           ) : null}
         </View>

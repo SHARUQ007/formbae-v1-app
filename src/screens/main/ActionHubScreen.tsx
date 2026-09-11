@@ -1,8 +1,10 @@
+import { StableImage, StableImageBackground } from '../../components/StableImage';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Image, ImageBackground, PixelRatio, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Image, PixelRatio, RefreshControl, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { launchCamera, launchImageLibrary, type Asset } from 'react-native-image-picker';
 import type { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { observeAppEvent } from '../../services/monitoringService';
 import { useFocusEffect } from '@react-navigation/native';
 import LinearGradient from 'react-native-linear-gradient';
 import Feather from 'react-native-vector-icons/Feather';
@@ -107,6 +109,14 @@ export function ActionHubScreen({ navigation }: Props) {
     setBaeUnavailable(false);
   }, []);
   const partnerStatus = accountabilityBae?.status;
+  useFocusEffect(useCallback(() => {
+    if (activeView === 'today') observeAppEvent('feature_view', 'my_day');
+    else if (!baeLoading && !baeUnavailable) {
+      const state = getPartnerState(accountabilityBae?.status, accountabilityBae?.preference);
+      observeAppEvent('feature_view', state === 'matching' ? 'partner_search' : state === 'invite' ? 'partner_invite' : state === 'matched' ? 'partner_matched' : 'partner_home');
+    }
+  }, [activeView, accountabilityBae?.status, accountabilityBae?.preference, baeLoading, baeUnavailable]));
+
 
   const load = useCallback(async (force = false) => {
     const generation = loadGeneration.current + 1;
@@ -676,7 +686,7 @@ function BaeArtworkHero({ eyebrow, title, body, loading = false, compact = false
   expanded?: boolean;
 }) {
   return (
-    <ImageBackground source={getAccountabilityBaeArtwork('inactive')} defaultSource={getAccountabilityBaeArtwork('inactive')} fadeDuration={0} style={[styles.baeArtworkHero, compact && styles.baeArtworkCompact, expanded && styles.baeArtworkExpanded]} imageStyle={styles.baeArtworkImage} resizeMode={expanded ? "cover" : "contain"}>
+    <StableImageBackground source={getAccountabilityBaeArtwork('inactive')} defaultSource={getAccountabilityBaeArtwork('inactive')} fadeDuration={0} style={[styles.baeArtworkHero, compact && styles.baeArtworkCompact, expanded && styles.baeArtworkExpanded]} imageStyle={styles.baeArtworkImage} resizeMode={expanded ? "cover" : "contain"}>
       <LinearGradient colors={['rgba(4,5,8,0.98)', 'rgba(4,5,8,0.82)', 'rgba(4,5,8,0.08)']} locations={[0, 0.58, 1]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
       <View style={[styles.baeArtworkContent, compact && styles.baeArtworkContentCompact, expanded && styles.baeArtworkContentExpanded]}>
         <View style={styles.baeArtworkEyebrowRow}>
@@ -688,7 +698,7 @@ function BaeArtworkHero({ eyebrow, title, body, loading = false, compact = false
           <Text style={styles.baeArtworkBody}>{body}</Text>
         </View>
       </View>
-    </ImageBackground>
+    </StableImageBackground>
   );
 }
 
@@ -876,7 +886,7 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
   return (
     <View style={styles.partnerSection}>
       {header}
-      <ImageBackground source={getAccountabilityBaeArtwork('matched')} defaultSource={getAccountabilityBaeArtwork('matched')} fadeDuration={0} style={styles.baeConnectedHero} imageStyle={styles.baeArtworkImage} resizeMode="contain">
+      <StableImageBackground source={getAccountabilityBaeArtwork('matched')} defaultSource={getAccountabilityBaeArtwork('matched')} fadeDuration={0} style={styles.baeConnectedHero} imageStyle={styles.baeArtworkImage} resizeMode="contain">
         <LinearGradient colors={['rgba(4,5,8,0.98)', 'rgba(4,5,8,0.74)', 'rgba(4,5,8,0.06)']} locations={[0, 0.52, 1]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
         <View style={styles.baeConnectedContent}>
           <View style={styles.baeConnectedTop}>
@@ -889,7 +899,7 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
             <Text style={styles.baeConnectedCaption}>View partner & connection settings →</Text>
           </TouchableOpacity>
         </View>
-      </ImageBackground>
+      </StableImageBackground>
       <View style={styles.baePairSummary}>
         <View style={styles.baePairScores}>
           <View style={styles.baePairMember}>
@@ -1027,7 +1037,7 @@ function ProofTile({ label, submitted, imageUrl, locked }: { label: string; subm
   return (
     <View style={styles.proofTile} accessible accessibilityRole="image" accessibilityLabel={`${label}, ${stateLabel}`}>
       <View style={styles.proofImageWrap}>
-        {source && !locked ? <Image source={source} style={styles.proofImage} resizeMode="cover" accessible={false} /> : <View style={styles.proofPlaceholder}><Feather name={locked ? 'lock' : submitted ? 'check' : 'camera'} size={23} color={submitted ? colors.ink : colors.inkSubtle} /></View>}
+        {source && !locked ? <StableImage source={source} style={styles.proofImage} resizeMode="cover" accessible={false} /> : <View style={styles.proofPlaceholder}><Feather name={locked ? 'lock' : submitted ? 'check' : 'camera'} size={23} color={submitted ? colors.ink : colors.inkSubtle} /></View>}
         <View style={[styles.proofStatusDot, submitted && styles.proofStatusDotDone]} />
       </View>
       <View style={styles.proofMeta}>
@@ -1077,7 +1087,7 @@ function TodayTaskCard({ task, loading, onPress }: { task: TodayTask; loading: b
       <View style={[styles.todayTaskArtwork, compact && styles.todayTaskArtworkCompact]}>
         <View pointerEvents="none" style={styles.todayTaskImageWindow}
           onLayout={({ nativeEvent: { layout } }) => setArtworkLayout({ width: layout.width, height: layout.height })}>
-          <Image source={artwork} defaultSource={artwork} fadeDuration={0} resizeMode="contain" resizeMethod="scale" accessible={false}
+          <StableImage source={artwork} defaultSource={artwork} fadeDuration={0} resizeMode="contain" resizeMethod="scale" accessible={false}
             style={[styles.todayTaskImage, artworkFrame]} />
         </View>
         <LinearGradient colors={[colors.bg, 'rgba(5,6,10,0.74)', 'rgba(5,6,10,0)']}

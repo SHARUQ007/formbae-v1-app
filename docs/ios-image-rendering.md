@@ -41,3 +41,23 @@ Validation on a rebuilt app:
 4. Confirm text and photos remain visible, including after a cold launch.
 
 Fast Refresh cannot install this fix: rebuild and install the iOS app.
+
+## Shared image path
+
+`StableImage` and `StableImageBackground` disable image fades on the main tab
+cards and shared report/diary components. They use the existing startup image
+queue, rather than a second tab-level warmup.
+
+For Debug require() assets, the startup queue now downloads the packager's
+content-hashed asset into `CachesDirectoryPath/bundled-artwork-v1` before native
+prefetch. Repeat launches reuse that file. Density is part of the filename;
+changed artwork gets a new content hash. Previous revisions are pruned at startup
+when the directory exceeds 20 MiB. The current bundled raster library adds only
+a few MiB. This cache is only for bundled artwork: authenticated photos and
+external article URLs keep their original request headers and cache semantics.
+
+Mounted images retain their source even if background prefetch finishes later.
+A missing or invalid cached file falls back to the original bundled source and
+is removed so a future preload can repair it. Release assets already live inside
+the application and bypass disk copying. First-time Debug loads still need Metro;
+this does not eliminate first-download latency for remote photos.

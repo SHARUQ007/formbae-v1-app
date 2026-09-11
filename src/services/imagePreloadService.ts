@@ -1,3 +1,4 @@
+import { cacheBundledImage } from './bundledImageCache';
 import {
   Image,
   type ImageSourcePropType,
@@ -73,7 +74,7 @@ function uniqueSources(sources: Array<ImageSourcePropType | null | undefined>) {
 }
 
 async function preloadImageSource(source: ImageSourcePropType) {
-  const resolved = resolvedSource(source);
+  const resolved = resolvedSource(typeof source === 'number' ? await cacheBundledImage(source) : source);
   if (!resolved?.uri) return false;
 
   if (resolved.headers && Object.keys(resolved.headers).length) {
@@ -207,7 +208,7 @@ export function getDietDiaryImageSources(entries: DietDiaryEntry[]) {
   return uniqueSources(
     entries.map(entry => {
       const uri = resolveDietDiaryImageUrl(
-        entry.remoteImageUrl || entry.uri || '',
+        (entry.storedLocally ? entry.uri : entry.remoteImageUrl) || entry.uri || '',
       );
       if (!uri) return null;
       if (token && shouldAuthenticateDietDiaryImage(uri)) {

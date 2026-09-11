@@ -82,7 +82,7 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
 
   useFocusEffect(useCallback(() => {
     let active = true;
-    loadWorkoutProgress(planDayId)
+    loadWorkoutProgress(planDayId, mode)
       .then((progress) => {
         if (active) {
           setSelectedAlternates(progress.selectedAlternatesByExercise || {});
@@ -93,7 +93,7 @@ export function WorkoutSummaryScreen({ route, navigation }: Props) {
     return () => {
       active = false;
     };
-  }, [planDayId]));
+  }, [mode, planDayId]));
 
   const exercises = useMemo(
     () => (detail?.exercises ?? []).filter((exercise) => !isSectionMarker(exercise.notes)),

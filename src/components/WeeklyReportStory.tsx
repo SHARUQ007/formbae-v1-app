@@ -1,5 +1,6 @@
+import { StableImage } from './StableImage';
 import { useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import type { WeeklyProgressReview } from '../types/api';
 import { colors } from '../theme/colors';
@@ -59,7 +60,7 @@ export function WeeklyReportStory({ report, onAction }: Props) {
         </View>
         <Text style={styles.headline} accessibilityRole="header">{model.headline}</Text>
         {model.summary ? <View style={styles.summaryBlocks}><ReadingBlocks value={model.summary} /></View> : null}
-        <Image source={getReportEditorialArtwork('training', reportKey)} style={styles.leadArtwork} resizeMode="cover" accessible={false} testID="weekly-report-context-art" />
+        <StableImage source={getReportEditorialArtwork('training', reportKey)} style={styles.leadArtwork} resizeMode="cover" accessible={false} testID="weekly-report-context-art" />
         <View style={styles.byline}>
           <View style={styles.bylineDot} />
           <Text style={styles.bylineText}>

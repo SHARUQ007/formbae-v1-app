@@ -7,6 +7,7 @@ import notifee, {
 } from '@notifee/react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { observeAppEvent } from './monitoringService';
 import { apiRequest } from './apiClient';
 
 const CHANNEL_ID = 'formbae-reminders';
@@ -90,6 +91,8 @@ export async function ensureNotificationSetup(): Promise<boolean> {
   const granted =
     settings.authorizationStatus === AuthorizationStatus.AUTHORIZED ||
     settings.authorizationStatus === AuthorizationStatus.PROVISIONAL;
+
+  observeAppEvent('notification_permission', granted ? 'granted' : 'denied');
 
   if (Platform.OS === 'android') {
     await notifee.createChannel({

@@ -1,6 +1,7 @@
+import { StableImage } from '../../components/StableImage';
 import { formatWorkoutTitle } from '../../utils/workoutTitle';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, BackHandler, Easing, Image, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, BackHandler, Easing, Modal, ScrollView, Text, StyleSheet, RefreshControl, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
@@ -157,7 +158,7 @@ function CoachingFeature({ onPress }: { onPress: () => void }) {
         {largeText ? (
           <>
             <View style={styles.coachingFeatureImageStage}>
-              <Image source={COACH_DISCOVERY_ART} style={styles.coachingFeatureImageFlow} resizeMode="cover" accessible={false} />
+              <StableImage source={COACH_DISCOVERY_ART} style={styles.coachingFeatureImageFlow} resizeMode="cover" accessible={false} />
             </View>
             <View style={styles.coachingFeatureCopyFlow}>
               <Text style={styles.coachingFeatureKicker}>Meet your match</Text>
@@ -170,7 +171,7 @@ function CoachingFeature({ onPress }: { onPress: () => void }) {
           </>
         ) : (
           <>
-            <Image source={COACH_DISCOVERY_ART} style={styles.coachingFeatureImage} resizeMode="cover" accessible={false} />
+            <StableImage source={COACH_DISCOVERY_ART} style={styles.coachingFeatureImage} resizeMode="cover" accessible={false} />
             <View style={[styles.coachingFeatureShade, expandedHero && styles.coachingFeatureShadeExpanded]} />
             <View style={[styles.coachingFeatureCopy, expandedHero && styles.coachingFeatureCopyExpanded]}>
               <Text style={styles.coachingFeatureKicker}>Meet your match</Text>
@@ -788,7 +789,7 @@ function WorkoutDashboardScreen({ navigation, route }: Props) {
               >
                 <View style={styles.trainerPhotoWrap}>
                   {trainerPhoto && !trainerPhotoFailed ? (
-                    <Image
+                    <StableImage
                       source={trainerPhoto}
                       style={styles.trainerPhoto}
                       resizeMode="cover"

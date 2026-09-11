@@ -1,3 +1,4 @@
+import { configureMonitoring, observeApiResult } from './monitoringService';
 import { API_PREFIX, getBackendApiBaseUrl } from '../constants/config';
 
 export class ApiError extends Error {
@@ -30,6 +31,7 @@ let onUnauthorized: (() => void) | null = null;
 
 export function setAuthToken(token: string | null) {
   authToken = token;
+  configureMonitoring(token);
 }
 
 export function getAuthToken() {
@@ -152,6 +154,19 @@ async function performApiRequest<T>(path: string, options: RequestOptions = {}):
   throw lastError ?? new ApiError('Request failed', 0, undefined, true);
 }
 
+async function measuredRequest<T>(path: string, options: RequestOptions): Promise<T> {
+  const started = Date.now();
+  const owner = options.token !== undefined ? options.token : authToken;
+  try {
+    const result = await performApiRequest<T>(path, options);
+    observeApiResult(path, Date.now() - started, 200, owner);
+    return result;
+  } catch (error) {
+    if (!options.signal?.aborted) observeApiResult(path, Date.now() - started, error instanceof ApiError ? error.status : 0, owner);
+    throw error;
+  }
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = options.method || 'GET';
   const token = options.token !== undefined ? options.token : authToken;
@@ -160,11 +175,11 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   if (dedupeKey) {
     const existing = inflightGetRequests.get(dedupeKey);
     if (existing) return existing as Promise<T>;
-    const promise = performApiRequest<T>(path, options).finally(() => {
+    const promise = measuredRequest<T>(path, options).finally(() => {
       inflightGetRequests.delete(dedupeKey);
     });
     inflightGetRequests.set(dedupeKey, promise);
     return promise;
   }
-  return performApiRequest<T>(path, options);
+  return measuredRequest<T>(path, options);
 }

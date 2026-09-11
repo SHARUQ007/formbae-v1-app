@@ -219,6 +219,28 @@ export type WorkoutLog = {
   completedFlag: string;
 };
 
+export type WorkoutHistoryExercise = {
+  exerciseId: string;
+  name: string;
+  muscleGroups: string[];
+  completed?: boolean;
+  plannedSets?: string;
+  plannedReps?: string;
+  sets: Array<{ setNumber: string; reps: string; weight: string; rpe?: string; durationSec?: string }>;
+};
+
+export type WorkoutHistoryEntry = {
+  date: string;
+  planId: string;
+  planDayId: string;
+  workoutMode: 'standard' | 'quick' | string;
+  logId?: string;
+  title?: string;
+  muscleGroups?: string[];
+  exercises?: WorkoutHistoryExercise[];
+  detailsSource?: 'snapshot' | 'plan' | 'unavailable';
+};
+
 export type ProgressSummary = {
   userId: string;
   adherencePct: number;
@@ -228,12 +250,7 @@ export type ProgressSummary = {
   quickCompletedThisWeek?: number;
   currentStreak: number;
   bestStreak: number;
-  completionHistory?: Array<{
-    date: string;
-    planId: string;
-    planDayId: string;
-    workoutMode: 'standard' | 'quick' | string;
-  }>;
+  completionHistory?: WorkoutHistoryEntry[];
   bodyTrend?: Array<{ entryId?: string; date: string; createdAt?: string; weight: number; chest?: number; waist?: number; biceps?: number }>;
   weeklyReview?: WeeklyProgressReview;
   trophies?: TrophySummary;

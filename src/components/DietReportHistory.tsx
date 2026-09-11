@@ -1,5 +1,6 @@
+import { StableImage } from './StableImage';
 import { useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions, type ImageSourcePropType } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, useWindowDimensions, type ImageSourcePropType } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import type { DietCoachFeedback } from '../services/dietDiaryService';
 import { colors } from '../theme/colors';
@@ -55,12 +56,12 @@ function ArchiveArtwork({ source, hero = false, wide = false, slot = 0 }: { sour
     // expanding the intro on native platforms. Keep the full composition.
     return <View style={[styles.heroArt, wide && styles.heroArtWide, styles.artFallback]}>
       {source && source !== failed
-        ? <Image source={source} onError={() => setFailed(source)} style={styles.heroImage} resizeMode="contain" accessible={false} />
+        ? <StableImage source={source} onError={() => setFailed(source)} style={styles.heroImage} resizeMode="contain" accessible={false} />
         : <ReportIllustration kind="reportReview" size={64} slot={slot} />}
     </View>;
   }
   return source && source !== failed
-    ? <Image source={source} onError={() => setFailed(source)} style={styles.thumbnail} resizeMode="cover" accessible={false} />
+    ? <StableImage source={source} onError={() => setFailed(source)} style={styles.thumbnail} resizeMode="cover" accessible={false} />
     : <View style={[styles.thumbnail, styles.artFallback]}><ReportIllustration kind="reportReview" size={56} slot={slot} /></View>;
 }
 

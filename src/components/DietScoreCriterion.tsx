@@ -1,5 +1,6 @@
+import { StableImage } from './StableImage';
 import { useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import Feather from 'react-native-vector-icons/Feather';
 import { colors } from '../theme/colors';
@@ -40,7 +41,7 @@ export function DietScoreCriterion({ criterionKey, label, definition, value, max
   const arcLength = circumference * 0.75;
   const showDefinition = expanded || value === null;
 
-  const illustration = artwork && failedArtwork !== artwork ? <Image onError={() => setFailedArtwork(artwork)} source={artwork} style={[styles.artwork, compact && styles.artworkCompact]} resizeMode="cover" accessible={false} /> : <View style={[styles.artwork, compact && styles.artworkCompact, styles.vectorFrame]}>
+  const illustration = artwork && failedArtwork !== artwork ? <StableImage onError={() => setFailedArtwork(artwork)} source={artwork} style={[styles.artwork, compact && styles.artworkCompact]} resizeMode="cover" accessible={false} /> : <View style={[styles.artwork, compact && styles.artworkCompact, styles.vectorFrame]}>
     <ReportIllustration kind={dietCriterionIllustration(criterionKey)} size={56} reportKey={reportKey} dietPreference={dietPreference} slot={1} />
   </View>;
   const score = <View style={[styles.score, { width: size, height: size }]} accessible

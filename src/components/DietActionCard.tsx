@@ -1,6 +1,7 @@
+import { StableImage } from './StableImage';
 import { useState } from 'react';
 import type { ImageSourcePropType } from 'react-native';
-import { Image, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { colors } from '../theme/colors';
 import { reportTypography } from '../theme/reportTypography';
 import { dietTopicIllustration } from '../utils/dietReportArtwork';
@@ -20,7 +21,7 @@ export function DietActionCard({ action, index, reportKey, dietPreference }: {
   return <View style={styles.card} testID="diet-report-action">
     <View style={styles.content}>
       <View style={[styles.header, stacked && styles.headerStacked]}>
-        {artwork && failedArtwork !== artwork ? <Image onError={() => setFailedArtwork(artwork)} source={artwork} style={styles.art} resizeMode="cover" accessible={false} />
+        {artwork && failedArtwork !== artwork ? <StableImage onError={() => setFailedArtwork(artwork)} source={artwork} style={styles.art} resizeMode="cover" accessible={false} />
           : <View style={[styles.art, styles.vector]}><ReportIllustration kind={dietTopicIllustration(action.title, 'reportPlan')} dietPreference={dietPreference} size={80} reportKey={reportKey} slot={index + 1} /></View>}
         <View style={styles.heading}>
           <Text style={styles.eyebrow}>{index === 0 ? 'START HERE' : 'THEN, IF MANAGEABLE'}</Text>

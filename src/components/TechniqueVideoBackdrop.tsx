@@ -1,5 +1,6 @@
+import { StableImage } from './StableImage';
 import { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, ActivityIndicator, Animated, Easing, Image, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, Animated, Easing, StyleSheet, View } from 'react-native';
 import type { ImageSourcePropType } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
@@ -40,7 +41,7 @@ export function TechniqueVideoBackdrop({ resolving, imageSource }: { resolving?:
   return (
     <View style={styles.root} pointerEvents="none">
       {imageSource ? (
-        <Image source={imageSource} style={styles.fill} resizeMode="cover" />
+        <StableImage source={imageSource} style={styles.fill} resizeMode="cover" />
       ) : (
         <LinearGradient colors={['#1b1c21', '#111217', '#08090d']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.fill} />
       )}

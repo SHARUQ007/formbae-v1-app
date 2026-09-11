@@ -1,5 +1,7 @@
+import { observeAppEvent } from '../services/monitoringService';
+import { StableImage } from './StableImage';
 import { useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
@@ -19,10 +21,10 @@ export function ReadingArticleCard({ article, imageUrl, compact = false, onPress
   const showImage = imageUrl && failedImage !== imageUrl;
   const topic = article.topic === 'training' ? 'Movement' : article.topic === 'nutrition' ? 'Food' : article.topic === 'recovery' ? 'Recovery' : 'Reading';
   const date = article.publishedAt ? new Date(`${article.publishedAt}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null;
-  return <TouchableOpacity onPress={onPress} activeOpacity={0.85}
+  return <TouchableOpacity onPress={() => { observeAppEvent('article_open', article.topic || 'other'); onPress(); }} activeOpacity={0.85}
     accessibilityRole="button" accessibilityLabel={`Read ${article.title} from ${article.publisher}`}
     style={[styles.card, compact && styles.compact]}>
-    {!compact && showImage ? <Image source={{ uri: imageUrl }} style={styles.cover} resizeMode="cover" accessible={false} onError={() => setFailedImage(imageUrl)} /> : null}
+    {!compact && showImage ? <StableImage source={{ uri: imageUrl }} style={styles.cover} resizeMode="cover" accessible={false} onError={() => setFailedImage(imageUrl)} /> : null}
     <View style={[styles.copy, compact && styles.compactCopy]}>
       {compact ? <View style={styles.compactMeta}><Text style={styles.topic}>{topic}</Text><Text style={styles.source}>{article.publisher}</Text></View> : <View style={styles.storyMeta}>
         <Text style={styles.topic}>{topic}</Text>
@@ -41,7 +43,7 @@ export function ReadingArticleCard({ article, imageUrl, compact = false, onPress
         </View>
       </View>}
     </View>
-    {compact && showImage ? <Image source={{ uri: imageUrl }} style={styles.thumbnail} resizeMode="cover" accessible={false} onError={() => setFailedImage(imageUrl)} /> : null}
+    {compact && showImage ? <StableImage source={{ uri: imageUrl }} style={styles.thumbnail} resizeMode="cover" accessible={false} onError={() => setFailedImage(imageUrl)} /> : null}
   </TouchableOpacity>;
 }
 const styles = StyleSheet.create({

@@ -1,4 +1,4 @@
-import { workoutDateKey, workoutHistoryStats, workoutMonthDays } from './workoutHistory';
+import { workoutDateKey, workoutHistoryStats, workoutMonthDays, historyWorkoutTitle, historyWorkoutSummary, historyExercisePreview, historyBodyMuscles, historySessionKey } from './workoutHistory';
 
 it('lays out leap February Monday first with trailing blank cells', () => {
   const days = workoutMonthDays(new Date(2024, 1, 1));
@@ -22,4 +22,19 @@ it('counts active days once when multiple workouts happen on the same day', () =
 });
 it('does not invent highlights for empty history', () => {
   expect(workoutHistoryStats([])).toEqual({ days: 0, first: undefined, quick: 0, favouriteDay: null });
+});
+
+it('uses session titles and logged sets instead of treating prescribed sets as performed', () => {
+  const session = { date:'2026-08-25',planId:'old',planDayId:'day1',workoutMode:'standard',title:'Lower body + Core',muscleGroups:['Quads','Glutes','Core'],exercises:[{exerciseId:'squat',name:'Goblet squat',muscleGroups:['Quads'],plannedSets:'4',plannedReps:'10',sets:[{setNumber:'1',reps:'8',weight:'12'}]}] };
+  expect(historyWorkoutTitle(session)).toBe('Lower body and Core');
+  expect(historyWorkoutSummary(session)).toBe('1 exercise · 1 logged set');
+  expect(historyExercisePreview(session)).toBe('Goblet squat');
+  expect(historyBodyMuscles(session)).toEqual(['Quads','Glutes','Core']);
+});
+it('handles old completions without inventing exercise names or muscle groups', () => {
+  const session={date:'2026-08-01',planId:'missing',planDayId:'old',workoutMode:'standard'};
+  expect(historyWorkoutTitle(session)).toBe('Training session');
+  expect(historyWorkoutSummary(session)).toBe('Session saved · Details unavailable');
+  expect(historyBodyMuscles(session)).toEqual([]);
+  expect(historySessionKey({...session,workoutMode:'quick'})).not.toBe(historySessionKey(session));
 });

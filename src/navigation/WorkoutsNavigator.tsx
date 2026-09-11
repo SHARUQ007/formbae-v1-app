@@ -29,6 +29,7 @@ export function WorkoutsNavigator() {
     >
       <Stack.Screen name="WorkoutList" component={WorkoutsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="WorkoutHistory" getComponent={() => require('../screens/main/WorkoutHistoryScreen').WorkoutHistoryScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="WorkoutHistoryDetail" getComponent={() => require('../screens/main/WorkoutHistoryDetailScreen').WorkoutHistoryDetailScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Coach" getComponent={getTrainerScreen} options={{ headerShown: false }} />
       <Stack.Screen name="PlanRefresh" getComponent={getPlanRefreshScreen} options={{ headerShown: false }} />
       <Stack.Screen name="WorkoutSummary" getComponent={getWorkoutSummaryScreen} options={{ headerShown: false, animation: 'none' }} />

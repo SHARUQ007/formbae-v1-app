@@ -1,5 +1,6 @@
+import { StableImage } from './StableImage';
 import { useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { colors } from '../theme/colors';
 import { reportTypography } from '../theme/reportTypography';
@@ -41,7 +42,7 @@ export function ReportSourceArticles({ sources, reportKey = '', family = 'weekly
           <TouchableOpacity key={source.url} activeOpacity={0.85} style={styles.card} accessibilityRole="button"
             accessibilityLabel={`Read ${source.title} from ${publisherOf(source)}`}
             onPress={() => setSelected(source)}>
-            {artwork[index] ? <Image source={artwork[index]} style={styles.cover} resizeMode="cover" accessible={false} /> : null}
+            {artwork[index] ? <StableImage source={artwork[index]} style={styles.cover} resizeMode="cover" accessible={false} /> : null}
             <View style={styles.cardCopy}>
               <Text style={styles.category}>{source.kind === 'reference' ? 'REPORT SOURCE' : 'FURTHER READING'} · {topicOf(source).toUpperCase()}</Text>
               <Text style={styles.title} numberOfLines={3}>{source.title}</Text>

@@ -1,5 +1,6 @@
+import { StableImage } from './StableImage';
 import { useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
@@ -24,7 +25,7 @@ export function FoodDiaryOverview({ entries, meals, days, reportStatus, onReport
         <Text style={styles.eyebrow}>{empty ? 'YOUR FOOD DIARY' : 'THIS WEEK'}</Text>
         <Text style={styles.title} accessibilityRole="header">{empty ? 'Start with one meal.' : 'Your week in meals.'}</Text>
       </View>
-      {imageFailed ? <ReportIllustration kind="diaryCapture" size={80} slot={1} /> : <Image source={require('../assets/editorial/diary/meal-journal.jpg')} style={styles.hero} resizeMode="cover" onError={() => setImageFailed(true)} accessible={false} />}
+      {imageFailed ? <ReportIllustration kind="diaryCapture" size={80} slot={1} /> : <StableImage source={require('../assets/editorial/diary/meal-journal.jpg')} style={styles.hero} resizeMode="cover" onError={() => setImageFailed(true)} accessible={false} />}
     </View>
     {empty ? <Text style={styles.emptyCopy}>A photo or a few words is enough to start your diary.</Text> : <View style={[styles.stats, compact && styles.statsStacked]}>
       {stats.map((stat, index) => <View key={stat.label} style={[styles.stat, compact && styles.statCompact]} accessible accessibilityLabel={`${stat.value} ${stat.label.toLowerCase()} this week`}>

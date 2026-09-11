@@ -1,5 +1,5 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
-import type { WorkoutDayDetail } from '../types/api';
+import type { WorkoutDayDetail, WorkoutHistoryEntry } from '../types/api';
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -54,6 +54,7 @@ export type CoachScreenParams = {
 
 export type WorkoutStackParamList = {
   WorkoutHistory: undefined;
+  WorkoutHistoryDetail: { session: WorkoutHistoryEntry };
   WorkoutList: {
     pendingPlanBuild?: {
       planId: string;

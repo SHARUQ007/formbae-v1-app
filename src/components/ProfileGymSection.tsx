@@ -9,24 +9,27 @@ type Props = {
   saved: boolean;
   loading: boolean;
   onSelect: () => void;
+  membership?: string;
+  provider?: string;
 };
 
-export function ProfileGymSection({ gym, saved, loading, onSelect }: Props) {
+export function ProfileGymSection({ gym, saved, loading, onSelect, membership, provider }: Props) {
   return <View style={styles.section}>
     <View style={styles.heading}>
       <Text style={styles.overline}>YOUR GYM</Text>
-      {saved ? <View style={styles.saved}><Feather name="check" size={12} color={colors.gold} /><Text style={styles.savedText}>Saved</Text></View> : null}
+
     </View>
     <View style={styles.content}>
       <View style={styles.copy}>
-        <Text style={styles.title}>{saved ? gym?.name || 'Your gym is saved' : 'Your training place'}</Text>
+        <Text style={styles.title} numberOfLines={2}>{saved ? gym?.name || 'Your gym is saved' : 'Your training place'}</Text>
         {loading ? <View style={styles.loading}><ActivityIndicator size="small" color={colors.gold} /><Text style={styles.caption}>Loading gym details…</Text></View>
-          : <Text style={styles.caption}>{saved ? gym?.address || 'Gym details are unavailable right now.' : 'Keep your usual gym with your plan.'}</Text>}
+          : <Text style={styles.caption} numberOfLines={1}>{saved ? gym?.address || 'Gym details are unavailable right now.' : 'Add your gym and membership.'}</Text>}
+        {saved ? <Text style={styles.caption}>{[membership, provider].filter(Boolean).join(' · ') || 'Add membership details'}</Text> : null}
         {gym && !loading ? <Text style={styles.attribution}>Google Maps</Text> : null}
       </View>
     </View>
-    <TouchableOpacity onPress={onSelect} style={[styles.action, !saved && styles.primaryAction]} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel={saved ? 'Change your gym' : 'Select your gym'}>
-      <Text style={[styles.actionText, !saved && styles.primaryActionText]}>{saved ? 'Change gym' : 'Select your gym'}</Text>
+    <TouchableOpacity onPress={onSelect} style={[styles.action, !saved && styles.primaryAction]} activeOpacity={0.8} accessibilityRole="button" accessibilityLabel={saved ? 'Edit gym details' : 'Select your gym'}>
+      <Text style={[styles.actionText, !saved && styles.primaryActionText]}>{saved ? 'Gym details' : 'Select your gym'}</Text>
       <Feather name="arrow-right" size={20} color={saved ? colors.gold : colors.onPrimary} />
     </TouchableOpacity>
   </View>;

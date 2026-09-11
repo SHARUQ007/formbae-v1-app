@@ -1,14 +1,27 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { completeWorkoutAction } from '../services/workoutService';
+import type { WorkoutCompletionInput } from '../services/workoutService';
+import { ApiError } from '../services/apiClient';
 
 const PROGRESS_PREFIX = 'formbae_workout_progress:';
 const QUEUE_KEY = 'formbae_workout_queue';
 
+export type WorkoutSetLog = {
+  setNumber: number;
+  reps: string;
+  weight: string;
+  durationSec?: number;
+  exerciseName?: string;
+  plannedSets?: string;
+  plannedReps?: string;
+};
+
 export type WorkoutProgress = {
   planDayId: string;
+  workoutMode?: 'standard' | 'quick';
   completedExerciseIds: string[];
   setProgressByExercise?: Record<string, number>;
-  setLogsByExercise?: Record<string, Array<{ setNumber: number; reps: string; weight: string; durationSec?: number }>>;
+  setLogsByExercise?: Record<string, WorkoutSetLog[]>;
   selectedAlternatesByExercise?: Record<string, number>;
   activeExerciseId?: string;
   rest?: {
@@ -19,8 +32,12 @@ export type WorkoutProgress = {
   updatedAt: string;
 };
 
-export async function loadWorkoutProgress(planDayId: string): Promise<WorkoutProgress> {
-  const raw = await AsyncStorage.getItem(`${PROGRESS_PREFIX}${planDayId}`);
+function progressKey(planDayId: string, workoutMode: 'standard' | 'quick' = 'standard') {
+  return `${PROGRESS_PREFIX}${planDayId}${workoutMode === 'quick' ? ':quick' : ''}`;
+}
+
+export async function loadWorkoutProgress(planDayId: string, workoutMode: 'standard' | 'quick' = 'standard'): Promise<WorkoutProgress> {
+  const raw = await AsyncStorage.getItem(progressKey(planDayId, workoutMode));
   if (!raw) return { planDayId, completedExerciseIds: [], updatedAt: '' };
   try {
     return JSON.parse(raw) as WorkoutProgress;
@@ -37,21 +54,15 @@ export function hasWorkoutStarted(progress: WorkoutProgress): boolean {
 }
 
 export async function saveWorkoutProgress(progress: WorkoutProgress) {
-  await AsyncStorage.setItem(`${PROGRESS_PREFIX}${progress.planDayId}`, JSON.stringify(progress));
+  await AsyncStorage.setItem(progressKey(progress.planDayId, progress.workoutMode), JSON.stringify(progress));
 }
 
-export async function clearWorkoutProgress(planDayId: string) {
-  await AsyncStorage.removeItem(`${PROGRESS_PREFIX}${planDayId}`);
+export async function clearWorkoutProgress(planDayId: string, workoutMode: 'standard' | 'quick' = 'standard') {
+  await AsyncStorage.removeItem(progressKey(planDayId, workoutMode));
 }
 
-type QueuedAction = {
+type QueuedAction = WorkoutCompletionInput & {
   id: string;
-  planId: string;
-  planDayId: string;
-  action: 'exercise' | 'exerciseUndo' | 'day' | 'dayUndo';
-  exerciseId?: string;
-  workoutMode?: string;
-  streakOnly?: boolean;
 };
 
 async function readQueue(): Promise<QueuedAction[]> {
@@ -76,7 +87,11 @@ export async function completeWithQueue(params: Omit<QueuedAction, 'id'>): Promi
   try {
     await completeWorkoutAction(params);
     return { synced: true };
-  } catch {
+  } catch (error) {
+    // A rejected payload or an inaccessible plan will not improve offline.
+    // Keep the local workout available instead of claiming it was saved.
+    if (error instanceof ApiError && !error.isNetwork && error.status >= 400 && error.status < 500
+      && error.status !== 408 && error.status !== 429) throw error;
     const queue = await readQueue();
     queue.push({ ...params, id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}` });
     await writeQueue(queue);

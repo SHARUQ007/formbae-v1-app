@@ -1,3 +1,6 @@
+import { useFocusEffect } from '@react-navigation/native';
+import { observeAppEvent } from '../../services/monitoringService';
+import { StableImage } from '../../components/StableImage';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -5,7 +8,6 @@ import {
   Animated,
   BackHandler,
   Easing,
-  Image,
   Keyboard,
   KeyboardAvoidingView,
   Linking,
@@ -718,7 +720,7 @@ function DietReportNoEvidenceState({
     return (
       <View style={[styles.paperDocument, styles.reportNoDataDocument]} testID="diet-report-no-evidence">
         <View style={styles.reportNoDataHero}>
-          <Image
+          <StableImage
             source={getDietReportEmptyArtwork(artworkGender)}
             style={styles.reportNoDataArtwork}
             resizeMode="cover"
@@ -1010,7 +1012,7 @@ export function DietReportStory({
       <View style={styles.paperHeader}>
         <DietReportMasthead period={formatReportPeriod(feedback.weekStartDate, feedback.weekEndDate)} reportKey={reportKey} />
         <Text style={styles.paperHeadline} accessibilityRole="header">{headline}</Text>
-        <Image source={getReportEditorialArtwork('nutrition', reportKey)} style={styles.paperNutritionHero} resizeMode="cover" accessible={false} testID="diet-report-editorial-art" />
+        <StableImage source={getReportEditorialArtwork('nutrition', reportKey)} style={styles.paperNutritionHero} resizeMode="cover" accessible={false} testID="diet-report-editorial-art" />
         {weekReview ? <View style={styles.paperWeekReview}>
           <View style={styles.paperReviewHeading}><ReportIllustration kind="reportReview" size={42} reportKey={reportKey} /><Text style={styles.paperWeekReviewLabel}>THIS WEEK IN REVIEW</Text></View>
           <Text style={styles.paperWeekReviewBody}>{weekReview}</Text>
@@ -1242,7 +1244,7 @@ function FoodPointsBadge({ points }: { points: number }) {
 }
 
 function imageSource(entry: DietDiaryEntry) {
-  const uri = resolveDietDiaryImageUrl(entry.remoteImageUrl || entry.uri || '');
+  const uri = resolveDietDiaryImageUrl((entry.storedLocally ? entry.uri : entry.remoteImageUrl) || entry.uri || '');
   const token = getAuthToken();
   if (shouldAuthenticateDietDiaryImage(uri) && token) {
     return { uri, headers: { Authorization: `Bearer ${token}` } };
@@ -1297,6 +1299,9 @@ function DietScreenContent({ route, navigation }: Props) {
     note: string;
   } | null>(null);
   const [activeTab, setActiveTab] = useState<'log' | 'diary' | 'report' | 'reportHistory' | 'previousReport'>('log');
+  useFocusEffect(useCallback(() => {
+    observeAppEvent('feature_view', ['report', 'reportHistory', 'previousReport'].includes(activeTab) ? 'diet_report' : 'diet_diary');
+  }, [activeTab]));
   const [reportReturnTab, setReportReturnTab] = useState<'log' | 'diary'>('log');
   const [selectedPreviousReport, setSelectedPreviousReport] = useState<DietCoachFeedback | null>(null);
   const saveToastOpacity = useRef(new Animated.Value(0)).current;
@@ -2672,7 +2677,7 @@ function DietScreenContent({ route, navigation }: Props) {
             bounces={false}
           >
             {preview?.uri ? (
-              <Image
+              <StableImage
                 source={imageSource(preview)}
                 style={styles.previewImage}
                 resizeMode="cover"

@@ -1,5 +1,6 @@
+import { StableImage } from './StableImage';
 import { useState } from 'react';
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { colors } from '../theme/colors';
 import { reportTypography } from '../theme/reportTypography';
@@ -38,7 +39,7 @@ export function WeeklyReportPending(props: Props) {
       scrollEnabled={viewport > 0 && contentHeight > viewport + 1}
       bounces={false} showsVerticalScrollIndicator={false}>
       <View style={[styles.hero, compact && styles.heroCompact]}>
-        <Image source={REPORT_IMAGE_POOLS.weeklyCover[0].source} resizeMode="cover" accessible={false}
+        <StableImage source={REPORT_IMAGE_POOLS.weeklyCover[0].source} resizeMode="cover" accessible={false}
           testID="weekly-pending-artwork" style={StyleSheet.absoluteFill} />
         <View style={styles.artworkShade} pointerEvents="none" />
         <View style={styles.meta}>
@@ -88,7 +89,7 @@ function Goal({ kind, label, current, target, onPress, compact, stacked }: {
           <Text style={styles.goalTitle}>{label}</Text>
           <Text style={styles.goalCount}>{current}<Text style={styles.goalMax}> / {target}</Text></Text>
         </View>
-        <Image source={WEEKLY_GOAL_ARTWORK[kind]} resizeMode="contain" accessible={false}
+        <StableImage source={WEEKLY_GOAL_ARTWORK[kind]} resizeMode="contain" accessible={false}
           testID={`weekly-goal-artwork-${kind}`} style={[styles.goalArtwork, compact && styles.goalArtworkCompact]} />
       </View>
       <View style={styles.goalTrack}><View style={[styles.fill, { width: `${fraction * 100}%` }]} /></View>

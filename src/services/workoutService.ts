@@ -103,14 +103,26 @@ export async function replaceWorkoutVideo(params: WorkoutVideoContext & {
   return response;
 }
 
-export async function completeWorkoutAction(params: {
+export type CompletedExerciseInput = {
+  exerciseId: string;
+  name: string;
+  completed: boolean;
+  plannedSets?: string;
+  plannedReps?: string;
+  sets: Array<{ setNumber: string; reps: string; weight: string; durationSec?: string }>;
+};
+
+export type WorkoutCompletionInput = {
   planId: string;
   planDayId: string;
   action: 'exercise' | 'exerciseUndo' | 'day' | 'dayUndo';
   exerciseId?: string;
   workoutMode?: string;
   streakOnly?: boolean;
-}) {
+  exercises?: CompletedExerciseInput[];
+};
+
+export async function completeWorkoutAction(params: WorkoutCompletionInput) {
   const response = await apiRequest<{ ok: boolean; completed: boolean; date: string; trophies?: TrophySummary }>('/workouts/complete', {
     method: 'POST',
     body: params,

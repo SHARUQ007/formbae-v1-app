@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { TrophyInviteGate } from '../components/TrophyInviteGate';
 import { SplashScreen } from '../screens/auth/SplashScreen';
 import { useAuthStore } from '../store/authStore';
+import { observeScreen } from '../services/monitoringService';
 import { trackMobileActivity } from '../services/activityService';
 import {
   resolveOnboardingInitialRoute,
@@ -62,13 +63,20 @@ export function RootNavigator() {
   const { ready, token, status } = useAuthStore();
 
   const queuePageView = useCallback((path: string) => {
-    if (!token || path === lastTrackedPathRef.current) return;
+    if (!token) return;
+    observeScreen(path);
+    if (path === lastTrackedPathRef.current) return;
     if (pageViewTimerRef.current) clearTimeout(pageViewTimerRef.current);
     pageViewTimerRef.current = setTimeout(() => {
       lastTrackedPathRef.current = path;
       trackMobileActivity('page_view', path).catch(() => undefined);
     }, 350);
   }, [token]);
+
+  useEffect(() => {
+    lastTrackedPathRef.current = '';
+    if (token && navigationReady) observeScreen(getActiveRoutePath(navigationRef.current?.getRootState()));
+  }, [token, navigationReady]);
 
   useEffect(() => {
     if (!ready || !navigationReady) return;

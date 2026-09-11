@@ -1,8 +1,8 @@
+import { StableImage } from '../../components/StableImage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -454,7 +454,7 @@ function CoachHero({ coach, ai, onImageError }: { coach: CoachOption; ai: boolea
     <View style={styles.hero}>
       <View style={styles.heroTop}>
         {image && !imageFailed ? (
-          <Image
+          <StableImage
             source={image}
             style={styles.heroImage}
             resizeMode="cover"
@@ -669,7 +669,7 @@ function CoachDetailPage({
       <View style={styles.detailHero}>
         <View style={styles.detailHeroTop}>
           {image && !imageFailed ? (
-            <Image
+            <StableImage
               source={image}
               style={styles.detailImage}
               resizeMode="cover"
@@ -848,7 +848,7 @@ function CoachOptionCard({
     >
       <View style={styles.optionVisual}>
         {image && !imageFailed ? (
-          <Image
+          <StableImage
             source={image}
             style={styles.optionImage}
             resizeMode="cover"

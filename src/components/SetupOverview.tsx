@@ -1,4 +1,5 @@
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StableImage } from './StableImage';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer } from './Card';
 import { PrimaryButton } from './PrimaryButton';
@@ -13,7 +14,7 @@ export function SetupOverview({ paid, steps, title, subtitle, action, onContinue
   return <ScreenContainer withBottomInset>
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
       <View style={styles.hero}>
-        <Image source={require('../assets/editorial/accountability-plan.jpg')} style={styles.art} resizeMode="cover" accessibilityIgnoresInvertColors />
+        <StableImage source={require('../assets/editorial/accountability-plan.jpg')} style={styles.art} resizeMode="cover" accessibilityIgnoresInvertColors />
         <View style={styles.heroCopy}>
           <Text style={styles.eyebrow}>{paid ? 'YOUR MEMBERSHIP IS ACTIVE' : 'YOUR FIRST CHAPTER'}</Text>
           <Text style={styles.title}>{title}</Text>

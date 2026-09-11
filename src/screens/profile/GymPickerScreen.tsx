@@ -1,3 +1,4 @@
+import { GymSetupDetails } from '../../components/GymSetupDetails';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -25,7 +26,6 @@ import { updateProfile, type MobileSettingsResponse } from '../../services/setti
 import { GymLocationIllustration } from '../../components/GymLocationIllustration';
 import { getGymProfileArtwork } from '../../utils/profileArtwork';
 import { colors } from '../../theme/colors';
-import { radius } from '../../theme/radius';
 import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
 
@@ -56,13 +56,17 @@ export function GymPickerScreen({ navigation }: Props) {
   const [selectedGym, setSelectedGym] = useState<GymPlace | null>(null);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<GymPlace[]>([]);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [expandedGym, setExpandedGym] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchedQuery, setSearchedQuery] = useState('');
   const [loadingSelection, setLoadingSelection] = useState(Boolean(initialLifestyle.selectedGymPlaceId));
   const [searching, setSearching] = useState(false);
   const [savingPlaceId, setSavingPlaceId] = useState('');
+  const [savingDetails, setSavingDetails] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState('');
+  const scrollRef = useRef<ScrollView>(null);
   const searchController = useRef<AbortController | null>(null);
   const emptyPicker = !selectedPlaceId && !hasSearched;
   // Reserve the actual search/copy heights before sizing decorative artwork.
@@ -151,6 +155,14 @@ export function GymPickerScreen({ navigation }: Props) {
     try {
       const latestSettings = settings || await loadProfileSettingsCached();
       const lifestyle = parseLifestyle(latestSettings.profile?.lifestyleJson);
+      if (lifestyle.selectedGymPlaceId !== place.placeId) {
+        delete lifestyle.gymMembership;
+        delete lifestyle.gymMembershipProvider;
+        delete lifestyle.gymEquipment;
+        delete lifestyle.gymMembershipStart;
+        delete lifestyle.gymMembershipExpiry;
+      }
+      const nextLifestyle = { ...lifestyle, workoutSetting: 'gym', selectedGymPlaceId: place.placeId };
       await updateProfile({
         lifestyleJson: JSON.stringify({
           ...lifestyle,
@@ -158,8 +170,13 @@ export function GymPickerScreen({ navigation }: Props) {
           selectedGymPlaceId: place.placeId,
         }),
       });
+      setSettings({ ...latestSettings, profile: { ...latestSettings.profile, lifestyleJson: JSON.stringify(nextLifestyle) } });
+      setSelectedPlaceId(place.placeId);
+      setSelectedGym(place);
+      scrollRef.current?.scrollTo({ y: 0, animated: false });
+      setResults([]);
+      setHasSearched(false);
       await loadProfileSettingsCached({ force: true }).catch(() => undefined);
-      navigation.goBack();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save this gym.');
     } finally {
@@ -167,8 +184,23 @@ export function GymPickerScreen({ navigation }: Props) {
     }
   };
 
+  const saveGymDetails = async (details: Record<string, string>) => {
+    if (savingDetails || !selectedPlaceId) return;
+    setSavingDetails(true);
+    setError('');
+    try {
+      const latest = await loadProfileSettingsCached({ force: true });
+      const lifestyle = parseLifestyle(latest.profile?.lifestyleJson);
+      if (lifestyle.selectedGymPlaceId !== selectedPlaceId) throw new Error('Your gym changed. Reopen this page to update it.');
+      await updateProfile({ lifestyleJson: JSON.stringify({ ...lifestyle, ...details }) });
+      await loadProfileSettingsCached({ force: true }).catch(() => undefined);
+      navigation.goBack();
+    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not save gym details.'); }
+    finally { setSavingDetails(false); }
+  };
+
   const removeSelection = () => {
-    Alert.alert('Remove selected gym?', 'Your workout setting will stay as Gym, but the saved location will be cleared.', [
+    Alert.alert('Remove selected gym?', 'Remove this gym and its membership details?', [
       { text: 'Keep gym', style: 'cancel' },
       {
         text: 'Remove',
@@ -180,6 +212,11 @@ export function GymPickerScreen({ navigation }: Props) {
             const latestSettings = settings || await loadProfileSettingsCached();
             const lifestyle = parseLifestyle(latestSettings.profile?.lifestyleJson);
             delete lifestyle.selectedGymPlaceId;
+            delete lifestyle.gymMembership;
+            delete lifestyle.gymMembershipProvider;
+            delete lifestyle.gymEquipment;
+        delete lifestyle.gymMembershipStart;
+        delete lifestyle.gymMembershipExpiry;
             await updateProfile({ lifestyleJson: JSON.stringify(lifestyle) });
             await loadProfileSettingsCached({ force: true }).catch(() => undefined);
             navigation.goBack();
@@ -196,8 +233,9 @@ export function GymPickerScreen({ navigation }: Props) {
   return (
     <ScreenContainer>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScreenHeader title="Select your gym" onBack={() => navigation.goBack()} />
+        <ScreenHeader title={selectedPlaceId ? "Your gym" : "Select your gym"} onBack={() => navigation.goBack()} />
         <ScrollView
+          ref={scrollRef}
           style={[styles.flex, emptyPicker && { marginBottom: tabBarHeight }]}
           onLayout={event => setViewportHeight(event.nativeEvent.layout.height)}
           onContentSizeChange={(_, height) => setContentHeight(height)}
@@ -212,17 +250,8 @@ export function GymPickerScreen({ navigation }: Props) {
             <View style={styles.selectedCard}>
               <View style={styles.selectedHeading}>
                 <GymLocationIllustration size={44} />
-                <Text style={[styles.eyebrow, styles.selectedLabel]}>SAVED TO YOUR PLAN</Text>
-                <TouchableOpacity
-                  style={styles.removeButton}
-                  accessibilityRole="button"
-                  accessibilityLabel="Remove selected gym"
-                  onPress={removeSelection}
-                  disabled={removing || Boolean(savingPlaceId)}
-                  accessibilityState={{ disabled: removing || Boolean(savingPlaceId), busy: removing }}
-                >
-                  {removing ? <ActivityIndicator size="small" color={colors.inkMuted} /> : <Feather name="x" size={19} color={colors.inkMuted} />}
-                </TouchableOpacity>
+                <Text style={[styles.eyebrow, styles.selectedLabel]}>YOUR GYM</Text>
+
               </View>
               <View style={styles.selectedCopy}>
                 {loadingSelection ? (
@@ -232,21 +261,30 @@ export function GymPickerScreen({ navigation }: Props) {
                   </View>
                 ) : (
                   <>
-                    <Text style={styles.selectedName}>{selectedGym?.name || 'Your gym is saved'}</Text>
-                    <Text style={styles.selectedAddress}>{selectedGym?.address || 'Location details are unavailable right now.'}</Text>
+                    <Text style={styles.selectedName} numberOfLines={2}>{selectedGym?.name || 'Your gym is saved'}</Text>
+                    <Text style={styles.selectedAddress} numberOfLines={2}>{selectedGym?.address || 'Location details are unavailable right now.'}</Text>
                     {selectedGym ? <Text style={styles.googleAttribution}>Google Maps</Text> : null}
                   </>
                 )}
               </View>
+
             </View>
           ) : null}
 
-          <View style={styles.searchCard} testID="gym-picker-search" onLayout={event => setSearchHeight(event.nativeEvent.layout.height)}>
+          {selectedPlaceId ? <>
+            <GymSetupDetails key={selectedPlaceId} initial={parseLifestyle(settings?.profile?.lifestyleJson)} busy={savingDetails || removing || Boolean(savingPlaceId)} onSave={saveGymDetails} />
+
+          </> : null}
+          {!selectedPlaceId ? <View style={styles.searchCard} testID="gym-picker-search" onLayout={event => setSearchHeight(event.nativeEvent.layout.height)}>
             <Text style={styles.fieldLabel}>{selectedPlaceId ? 'Find another gym' : 'Where do you train?'}</Text>
-            <View style={[styles.searchBox, Boolean(error) && styles.searchBoxError]}>
-              <Feather name="search" size={20} color={colors.inkMuted} />
+            <View style={[styles.searchBox, searchFocused && styles.searchBoxFocused, Boolean(error) && styles.searchBoxError]}>
+              <Feather name="map-pin" size={18} color={searchFocused ? colors.gold : colors.inkSubtle} />
               <TextInput
                 value={query}
+                onFocus={() => setSearchFocused(true)}
+                onBlur={() => setSearchFocused(false)}
+                selectionColor={colors.gold}
+                maxLength={100}
                 onChangeText={(value) => {
                   setQuery(value);
                   if (error) setError('');
@@ -261,7 +299,7 @@ export function GymPickerScreen({ navigation }: Props) {
               />
               {query ? <TouchableOpacity style={styles.clearButton} accessibilityRole="button" accessibilityLabel="Clear gym search" onPress={() => { searchController.current?.abort(); searchController.current = null; setQuery(''); setResults([]); setHasSearched(false); setSearching(false); setError(''); }}><Feather name="x" size={17} color={colors.inkMuted} /></TouchableOpacity> : null}
             </View>
-            <Text style={styles.searchHint}>Add a neighbourhood or city to narrow your search.</Text>
+            <Text style={styles.searchHint}>Try “Youmania, Mumbai”</Text>
             <TouchableOpacity
               style={[styles.searchButton, query.trim().length < 3 && styles.searchButtonDisabled]}
               onPress={runSearch}
@@ -273,7 +311,7 @@ export function GymPickerScreen({ navigation }: Props) {
               {searching ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <Feather name="search" size={18} color={query.trim().length < 3 ? colors.inkSubtle : colors.onPrimary} />}
               <Text style={[styles.searchButtonText, query.trim().length < 3 && styles.disabledButtonText]}>{searching ? 'Searching…' : 'Search gyms'}</Text>
             </TouchableOpacity>
-          </View>
+          </View> : null}
           {error ? <Text style={styles.error} accessibilityRole="alert">{error}</Text> : null}
 
           {searching ? (
@@ -286,16 +324,16 @@ export function GymPickerScreen({ navigation }: Props) {
             <View style={styles.resultsCard}>
               <View style={styles.resultsHeading}>
                 <Text style={styles.fieldLabel}>{results.length} {results.length === 1 ? 'gym found' : 'gyms found'}</Text>
-                <Text style={styles.resultAddress}>Matches for “{searchedQuery}”. Tap a gym to save it.</Text>
+                <Text style={styles.resultAddress}>Results for “{searchedQuery}”</Text>
               </View>
-              {results.map((place, index) => {
+              {results.map((place) => {
                 const selected = place.placeId === selectedPlaceId;
                 const saving = place.placeId === savingPlaceId;
                 return (
                   <TouchableOpacity
                     key={place.placeId}
                     activeOpacity={0.82}
-                    style={[styles.resultRow, index < results.length - 1 && styles.resultBorder]}
+                    style={[styles.resultRow, selected && styles.resultSelected]}
                     onPress={() => saveSelection(place)}
                     disabled={Boolean(savingPlaceId) || removing}
                     accessibilityRole="button"
@@ -303,13 +341,15 @@ export function GymPickerScreen({ navigation }: Props) {
                     accessibilityState={{ selected, disabled: Boolean(savingPlaceId) || removing, busy: saving }}
                   >
                     <View style={[styles.resultMarker, selected && styles.resultMarkerSelected]}>
-                      <GymLocationIllustration size={38} />
+                      <GymLocationIllustration size={30} />
                     </View>
                     <View style={styles.resultCopy}>
-                      <Text style={styles.resultName}>{place.name}</Text>
-                      <Text style={styles.resultAddress}>{place.address}</Text>
+                      <Text style={styles.resultName} numberOfLines={expandedGym === place.placeId ? undefined : 2}>{place.name}</Text>
+                      <Text style={styles.resultAddress} numberOfLines={expandedGym === place.placeId ? undefined : 2}>{place.address}</Text>
+                      <Text accessibilityRole="button" accessibilityLabel={`${expandedGym === place.placeId ? 'Hide' : 'Show'} full details for ${place.name}`} style={styles.detailsToggle} onPress={event => { event.stopPropagation(); setExpandedGym(expandedGym === place.placeId ? null : place.placeId); }}>{expandedGym === place.placeId ? 'Less detail' : 'Full details'}</Text>
+                      <View style={styles.selectHint}><Text style={styles.selectLabel}>{saving ? 'Saving…' : selected ? 'Your gym' : 'Select gym'}</Text><Feather name={selected ? 'check' : 'arrow-right'} size={14} color={colors.gold} /></View>
                     </View>
-                    {saving ? <ActivityIndicator size="small" color={colors.gold} /> : <Feather name={selected ? 'check-circle' : 'chevron-right'} size={20} color={selected ? colors.success : colors.inkMuted} />}
+                    {saving ? <ActivityIndicator size="small" color={colors.gold} /> : null}
                   </TouchableOpacity>
                 );
               })}
@@ -328,10 +368,23 @@ export function GymPickerScreen({ navigation }: Props) {
               {artworkHeight >= 80 ? <Image source={getGymProfileArtwork(settings?.profile?.gender)} style={[styles.introArtwork, { height: artworkHeight }]} resizeMode="contain" accessible={false} testID="gym-picker-artwork" /> : null}
               <View style={styles.introCopy} testID="gym-picker-intro-copy" onLayout={event => setIntroCopyHeight(event.nativeEvent.layout.height)}>
                 <Text style={styles.eyebrow}>YOUR TRAINING HOME</Text>
-                <Text style={styles.introTitle}>A place for your routine.</Text>
-                <Text style={styles.helperText}>Keep your usual gym with your plan. You can change it anytime.</Text>
+                <Text style={styles.introTitle}>Your gym setup.</Text>
+                <Text style={styles.helperText}>Add your gym and membership.</Text>
               </View>
             </View>
+          ) : null}
+          {selectedPlaceId ? (
+                <TouchableOpacity
+                  style={styles.removeButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Remove selected gym"
+                  onPress={removeSelection}
+                  disabled={removing || savingDetails || Boolean(savingPlaceId)}
+                  accessibilityState={{ disabled: removing || savingDetails || Boolean(savingPlaceId), busy: removing }}
+                >
+                  {removing ? <ActivityIndicator size="small" color={colors.error} /> : <Feather name="trash-2" size={17} color={colors.error} />}
+                  <Text style={styles.removeButtonText}>{removing ? 'Removing…' : 'Remove gym'}</Text>
+                </TouchableOpacity>
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
@@ -349,31 +402,36 @@ const styles = StyleSheet.create({
   selectedCopy: { minWidth: 0 },
   eyebrow: { ...typography.overline, color: colors.gold, fontSize: 10, lineHeight: 16 },
   selectedName: { ...typography.subtitle, fontSize: 17, lineHeight: 24, color: colors.ink, marginTop: 4 },
-  selectedAddress: { ...typography.caption, fontSize: 13, lineHeight: 20, color: colors.inkMuted, marginTop: 4 },
+  selectedAddress: { ...typography.caption, fontSize: 12, lineHeight: 18, color: colors.inkMuted, marginTop: 4 },
   loadingLine: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.xs, marginTop: spacing.xs },
-  removeButton: { width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
-  searchCard: { padding: 16, borderRadius: 22, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  removeButton: { marginTop: 20, minHeight: 44, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.errorLight, borderWidth: 1, borderColor: 'rgba(255,129,140,0.25)' },
+  removeButtonText: { ...typography.label, color: colors.error },
+  searchCard: { padding: 16, borderRadius: 18, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
   fieldLabel: { ...typography.bodyBold, fontSize: 16, lineHeight: 23, color: colors.ink, marginBottom: 10 },
-  searchBox: { minHeight: 54, borderRadius: 14, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.bg, flexDirection: 'row', alignItems: 'center', paddingLeft: 12, paddingRight: 4, gap: 10 },
+  searchBox: { minHeight: 52, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panelMuted, flexDirection: 'row', alignItems: 'center', paddingLeft: 12, paddingRight: 4, gap: 10 },
+  searchBoxFocused: { borderColor: colors.goldMuted, backgroundColor: colors.bg },
   searchBoxError: { borderColor: colors.error },
-  input: { ...typography.body, fontSize: 15, lineHeight: 23, color: colors.ink, flex: 1, minWidth: 0, paddingVertical: 12 },
+  input: { ...typography.body, fontSize: 15, lineHeight: 22, color: colors.ink, flex: 1, minWidth: 0, paddingVertical: 10 },
   clearButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  searchHint: { ...typography.caption, fontSize: 12, lineHeight: 18, color: colors.inkMuted, marginTop: 10 },
-  searchButton: { minHeight: 48, marginTop: 16, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 14, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primaryAction },
-  searchButtonText: { ...typography.bodyBold, fontSize: 15, lineHeight: 22, color: colors.onPrimary, flexShrink: 1 },
+  searchHint: { ...typography.caption, fontSize: 12, lineHeight: 18, color: colors.inkSubtle, marginTop: 8 },
+  searchButton: { minHeight: 48, marginTop: 12, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 14, flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primaryAction },
+  searchButtonText: { ...typography.bodyBold, fontSize: 14, lineHeight: 20, color: colors.onPrimary, flexShrink: 1 },
   searchButtonDisabled: { backgroundColor: colors.panelRaised },
   disabledButtonText: { color: colors.inkSubtle },
   error: { ...typography.caption, color: colors.error, marginTop: 12, paddingHorizontal: 4 },
-  resultsCard: { marginTop: 20, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, overflow: 'hidden' },
-  resultsHeading: { padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
-  resultRow: { minHeight: 84, paddingHorizontal: 14, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  resultBorder: { borderBottomWidth: 1, borderBottomColor: colors.border },
-  resultMarker: { width: 42, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
+  resultsCard: { marginTop: 20, gap: 10 },
+  resultsHeading: { paddingHorizontal: 2, paddingBottom: 4 },
+  resultRow: { padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
+  resultSelected: { borderColor: colors.goldMuted },
+  detailsToggle: { ...typography.caption, fontSize: 11, color: colors.inkMuted, paddingVertical: 10 },
+  selectHint: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  selectLabel: { ...typography.label, fontSize: 12, color: colors.gold },
+  resultMarker: { width: 36, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
   resultMarkerSelected: { backgroundColor: colors.successLight },
   resultCopy: { flex: 1, minWidth: 0 },
-  resultName: { ...typography.bodyBold, fontSize: 15, lineHeight: 22, color: colors.ink },
-  resultAddress: { ...typography.caption, fontSize: 13, lineHeight: 20, color: colors.inkMuted, marginTop: 3 },
-  attributionRow: { borderTopWidth: 1, borderTopColor: colors.border, paddingHorizontal: 16, paddingVertical: 10 },
+  resultName: { ...typography.bodyBold, fontSize: 14, lineHeight: 20, color: colors.ink },
+  resultAddress: { ...typography.caption, fontSize: 12, lineHeight: 18, color: colors.inkMuted, marginTop: 3 },
+  attributionRow: { paddingHorizontal: 2, paddingVertical: 4 },
   googleAttribution: { fontSize: 12, lineHeight: 18, fontWeight: '400', color: colors.inkMuted, marginTop: 4 },
   emptyState: { marginTop: 20, alignItems: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: 20, backgroundColor: colors.panel, paddingVertical: 24, paddingHorizontal: 20 },
   emptyTitle: { ...typography.subtitle, fontSize: 18, lineHeight: 25, color: colors.ink, textAlign: 'center', marginTop: 12 },

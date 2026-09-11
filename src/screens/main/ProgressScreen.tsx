@@ -1,8 +1,9 @@
+import { StableImage } from '../../components/StableImage';
 import { weeklyReportSchedule } from '../../utils/weeklyReportSchedule';
 import { WeeklyReportPending } from '../../components/WeeklyReportPending';
 import { useFocusEffect } from '@react-navigation/native';
 import { Fragment, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Alert, Image, LayoutChangeEvent, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, LayoutChangeEvent, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -558,7 +559,7 @@ export function ProgressScreen({ route, navigation }: Props) {
         <TouchableOpacity onPress={() => navigation.navigate('ProgressReport')} activeOpacity={0.88} accessibilityRole="button" accessibilityLabel={`Open progress report. ${schedule.countdown}. ${reportCompletionPercent}% complete`}>
           {reviewReady ? (
             <View style={styles.reportCard}>
-              <Image
+              <StableImage
                 source={getProgressReportArtwork(profileGender)}
                 style={styles.reportArtwork}
                 resizeMode="cover"

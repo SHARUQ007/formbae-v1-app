@@ -52,7 +52,8 @@ it('shows complete result details and saves a choice without losing other prefer
   expect(output()).toContain('Google Maps');
   await act(async () => button(`Select ${place.name}`).props.onPress());
   expect(updateProfile).toHaveBeenCalledWith({ lifestyleJson: JSON.stringify({ trainingDays: '4', workoutSetting: 'gym', selectedGymPlaceId: 'gym-1' }) });
-  expect(goBack).toHaveBeenCalledTimes(1);
+  expect(goBack).not.toHaveBeenCalled();
+  expect(output()).toContain('Gym subscription');
 });
 
 it('clears an in-flight search and ignores its late results', async () => {
@@ -75,7 +76,8 @@ it('keeps the saved-gym state when location details are unavailable', async () =
   await renderScreen();
   expect(output()).toContain('Your gym is saved');
   expect(output()).toContain('Location details are unavailable right now.');
-  expect(output()).toContain('Find another gym');
+  expect(output()).not.toContain('Find another gym');
+  expect(output()).toContain('Gym subscription');
   expect(button('Remove selected gym').props.disabled).toBe(false);
 });
 

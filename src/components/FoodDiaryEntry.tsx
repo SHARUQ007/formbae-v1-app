@@ -1,5 +1,6 @@
+import { StableImage } from './StableImage';
 import { useState } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View, type ImageSourcePropType } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, type ImageSourcePropType } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import type { DietDiaryEntry } from '../store/dietDiaryStore';
 import { colors } from '../theme/colors';
@@ -17,7 +18,7 @@ export function FoodDiaryEntry({ entry, source, time, onOpen, onEdit }: {
     <View style={styles.header}>
       <TouchableOpacity onPress={onOpen} activeOpacity={0.82} style={styles.identity} accessible={false}>
         <View style={styles.art}>
-          {isPhoto && source && failedSource !== entry.uri ? <Image source={source} style={styles.photo} resizeMode="cover" onError={() => setFailedSource(entry.uri)} accessible={false} />
+          {isPhoto && source && failedSource !== entry.uri ? <StableImage source={source} style={styles.photo} resizeMode="cover" onError={() => setFailedSource(entry.uri)} accessible={false} />
             : <ReportIllustration kind={isPhoto ? 'diaryCapture' : mealArt[entry.mealType] || 'diaryCapture'} size={44} reportKey={entry.createdAt} />}
         </View>
         <View style={styles.meta}>

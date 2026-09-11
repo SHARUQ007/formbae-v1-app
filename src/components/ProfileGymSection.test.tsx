@@ -17,12 +17,12 @@ it('shows the saved gym, address and attribution with a change action', () => {
   let tree!: TestRenderer.ReactTestRenderer;
   act(() => { tree = TestRenderer.create(<ProfileGymSection gym={{ placeId: 'gym-1', name: 'Neighbourhood Strength Studio', address: '12 Park Road, Kochi' }} saved loading={false} onSelect={onSelect} />); });
   const output = JSON.stringify(tree.toJSON());
-  expect(output).toContain('Saved');
+  expect(output).toContain('Add membership details');
   expect(output).toContain('Neighbourhood Strength Studio');
   expect(output).toContain('12 Park Road, Kochi');
   expect(output).toContain('Google Maps');
   expect(output).not.toContain('Select your gym');
-  act(() => tree.root.findByProps({ accessibilityLabel: 'Change your gym' }).props.onPress());
+  act(() => tree.root.findByProps({ accessibilityLabel: 'Edit gym details' }).props.onPress());
   expect(onSelect).toHaveBeenCalledTimes(1);
   act(() => tree.unmount());
 });

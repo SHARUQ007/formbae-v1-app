@@ -32,7 +32,9 @@ import {
   loadWorkoutProgress,
   saveWorkoutProgress,
   clearWorkoutProgress,
+  type WorkoutSetLog,
 } from '../../store/workoutStore';
+import { buildCompletedExercises, isTimedWorkoutTarget } from '../../store/workoutCompletion';
 import { WorkoutRestDock } from '../../components/WorkoutRestDock';
 import { useRestTimer } from '../../hooks/useRestTimer';
 import { deriveWorkoutResumeIndex, remainingRestSeconds } from '../../hooks/useWorkoutSession';
@@ -53,7 +55,7 @@ type Props = NativeStackScreenProps<WorkoutStackParamList, 'WorkoutDetail'>;
 
 type RewardType = 'set' | 'movement' | 'workout';
 type RewardState = { id: number; type: RewardType; title: string; subtitle: string } | null;
-type SetLog = { setNumber: number; reps: string; weight: string; durationSec?: number };
+type SetLog = WorkoutSetLog;
 type SetSaveResult = {
   movementComplete: boolean;
   workoutComplete: boolean;
@@ -267,7 +269,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     try {
       const data = initialDetail?.planDayId === planDayId ? initialDetail : await loadWorkoutDayCached(planDayId, mode);
       setDetail(data);
-      const saved = await loadWorkoutProgress(planDayId);
+      const saved = await loadWorkoutProgress(planDayId, data.workoutMode);
       setCompleted(new Set(saved.completedExerciseIds));
       setSetProgress(saved.setProgressByExercise || {});
       setSetLogs(saved.setLogsByExercise || {});
@@ -341,6 +343,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
   const activeExerciseId = activeExercise?.exerciseId || '';
   const originalActiveExercise = detail?.exercises.find((exercise) => exercise.exerciseId === activeExerciseId);
   const activeExerciseReps = activeExercise?.reps || '';
+  const activeIsTimed = isTimedWorkoutTarget(activeExerciseReps);
   const activeExerciseIndex = activeExercise ? trackableExercises.findIndex((exercise) => exercise.exerciseId === activeExercise.exerciseId) : 0;
   const activeDone = activeExercise ? completed.has(activeExercise.exerciseId) : false;
   const activeSets = Math.max(1, Number(activeExercise?.sets || 1));
@@ -518,14 +521,15 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       return;
     }
     const existing = activeSetLogs.find((log) => log.setNumber === activeSetNumber);
-    setRepInput(existing?.reps || defaultRepsFromPrescription(activeExerciseReps));
+    setRepInput(activeIsTimed ? '' : existing?.reps || defaultRepsFromPrescription(activeExerciseReps));
     setWeightInput(existing?.weight || '');
-  }, [activeDone, activeExerciseId, activeExerciseReps, activeSetLogs, activeSetNumber]);
+  }, [activeDone, activeExerciseId, activeExerciseReps, activeIsTimed, activeSetLogs, activeSetNumber]);
 
   const persistSets = useCallback(
     async (next: Record<string, number>, completedSet = completed, logsOverride = setLogs) => {
       await saveWorkoutProgress({
         planDayId,
+        workoutMode: detail?.workoutMode ?? mode,
         completedExerciseIds: Array.from(completedSet),
         setProgressByExercise: next,
         setLogsByExercise: logsOverride,
@@ -533,11 +537,11 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         updatedAt: new Date().toISOString(),
       });
     },
-    [completed, planDayId, selectedAlternates, setLogs],
+    [completed, detail?.workoutMode, mode, planDayId, selectedAlternates, setLogs],
   );
 
   const selectExerciseVariant = async (alternateIndex?: number) => {
-    if (!activeExerciseId) return;
+    if (!activeExerciseId || completed.has(activeExerciseId) || setLogs[activeExerciseId]?.length) return;
     const next = { ...selectedAlternates };
     if (alternateIndex === undefined) delete next[activeExerciseId];
     else next[activeExerciseId] = alternateIndex;
@@ -545,6 +549,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     setMovementStarted(false);
     await saveWorkoutProgress({
       planDayId,
+      workoutMode: detail?.workoutMode ?? mode,
       completedExerciseIds: Array.from(completed),
       setProgressByExercise: setProgress,
       setLogsByExercise: setLogs,
@@ -630,6 +635,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       exerciseId: activeExercise.exerciseId,
       workoutMode: detail.workoutMode,
       streakOnly: detail.dayComplete,
+      exercises: buildCompletedExercises(trackableExercises, nextCompleted, logsOverride),
     });
   };
 
@@ -650,6 +656,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     setSetElapsed(0);
     saveWorkoutProgress({
       planDayId,
+      workoutMode: detail?.workoutMode ?? mode,
       completedExerciseIds: Array.from(completed),
       setProgressByExercise: setProgress,
       setLogsByExercise: setLogs,
@@ -671,9 +678,12 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     const nextSetCount = Math.min(activeSets, activeSetCount + 1);
     const nextLog: SetLog = {
       setNumber: nextSetCount,
-      reps: repInput.trim() || defaultRepsFromPrescription(activeExercise.reps),
+      reps: activeIsTimed ? '' : repInput.trim(),
       weight: activeNeedsWeight ? weightInput.trim() : '',
       durationSec: setElapsed,
+      exerciseName: activeExercise.exerciseName,
+      plannedSets: activeExercise.sets,
+      plannedReps: activeExercise.reps,
     };
     const previousLogs = setLogs[activeExercise.exerciseId] || [];
     const nextLogsForExercise = [
@@ -715,6 +725,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         timer.start(activeRest);
         saveWorkoutProgress({
           planDayId,
+          workoutMode: detail?.workoutMode ?? mode,
           completedExerciseIds: Array.from(movementComplete ? new Set([...completed, activeExercise.exerciseId]) : completed),
           setProgressByExercise: nextSets,
           setLogsByExercise: nextLogs,
@@ -747,6 +758,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       setSetElapsed(0);
       saveWorkoutProgress({
         planDayId,
+        workoutMode: detail?.workoutMode ?? mode,
         completedExerciseIds: Array.from(completed),
         setProgressByExercise: setProgress,
         setLogsByExercise: setLogs,
@@ -763,6 +775,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
     if (!nextExerciseId) return;
     saveWorkoutProgress({
       planDayId,
+      workoutMode: detail?.workoutMode ?? mode,
       completedExerciseIds: Array.from(completed),
       setProgressByExercise: setProgress,
       setLogsByExercise: setLogs,
@@ -807,8 +820,9 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         action: 'day',
         workoutMode: detail.workoutMode,
         streakOnly: detail.dayComplete,
+        exercises: buildCompletedExercises(trackableExercises, completed, setLogs),
       });
-      await clearWorkoutProgress(planDayId);
+      await clearWorkoutProgress(planDayId, detail.workoutMode);
       await AsyncStorage.setItem(
         PENDING_STREAK_CELEBRATION_KEY,
         JSON.stringify({ planDayId: detail.planDayId, completedAt: Date.now() }),
@@ -824,10 +838,12 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
       } else if (destination === 'body') {
         tabNavigation?.navigate('Progress', { screen: 'ProgressMain', params: { action: 'logBody', requestId: Date.now() } });
       }
+    } catch (saveError) {
+      Alert.alert('Could not save workout', saveError instanceof Error ? saveError.message : 'Please try again.');
     } finally {
       setFinishing(false);
     }
-  }, [detail, planDayId, navigation]);
+  }, [completed, detail, planDayId, navigation, setLogs, trackableExercises]);
 
   const leaveWorkout = () => {
     if (!movementStarted && !timer.running) {
@@ -1040,7 +1056,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
                 <View style={styles.lastLogCard}>
                   <Feather name="check-circle" size={18} color={colors.accentDark} />
                   <Text style={styles.lastLogText}>
-                    Last set: {activeLastLog.reps || '-'} reps{activeLastLog.weight ? ` · ${activeLastLog.weight} kg` : ''}{activeLastLog.durationSec ? ` · ${formatTimer(activeLastLog.durationSec)}` : ''}
+                    Last set: {activeIsTimed ? formatTimer(activeLastLog.durationSec || 0) : `${activeLastLog.reps || '—'} reps`}{activeLastLog.weight ? ` · ${activeLastLog.weight} kg` : ''}{!activeIsTimed && activeLastLog.durationSec ? ` · ${formatTimer(activeLastLog.durationSec)}` : ''}
                   </Text>
                 </View>
               ) : null}
@@ -1148,6 +1164,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         reps={repInput}
         weight={weightInput}
         needsWeight={activeNeedsWeight}
+        timed={activeIsTimed}
         targetReps={displayValue(activeExercise.reps, '0')}
         onReps={setRepInput}
         onWeight={setWeightInput}
@@ -1180,6 +1197,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
         feedbackText={feedbackText}
         submitting={feedbackSubmitting}
         saved={feedbackSaved}
+        canChangeExercise={!activeDone && !activeSetLogs.length}
         onSentiment={(value) => {
           setFeedbackSentiment(value);
           if (value === 'up') setFeedbackAlternateIndex(selectedAlternates[activeExerciseId]);
@@ -1403,6 +1421,7 @@ function ExerciseFeedbackSheet({
   feedbackText,
   submitting,
   saved,
+  canChangeExercise,
   onSentiment,
   onSelectAlternate,
   onFeedbackText,
@@ -1422,6 +1441,7 @@ function ExerciseFeedbackSheet({
   feedbackText: string;
   submitting: boolean;
   saved: boolean;
+  canChangeExercise: boolean;
   onSentiment: (value: WorkoutFeedbackSentiment) => void;
   onSelectAlternate: (index?: number) => void;
   onFeedbackText: (value: string) => void;
@@ -1450,7 +1470,7 @@ function ExerciseFeedbackSheet({
             <View style={styles.sheetTitleBlock}>
               <Text style={styles.sheetKicker}>Workout feedback</Text>
               <Text style={styles.sheetTitle}>{exerciseName}</Text>
-              <Text style={styles.sheetSub}>Share what worked or choose a better exercise.</Text>
+              <Text style={styles.sheetSub}>{canChangeExercise ? 'Share what worked or choose a better exercise.' : 'Share what worked for your next workout.'}</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton} accessibilityRole="button" accessibilityLabel="Close feedback">
               <Feather name="x" size={20} color={colors.inkMuted} />
@@ -1467,12 +1487,12 @@ function ExerciseFeedbackSheet({
                   style={[styles.sentimentButton, active && styles.sentimentSelected]}
                 >
                   <Feather name={value === 'up' ? 'thumbs-up' : 'thumbs-down'} size={18} color={active ? colors.white : colors.ink} />
-                  <Text style={[styles.sentimentText, active && styles.sentimentTextSelected]}>{value === 'up' ? 'Works' : 'Change it'}</Text>
+                  <Text style={[styles.sentimentText, active && styles.sentimentTextSelected]}>{value === 'up' ? 'Works' : canChangeExercise ? 'Change it' : 'Needs adjustment'}</Text>
                 </TouchableOpacity>
               );
             })}
           </View>
-          {originalExercise && alternativeChoices.length ? (
+          {canChangeExercise && originalExercise && alternativeChoices.length ? (
             <View style={styles.feedbackAlternateSection}>
               <Text style={styles.feedbackAlternateTitle}>Prefer another exercise?</Text>
               <Text style={styles.feedbackAlternateSubtitle}>Choose one below. It replaces {exerciseName} when you save.</Text>
@@ -1673,6 +1693,7 @@ function SetEntryModal({
   reps,
   weight,
   needsWeight,
+  timed,
   targetReps,
   onReps,
   onWeight,
@@ -1690,6 +1711,7 @@ function SetEntryModal({
   reps: string;
   weight: string;
   needsWeight: boolean;
+  timed: boolean;
   targetReps: string;
   onReps: (value: string) => void;
   onWeight: (value: string) => void;
@@ -1856,7 +1878,7 @@ function SetEntryModal({
                 <View style={styles.setEntryMetrics}>
                   <View style={styles.setEntryMetric}>
                     <View>
-                      <Text style={styles.setEntryMetricLabel}>Target reps</Text>
+                      <Text style={styles.setEntryMetricLabel}>{timed ? 'Time target' : 'Target reps'}</Text>
                       <Text style={styles.setEntryMetricValue}>{targetReps}</Text>
                     </View>
                   </View>
@@ -1871,7 +1893,7 @@ function SetEntryModal({
                 </View>
 
                 <View style={[styles.sheetInputStack, useInputColumns && styles.sheetInputStackColumns]}>
-                  <View style={[styles.sheetInputGroup, useInputColumns && styles.sheetInputGroupColumn]}>
+                  {!timed ? <View style={[styles.sheetInputGroup, useInputColumns && styles.sheetInputGroupColumn]}>
                     <Text style={styles.sheetInputLabel}>Reps completed</Text>
                     <View style={styles.sheetStepperInputRow}>
                       <TouchableOpacity onPress={() => onAdjustReps(-1)} disabled={controlsLocked} style={styles.sheetStepperButton} accessibilityRole="button" accessibilityLabel="Decrease reps">
@@ -1891,7 +1913,7 @@ function SetEntryModal({
                         <Feather name="plus" size={20} color={colors.accentDark} />
                       </TouchableOpacity>
                     </View>
-                  </View>
+                  </View> : null}
 
                   {needsWeight ? (
                     <View style={[styles.sheetInputGroup, useInputColumns && styles.sheetInputGroupColumn]}>
