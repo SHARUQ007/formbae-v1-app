@@ -100,3 +100,33 @@ it('fits empty-state artwork into the viewport and keeps the form reachable on a
   expect(scroll().props.scrollEnabled).toBe(true);
   expect(button('Gym name or area')).toBeDefined();
 });
+
+it('reuses displayed results for an identical normalized search', async () => {
+  await renderScreen();
+  typeQuery('Studio   Kochi');
+  await act(async () => button('Search gyms').props.onPress());
+  typeQuery('studio kochi');
+  await act(async () => button('Search gyms').props.onPress());
+  expect(searchGyms).toHaveBeenCalledTimes(1);
+  expect(searchGyms).toHaveBeenCalledWith('Studio Kochi', expect.anything());
+});
+
+it('blocks double submission before the first request completes', async () => {
+  let resolve!: (places: GymPlace[]) => void;
+  jest.mocked(searchGyms).mockReturnValue(new Promise(done => { resolve = done; }));
+  await renderScreen();
+  typeQuery('Kochi');
+  act(() => { const submit = button('Search gyms').props.onPress; submit(); submit(); });
+  expect(searchGyms).toHaveBeenCalledTimes(1);
+  await act(async () => resolve([place]));
+});
+
+it('shows the server rate-limit message and allows retry after failure', async () => {
+  jest.mocked(searchGyms).mockRejectedValueOnce(new Error('Gym request limit reached. Please try again later.'));
+  await renderScreen();
+  typeQuery('Kochi');
+  await act(async () => button('Search gyms').props.onPress());
+  expect(output()).toContain('Gym request limit reached');
+  await act(async () => button('Search gyms').props.onPress());
+  expect(searchGyms).toHaveBeenCalledTimes(2);
+});

@@ -113,7 +113,9 @@ export function GymPickerScreen({ navigation }: Props) {
   }, [selectedPlaceId]);
 
   const runSearch = async () => {
-    const cleanQuery = query.trim();
+    const cleanQuery = query.trim().replace(/\s+/g, ' ');
+    if (searchController.current && !searchController.current.signal.aborted) return;
+    if (hasSearched && !error && !searching && searchedQuery.toLowerCase() === cleanQuery.toLowerCase()) return;
     if (cleanQuery.length < 3) {
       setError('Enter a gym name or area.');
       return;
@@ -135,7 +137,10 @@ export function GymPickerScreen({ navigation }: Props) {
         setError(searchError instanceof Error ? searchError.message : 'Gym search is unavailable right now.');
       }
     } finally {
-      if (searchController.current === controller) setSearching(false);
+      if (searchController.current === controller) {
+        searchController.current = null;
+        setSearching(false);
+      }
     }
   };
 
