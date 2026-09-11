@@ -53,6 +53,7 @@ export type CoachScreenParams = {
 };
 
 export type WorkoutStackParamList = {
+  WorkoutHistory: undefined;
   WorkoutList: {
     pendingPlanBuild?: {
       planId: string;

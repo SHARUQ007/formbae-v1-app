@@ -2,7 +2,7 @@ import type { ImageSourcePropType } from 'react-native';
 import { getBackendApiBaseUrl, getSiteUrl } from '../constants/config';
 import { getAuthToken } from '../services/apiClient';
 
-const AVA_COACH_ARTWORK = require('../assets/editorial/ava-coach-gold.jpg') as ImageSourcePropType;
+const AVA_COACH_ARTWORK = require('../assets/editorial/ava-coach-portrait-v2.jpg') as ImageSourcePropType;
 
 type CoachArtworkInput = {
   name?: string;
@@ -23,7 +23,7 @@ function isAvaArtwork(input: CoachArtworkInput) {
   return /^ava(?:\s|$)/.test(name) || photoUrl.includes('/ai-questionnaire/goal-baseline.webp');
 }
 
-/** Uses the bundled gold Ava portrait so her identity is consistent and instant. */
+/** Uses the bundled Ava coach portrait so her identity is consistent and instant. */
 export function getCoachArtworkSource(input: CoachArtworkInput): ImageSourcePropType | null {
   if (isAvaArtwork(input)) return AVA_COACH_ARTWORK;
   const photoUrl = String(input.photoUrl || '').trim();

@@ -4,7 +4,7 @@ import {
   Animated,
   Easing,
   Image,
-  Platform,
+  ImageBackground,
   useWindowDimensions,
   View,
   Text,
@@ -12,8 +12,10 @@ import {
   type ImageSourcePropType,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { getAccountabilityArtworkSources, imageWarmupSize } from '../../services/imagePreloadService';
+import { Logo } from '../../components/Logo';
 import { GymLoadingMessage } from '../../components/GymLoadingMessage';
 import {
   getMainAppPreloadSnapshot,
@@ -41,8 +43,7 @@ import type { RootStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Splash'>;
 
-const STARTUP_ART = require('../../assets/editorial/startup-abstract-mosaic-v1.jpg');
-const BRAND_MARK = require('../../assets/formbae-mark-transparent.png');
+const STARTUP_ART = require('../../assets/editorial/startup-people-hero-v3.jpg');
 const LAUNCH_HANDOFF_MIN_MS = 520;
 
 const STARTUP_LINES = [
@@ -121,6 +122,7 @@ export function SplashScreen({ navigation }: Props) {
   const [motionPreference, setMotionPreference] =
     useState<MotionPreference>('unknown');
   const bridgeOpacity = useRef(new Animated.Value(1)).current;
+  const headerReveal = useRef(new Animated.Value(0)).current;
   const footerReveal = useRef(new Animated.Value(0)).current;
   const progressAnimation = useRef(new Animated.Value(0.08)).current;
   const entranceComplete = useRef(false);
@@ -163,8 +165,10 @@ export function SplashScreen({ navigation }: Props) {
 
     if (motionPreference === 'reduce' || entranceComplete.current) {
       bridgeOpacity.stopAnimation();
+      headerReveal.stopAnimation();
       footerReveal.stopAnimation();
       bridgeOpacity.setValue(0);
+      headerReveal.setValue(1);
       footerReveal.setValue(1);
       entranceComplete.current = true;
       return undefined;
@@ -175,6 +179,13 @@ export function SplashScreen({ navigation }: Props) {
         toValue: 0,
         duration: 220,
         delay: 90,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(headerReveal, {
+        toValue: 1,
+        duration: 280,
+        delay: 140,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
@@ -193,6 +204,7 @@ export function SplashScreen({ navigation }: Props) {
   }, [
     bridgeOpacity,
     footerReveal,
+    headerReveal,
     motionPreference,
   ]);
 
@@ -305,34 +317,59 @@ export function SplashScreen({ navigation }: Props) {
   }, [motionPreference, progress, progressAnimation]);
 
   return (
-    <View style={styles.screen}>
-      <Image
-        source={STARTUP_ART}
-        defaultSource={STARTUP_ART}
-        style={[styles.artwork, { top: insets.top + 84, bottom: insets.bottom + 160 }]}
-        resizeMode="contain"
-        fadeDuration={0}
-        accessible={false}
-      />
+    <ImageBackground
+      source={STARTUP_ART}
+      defaultSource={STARTUP_ART}
+      style={styles.screen}
+      imageStyle={styles.artwork}
+      resizeMode="cover"
+      fadeDuration={0}
+      accessible={false}
+    >
       <NativeImageWarmup
         key={imageWarmupGeneration}
         sources={imageWarmupSources}
         onComplete={completeImageWarmup}
+      />
+      <LinearGradient
+        colors={[
+          'rgba(5, 6, 9, 0.76)',
+          'rgba(5, 6, 9, 0.04)',
+          'rgba(5, 6, 9, 0.16)',
+          'rgba(5, 6, 9, 0.95)',
+        ]}
+        locations={[0, 0.24, 0.58, 1]}
+        style={styles.artworkShade}
+        pointerEvents="none"
       />
 
       <View
         style={[
           styles.content,
           {
-            paddingTop: insets.top + 20,
+            paddingTop: insets.top + spacing.md,
             paddingBottom: Math.max(insets.bottom + spacing.sm, spacing.lg),
           },
         ]}
       >
-        <View style={styles.header} accessible accessibilityRole="header" accessibilityLabel="FormBae">
-          <Image source={BRAND_MARK} style={styles.brandMark} resizeMode="contain" accessible={false} />
-          <Text style={styles.brandName} accessible={false}>FormBae</Text>
-        </View>
+        <Animated.View
+          style={[
+            styles.header,
+            {
+              opacity: headerReveal,
+              transform: [
+                {
+                  translateY: headerReveal.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-4, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <Logo height={38} showTagline={false} />
+        </Animated.View>
 
         <Animated.View
           style={[
@@ -405,6 +442,9 @@ export function SplashScreen({ navigation }: Props) {
         accessible={false}
         importantForAccessibility="no-hide-descendants"
       >
+        <View style={styles.launchBrand}>
+          <Logo height={48} showTagline={false} />
+        </View>
         <Text
           style={[
             styles.launchTagline,
@@ -414,7 +454,7 @@ export function SplashScreen({ navigation }: Props) {
           Train better form
         </Text>
       </Animated.View>
-    </View>
+    </ImageBackground>
   );
 }
 
@@ -424,8 +464,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   artwork: {
+    width: '100%',
+    height: '100%',
+  },
+  artworkShade: {
     position: 'absolute',
+    top: 0,
     right: 0,
+    bottom: 0,
     left: 0,
   },
   imageWarmup: {
@@ -450,29 +496,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   header: {
-    height: 44,
-    width: 200,
-    alignSelf: 'center',
+    minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  brandMark: { width: 36, height: 36 },
-  brandName: {
-    width: 156,
-    textAlign: 'center',
-    fontFamily: Platform.OS === 'ios' ? 'AvenirNext-DemiBold' : 'sans-serif-medium',
-    fontSize: 32,
-    lineHeight: 44,
-    color: colors.ink,
   },
   footer: {
     marginTop: 'auto',
   },
   artworkQuote: {
     maxWidth: 370,
-    fontSize: 24,
-    lineHeight: 30,
+    fontSize: 28,
+    lineHeight: 34,
     fontWeight: '700',
     letterSpacing: -0.45,
     color: colors.inkStrong,
@@ -489,7 +523,7 @@ const styles = StyleSheet.create({
   },
   statusSection: {
     width: '100%',
-    marginTop: spacing.md,
+    marginTop: spacing.xl,
   },
   stageRow: {
     flexDirection: 'row',
@@ -534,6 +568,14 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     zIndex: 10,
+    backgroundColor: colors.bg,
+  },
+  launchBrand: {
+    position: 'absolute',
+    top: '23%',
+    right: 0,
+    left: 0,
+    alignItems: 'center',
   },
   launchTagline: {
     position: 'absolute',

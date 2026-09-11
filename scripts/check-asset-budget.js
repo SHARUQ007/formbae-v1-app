@@ -8,9 +8,8 @@ const iosNativeAssetRoot = path.join(appRoot, 'ios', 'FormBae', 'Images.xcassets
 const androidNativeAssetRoot = path.join(appRoot, 'android', 'app', 'src', 'main', 'res');
 // Requested rotating library: 24 editorial photos, 18 scorecard thumbnails, 6 action thumbnails, 2 journal images and 84 SVGs.
 // Individual raster cap stays unchanged; no originals are bundled.
-// Bundled mosaic replaces startup photography; iOS also includes a native launch copy.
 const sharedAssetBudgetBytes = 5_300_000;
-const iosRasterBudgetBytes = 5_950_000;
+const iosRasterBudgetBytes = 5_850_000;
 const androidRasterBudgetBytes = 5_600_000;
 const singleRasterBudgetBytes = 220_000;
 

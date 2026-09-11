@@ -96,6 +96,8 @@ export function ProfileScreen({ navigation }: Props) {
   const cached = useMemo(() => peekCachedResource<MobileSettingsResponse>(CACHE_KEYS.profileSettings), []);
   const [cancelling, setCancelling] = useState(false);
   const [manageAccessOpen, setManageAccessOpen] = useState(false);
+  const [bodyArtworkWidth, setBodyArtworkWidth] = useState(0);
+  const [planArtworkWidth, setPlanArtworkWidth] = useState(0);
   const [selectedGym, setSelectedGym] = useState<GymPlace | null>(null);
   const [gymLoading, setGymLoading] = useState(false);
   const hasFocusedRef = useRef(false);
@@ -288,10 +290,18 @@ export function ProfileScreen({ navigation }: Props) {
               <Feather name="edit-3" size={18} color={colors.inkMuted} />
             </TouchableOpacity>
           </View>
-          <View style={[styles.bodyArtworkFrame, largeText && styles.bodyArtworkFrameLarge]}>
+          <View
+            style={[styles.bodyArtworkFrame, largeText && styles.bodyArtworkFrameLarge]}
+            onLayout={({ nativeEvent }) => setBodyArtworkWidth(nativeEvent.layout.width)}
+          >
             <Image
               source={bodyArtwork}
-              style={styles.bodyArtwork}
+              defaultSource={bodyArtwork}
+              fadeDuration={0}
+              style={[styles.bodyArtwork, {
+                width: bodyArtworkWidth || availableArtworkWidth,
+                height: (bodyArtworkWidth || availableArtworkWidth) * 667 / 1000,
+              }]}
               resizeMode="cover"
               accessible={false}
               accessibilityIgnoresInvertColors
@@ -357,10 +367,18 @@ export function ProfileScreen({ navigation }: Props) {
 
         <SectionHeading title="Plan" action="Edit" onAction={editProfile} />
         <View style={styles.planCard} testID="plan-and-gym-card">
-          <View style={[styles.planArtworkFrame, { height: artworkHeight }]}>
+          <View
+            style={[styles.planArtworkFrame, { height: artworkHeight }]}
+            onLayout={({ nativeEvent }) => setPlanArtworkWidth(nativeEvent.layout.width)}
+          >
             <Image
               source={planArtwork}
-              style={styles.planArtwork}
+              defaultSource={planArtwork}
+              fadeDuration={0}
+              style={[styles.planArtwork, {
+                width: planArtworkWidth || availableArtworkWidth,
+                height: artworkHeight,
+              }]}
               resizeMode="cover"
               accessible={false}
               accessibilityIgnoresInvertColors
@@ -616,11 +634,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
-    width: '100%',
-    // Preserve the source proportions and anchor its top edge. A percentage
-    // height with cover would crop the head as the card gets shorter.
-    height: undefined,
-    aspectRatio: 1000 / 667,
+    // Dimensions come from the card layout, preserving the photo's top edge.
   },
   bodyArtworkShade: {
     position: 'absolute',
@@ -729,8 +743,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
-    width: '100%',
-    height: '100%',
   },
   planArtworkShade: {
     position: 'absolute',

@@ -955,6 +955,22 @@ function WorkoutDashboardScreen({ navigation, route }: Props) {
 
             <CoachingFeature onPress={() => navigation.navigate('Coach', { initialView: 'browse' })} />
 
+            <TouchableOpacity onPress={() => navigation.navigate('WorkoutHistory')} activeOpacity={0.85} style={[styles.switchPlanButton, styles.historyButton]} accessibilityRole="button" accessibilityLabel="My workout history">
+              <View style={styles.switchPlanIcon}>
+                <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" accessible={false}>
+                  <Path d="M8 3v4m8-4v4M4 10h16M6 5h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" stroke={colors.goldMuted} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
+                  <Path d="m8 15 2 2 5-4" stroke={colors.goldMuted} strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" />
+                </Svg>
+              </View>
+              <View style={styles.switchPlanText}>
+                <Text style={styles.switchPlanTitle}>My workout history</Text>
+                <Text style={styles.switchPlanMeta}>Your calendar, streaks & milestones</Text>
+              </View>
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" accessible={false}>
+                <Path d="m9 6 6 6-6 6" stroke={colors.inkSubtle} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+              </Svg>
+            </TouchableOpacity>
+
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={openPlanSwitcher}
@@ -1592,9 +1608,10 @@ const styles = StyleSheet.create({
   coachingFeatureActionText: { ...typography.caption, color: colors.onPrimary, fontWeight: '900' },
   trainerCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.md, padding: spacing.md },
   trainerPhotoWrap: {
-    width: 58,
-    height: 58,
-    borderRadius: 22,
+    width: 76,
+    height: 76,
+    flexShrink: 0,
+    borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: colors.panelRaised,
     borderWidth: 1,
@@ -1722,6 +1739,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  historyButton: { borderBottomWidth: 0, marginBottom: -spacing.md },
   switchPlanButton: {
     marginTop: spacing.md,
     flexDirection: 'row',

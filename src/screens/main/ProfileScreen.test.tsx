@@ -42,13 +42,21 @@ describe('Profile subscription disclosure', () => {
     const bodyArtwork = tree!.root.findByProps({ testID: 'body-profile-artwork' });
     const planArtwork = tree!.root.findByProps({ testID: 'plan-profile-artwork' });
     expect(bodyArtwork.props.source).not.toEqual(planArtwork.props.source);
+    act(() => {
+      bodyArtwork.parent!.props.onLayout({ nativeEvent: { layout: { width: 350 } } });
+      planArtwork.parent!.props.onLayout({ nativeEvent: { layout: { width: 350 } } });
+    });
     expect(StyleSheet.flatten(bodyArtwork.props.style)).toEqual(expect.objectContaining({
       top: 0,
-      width: '100%',
-      height: undefined,
-      aspectRatio: 1000 / 667,
+      width: 350,
+      height: 350 * 667 / 1000,
     }));
-    expect(StyleSheet.flatten(planArtwork.props.style)).toEqual(expect.objectContaining({ width: '100%', height: '100%' }));
+    expect(StyleSheet.flatten(planArtwork.props.style)).toEqual(expect.objectContaining({
+      width: 350,
+      height: expect.any(Number),
+    }));
+    expect(bodyArtwork.props.defaultSource).toEqual(bodyArtwork.props.source);
+    expect(planArtwork.props.defaultSource).toEqual(planArtwork.props.source);
 
     expect(tree!.root.findAllByProps({ children: 'Cancel subscription' })).toHaveLength(0);
 

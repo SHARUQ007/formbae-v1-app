@@ -16,6 +16,7 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, Card } from '../../components/Card';
 import { Avatar } from '../../components/Avatar';
+import { CoachPlanSummary } from '../../components/CoachPlanSummary';
 import { Badge } from '../../components/Badge';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
@@ -474,12 +475,7 @@ function CoachHero({ coach, ai, onImageError }: { coach: CoachOption; ai: boolea
         </View>
         <Badge label={coach.tier} tone="accent" icon="award" />
       </View>
-      {ai ? (
-        <View style={styles.aiPromise}>
-          <Feather name="zap" size={18} color={colors.goldMuted} />
-          <Text style={styles.aiPromiseText}>Plans from your logs, feedback, and next two-week schedule.</Text>
-        </View>
-      ) : null}
+      {ai ? <CoachPlanSummary /> : null}
     </View>
   );
 }
@@ -903,11 +899,11 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
-  heroImage: { width: 64, height: 64, borderRadius: 22, backgroundColor: colors.panelMuted },
+  heroImage: { width: 64, height: 64, borderRadius: 12, backgroundColor: colors.panelMuted },
   aiPhotoFallback: {
     width: 64,
     height: 64,
-    borderRadius: 22,
+    borderRadius: 12,
     backgroundColor: colors.panelMuted,
     borderWidth: 1,
     borderColor: colors.borderStrong,
@@ -917,17 +913,6 @@ const styles = StyleSheet.create({
   heroText: { flex: 1 },
   kicker: { ...typography.overline, color: colors.gold, textTransform: 'uppercase' },
   heroName: { ...typography.title, color: colors.ink, marginTop: 2 },
-  aiPromise: {
-    minHeight: 50,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  aiPromiseText: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 18, fontWeight: '600' },
   screenHeader: {
     minHeight: 52,
     flexDirection: 'row',

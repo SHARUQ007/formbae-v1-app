@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "assets:check": "node scripts/check-asset-budget.js",
     "check": "npm run assets:check && npm run lint && npm run typecheck && npm test -- --runInBand",
-    "audit:exercise-knowledge": "npm --prefix ../frontend run audit:exercise-knowledge --"
+    "audit:exercise-knowledge": "npm --prefix ../frontend run audit:exercise-knowledge --",
+    "ios:release": "react-native run-ios --mode Release"
   },
   "dependencies": {
     "@notifee/react-native": "^9.1.8",

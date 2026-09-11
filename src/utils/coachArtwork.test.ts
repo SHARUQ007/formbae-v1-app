@@ -4,9 +4,9 @@ import { setAuthToken } from '../services/apiClient';
 describe('getCoachArtworkSource', () => {
   afterEach(() => setAuthToken(null));
 
-  it('uses the bundled gold artwork for Ava even when the legacy green URL is returned', () => {
+  it('uses the bundled coach portrait for Ava even when the legacy green URL is returned', () => {
     expect(getCoachArtworkSource({ name: 'Ava', photoUrl: '/ai-questionnaire/goal-baseline.webp' })).toEqual(
-      expect.objectContaining({ testUri: expect.stringContaining('ava-coach-gold.jpg') }),
+      expect.objectContaining({ testUri: expect.stringContaining('ava-coach-portrait-v2.jpg') }),
     );
   });
 

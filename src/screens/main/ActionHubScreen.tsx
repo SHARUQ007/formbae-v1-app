@@ -50,7 +50,7 @@ import {
   getAccountabilityTaskLabel,
   accountabilityArtworkFrame,
 } from '../../utils/accountabilityArtwork';
-import { getAccountabilityBaeArtwork, getAccountabilityBaeModeCaption } from '../../utils/accountabilityBaeArtwork';
+import { getAccountabilityBaeArtwork, getAccountabilityBaeModeCaption, getPartnerState } from '../../utils/accountabilityBaeArtwork';
 import type { MainTabParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
@@ -272,7 +272,7 @@ export function ActionHubScreen({ navigation }: Props) {
     if (baeBusy) return;
     setBaeBusy(true);
     try {
-      if (accountabilityBae?.status === 'matched') {
+      if (accountabilityBae?.status === 'matched' || (getPartnerState(accountabilityBae?.status, accountabilityBae?.preference) === 'matching' && preference === 'friend')) {
         applyBaeSummary(await leaveAccountabilityBae());
       }
       applyBaeSummary(await startAccountabilityBaeMatch(preference));
@@ -292,11 +292,32 @@ export function ActionHubScreen({ navigation }: Props) {
   };
 
   const startBaeMatch = (preference: 'male' | 'female' | 'friend') => {
+    if (baeBusy) return;
+    if (getPartnerState(accountabilityBae?.status, accountabilityBae?.preference) === 'matching' && preference === 'friend') {
+      Alert.alert('Invite a friend instead?', 'This cancels your current matching and creates a friend invite.', [
+        { text: 'Keep matching', style: 'cancel' },
+        { text: 'Invite a friend', onPress: () => { runBaeMatch('friend').catch(() => undefined); } },
+      ]);
+      return;
+    }
     if (accountabilityBae?.status !== 'matched') { runBaeMatch(preference).catch(() => undefined); return; }
     Alert.alert('Invite a friend instead?', 'This ends your current match and deletes its shared photos. Any leaderboard connection stays. You can then share a partner code with your friend.', [
       { text: 'Keep my partner', style: 'cancel' },
       { text: 'Switch to a friend', onPress: () => { runBaeMatch(preference).catch(() => undefined); } },
     ]);
+  };
+
+  const cancelBaeMatch = async () => {
+    if (baeBusy) return;
+    setBaeBusy(true);
+    try {
+      applyBaeSummary(await leaveAccountabilityBae());
+      setFriendCode('');
+    } catch (error) {
+      Alert.alert('Could not cancel matching', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setBaeBusy(false);
+    }
   };
 
   const joinFriend = async () => {
@@ -479,7 +500,7 @@ export function ActionHubScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.accent} />}
-        contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + spacing.xl }]}
+        contentContainerStyle={[styles.scroll, { paddingBottom: tabBarHeight + (activeView === 'bae' ? spacing.sm : spacing.xl) }]}
       >
         <View style={[styles.pageHeader, compactLayout && styles.pageHeaderCompact]}>
           <View style={styles.pageHeaderCopy}>
@@ -508,6 +529,8 @@ export function ActionHubScreen({ navigation }: Props) {
         <AccountabilityModeSwitch
           activeView={activeView}
           partnerStatus={accountabilityBae?.status}
+          partnerPreference={accountabilityBae?.preference}
+          partnerBusy={baeBusy}
           partnerLoading={baeLoading && !accountabilityBae}
           partnerUnavailable={baeUnavailable && !accountabilityBae}
           compact={compactLayout}
@@ -544,6 +567,7 @@ export function ActionHubScreen({ navigation }: Props) {
               friendCode={friendCode}
               onFriendCodeChange={setFriendCode}
               onStart={startBaeMatch}
+              onCancelMatch={cancelBaeMatch}
               onJoinFriend={joinFriend}
               onShareFriendCode={shareFriendCode}
               onSubmitProof={openProofPicker}
@@ -562,15 +586,17 @@ export function ActionHubScreen({ navigation }: Props) {
 
 type AccountabilityView = 'today' | 'bae';
 
-export function AccountabilityModeSwitch({ activeView, partnerStatus, partnerLoading, partnerUnavailable, compact, onChange }: {
+export function AccountabilityModeSwitch({ activeView, partnerStatus, partnerPreference, partnerBusy = false, partnerLoading, partnerUnavailable, compact, onChange }: {
   activeView: AccountabilityView;
   partnerStatus?: AccountabilityBaeSummary['status'];
+  partnerPreference?: AccountabilityBaeSummary['preference'];
+  partnerBusy?: boolean;
   partnerLoading: boolean;
   partnerUnavailable: boolean;
   compact: boolean;
   onChange: (view: AccountabilityView) => void;
 }) {
-  const partnerCaption = partnerUnavailable ? 'Unavailable' : partnerLoading ? 'Loading' : getAccountabilityBaeModeCaption(partnerStatus);
+  const partnerCaption = partnerUnavailable ? 'Unavailable' : partnerBusy ? 'Updating' : partnerLoading ? 'Loading' : getAccountabilityBaeModeCaption(partnerStatus, partnerPreference);
   return (
     <View style={styles.accountabilityTabs} accessibilityRole="tablist" accessibilityLabel="Accountability views">
       <AccountabilityModeOption
@@ -641,16 +667,18 @@ function BaeLoadingState() {
   );
 }
 
-function BaeArtworkHero({ eyebrow, title, body, loading = false }: {
+function BaeArtworkHero({ eyebrow, title, body, loading = false, compact = false, expanded = false }: {
   eyebrow: string;
   title: string;
   body: string;
   loading?: boolean;
+  compact?: boolean;
+  expanded?: boolean;
 }) {
   return (
-    <ImageBackground source={getAccountabilityBaeArtwork('inactive')} defaultSource={getAccountabilityBaeArtwork('inactive')} fadeDuration={0} style={styles.baeArtworkHero} imageStyle={styles.baeArtworkImage} resizeMode="cover">
+    <ImageBackground source={getAccountabilityBaeArtwork('inactive')} defaultSource={getAccountabilityBaeArtwork('inactive')} fadeDuration={0} style={[styles.baeArtworkHero, compact && styles.baeArtworkCompact, expanded && styles.baeArtworkExpanded]} imageStyle={styles.baeArtworkImage} resizeMode={expanded ? "cover" : "contain"}>
       <LinearGradient colors={['rgba(4,5,8,0.98)', 'rgba(4,5,8,0.82)', 'rgba(4,5,8,0.08)']} locations={[0, 0.58, 1]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
-      <View style={styles.baeArtworkContent}>
+      <View style={[styles.baeArtworkContent, compact && styles.baeArtworkContentCompact, expanded && styles.baeArtworkContentExpanded]}>
         <View style={styles.baeArtworkEyebrowRow}>
           {loading ? <ActivityIndicator size="small" color={colors.gold} /> : <View style={styles.baeArtworkDot} />}
           <Text style={styles.baeArtworkEyebrow}>{eyebrow}</Text>
@@ -672,6 +700,7 @@ type AccountabilityBaeCardProps = {
   friendCode: string;
   onFriendCodeChange: (value: string) => void;
   onStart: (preference: 'male' | 'female' | 'friend') => void;
+  onCancelMatch: () => void;
   onJoinFriend: () => void;
   onShareFriendCode: () => void;
   onSubmitProof: () => void;
@@ -680,11 +709,23 @@ type AccountabilityBaeCardProps = {
   onViewTrophies: () => void;
 };
 
-export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, friendCode, onFriendCodeChange, onStart, onJoinFriend, onShareFriendCode, onSubmitProof, onRetry, onViewTrophies, onViewPartner }: AccountabilityBaeCardProps) {
+export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, friendCode, onFriendCodeChange, onStart, onCancelMatch, onJoinFriend, onShareFriendCode, onSubmitProof, onRetry, onViewTrophies, onViewPartner }: AccountabilityBaeCardProps) {
   const data = normalizeAccountabilityBaeSummary(rawData);
+  const partnerState = getPartnerState(data?.status, data?.preference);
   const [editingPreferences, setEditingPreferences] = useState(false);
   useEffect(() => { setEditingPreferences(false); }, [data?.status]);
-  const showingPreferences = data?.status === 'waiting' && editingPreferences;
+  const confirmCancelMatch = () => {
+    if (busy) return;
+    const isInvite = data?.preference === 'friend';
+    Alert.alert(isInvite ? 'Cancel your invite?' : 'Stop matching?', isInvite
+      ? 'This ends your current friend invite. You can create a new one anytime.'
+      : 'We’ll stop searching for a training partner. You can start again anytime.', [
+      { text: isInvite ? 'Keep invite' : 'Keep searching', style: 'cancel' },
+      { text: isInvite ? 'Cancel invite' : 'Stop matching', style: 'destructive', onPress: onCancelMatch },
+    ]);
+  };
+  const cancelMatchButton = <PrimaryButton title="Cancel matching" icon="x-circle" variant="secondary" onPress={confirmCancelMatch} disabled={busy} style={styles.baeCancelButton} />;
+  const showingPreferences = (partnerState === 'invite' || partnerState === 'matching') && editingPreferences;
   const selectPreference = (preference: 'male' | 'female' | 'friend') => {
     if (busy) return;
     setEditingPreferences(false);
@@ -704,7 +745,7 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
       : data.status === 'locked'
         ? 'Unlock shared daily challenges'
         : 'A little support goes a long way';
-  const header = (
+  const header = partnerState === 'invite' && !showingPreferences ? null : (
     <View style={styles.baeHeader}>
       <View style={styles.baeHeaderCopy}>
         <Text style={styles.baeTitle}>Partner check-in</Text>
@@ -750,9 +791,10 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
       <View style={styles.partnerSection}>
         {header}
         <BaeArtworkHero
+          expanded
           eyebrow={busy ? 'SETTING UP' : showingPreferences ? 'MATCH PREFERENCES' : 'PARTNER MODE'}
-          title={busy ? 'Saving your preference' : showingPreferences ? 'Choose your connection' : 'Better together'}
-          body={busy ? 'Getting your shared space ready.' : showingPreferences ? data.preference === 'friend' ? 'Your current invite stays ready until you choose another option.' : 'Your current auto-match stays active until you choose another option.' : 'Choose how you’d like to connect.'}
+          title={busy ? 'Saving your preference' : 'Get fit together'}
+          body={busy ? 'Getting your shared space ready.' : 'Fitness is better with a friend.'}
           loading={busy}
         />
         <Text style={styles.baeChoicePrompt}>Match with</Text>
@@ -762,14 +804,12 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
           <BaePreference kind="friend" label="Friend" detail="Use a code" compact={compact} onPress={() => selectPreference('friend')} disabled={busy} />
         </View>
         {busy ? <ActivityIndicator color={colors.gold} /> : null}
-        {showingPreferences ? <PrimaryButton title={data.preference === 'friend' ? 'Back to your invite' : 'Back to current match'} variant="ghost" size="sm" onPress={() => setEditingPreferences(false)} disabled={busy} style={styles.baeTextButton} /> : null}
-        <View style={styles.baeSafety}><Feather name="lock" size={14} color={colors.inkMuted} /><Text style={styles.baeSafetyText}>Only your first name and initial are shown. Photos unlock after midnight only if you both check in before the day ends. Showing your face is optional.</Text></View>
       </View>
     );
   }
 
-  if (data.status === 'waiting') {
-    const friendMode = data.preference === 'friend';
+  if (partnerState === 'invite' || partnerState === 'matching') {
+    const friendMode = partnerState === 'invite';
     const inviteCodeReady = Boolean(data.inviteCode);
     if (!friendMode) {
       return (
@@ -781,6 +821,7 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
             onChangePreference={() => setEditingPreferences(true)}
             onInviteFriend={() => onStart('friend')}
           />
+          {cancelMatchButton}
         </View>
       );
     }
@@ -788,23 +829,24 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
       <View style={styles.partnerSection}>
         {header}
         <BaeArtworkHero
-          eyebrow="INVITE READY"
-          title="Bring a friend along"
-          body="One code. Shared challenges. A place on each other’s leaderboard."
+          eyebrow="FRIEND INVITE"
+          title="Invite a friend"
+          body="Share your code to connect."
+          compact
           loading={busy}
         />
         {friendMode ? (
           <>
             <View style={styles.friendInviteBox}>
-              <View style={styles.friendCodeCopy}><Text style={styles.friendCodeLabel}>PARTNER CODE</Text><Text style={styles.friendCodeValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{inviteCodeReady ? data.inviteCode : 'Preparing…'}</Text></View>
+              <View style={styles.friendCodeCopy}><Text style={styles.friendCodeLabel}>YOUR CODE</Text><Text style={styles.friendCodeValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{inviteCodeReady ? data.inviteCode : 'Preparing…'}</Text></View>
               <PrimaryButton title="Invite" icon="share-2" size="sm" onPress={onShareFriendCode} disabled={!inviteCodeReady || busy} style={styles.friendShareButton} />
             </View>
-            <Text style={styles.friendJoinLabel}>Already have their code?</Text>
+            <Text style={styles.friendJoinLabel}>Or use their code</Text>
             <View style={styles.friendJoinRow}>
               <TextInput
                 value={friendCode}
                 onChangeText={(value) => onFriendCodeChange(value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                placeholder="ENTER PARTNER CODE"
+                placeholder="Partner code"
                 placeholderTextColor={colors.inkSubtle}
                 autoCapitalize="characters"
                 autoCorrect={false}
@@ -816,8 +858,7 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
             </View>
           </>
         ) : null}
-
-        <PrimaryButton title="Back to match options" variant="ghost" size="sm" onPress={() => setEditingPreferences(true)} disabled={busy} style={styles.baeTextButton} />
+        {cancelMatchButton}
       </View>
     );
   }
@@ -835,7 +876,7 @@ export function AccountabilityBaeCard({ data: rawData, loading, compact, busy, f
   return (
     <View style={styles.partnerSection}>
       {header}
-      <ImageBackground source={getAccountabilityBaeArtwork('matched')} defaultSource={getAccountabilityBaeArtwork('matched')} fadeDuration={0} style={styles.baeConnectedHero} imageStyle={styles.baeArtworkImage} resizeMode="cover">
+      <ImageBackground source={getAccountabilityBaeArtwork('matched')} defaultSource={getAccountabilityBaeArtwork('matched')} fadeDuration={0} style={styles.baeConnectedHero} imageStyle={styles.baeArtworkImage} resizeMode="contain">
         <LinearGradient colors={['rgba(4,5,8,0.98)', 'rgba(4,5,8,0.74)', 'rgba(4,5,8,0.06)']} locations={[0, 0.52, 1]} start={{ x: 0, y: 0.5 }} end={{ x: 1, y: 0.5 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
         <View style={styles.baeConnectedContent}>
           <View style={styles.baeConnectedTop}>
@@ -1124,12 +1165,16 @@ const styles = StyleSheet.create({
   todayTaskCardDetail: { ...typography.caption, color: colors.inkMuted },
   todayTaskCardAction: { alignSelf: 'flex-start', minWidth: 104, minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: radius.pill, backgroundColor: colors.gold, paddingHorizontal: 18, paddingVertical: 10, marginTop: 8 },
   todayTaskCardActionText: { ...typography.label, color: colors.onPrimary, fontWeight: '800' },
-  partnerSection: { paddingBottom: spacing.sm, marginTop: spacing.lg },
+  partnerSection: { flexGrow: 1, flexShrink: 0, paddingBottom: spacing.sm, marginTop: spacing.lg },
   baeHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, marginBottom: spacing.sm, paddingHorizontal: 2 },
   baeHeaderCopy: { flex: 1, minWidth: 0 },
   baeTitle: { ...typography.subtitle, color: colors.ink, fontWeight: '700' },
   baeHeaderCaption: { ...typography.caption, color: colors.inkMuted, marginTop: 2 },
-  baeArtworkHero: { minHeight: 226, overflow: 'hidden', borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.lg, backgroundColor: colors.panel },
+  baeArtworkHero: { flexGrow: 1, flexShrink: 0, minHeight: 226, overflow: 'hidden', borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.lg, backgroundColor: colors.panel },
+  baeArtworkExpanded: { minHeight: 310 },
+  baeArtworkContentExpanded: { minHeight: 310 },
+  baeArtworkCompact: { minHeight: 166 },
+  baeArtworkContentCompact: { minHeight: 166, gap: spacing.md },
   baeArtworkImage: { borderRadius: radius.lg },
   baeArtworkContent: { flex: 1, minHeight: 226, justifyContent: 'space-between', padding: spacing.md },
   baeArtworkEyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
@@ -1172,11 +1217,11 @@ const styles = StyleSheet.create({
   friendShareButton: { minWidth: 92 },
   friendJoinLabel: { ...typography.caption, color: colors.inkMuted, fontWeight: '700', marginTop: spacing.md },
   friendJoinRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-  friendCodeInput: { flex: 1, height: 48, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panelMuted, color: colors.ink, fontSize: 14, fontWeight: '900', letterSpacing: 1.5, textAlign: 'center', paddingHorizontal: spacing.sm },
+  friendCodeInput: { flex: 1, height: 48, borderRadius: radius.md, borderWidth: 1, borderColor: colors.borderStrong, backgroundColor: colors.panelMuted, color: colors.ink, fontSize: 14, fontWeight: '600', letterSpacing: 0.5, textAlign: 'left', paddingHorizontal: spacing.md },
   friendJoinButton: { minWidth: 92, minHeight: 48 },
-  baeTextButton: { alignSelf: 'center', marginTop: spacing.sm },
+  baeCancelButton: { marginTop: spacing.sm, borderRadius: 16, backgroundColor: colors.bg, borderColor: colors.border },
   baeDisabled: { opacity: 0.45 },
-  baeConnectedHero: { minHeight: 238, overflow: 'hidden', borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.lg, backgroundColor: colors.panel },
+  baeConnectedHero: { flexGrow: 1, flexShrink: 0, minHeight: 238, overflow: 'hidden', borderWidth: 1, borderColor: colors.borderStrong, borderRadius: radius.lg, backgroundColor: colors.panel },
   baeConnectedContent: { flex: 1, minHeight: 238, justifyContent: 'space-between', padding: spacing.md },
   baeConnectedTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
   baeConnectedStatus: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: radius.pill, borderWidth: 1, borderColor: 'rgba(240,206,120,0.35)', backgroundColor: 'rgba(5,6,10,0.78)', paddingHorizontal: spacing.sm },

@@ -1,8 +1,13 @@
 import React from 'react';
-import { Alert, Image, Text } from 'react-native';
+import { AccessibilityInfo, Alert, Image, Text } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import type { AccountabilityBaeSummary } from '../../types/api';
 import { AccountabilityBaeCard, AccountabilityModeSwitch } from './ActionHubScreen';
+
+beforeEach(() => {
+  jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
+});
+afterEach(() => { jest.restoreAllMocks(); });
 
 const noop = () => undefined;
 const unlockedAccess = { unlocked: true, override: 'default' as const, trophyScore: 50, trophyThreshold: 50, trophiesRemaining: 0 };
@@ -23,6 +28,7 @@ async function renderCard(data: AccountabilityBaeSummary | null, overrides: Part
         friendCode=""
         onFriendCodeChange={noop}
         onStart={noop}
+        onCancelMatch={noop}
         onJoinFriend={noop}
         onShareFriendCode={noop}
         onSubmitProof={noop}
@@ -71,14 +77,14 @@ describe('Accountability Bae UI states', () => {
     expect(onChange).toHaveBeenCalledWith('today');
   });
 
-  it('keeps partner selection compact and discloses reciprocal privacy before matching', async () => {
+  it('keeps partner selection compact without the extra footer', async () => {
     const onStart = jest.fn();
     const renderer = await renderCard({ status: 'inactive', access: unlockedAccess, preference: '', inviteCode: '' }, { onStart });
     const text = copy(renderer);
-    expect(text).toContain('Better together');
-    expect(text).toContain('Only your first name and initial are shown.');
-    expect(text).toContain('Photos unlock after midnight');
-    expect(text).toContain('Showing your face is optional');
+    expect(text).toContain('Get fit together');
+    expect(text).not.toContain('Only your first name and initial are shown.');
+    expect(text).not.toContain('Photos unlock after midnight');
+    expect(text).not.toContain('Showing your face is optional');
     renderer.root.findByProps({ accessibilityLabel: 'Female. Auto-match' }).props.onPress();
     expect(onStart).toHaveBeenCalledWith('female');
   });
@@ -187,9 +193,9 @@ it('keeps both trophy counts and partnership visible when no challenge is open',
 it('keeps a friend invite prominent while automatic matching is active without simulated progress', async () => {
   const onStart = jest.fn();
   const renderer = await renderCard({ status: 'waiting', access: unlockedAccess, preference: 'female', inviteCode: '' }, { onStart });
-  expect(copy(renderer)).toContain('Preference saved');
+  expect(copy(renderer)).toContain('Looking for');
   expect(copy(renderer)).toContain('Finding your fit');
-  expect(copy(renderer)).toContain('Meet your partner');
+  expect(copy(renderer)).toContain('Your training partner will appear here.');
   expect(copy(renderer)).not.toContain('MATCHING NOW');
   renderer.root.findByProps({ title: 'Invite a friend instead' }).props.onPress();
   expect(onStart).toHaveBeenCalledWith('friend');
@@ -216,21 +222,72 @@ it('honours an admin threshold and hides all matching actions while locked', asy
 });
 
 
-it.each(['female', 'friend'] as const)('opens preferences without cancelling the current %s connection', async preference => {
+it.each(['female'] as const)('opens preferences without cancelling the current %s connection', async preference => {
   const onStart = jest.fn();
   const alert = jest.spyOn(Alert, 'alert');
   const renderer = await renderCard({ status: 'waiting', access: unlockedAccess, preference, inviteCode: 'FRIEND123' }, { onStart });
   await ReactTestRenderer.act(() => {
-    if (preference === 'friend') renderer.root.findByProps({ title: 'Back to match options' }).props.onPress();
-    else renderer.root.findByProps({ accessibilityLabel: 'Change match preference' }).props.onPress();
+    renderer.root.findByProps({ accessibilityLabel: 'Change match preference' }).props.onPress();
   });
-  expect(copy(renderer)).toContain('Choose your connection');
-  expect(copy(renderer)).toContain(preference === 'friend' ? 'Your current invite stays ready' : 'Your current auto-match stays active');
+  expect(copy(renderer)).toContain('Get fit together');
+  expect(copy(renderer)).toContain('Fitness is better with a friend.');
   expect(onStart).not.toHaveBeenCalled();
   expect(alert).not.toHaveBeenCalled();
-  await ReactTestRenderer.act(() => renderer.root.findByProps({ title: preference === 'friend' ? 'Back to your invite' : 'Back to current match' }).props.onPress());
-  expect(copy(renderer)).toContain(preference === 'friend' ? 'FRIEND123' : 'Finding your fit');
-  expect(copy(renderer)).not.toContain('Choose your connection');
-  expect(onStart).not.toHaveBeenCalled();
+  expect(copy(renderer)).not.toContain('Back to your invite');
   alert.mockRestore();
+});
+
+it.each(['female', 'friend'] as const)('omits redundant navigation buttons for %s', async preference => {
+  const renderer = await renderCard({ status: 'waiting', access: unlockedAccess, preference, inviteCode: 'FRIEND123' });
+  for (const title of ['Back to match options', 'Back to your invite']) {
+    expect(renderer.root.findAllByProps({ title })).toHaveLength(0);
+  }
+  expect(copy(renderer)).not.toContain('Only your first name and initial');
+});
+
+it.each(['male', 'female'] as const)('confirms cancellation from %s', async state => {
+  const onCancelMatch = jest.fn();
+  const alert = jest.spyOn(Alert, 'alert');
+  const renderer = await renderCard({ status: 'waiting', access: unlockedAccess, preference: state, inviteCode: 'FRIEND123' }, { onCancelMatch });
+  const buttons = renderer.root.findAllByProps({ title: 'Cancel matching' });
+  expect(buttons).toHaveLength(1);
+  await ReactTestRenderer.act(() => buttons[0].props.onPress());
+  expect(onCancelMatch).not.toHaveBeenCalled();
+  const choices = alert.mock.calls[0][2]!;
+  expect(choices[0].style).toBe('cancel');
+  await ReactTestRenderer.act(() => choices[1].onPress?.());
+  expect(onCancelMatch).toHaveBeenCalledTimes(1);
+  alert.mockRestore();
+});
+
+it('confirms before cancelling a friend invite', async () => {
+  const onCancelMatch = jest.fn();
+  const alert = jest.spyOn(Alert, 'alert');
+  const renderer = await renderCard({ status: 'waiting', access: unlockedAccess, preference: 'friend', inviteCode: 'FRIEND123' }, { onCancelMatch });
+  expect(renderer.root.findAllByProps({ title: 'Back' })).toHaveLength(0);
+  const buttons = renderer.root.findAllByProps({ title: 'Cancel matching' });
+  expect(buttons).toHaveLength(1);
+  await ReactTestRenderer.act(() => buttons[0].props.onPress());
+  expect(onCancelMatch).not.toHaveBeenCalled();
+  const choices = alert.mock.calls[0][2]!;
+  expect(choices[0].style).toBe('cancel');
+  expect(choices[1].style).toBe('destructive');
+  await ReactTestRenderer.act(() => choices[1].onPress?.());
+  expect(onCancelMatch).toHaveBeenCalledTimes(1);
+  alert.mockRestore();
+});
+
+it('updates the toggle when a search becomes an invite or a connected partner', async () => {
+  let renderer!: ReactTestRenderer.ReactTestRenderer;
+  const props = { activeView: 'bae' as const, partnerStatus: 'waiting' as const, partnerPreference: 'female' as const, partnerLoading: false, partnerUnavailable: false, compact: false, onChange: noop };
+  await ReactTestRenderer.act(() => { renderer = ReactTestRenderer.create(<AccountabilityModeSwitch {...props} />); });
+  expect(copy(renderer)).toContain('Partner. Matching');
+  await ReactTestRenderer.act(() => renderer.update(<AccountabilityModeSwitch {...props} partnerBusy />));
+  expect(copy(renderer)).toContain('Partner. Updating');
+  await ReactTestRenderer.act(() => renderer.update(<AccountabilityModeSwitch {...props} partnerPreference="friend" />));
+  expect(copy(renderer)).toContain('Partner. Invite a friend');
+  await ReactTestRenderer.act(() => renderer.update(<AccountabilityModeSwitch {...props} partnerStatus="matched" />));
+  expect(copy(renderer)).toContain('Partner. Connected');
+  await ReactTestRenderer.act(() => renderer.update(<AccountabilityModeSwitch {...props} partnerStatus="inactive" />));
+  expect(copy(renderer)).toContain('Partner. Train together');
 });

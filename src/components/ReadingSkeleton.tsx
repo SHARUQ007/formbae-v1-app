@@ -13,9 +13,9 @@ export function ReadingSkeleton({ compact = false }: { compact?: boolean }) {
 }
 const styles = StyleSheet.create({
   list: { gap: 12 },
-  card: { borderRadius: 20, overflow: 'hidden', backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border },
+  card: { borderRadius: 16, overflow: 'hidden', backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border },
   compact: { flexDirection: 'row', alignItems: 'center', paddingRight: 12 },
-  cover: { height: 150, backgroundColor: colors.panelRaised },
+  cover: { width: '100%', aspectRatio: 2.35, backgroundColor: colors.panelRaised },
   copy: { padding: 16, gap: 10, flex: 1 },
   line: { height: 12, borderRadius: 4, backgroundColor: colors.panelRaised },
   short: { height: 8, width: '45%', borderRadius: 4, backgroundColor: colors.panelRaised },

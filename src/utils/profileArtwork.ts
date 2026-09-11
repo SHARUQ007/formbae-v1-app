@@ -1,7 +1,7 @@
-import type { ImageSourcePropType } from 'react-native';
+import type { ImageRequireSource } from 'react-native';
 import { resolveBodyGender, type BodyGender } from './weeklyMuscles';
 
-type GenderedArtwork = Record<BodyGender, ImageSourcePropType>;
+type GenderedArtwork = Record<BodyGender, ImageRequireSource>;
 
 const BODY_PROFILE_ARTWORK: GenderedArtwork = {
   female: require('../assets/editorial/profile-body-v2-female.jpg'),
