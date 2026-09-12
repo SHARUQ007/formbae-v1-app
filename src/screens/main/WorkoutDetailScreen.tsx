@@ -36,6 +36,7 @@ import {
 } from '../../store/workoutStore';
 import { buildCompletedExercises, isTimedWorkoutTarget } from '../../store/workoutCompletion';
 import { WorkoutRestDock } from '../../components/WorkoutRestDock';
+import { WorkoutSessionArtwork } from '../../components/WorkoutSessionArtwork';
 import { useRestTimer } from '../../hooks/useRestTimer';
 import { deriveWorkoutResumeIndex, remainingRestSeconds } from '../../hooks/useWorkoutSession';
 import { WorkoutPrimaryCTA } from '../../features/workout/components/WorkoutPrimaryCTA';
@@ -1035,9 +1036,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
             <View style={styles.prepContent}>
               <View style={styles.coachCueCard}>
                 <View style={styles.coachCueHeader}>
-                  <View style={styles.coachCueIcon}>
-                    <Feather name="check" size={16} color={colors.gold} />
-                  </View>
+                  <WorkoutSessionArtwork kind="form" size={40} />
                   <Text style={styles.coachCueKicker}>Form cues</Text>
                 </View>
                 <View style={styles.coachCueList}>
@@ -1054,7 +1053,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
 
               {activeLastLog ? (
                 <View style={styles.lastLogCard}>
-                  <Feather name="check-circle" size={18} color={colors.accentDark} />
+                  <WorkoutSessionArtwork kind="logged" size={38} />
                   <Text style={styles.lastLogText}>
                     Last set: {activeIsTimed ? formatTimer(activeLastLog.durationSec || 0) : `${activeLastLog.reps || '—'} reps`}{activeLastLog.weight ? ` · ${activeLastLog.weight} kg` : ''}{!activeIsTimed && activeLastLog.durationSec ? ` · ${formatTimer(activeLastLog.durationSec)}` : ''}
                   </Text>
@@ -1077,9 +1076,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
               </View>
               <View style={styles.coachCueCard}>
                 <View style={styles.coachCueHeader}>
-                  <View style={styles.coachCueIcon}>
-                    <Feather name="check" size={16} color={colors.gold} />
-                  </View>
+                  <WorkoutSessionArtwork kind="form" size={40} />
                   <Text style={styles.coachCueKicker}>Form cues</Text>
                 </View>
                 <View style={styles.coachCueList}>
@@ -1133,6 +1130,7 @@ function FocusedWorkoutDetailScreen({ route, navigation }: Props) {
             title={finishing ? 'Finishing...' : primaryTitle}
             subtitle={!timer.running && !activeDone ? `Set ${activeSetNumber} of ${activeSets}` : undefined}
             icon={timer.running ? 'skip-forward' : activeDone && activeExerciseIndex >= trackableExercises.length - 1 ? 'flag' : 'play'}
+            trailing={!activeDone && !timer.running ? <WorkoutSessionArtwork kind="begin" size={72} /> : undefined}
             onPress={primaryCta}
             disabled={finishing}
             large
@@ -2251,7 +2249,7 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: spacing.sm,
     marginTop: spacing.sm,
   },
   statusPanel: {
@@ -2627,14 +2625,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   coachCueHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  coachCueIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.panelMuted,
-  },
   coachCueKicker: { fontSize: 14, lineHeight: 19, fontWeight: '800', color: colors.ink },
   coachCueList: { marginTop: spacing.xs },
   coachCueRow: {
