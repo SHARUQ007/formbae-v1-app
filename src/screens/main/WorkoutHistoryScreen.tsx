@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, RefreshControl, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -7,7 +7,8 @@ import { WorkoutHistoryArtwork } from '../../components/WorkoutHistoryArtwork';
 import { WorkoutHistoryCalendar } from '../../components/WorkoutHistoryCalendar';
 import { ScreenContainer } from '../../components/Card';
 import { CoachingFeature } from '../../components/CoachingFeature';
-import { fetchProgress, fetchTrophyLeaderboard } from '../../services/progressService';
+import { loadProgressBundleCached, loadTrophyLeaderboardCached, peekProgressBundleCached, peekTrophyLeaderboardCached } from '../../services/preloadService';
+import { getActiveCacheSessionId } from '../../services/appCache';
 import type { ProgressSummary, TrophyLeaderboard, WorkoutHistoryEntry } from '../../types/api';
 import type { WorkoutStackParamList } from '../../navigation/types';
 import { workoutHistoryStats, historyWorkoutTitle, historyWorkoutSummary, historyExercisePreview, historyMuscleGroups, historySessionKey } from '../../utils/workoutHistory';
@@ -17,7 +18,7 @@ import { typography } from '../../theme/typography';
 const parseDate = (date: string) => new Date(`${date}T12:00:00`);
 
 type WorkoutGroupProps = { date: string; workouts: WorkoutHistoryEntry[]; onOpen: (session: WorkoutHistoryEntry) => void };
-function WorkoutGroup({ date, workouts, onOpen }: WorkoutGroupProps) {
+const WorkoutGroup = memo(function WorkoutGroupRow({ date, workouts, onOpen }: WorkoutGroupProps) {
   const day = parseDate(date);
   return <View style={styles.workoutGroup}>
     <View style={styles.dateColumn}>
@@ -26,48 +27,59 @@ function WorkoutGroup({ date, workouts, onOpen }: WorkoutGroupProps) {
       <Text style={styles.dateYear}>{day.getFullYear()}</Text>
     </View>
     <View style={styles.entries}>
-      {workouts.map((workout, index) => <TouchableOpacity
+      {workouts.map((workout, index) => {
+        const title = historyWorkoutTitle(workout);
+        const muscles = historyMuscleGroups(workout);
+        const preview = historyExercisePreview(workout);
+        return <TouchableOpacity
         key={historySessionKey(workout)}
         style={[styles.entry, index > 0 && styles.entryDivider]}
         onPress={() => onOpen(workout)}
         activeOpacity={0.65}
         accessibilityRole="button"
-        accessibilityLabel={`View ${historyWorkoutTitle(workout)}, ${date}`}
+        accessibilityLabel={`View ${title}, ${date}`}
       >
         <View style={styles.entryTop}>
           <Text style={styles.weekday}>{day.toLocaleDateString('en-GB', { weekday: 'long' })}</Text>
           {workout.workoutMode === 'quick' ? <Text style={styles.quickLabel}>QUICK</Text> : null}
         </View>
-        <Text style={styles.workoutTitle}>{historyWorkoutTitle(workout)}</Text>
-        {historyMuscleGroups(workout).length ? <Text style={styles.muscles} numberOfLines={2}>{historyMuscleGroups(workout).join(' / ')}</Text> : null}
-        {historyExercisePreview(workout) ? <Text style={styles.preview} numberOfLines={2}>{historyExercisePreview(workout)}</Text> : null}
+        <Text style={styles.workoutTitle}>{title}</Text>
+        {muscles.length ? <Text style={styles.muscles} numberOfLines={2}>{muscles.join(' / ')}</Text> : null}
+        {preview ? <Text style={styles.preview} numberOfLines={2}>{preview}</Text> : null}
         <View style={styles.entryBottom}>
           <Text style={styles.summary}>{historyWorkoutSummary(workout)}</Text>
           <Text style={styles.detailLink}>Details</Text>
         </View>
-      </TouchableOpacity>)}
+      </TouchableOpacity>;
+      })}
     </View>
   </View>;
-}
+});
 
 export function WorkoutHistoryScreen({ navigation }: NativeStackScreenProps<WorkoutStackParamList, 'WorkoutHistory'>) {
-  const [progress, setProgress] = useState<ProgressSummary | null>(null);
-  const [community, setCommunity] = useState<TrophyLeaderboard | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [progress, setProgress] = useState<ProgressSummary | null>(() => peekProgressBundleCached()?.progress ?? null);
+  const [community, setCommunity] = useState<TrophyLeaderboard | null>(() => peekTrophyLeaderboardCached() ?? null);
+  const [loading, setLoading] = useState(!progress);
   const [error, setError] = useState(false);
   const requestVersion = useRef(0);
   const tabHeight = useBottomTabBarHeight();
-  const load = useCallback(() => {
+  const load = useCallback((force = false) => {
     const version = ++requestVersion.current;
-    setLoading(true);
-    Promise.allSettled([fetchProgress(), fetchTrophyLeaderboard()]).then(([workouts, people]) => {
-      if (version !== requestVersion.current) return;
-      setError(workouts.status === 'rejected');
-      if (workouts.status === 'fulfilled') setProgress(workouts.value);
-      setCommunity(people.status === 'fulfilled' ? people.value : null);
-      setLoading(false);
-    });
+    const session = getActiveCacheSessionId();
+    const current = () => version === requestVersion.current && session === getActiveCacheSessionId();
+    setLoading(force || !peekProgressBundleCached());
+    // History is useful on its own; optional rankings must not hold it back.
+    loadProgressBundleCached({ force }).then(bundle => {
+      if (!current()) return;
+      setProgress(bundle.progress);
+      setError(false);
+    }).catch(() => { if (current()) setError(true); })
+      .finally(() => { if (current()) setLoading(false); });
+    loadTrophyLeaderboardCached({ force }).then(people => {
+      if (current()) setCommunity(people);
+    }).catch(() => { if (current()) setCommunity(null); });
   }, []);
+  const refresh = useCallback(() => load(true), [load]);
   useFocusEffect(useCallback(() => {
     load();
     return () => { requestVersion.current++; };
@@ -84,6 +96,7 @@ export function WorkoutHistoryScreen({ navigation }: NativeStackScreenProps<Work
     return [...groups.entries()].sort(([a], [b]) => b.localeCompare(a));
   }, [history]);
   const openSession = useCallback((session: WorkoutHistoryEntry) => navigation.navigate('WorkoutHistoryDetail', { session }), [navigation]);
+  const renderWorkoutGroup = useCallback(({ item: [date, workouts] }: { item: [string, WorkoutHistoryEntry[]] }) => <WorkoutGroup date={date} workouts={workouts} onOpen={openSession} />, [openSession]);
 
   return <ScreenContainer>
     <View style={styles.header}>
@@ -95,12 +108,12 @@ export function WorkoutHistoryScreen({ navigation }: NativeStackScreenProps<Work
       keyExtractor={item => item[0]}
       initialNumToRender={10}
       showsVerticalScrollIndicator={false}
-      renderItem={({ item: [date, workouts] }) => <WorkoutGroup date={date} workouts={workouts} onOpen={openSession} />}
+      renderItem={renderWorkoutGroup}
       contentContainerStyle={{ paddingBottom: tabHeight + 24 }}
-      refreshControl={<RefreshControl refreshing={loading && !!progress} onRefresh={load} tintColor={colors.gold} />}
+      refreshControl={<RefreshControl refreshing={loading && !!progress} onRefresh={refresh} tintColor={colors.gold} />}
       ListHeaderComponent={<View>
         {loading && !progress ? <View style={styles.loading}><ActivityIndicator color={colors.gold} /><Text style={styles.caption}>Loading your training log…</Text></View> : null}
-        {error ? <View style={styles.error}><Text style={styles.caption}>{progress ? 'Couldn’t refresh your history.' : 'Couldn’t load your workout history.'}</Text><TouchableOpacity onPress={load} style={styles.textButton} accessibilityRole="button"><Text style={styles.detailLink}>Try again</Text></TouchableOpacity></View> : null}
+        {error ? <View style={styles.error}><Text style={styles.caption}>{progress ? 'Couldn’t refresh your history.' : 'Couldn’t load your workout history.'}</Text><TouchableOpacity onPress={refresh} style={styles.textButton} accessibilityRole="button"><Text style={styles.detailLink}>Try again</Text></TouchableOpacity></View> : null}
         {progress ? <>
           <View style={styles.overview}>
             <View style={styles.overviewTop}>

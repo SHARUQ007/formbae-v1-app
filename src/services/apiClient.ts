@@ -50,33 +50,51 @@ export function setUnauthorizedHandler(handler: () => void) {
   onUnauthorized = handler;
 }
 
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => {
-    setTimeout(() => resolve(), ms);
+function cancellationError() {
+  const error = new Error('Request cancelled.');
+  error.name = 'AbortError';
+  return error;
+}
+
+function throwIfCancelled(signal?: AbortSignal) {
+  if (signal?.aborted) throw cancellationError();
+}
+
+function sleep(ms: number, signal?: AbortSignal) {
+  throwIfCancelled(signal);
+  return new Promise<void>((resolve, reject) => {
+    const cancel = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', cancel);
+      reject(cancellationError());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', cancel);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', cancel, { once: true });
   });
 }
 
 async function doFetch(url: string, init: RequestInit, timeoutMs: number, externalSignal?: AbortSignal) {
+  throwIfCancelled(externalSignal);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-  if (externalSignal) {
-    if (externalSignal.aborted) {
-      controller.abort();
-    } else {
-      externalSignal.onabort = () => {
-        controller.abort();
-      };
-    }
-  }
+  const cancel = () => controller.abort();
+  externalSignal?.addEventListener('abort', cancel, { once: true });
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    const text = await response.text();
+    throwIfCancelled(externalSignal);
+    return { response, text };
   } finally {
     clearTimeout(timer);
+    externalSignal?.removeEventListener('abort', cancel);
   }
 }
 
 async function performApiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const method = options.method || 'GET';
+  const method = (options.method || 'GET').toUpperCase();
   const url = getApiUrl(path);
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -97,10 +115,13 @@ async function performApiRequest<T>(path: string, options: RequestOptions = {}):
   let lastError: ApiError | null = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    throwIfCancelled(options.signal);
     let response: Response;
+    let text: string;
     try {
-      response = await doFetch(url, init, timeoutMs, options.signal);
+      ({ response, text } = await doFetch(url, init, timeoutMs, options.signal));
     } catch (error) {
+      throwIfCancelled(options.signal);
       const aborted = error instanceof Error && error.name === 'AbortError';
       lastError = new ApiError(
         aborted ? 'Request timed out. Check your connection.' : 'Network error. Check your connection and API URL.',
@@ -109,13 +130,12 @@ async function performApiRequest<T>(path: string, options: RequestOptions = {}):
         true,
       );
       if (attempt < maxRetries) {
-        await sleep(400 * (attempt + 1));
+        await sleep(400 * (attempt + 1), options.signal);
         continue;
       }
       throw lastError;
     }
 
-    const text = await response.text();
     let payload: unknown = null;
     if (text) {
       try {
@@ -126,13 +146,13 @@ async function performApiRequest<T>(path: string, options: RequestOptions = {}):
     }
 
     if (response.status === 401) {
-      onUnauthorized?.();
+      if (token && token === authToken) onUnauthorized?.();
       throw new ApiError('Session expired. Please log in again.', 401, payload);
     }
 
     if (response.status >= 500 && attempt < maxRetries) {
       lastError = new ApiError(`Server error (${response.status})`, response.status, payload);
-      await sleep(400 * (attempt + 1));
+      await sleep(400 * (attempt + 1), options.signal);
       continue;
     }
 
@@ -168,10 +188,12 @@ async function measuredRequest<T>(path: string, options: RequestOptions): Promis
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const method = options.method || 'GET';
+  const method = (options.method || 'GET').toUpperCase();
   const token = options.token !== undefined ? options.token : authToken;
   const canDedupe = method === 'GET' && !options.signal;
-  const dedupeKey = canDedupe ? `${token || 'public'}:${getApiUrl(path)}` : '';
+  const dedupeKey = canDedupe
+    ? JSON.stringify([token, getApiUrl(path), options.timeoutMs ?? DEFAULT_TIMEOUT_MS, options.retries ?? DEFAULT_RETRIES])
+    : '';
   if (dedupeKey) {
     const existing = inflightGetRequests.get(dedupeKey);
     if (existing) return existing as Promise<T>;

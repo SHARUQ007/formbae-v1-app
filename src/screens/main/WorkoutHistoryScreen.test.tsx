@@ -3,10 +3,17 @@ import { FlatList, RefreshControl } from 'react-native';
 import { act, create } from 'react-test-renderer';
 import { WorkoutHistoryScreen } from './WorkoutHistoryScreen';
 import { fetchProgress, fetchTrophyLeaderboard } from '../../services/progressService';
+import { loadProgressBundleCached, peekProgressBundleCached } from '../../services/preloadService';
 
 jest.mock('@react-navigation/native', () => ({ useFocusEffect: (effect: () => void) => require('react').useEffect(effect, [effect]) }));
 jest.mock('@react-navigation/bottom-tabs', () => ({ useBottomTabBarHeight: () => 0 }));
 jest.mock('../../services/progressService', () => ({ fetchProgress: jest.fn(), fetchTrophyLeaderboard: jest.fn() }));
+jest.mock('../../services/preloadService', () => ({
+  loadProgressBundleCached: jest.fn(() => require('../../services/progressService').fetchProgress().then((progress: unknown) => ({ progress }))),
+  loadTrophyLeaderboardCached: jest.fn(() => require('../../services/progressService').fetchTrophyLeaderboard()),
+  peekProgressBundleCached: jest.fn(),
+  peekTrophyLeaderboardCached: jest.fn(),
+}));
 
 it('exposes every saved date newest first while keeping the calendar optional', async () => {
   const history = Array.from({ length: 25 }, (_, index) => ({ date: `2026-08-${String(index + 1).padStart(2, '0')}`, planId: 'plan', planDayId: String(index), workoutMode: 'standard' }));
@@ -55,11 +62,38 @@ it('keeps loaded history and calendar state through refresh failure without hook
     act(() => show.props.onPress());
     jest.mocked(fetchProgress).mockRejectedValue(new Error('Offline'));
     await act(async () => tree.root.findByType(RefreshControl).props.onRefresh());
+    expect(loadProgressBundleCached).toHaveBeenLastCalledWith({ force: true });
     expect(tree.root.findByType(FlatList).props.data[0][1]).toEqual([logged]);
     expect(tree.root.findAll(node => node.props.accessibilityLabel === 'Hide calendar').length).toBeGreaterThan(0);
     expect(errors.mock.calls.filter(args => /static flag|order of Hooks|Rendered (more|fewer) hooks/i.test(args.join(' ')))).toEqual([]);
   } finally {
     if (tree) act(() => tree.unmount());
     errors.mockRestore();
+  }
+});
+
+it('shows workouts while optional leaderboard data is still pending', async () => {
+  jest.mocked(fetchProgress).mockResolvedValue({ userId: 'user', adherencePct: 100, completed: 1, planned: 1, currentStreak: 1, bestStreak: 1, completionHistory: [{ date: '2026-08-25', planId: 'old', planDayId: 'lower', workoutMode: 'standard', title: 'Lower body' }] });
+  jest.mocked(fetchTrophyLeaderboard).mockReturnValue(new Promise(() => {}));
+  let tree!: ReturnType<typeof create>;
+  await act(async () => { tree = create(<WorkoutHistoryScreen navigation={{ goBack: jest.fn() } as never} route={{ key: 'history', name: 'WorkoutHistory' }} />); });
+  expect(tree.root.findByType(FlatList).props.data).toHaveLength(1);
+  expect(tree.root.findByType(RefreshControl).props.refreshing).toBe(false);
+  act(() => tree.unmount());
+});
+
+it('renders warm history immediately while refreshing in the background', async () => {
+  const progress = { userId: 'user', adherencePct: 100, completed: 1, planned: 1, currentStreak: 1, bestStreak: 1, completionHistory: [{ date: '2026-08-25', planId: 'old', planDayId: 'lower', workoutMode: 'standard', title: 'Lower body' }] };
+  jest.mocked(peekProgressBundleCached).mockReturnValue({ progress, checkIns: [], dueThisWeek: [], planDays: [], gender: '', userName: '' });
+  jest.mocked(fetchProgress).mockReturnValue(new Promise(() => {}));
+  jest.mocked(fetchTrophyLeaderboard).mockReturnValue(new Promise(() => {}));
+  let tree!: ReturnType<typeof create>;
+  try {
+    await act(async () => { tree = create(<WorkoutHistoryScreen navigation={{ goBack: jest.fn() } as never} route={{ key: 'history', name: 'WorkoutHistory' }} />); });
+    expect(tree.root.findByType(FlatList).props.data).toHaveLength(1);
+    expect(tree.root.findByType(RefreshControl).props.refreshing).toBe(false);
+  } finally {
+    act(() => tree.unmount());
+    jest.mocked(peekProgressBundleCached).mockReset();
   }
 });
