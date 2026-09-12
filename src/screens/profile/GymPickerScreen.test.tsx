@@ -1,4 +1,4 @@
-import { ScrollView, StyleSheet } from 'react-native';
+import { Alert, ScrollView, StyleSheet } from 'react-native';
 import { act, create } from 'react-test-renderer';
 import { GymPickerScreen } from './GymPickerScreen';
 import { searchGyms, fetchGym, type GymPlace } from '../../services/gymService';
@@ -79,6 +79,27 @@ it('keeps the saved-gym state when location details are unavailable', async () =
   expect(output()).not.toContain('Find another gym');
   expect(output()).toContain('Gym subscription');
   expect(button('Remove selected gym').props.disabled).toBe(false);
+});
+
+it('persists subscription months and the calculated expiry with the existing gym and preferences', async () => {
+  mockSettings.profile.lifestyleJson = JSON.stringify({ selectedGymPlaceId: 'saved-gym', trainingDays: '4', gymMembership: 'Active', gymMembershipStart: '2026-01-31' });
+  await renderScreen();
+  act(() => button('1 month').props.onPress());
+  await act(async () => tree.root.findByProps({ title: 'Save details' }).props.onPress());
+  expect(updateProfile).toHaveBeenCalledWith({ lifestyleJson: JSON.stringify({ selectedGymPlaceId: 'saved-gym', trainingDays: '4', gymMembership: 'Active', gymMembershipStart: '2026-01-31', gymMembershipProvider: '', gymMembershipMonths: '1', gymMembershipExpiry: '2026-02-28' }) });
+  expect(goBack).toHaveBeenCalledTimes(1);
+});
+
+it('removes the duration along with the gym and membership dates', async () => {
+  mockSettings.profile.lifestyleJson = JSON.stringify({ selectedGymPlaceId: 'saved-gym', trainingDays: '4', gymMembership: 'Active', gymMembershipStart: '2026-09-12', gymMembershipExpiry: '2027-03-12', gymMembershipMonths: '6' });
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  try {
+    await renderScreen();
+    act(() => button('Remove selected gym').props.onPress());
+    const remove = alert.mock.calls[0][2]?.find(action => action.style === 'destructive');
+    await act(async () => { await remove?.onPress?.(); });
+    expect(updateProfile).toHaveBeenCalledWith({ lifestyleJson: JSON.stringify({ trainingDays: '4' }) });
+  } finally { alert.mockRestore(); }
 });
 
 it('fits empty-state artwork into the viewport and keeps the form reachable on a short screen', async () => {

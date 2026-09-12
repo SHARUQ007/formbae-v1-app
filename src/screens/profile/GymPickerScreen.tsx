@@ -161,6 +161,7 @@ export function GymPickerScreen({ navigation }: Props) {
         delete lifestyle.gymEquipment;
         delete lifestyle.gymMembershipStart;
         delete lifestyle.gymMembershipExpiry;
+        delete lifestyle.gymMembershipMonths;
       }
       const nextLifestyle = { ...lifestyle, workoutSetting: 'gym', selectedGymPlaceId: place.placeId };
       await updateProfile({
@@ -215,8 +216,9 @@ export function GymPickerScreen({ navigation }: Props) {
             delete lifestyle.gymMembership;
             delete lifestyle.gymMembershipProvider;
             delete lifestyle.gymEquipment;
-        delete lifestyle.gymMembershipStart;
-        delete lifestyle.gymMembershipExpiry;
+            delete lifestyle.gymMembershipStart;
+            delete lifestyle.gymMembershipExpiry;
+            delete lifestyle.gymMembershipMonths;
             await updateProfile({ lifestyleJson: JSON.stringify(lifestyle) });
             await loadProfileSettingsCached({ force: true }).catch(() => undefined);
             navigation.goBack();
