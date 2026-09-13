@@ -3,6 +3,7 @@ import { Alert, ScrollView, Text, TouchableOpacity, StyleSheet, View } from 'rea
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { ScreenContainer, ScreenTitle, ScreenSubtitle } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState } from '../../components/States';
@@ -40,6 +41,27 @@ const GENDERS: Array<{ value: HouseholdMemberProfile['gender']; label: string }>
 const emptyMember = (): HouseholdMemberProfile => ({ relationship: '', ageGroup: '', gender: '' });
 const secondsUntil = (expiresAt: string) => Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / 1000) || 0);
 const formatTimer = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+const INDIVIDUAL_BENEFITS = [
+  'Workouts personalized to your goal and schedule',
+  'Practical diet guidance and progress tracking',
+  'Daily AI coaching, reminders and accountability',
+];
+
+function benefitsForPlan(plan: PaymentPlan): string[] {
+  if (plan.benefits?.length) return plan.benefits;
+  const members = plan.memberLimit || 1;
+  if (members >= 3) return [
+    'Three personalized member profiles',
+    'Age- and gender-aware plans for each person',
+    'Separate workouts, diet guidance and progress',
+  ];
+  if (members === 2) return [
+    'Two personalized member profiles',
+    'Plans tailored to each person’s age and gender',
+    'Separate workouts, guidance and progress',
+  ];
+  return INDIVIDUAL_BENEFITS;
+}
 
 export function PaymentRequiredScreen({ navigation }: Props) {
   const { user, status, refreshStatus, logout } = useAuthStore();
@@ -54,6 +76,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
 
   const selectedPlan = plans.find((plan) => plan.planId === selectedId) || plans[0];
   const additionalMemberCount = Math.max(0, (selectedPlan?.memberLimit || 1) - 1);
+  const hasIntroPricing = offerSeconds > 0 || plans.some((plan) => plan.originalAmount ? plan.amount < plan.originalAmount : plan.amount <= 14900);
 
   const routeAfterPaid = useCallback((screen: string) => {
     const rootNav = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
@@ -201,6 +224,20 @@ export function PaymentRequiredScreen({ navigation }: Props) {
         <ScreenSubtitle>You’ve already taken the first step. Choose your support and turn today’s intention into a plan you can follow.</ScreenSubtitle>
 
         {!loading && plans.length ? (
+          <View style={styles.valueCard}>
+            <FamilyWellbeingMark />
+            <View style={styles.valueCopy}>
+              <Text style={styles.valueEyebrow}>A SMALL STEP THAT ADDS UP</Text>
+              <Text style={styles.valueText}>
+                {hasIntroPricing
+                  ? 'For about the cost of a coffee, invest in the fitness and wellbeing of you and the people you love.'
+                  : 'Build a healthier routine for you and the people you love, with support shaped around each person.'}
+              </Text>
+            </View>
+          </View>
+        ) : null}
+
+        {offerExpiresAt && !loading && plans.length ? (
           <View style={[styles.offerBar, offerSeconds === 0 && styles.offerBarExpired]}>
             <View style={styles.offerCopy}>
               <Text style={styles.offerEyebrow}>{offerSeconds > 0 ? 'INTRO PRICE RESERVED' : 'INTRO OFFER ENDED'}</Text>
@@ -250,14 +287,21 @@ export function PaymentRequiredScreen({ navigation }: Props) {
 
         {selectedPlan ? (
           <View style={styles.benefitsCard}>
-            <Text style={styles.benefitsTitle}>{selectedPlan.label || selectedPlan.planName} includes</Text>
-            {(selectedPlan.benefits || []).map((benefit) => (
+            <Text style={styles.benefitsEyebrow}>WHAT YOU’LL UNLOCK</Text>
+            <Text style={styles.benefitsTitle}>{selectedPlan.label || selectedPlan.planName}</Text>
+            {benefitsForPlan(selectedPlan).map((benefit) => (
               <View key={benefit} style={styles.benefitRow}>
-                <Feather name="check" size={15} color={colors.gold} />
+                <BenefitCheck />
                 <Text style={styles.benefitText}>{benefit}</Text>
               </View>
             ))}
-            <Text style={styles.coffeeText}>{offerSeconds > 0 ? 'Start today for less than the cost of a coffee.' : 'One monthly plan for steady, personalized support.'}</Text>
+            <View style={styles.benefitFootnote}>
+              <Text style={styles.benefitFootnoteText}>
+                {(selectedPlan.memberLimit || 1) > 1
+                  ? 'Every member gets recommendations shaped around their own profile.'
+                  : 'Your recommendations adapt as your fitness and routine change.'}
+              </Text>
+            </View>
           </View>
         ) : null}
 
@@ -291,6 +335,31 @@ export function PaymentRequiredScreen({ navigation }: Props) {
         </View>
       </ScrollView>
     </ScreenContainer>
+  );
+}
+
+function FamilyWellbeingMark() {
+  return (
+    <View style={styles.valueArtwork} pointerEvents="none">
+      <Svg width="54" height="54" viewBox="0 0 54 54">
+        <Circle cx="19" cy="18" r="6" fill="none" stroke={colors.gold} strokeWidth="2" />
+        <Circle cx="36" cy="20" r="5" fill="none" stroke={colors.goldMuted} strokeWidth="2" />
+        <Path d="M8 40c0-8 5-13 11-13s11 5 11 13" fill="none" stroke={colors.gold} strokeWidth="2" strokeLinecap="round" />
+        <Path d="M30 30c7 0 12 4 12 11" fill="none" stroke={colors.goldMuted} strokeWidth="2" strokeLinecap="round" />
+        <Path d="M40 8l1.4 3 3.1 1.3-3.1 1.4-1.4 3-1.4-3-3.1-1.4 3.1-1.3L40 8z" fill={colors.gold} />
+      </Svg>
+    </View>
+  );
+}
+
+function BenefitCheck() {
+  return (
+    <View style={styles.benefitCheck} pointerEvents="none">
+      <Svg width="18" height="18" viewBox="0 0 18 18">
+        <Circle cx="9" cy="9" r="7.25" fill="rgba(248,216,132,0.08)" stroke={colors.gold} strokeWidth="1.5" />
+        <Path d="M5.7 9.1l2.1 2.1 4.6-4.7" fill="none" stroke={colors.gold} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+    </View>
   );
 }
 
@@ -343,6 +412,29 @@ const styles = StyleSheet.create({
     paddingLeft: spacing.sm,
   },
   logoutText: { ...typography.caption, color: colors.inkSubtle, flexShrink: 1, fontWeight: '600' },
+  valueCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.goldMuted,
+    backgroundColor: colors.accentLight,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  valueArtwork: {
+    width: 60,
+    height: 60,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.panel,
+    flexShrink: 0,
+  },
+  valueCopy: { flex: 1, minWidth: 0 },
+  valueEyebrow: { ...typography.label, color: colors.gold, fontSize: 9, letterSpacing: 1.3 },
+  valueText: { ...typography.caption, color: colors.ink, lineHeight: 19, marginTop: 5, fontWeight: '600' },
   offerBar: {
     minHeight: 70,
     flexDirection: 'row',
@@ -393,11 +485,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   radioSelected: { backgroundColor: colors.accentFill, borderColor: colors.accent },
-  benefitsCard: { backgroundColor: colors.panel, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, gap: 9, marginBottom: spacing.md },
-  benefitsTitle: { ...typography.bodyBold, color: colors.ink, marginBottom: 2 },
+  benefitsCard: { backgroundColor: colors.panel, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, gap: 11, marginBottom: spacing.md },
+  benefitsEyebrow: { ...typography.label, color: colors.gold, fontSize: 9, letterSpacing: 1.4 },
+  benefitsTitle: { ...typography.bodyBold, color: colors.ink, marginBottom: 1 },
   benefitRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  benefitText: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 18 },
-  coffeeText: { ...typography.caption, color: colors.gold, fontWeight: '700', marginTop: 3 },
+  benefitCheck: { width: 18, height: 18, marginTop: 1, flexShrink: 0 },
+  benefitText: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 19 },
+  benefitFootnote: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: 10, marginTop: 2 },
+  benefitFootnoteText: { ...typography.caption, color: colors.inkSubtle, lineHeight: 18 },
   householdCard: { backgroundColor: colors.panel, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
   householdTitle: { ...typography.bodyBold, color: colors.ink },
   householdIntro: { ...typography.caption, color: colors.inkMuted, marginTop: 3, marginBottom: spacing.md },
