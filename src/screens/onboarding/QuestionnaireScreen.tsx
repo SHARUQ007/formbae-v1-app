@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, TouchableOpacity, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, Text, TouchableOpacity, StyleSheet, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
@@ -14,7 +13,7 @@ import { fetchQuestionnaire, saveQuestionnaireDraft, submitQuestionnaire } from 
 import { clearQuestionnaireDraft, loadQuestionnaireDraft, saveQuestionnaireDraft as saveLocalDraft } from '../../store/onboardingStore';
 import { useAuthStore } from '../../store/authStore';
 import type { MobileQuestion } from '../../types/api';
-import type { OnboardingStackParamList, RootStackParamList } from '../../navigation/types';
+import type { OnboardingStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
@@ -23,16 +22,14 @@ import { typography } from '../../theme/typography';
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'Questionnaire'>;
 
 export function QuestionnaireScreen({ navigation }: Props) {
-  return <QuestionnaireFlow onComplete={() => navigation.replace('AnalysisLoading')}
-    onLogout={() => navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Auth')} />;
+  return <QuestionnaireFlow onComplete={() => navigation.replace('AnalysisLoading')} />;
 }
 
-export function QuestionnaireFlow({ onComplete, onLogout }: {
+export function QuestionnaireFlow({ onComplete }: {
   onComplete: () => void | Promise<void>;
-  onLogout: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const { logout, user } = useAuthStore();
+  const { user } = useAuthStore();
   const userId = user?.userId || '';
   const [error, setError] = useState('');
   const [questions, setQuestions] = useState<MobileQuestion[]>([]);
@@ -91,19 +88,6 @@ export function QuestionnaireFlow({ onComplete, onLogout }: {
     }
   };
 
-  const exitFlow = () => {
-    Alert.alert('Leave setup?', 'Your progress is saved. You can continue your setup when you sign back in.', [
-      { text: 'Stay', style: 'cancel' },
-      {
-        text: 'Log out',
-        onPress: async () => {
-          await logout();
-          onLogout();
-        },
-      },
-    ]);
-  };
-
   const renderBody = () => {
     if (!current) return null;
     if (current.type === 'text') {
@@ -146,7 +130,6 @@ export function QuestionnaireFlow({ onComplete, onLogout }: {
       <Text style={styles.title}>Let’s try that again</Text>
       <Text style={styles.subtitle}>{error}</Text>
       <PrimaryButton title="Retry" onPress={load} />
-      <PrimaryButton title="Log out" variant="ghost" onPress={exitFlow} />
     </ScreenContainer>;
   }
   if (loading || !current) {
@@ -173,13 +156,6 @@ export function QuestionnaireFlow({ onComplete, onLogout }: {
             accessibilityState={{ disabled: index === 0 }}
           >
             <Feather name="chevron-left" size={24} color={colors.white} />
-          </TouchableOpacity>
-          <Text style={styles.step}>
-            {index + 1} / {questions.length}
-          </Text>
-          <TouchableOpacity onPress={exitFlow} style={styles.logoutButton} accessibilityRole="button" accessibilityLabel="Log out">
-            <Text style={styles.logoutText}>Log out</Text>
-            <Feather name="log-out" size={15} color="rgba(255,255,255,0.72)" />
           </TouchableOpacity>
         </View>
         <ProgressBar value={progress} trackColor="rgba(255,255,255,0.12)" fillColor={colors.white} />
@@ -213,6 +189,8 @@ export function QuestionnaireFlow({ onComplete, onLogout }: {
         onPress={onNext}
         loading={submitting}
         variant="inverted"
+        size="lg"
+        style={styles.continueButton}
       />
       </KeyboardAvoidingView>
     </LinearGradient>
@@ -223,12 +201,10 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   safeArea: { flex: 1, paddingHorizontal: spacing.lg },
   progressHeader: { marginBottom: spacing.xl },
-  progressTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  progressTop: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
   backButton: { width: 40, height: 40, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
   backButtonDisabled: { opacity: 0.28 },
-  logoutButton: { minHeight: 40, paddingHorizontal: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  logoutText: { ...typography.caption, color: 'rgba(255,255,255,0.72)', fontWeight: '700' },
-  step: { ...typography.label, color: 'rgba(255,255,255,0.48)' },
+  continueButton: { minHeight: 62, borderRadius: 18 },
   questionScroll: { flex: 1 },
   scroll: { paddingBottom: spacing.lg },
   scrollSingle: { flexGrow: 1 },
