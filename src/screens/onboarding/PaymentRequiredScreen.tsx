@@ -160,6 +160,10 @@ export function PaymentRequiredScreen({ navigation }: Props) {
       Alert.alert('No plan selected', 'Please choose a plan to continue.');
       return;
     }
+    if ((plan.memberLimit || 1) > 1) {
+      navigation.navigate('GiftPlanDetails', { planId: plan.planId });
+      return;
+    }
     setPaying(true);
     try {
       // Members are derived server-side from the survey, so none are sent here.
@@ -318,8 +322,14 @@ export function PaymentRequiredScreen({ navigation }: Props) {
 
       <View style={styles.footer}>
         <PrimaryButton
-          title={selectedPlan ? `Pay ${rupees(selectedPlan.amount)} & continue` : 'Choose a plan'}
-          icon="lock"
+          title={
+            !selectedPlan
+              ? 'Choose a plan'
+              : (selectedPlan.memberLimit || 1) > 1
+                ? 'Continue'
+                : `Pay ${rupees(selectedPlan.amount)} & continue`
+          }
+          icon={(selectedPlan?.memberLimit || 1) > 1 ? 'arrow-right' : 'lock'}
           onPress={onPayNative}
           loading={paying}
           size="lg"

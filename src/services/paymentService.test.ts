@@ -57,7 +57,7 @@ test('concurrent taps open only one checkout', async () => {
 });
 
 test('household profiles are attached to a recurring checkout', async () => {
-  const householdMembers = [{ relationship: 'mother', ageGroup: '50+', gender: 'female' }] as const;
+  const householdMembers = [{ relationship: 'mother', name: 'Asha', mobile: '9876543210' }] as const;
   request
     .mockResolvedValueOnce({ keyId: 'key', subscriptionId: 'sub_1', amount: 9900, currency: 'INR', planName: 'You + 1' })
     .mockResolvedValueOnce({ success: true, status: { hasPaid: true } });

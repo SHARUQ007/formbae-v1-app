@@ -22,6 +22,7 @@ export type OnboardingStackParamList = {
   AnalysisReport: undefined;
   TrainerMatch: undefined;
   PaymentRequired: undefined;
+  GiftPlanDetails: { planId: string };
 };
 
 export type PaidStackParamList = {

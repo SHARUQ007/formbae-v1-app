@@ -9,6 +9,7 @@ const getAnalysisLoadingScreen = () => require('../screens/onboarding/AnalysisLo
 const getAnalysisReportScreen = () => require('../screens/onboarding/AnalysisReportScreen').AnalysisReportScreen;
 const getTrainerMatchScreen = () => require('../screens/onboarding/TrainerMatchScreen').TrainerMatchScreen;
 const getPaymentRequiredScreen = () => require('../screens/onboarding/PaymentRequiredScreen').PaymentRequiredScreen;
+const getGiftPlanDetailsScreen = () => require('../screens/onboarding/GiftPlanDetailsScreen').GiftPlanDetailsScreen;
 
 export function OnboardingNavigator() {
   const reduceMotion = useReducedMotion();
@@ -28,6 +29,7 @@ export function OnboardingNavigator() {
       <Stack.Screen name="AnalysisReport" getComponent={getAnalysisReportScreen} options={{ animation: reduceMotion ? 'none' : 'fade' }} />
       <Stack.Screen name="TrainerMatch" getComponent={getTrainerMatchScreen} />
       <Stack.Screen name="PaymentRequired" getComponent={getPaymentRequiredScreen} />
+      <Stack.Screen name="GiftPlanDetails" getComponent={getGiftPlanDetailsScreen} />
     </Stack.Navigator>
   );
 }

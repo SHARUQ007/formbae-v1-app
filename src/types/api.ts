@@ -139,6 +139,15 @@ export type PaymentPlan = {
 /** Who the backend infers the trainee would bring along, from their survey age and gender. */
 export type HouseholdSuggestion = HouseholdMemberProfile & { label: string };
 
+/** What checkout sends for each gifted member: who they are and how to reach them. */
+export type HouseholdGiftMember = {
+  relationship: HouseholdMemberProfile['relationship'];
+  name: string;
+  mobile: string;
+  /** Only when the relationship is "other" - the trainee's own words for them. */
+  customLabel?: string;
+};
+
 export type HouseholdMemberProfile = {
   relationship: 'mother' | 'father' | 'spouse' | 'child' | 'other' | '';
   ageGroup: 'under-18' | '18-34' | '35-49' | '50+' | '';
