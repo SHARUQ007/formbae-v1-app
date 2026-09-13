@@ -64,11 +64,11 @@ it('failed payment verification does not claim membership is active', async () =
   expect(navigation.replace).not.toHaveBeenCalled();
   expect(renderer.root.findAllByType(PrimaryButton).some(node => node.props.title === 'Check again')).toBe(true);
 });
-it('coach selection only offers included coaches and persists the selected coach', async () => {
+it('coach selection only offers selectable coaches and persists the selected coach', async () => {
   const coach = { trainerId: 'ava', name: 'Ava', expertise: 'AI coach', canSelect: true, languages: ['English'], photoUrl: '' };
-  (fetchCoachHub as jest.Mock).mockResolvedValue({ currentTrainer: null, trainers: [coach, { ...coach, trainerId: 'upgrade', name: 'Upgrade coach', requiresUpgrade: true }] });
+  (fetchCoachHub as jest.Mock).mockResolvedValue({ currentTrainer: null, trainers: [coach, { ...coach, trainerId: 'locked', name: 'Locked coach', canSelect: false }] });
   await render(<FindingTrainerScreen navigation={navigation as never} route={{ name: 'FindingTrainer', key: 'coach' }} />);
-  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Upgrade coach, AI coach' })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Locked coach, AI coach' })).toHaveLength(0);
   await act(async () => { renderer.root.findAllByProps({ accessibilityLabel: 'Ava, AI coach' })[0].props.onPress(); });
   await act(async () => { await renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Continue with this coach')!.props.onPress(); });
   expect(changeCoach).toHaveBeenCalledWith('ava');

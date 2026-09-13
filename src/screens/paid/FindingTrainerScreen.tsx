@@ -23,7 +23,7 @@ export function FindingTrainerScreen({ navigation }: NativeStackScreenProps<Paid
     setLoading(true); setError('');
     try {
       const hub = await fetchCoachHub();
-      setCoaches(hub.trainers.filter(coach => coach.canSelect && !coach.requiresUpgrade));
+      setCoaches(hub.trainers.filter(coach => coach.canSelect));
       setSelected(hub.currentTrainer?.trainerId || '');
     } catch { setError('We couldn’t load your coaches. Please try again.'); }
     finally { setLoading(false); }

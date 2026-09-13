@@ -22,10 +22,9 @@ import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { changeCoach, fetchCoachHubPhotoFallbacks } from '../../services/trainerService';
-import { runNativeCheckout } from '../../services/paymentService';
 import { loadCoachBundleCached, peekCoachBundleCached } from '../../services/preloadService';
 import { useAuthStore } from '../../store/authStore';
-import type { CoachHubPayload, CoachOption, PaymentPlan } from '../../types/api';
+import type { CoachHubPayload, CoachOption } from '../../types/api';
 import type { CoachScreenParams } from '../../navigation/types';
 import { getCoachArtworkSource } from '../../utils/coachArtwork';
 import { colors } from '../../theme/colors';
@@ -44,11 +43,7 @@ function formatPrice(value: string) {
 }
 
 function coachAccessPrice(coach: CoachOption) {
-  const upgradePaise = Math.round(Number(coach.upgradeAmountPaise || 0));
-  if (coach.requiresUpgrade && Number.isFinite(upgradePaise) && upgradePaise >= 100) {
-    return `₹${Math.round(upgradePaise / 100).toLocaleString('en-IN')} to unlock`;
-  }
-  if (coach.requiresUpgrade) return 'Upgrade required';
+  // Every coach is included in a membership now.
   if (coach.canSelect) return 'Included';
   return formatPrice(coach.monthlyFee);
 }
@@ -94,21 +89,6 @@ function isAiCoach(coach: CoachOption) {
   return /\b(ai trainer|ava)\b/.test(text);
 }
 
-function trainerUpgradePlan(coach: CoachOption): PaymentPlan | null {
-  const amount = Math.round(Number(coach.upgradeAmountPaise || 0));
-  if (!coach.paywallId || !Number.isFinite(amount) || amount < 100) return null;
-  return {
-    planId: '',
-    planName: `${coach.name} coach access`,
-    label: `${coach.name} coach access`,
-    amount,
-    planDuration: 'monthly',
-    paywallId: coach.paywallId,
-    flowSlug: 'mobile',
-    billing: 'one_time',
-  };
-}
-
 function mergeCoachPhotos(current: CoachHubPayload, fallback: CoachHubPayload): CoachHubPayload {
   const fallbackPhotos = new Map(
     [fallback.currentTrainer, ...fallback.trainers]
@@ -142,10 +122,9 @@ export function TrainerScreen() {
   const [filter, setFilter] = useState<CoachFilter>('all');
   const [viewingCoach, setViewingCoach] = useState<CoachOption | null>(null);
   const [changingId, setChangingId] = useState('');
-  const [payingTrainerId, setPayingTrainerId] = useState('');
   const [coachImageRevision, setCoachImageRevision] = useState(0);
   const coachImageRecoveryAttempted = useRef(false);
-  const { user, status, refreshStatus } = useAuthStore();
+  const { refreshStatus } = useAuthStore();
 
   const { data, loading, error, reload, refresh, refreshing, setData } = useAsync((mode) =>
     loadCoachBundleCached({ force: mode === 'refresh' }),
@@ -235,56 +214,11 @@ export function TrainerScreen() {
 
   const activeTab: CoachTab = !currentCoach && tab === 'about' ? 'change' : tab;
 
-  const startTrainerUpgrade = useCallback(
-    async (coach: CoachOption) => {
-      const plan = trainerUpgradePlan(coach);
-      if (!plan) {
-        Alert.alert('Coach payment not ready', 'This coach does not have an enabled trainer paywall yet. Please try another coach or contact support.');
-        return;
-      }
-      setPayingTrainerId(coach.trainerId);
-      try {
-        const result = await runNativeCheckout({
-          plan,
-          paywallId: coach.paywallId,
-          selectedTrainerId: coach.trainerId,
-          user: {
-            name: status?.name || user?.name || 'FormBae Trainee',
-            mobile: status?.phone || user?.mobile || '',
-            email: status?.email,
-          },
-        });
-        if (result.cancelled) return;
-        if (!result.success) {
-          Alert.alert('Payment issue', result.error || 'Payment could not be completed.');
-          return;
-        }
-        await refreshStatus().catch(() => undefined);
-        await loadCoachBundleCached({ force: true }).catch(() => undefined);
-        await reload();
-        setViewingCoach(null);
-        setTab('about');
-      } catch (e) {
-        Alert.alert('Could not unlock coach', e instanceof Error ? e.message : 'Please try again.');
-      } finally {
-        setPayingTrainerId('');
-      }
-    },
-    [refreshStatus, reload, status?.email, status?.name, status?.phone, user?.mobile, user?.name],
-  );
-
   const confirmChangeCoach = useCallback(
     (coach: CoachOption) => {
       if (!data || coach.changeKind === 'none') return;
       if (coach.blockedUntil) {
         Alert.alert('Coach change locked', `${coach.reason} You can change again after ${formatUnlockDate(coach.blockedUntil)}.`);
-        return;
-      }
-      if (coach.requiresUpgrade) {
-        Alert.alert('Upgrade coach?', coach.reason || `Unlock ${coach.name} with Razorpay.`, [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Continue', onPress: () => startTrainerUpgrade(coach) },
-        ]);
         return;
       }
       Alert.alert('Change coach?', `Switch from ${currentCoach?.name || 'your current coach'} to ${coach.name}? Your workout history stays intact.`, [
@@ -309,7 +243,7 @@ export function TrainerScreen() {
         },
       ]);
     },
-    [currentCoach?.name, data, refreshStatus, reload, startTrainerUpgrade],
+    [currentCoach?.name, data, refreshStatus, reload],
   );
 
   if (loading) {
@@ -385,7 +319,7 @@ export function TrainerScreen() {
                 coach={coach}
                 onImageError={recoverCoachImages}
                 current={coach.trainerId === currentCoach?.trainerId}
-                changing={changingId === coach.trainerId || payingTrainerId === coach.trainerId}
+                changing={changingId === coach.trainerId}
                 fullWidth={stackCoachCards}
                 onPress={() => {
                   setViewingCoach(coach);
@@ -403,7 +337,7 @@ export function TrainerScreen() {
           coach={viewingCoach}
           onImageError={recoverCoachImages}
           current={viewingCoach.trainerId === currentCoach?.trainerId}
-          loading={changingId === viewingCoach.trainerId || payingTrainerId === viewingCoach.trainerId}
+          loading={changingId === viewingCoach.trainerId}
           tabBarHeight={tabBarHeight}
           onContinue={() => {
             if (viewingCoach.blockedUntil) {
@@ -413,12 +347,8 @@ export function TrainerScreen() {
               );
               return;
             }
-            if (!viewingCoach.canSelect && !viewingCoach.requiresUpgrade) {
-              Alert.alert('Coach unavailable', viewingCoach.reason || 'This coach is not available with your current access.');
-              return;
-            }
-            if (viewingCoach.requiresUpgrade) {
-              startTrainerUpgrade(viewingCoach);
+            if (!viewingCoach.canSelect) {
+              Alert.alert('Coach unavailable', viewingCoach.reason || 'This coach is not available right now.');
               return;
             }
             confirmChangeCoach(viewingCoach);
@@ -473,7 +403,6 @@ function CoachHero({ coach, ai, onImageError }: { coach: CoachOption; ai: boolea
           <Text style={styles.kicker}>{ai ? 'AI trainer' : 'Your coach'}</Text>
           <Text style={styles.heroName}>{coach.name}</Text>
         </View>
-        <Badge label={coach.tier} tone="accent" icon="award" />
       </View>
       {ai ? <CoachPlanSummary /> : null}
     </View>
@@ -627,7 +556,7 @@ function CoachDetailPage({
   const firstName = coach.name.trim().split(/\s+/)[0] || 'coach';
   const isAi = isAiCoach(coach);
   const isLocked = Boolean(coach.blockedUntil);
-  const isUnavailable = !current && !coach.canSelect && !coach.requiresUpgrade && !isLocked;
+  const isUnavailable = !current && !coach.canSelect && !isLocked;
   const languages = coach.languages?.filter(Boolean).join(', ') || '';
   const availability = coach.availableSlotCount > 0 ? `${coach.availableSlotCount} slots open` : '';
   const nextOpening = coach.nextSlotAt && Number.isFinite(new Date(coach.nextSlotAt).getTime())
@@ -655,8 +584,6 @@ function CoachDetailPage({
       ? `Available ${formatUnlockDate(coach.blockedUntil)}`
       : isUnavailable
         ? 'Not available'
-      : coach.requiresUpgrade
-        ? `Unlock ${firstName}`
         : `Choose ${firstName}`;
 
   useEffect(() => setImageFailed(false), [image]);
@@ -689,7 +616,6 @@ function CoachDetailPage({
           </View>
         </View>
         <View style={styles.detailBadgeRow}>
-          <Badge label={coach.tier || 'Coach'} tone="gold" icon="award" />
           {current ? <Badge label="Current coach" tone="neutral" icon="check" /> : null}
         </View>
         {!current ? <Text style={styles.detailPrice}>{coachAccessPrice(coach)}</Text> : null}
@@ -737,17 +663,13 @@ function CoachDetailPage({
               ? 'This is your current coach'
               : isUnavailable
                 ? 'Currently unavailable'
-                : coach.requiresUpgrade
-                  ? 'Secure coach access'
-                  : 'Your progress stays connected'}
+                : 'Your progress stays connected'}
           </Text>
           <Text style={styles.checkoutNoteBody}>
             {current
               ? 'Your current plan and workout history are already connected to this coach.'
               : isUnavailable
-                ? coach.reason || 'This coach is not available with your current access.'
-              : coach.requiresUpgrade
-                ? 'Complete the coach upgrade securely. Your existing workout history stays connected after access is confirmed.'
+                ? coach.reason || 'This coach is not available right now.'
                 : 'Changing coaches keeps your workout history and current progress intact.'}
           </Text>
         </View>
@@ -758,7 +680,7 @@ function CoachDetailPage({
       <View style={styles.detailActions}>
         <PrimaryButton
           title={actionTitle}
-          icon={current ? 'check' : isLocked ? 'lock' : coach.requiresUpgrade ? 'unlock' : 'arrow-right'}
+          icon={current ? 'check' : isLocked ? 'lock' : 'arrow-right'}
           size="lg"
           loading={loading}
           disabled={current || isLocked || isUnavailable}
@@ -826,7 +748,7 @@ function CoachOptionCard({
   const label = formatCoachLabel(coach);
   const disabled = changing;
   const locked = Boolean(coach.blockedUntil);
-  const status = current ? 'Current' : coach.requiresUpgrade ? 'Upgrade' : coach.canSelect ? 'Included' : 'View';
+  const status = current ? 'Current' : coach.canSelect ? 'Included' : 'View';
 
   useEffect(() => setImageFailed(false), [image]);
 
@@ -839,7 +761,6 @@ function CoachOptionCard({
         styles.optionCard,
         fullWidth && styles.optionCardFull,
         current && styles.optionCurrent,
-        coach.requiresUpgrade && styles.optionUpgrade,
       ]}
       accessibilityRole="button"
       accessibilityLabel={`${coach.name}, ${label}, ${status}, ${coachAccessPrice(coach)}`}
@@ -864,13 +785,9 @@ function CoachOptionCard({
             <Text style={styles.optionFallbackInitial}>{coach.name.slice(0, 1).toUpperCase()}</Text>
           </View>
         )}
-        <View style={[
-          styles.optionStatus,
-          current && styles.optionStatusCurrent,
-          coach.requiresUpgrade && styles.optionStatusUpgrade,
-        ]}>
-          <Feather name={current ? 'check' : coach.requiresUpgrade ? 'lock' : 'arrow-right'} size={12} color={current || coach.requiresUpgrade ? colors.onPrimary : colors.ink} />
-          <Text style={[styles.optionStatusText, (current || coach.requiresUpgrade) && styles.optionStatusTextDark]}>{status}</Text>
+        <View style={[styles.optionStatus, current && styles.optionStatusCurrent]}>
+          <Feather name={current ? 'check' : 'arrow-right'} size={12} color={current ? colors.onPrimary : colors.ink} />
+          <Text style={[styles.optionStatusText, current && styles.optionStatusTextDark]}>{status}</Text>
         </View>
         <View style={styles.optionCaption}>
           <Text style={styles.optionName} numberOfLines={1}>{coach.name}</Text>
@@ -879,7 +796,7 @@ function CoachOptionCard({
       </View>
       <View style={styles.optionFooter}>
         <Text style={styles.optionPrice} numberOfLines={1}>
-          {current ? 'View profile' : !coach.canSelect && !coach.requiresUpgrade ? 'View availability' : coachAccessPrice(coach)}
+          {current ? 'View profile' : !coach.canSelect ? 'View availability' : coachAccessPrice(coach)}
         </Text>
         {changing ? <ActivityIndicator size="small" color={colors.ink} /> : <Feather name="arrow-right" size={17} color={colors.ink} />}
       </View>

@@ -528,7 +528,7 @@ export type TrainerInfo = {
   trainerGender?: string;
 };
 
-export type CoachChangeKind = 'none' | 'initial' | 'swap' | 'upgrade';
+export type CoachChangeKind = 'none' | 'initial' | 'swap';
 
 export type CoachOption = {
   trainerId: string;
@@ -540,17 +540,14 @@ export type CoachOption = {
   detailedDescription: string;
   languages: string[];
   monthlyFee: string;
-  tier: string;
   trainerKind?: TrainerKind | string;
   trainerPersona?: string;
   availableSlotCount: number;
   nextSlotAt: string;
   changeKind: CoachChangeKind;
   blockedUntil: string;
-  requiresUpgrade: boolean;
   canSelect: boolean;
   reason: string;
-  upgradeAmountPaise: number;
   paywallId: string;
 };
 
@@ -558,8 +555,6 @@ export type CoachHubPayload = {
   currentTrainer: CoachOption | null;
   trainers: CoachOption[];
   access: {
-    accessibleTrainerTier: string;
-    currentTrainerTier: string;
     trainerAccessLabel: string;
     trainerAccessRemainingWeeks: number;
     swapLockedUntil: string;
