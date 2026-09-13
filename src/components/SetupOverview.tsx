@@ -7,9 +7,9 @@ import { colors } from '../theme/colors';
 
 export type SetupStep = { title: string; detail: string; artwork: SetupArtworkKind; complete?: boolean; onChange?: () => void };
 
-export function SetupOverview({ paid, steps, title, subtitle, action, onContinue, onLogout, busy, error }: {
+export function SetupOverview({ paid, steps, title, subtitle, action, onContinue, busy, error }: {
   paid?: boolean; steps: SetupStep[]; title: string; subtitle: string; action: string;
-  onContinue: () => void; onLogout: () => void; busy?: boolean; error?: string;
+  onContinue: () => void; busy?: boolean; error?: string;
 }) {
   const { height } = useWindowDimensions();
   const imageHeight = Math.min(180, Math.max(100, height * 0.18));
@@ -39,14 +39,13 @@ export function SetupOverview({ paid, steps, title, subtitle, action, onContinue
           </View>
           {step.onChange ? <TouchableOpacity onPress={step.onChange} disabled={busy} accessibilityRole="button" accessibilityLabel={`Change ${step.title.toLowerCase()}`} style={styles.changeButton}>
             <Text style={styles.changeText}>Change</Text>
-          </TouchableOpacity> : <Text style={styles.number}>{String(index + 1).padStart(2, '0')}</Text>}
+          </TouchableOpacity> : null}
         </View>)}
       </View>
       {paid ? <Text style={styles.note}>Your payment is already taken care of. We’ll keep your completed steps saved.</Text> : null}
     </ScrollView>
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-    <PrimaryButton title={action} iconArtwork={<SetupContinueArrow />} iconPosition="trailing" onPress={onContinue} loading={busy} style={styles.cta} />
-    <PrimaryButton title="Use another account" variant="ghost" size="sm" onPress={onLogout} disabled={busy} />
+    <PrimaryButton title={action} iconArtwork={<SetupContinueArrow />} iconPosition="trailing" onPress={onContinue} loading={busy} size="lg" style={styles.cta} />
   </ScreenContainer>;
 }
 
@@ -71,8 +70,7 @@ const styles = StyleSheet.create({
   detail: { color: colors.inkMuted, fontSize: 12, lineHeight: 17 },
   changeButton: { minHeight: 44, justifyContent: 'center', paddingLeft: 4 },
   changeText: { fontSize: 12, fontWeight: '700', color: colors.gold },
-  number: { color: colors.inkSubtle, fontSize: 12 },
   note: { color: colors.inkMuted, fontSize: 12, lineHeight: 18, marginTop: 16 },
-  cta: { backgroundColor: colors.gold, borderColor: colors.gold },
+  cta: { minHeight: 62, marginBottom: 8, borderRadius: 18, backgroundColor: colors.gold, borderColor: colors.gold },
   error: { color: colors.error, fontSize: 14, lineHeight: 20, marginBottom: 12 },
 });

@@ -8,7 +8,7 @@ import type { PaidStackParamList, RootStackParamList } from '../../navigation/ty
 type Props = NativeStackScreenProps<PaidStackParamList, 'PaidWelcome'>;
 
 export function PaidWelcomeScreen({ navigation }: Props) {
-  const { status, refreshStatus, logout } = useAuthStore();
+  const { status, refreshStatus } = useAuthStore();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const step = status ? nextPaidSetupStep(status) : 'PaymentSync';
@@ -32,6 +32,5 @@ export function PaidWelcomeScreen({ navigation }: Props) {
       { title: 'Your coach', detail: 'Choose from the coaches included in your plan', artwork: 'coach', complete: status?.trainerAssigned, onChange: status?.hasPaid && status.questionnaireCompleted && status.trainerAssigned && !status.planReady ? () => navigation.navigate('FindingTrainer') : undefined },
       { title: 'Your first workout plan', detail: 'Built from your profile and coach selection', artwork: 'plan', complete: status?.planReady },
     ]}
-    action={labels[step]} onContinue={proceed} busy={busy} error={error}
-    onLogout={async () => { await logout(); navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Auth'); }} />;
+    action={labels[step]} onContinue={proceed} busy={busy} error={error} />;
 }
