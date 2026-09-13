@@ -28,11 +28,14 @@ export function historyBodyMuscles(session: WorkoutHistoryEntry): BodyMuscle[] {
     return known ? [known] : [];
   }))];
 }
+export const isGenericHistoryTitle = (title?: string) => !title?.trim() || /^(?:(?:standard|quick|training)\s+)?(?:workout|session)(?:\s+session)?$/i.test(title.trim());
+
 export function historyWorkoutTitle(session: WorkoutHistoryEntry) {
   const title = formatWorkoutTitle(session.title);
-  if (title && !/^(standard|quick)?\s*workout$/i.test(title)) return title;
+  if (!isGenericHistoryTitle(title)) return title;
   const groups = historyMuscleGroups(session);
   if (groups.length) return groups.length <= 2 ? groups.join(' & ') : `${groups[0]} & more`;
+  if (session.exercises?.length === 1 && session.exercises[0].name) return session.exercises[0].name;
   return session.workoutMode === 'quick' ? 'Quick session' : 'Training session';
 }
 export function historyHasPerformance(session: WorkoutHistoryEntry) {

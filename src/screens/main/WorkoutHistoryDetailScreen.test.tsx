@@ -36,3 +36,12 @@ it('identifies a saved prescription without claiming its planned sets were perfo
   expect(text(tree)).not.toContain('LOGGED SETS');
   act(()=>tree.unmount());
 });
+
+it('retains recorded performance when exercise names come from an archived plan', () => {
+  let tree!: ReturnType<typeof create>;
+  act(() => { tree = render({ ...base, detailsSource: 'plan', exercises: [{ exerciseId: 'squat', name: 'Goblet squat', muscleGroups: ['Quads'], sets: [{ setNumber: '1', reps: '8', weight: '12' }] }] }); });
+  expect(text(tree)).toContain('Your recorded activity is shown below');
+  expect(text(tree)).toContain('8 reps · 12 kg');
+  expect(text(tree)).not.toContain('Exact performance wasn’t saved');
+  act(() => tree.unmount());
+});

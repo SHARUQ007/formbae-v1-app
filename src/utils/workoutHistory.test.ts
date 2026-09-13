@@ -38,3 +38,10 @@ it('handles old completions without inventing exercise names or muscle groups', 
   expect(historyBodyMuscles(session)).toEqual([]);
   expect(historySessionKey({...session,workoutMode:'quick'})).not.toBe(historySessionKey(session));
 });
+
+it('replaces generic titles with the saved muscles or single exercise when available', () => {
+  const session = { date: '2026-08-25', planId: 'old', planDayId: 'day', workoutMode: 'standard', title: 'Workout session' };
+  expect(historyWorkoutTitle({ ...session, muscleGroups: ['Back', 'Biceps'] })).toBe('Back & Biceps');
+  expect(historyWorkoutTitle({ ...session, exercises: [{ exerciseId: 'rowing', name: 'Rowing', muscleGroups: [], sets: [] }] })).toBe('Rowing');
+  expect(historyWorkoutTitle(session)).toBe('Training session');
+});
