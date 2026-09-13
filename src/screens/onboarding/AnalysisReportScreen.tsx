@@ -40,8 +40,8 @@ export function AnalysisReportScreen({ navigation }: Props) {
   const chartAnchorRef = useRef<View>(null);
 
   const layout = useMemo(() => {
-    const compact = windowWidth < 380;
-    const narrow = windowWidth < 360;
+    const compact = windowWidth < 440;
+    const narrow = windowWidth < 380;
     const outerPad = compact ? 8 : 12;
     const contentPad = compact ? 14 : 20;
     const chipGap = 8;
@@ -195,13 +195,13 @@ export function AnalysisReportScreen({ navigation }: Props) {
               colors={['rgba(248,216,132,0.12)', 'rgba(255,255,255,0.045)']}
               style={styles.projectionCard}
             >
-              <View style={styles.projectionHeader}>
+              <View style={[styles.projectionHeader, layout.compact && styles.projectionHeaderCompact]}>
                 <View style={styles.projectionKicker}>
                   <Text style={styles.eyebrowGold}>
                     30-day consistency projection
                   </Text>
                 </View>
-                <View style={styles.projectedBadge}>
+                <View style={[styles.projectedBadge, layout.compact && styles.projectedBadgeCompact]}>
                   <Text style={styles.projectedLabel}>Projected</Text>
                   <Text style={styles.projectedValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>
                     {projectionStart} to {projectionTarget}
@@ -565,6 +565,7 @@ const styles = StyleSheet.create({
   shellScroll: { flex: 1 },
   shellContent: {
     flexGrow: 1,
+    width: '100%',
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 40,
@@ -601,6 +602,7 @@ const styles = StyleSheet.create({
   },
   bmiCard: {
     flex: 1.05,
+    minWidth: 0,
     borderRadius: 22,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.10)',
@@ -609,6 +611,7 @@ const styles = StyleSheet.create({
   },
   readinessCard: {
     flex: 0.95,
+    minWidth: 0,
     borderRadius: 22,
     borderWidth: 1,
     borderColor: 'rgba(248,216,132,0.18)',
@@ -695,6 +698,7 @@ const styles = StyleSheet.create({
   insightChip: {
     flexGrow: 1,
     flexBasis: '48%',
+    minWidth: 0,
     maxWidth: '48.8%',
     borderRadius: 16,
     borderWidth: 1,
@@ -736,6 +740,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  projectionHeaderCompact: {
+    flexDirection: 'column',
+    gap: 6,
+  },
   projectionKicker: {
     flex: 1,
     flexShrink: 1,
@@ -746,6 +754,11 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     flexShrink: 0,
     maxWidth: '42%',
+  },
+  projectedBadgeCompact: {
+    width: '100%',
+    maxWidth: '100%',
+    alignItems: 'flex-start',
   },
   projectedLabel: {
     fontSize: 10,
@@ -760,6 +773,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '600',
     color: '#ffffff',
+    maxWidth: '100%',
   },
   chartStage: {
     marginTop: 4,
@@ -788,6 +802,7 @@ const styles = StyleSheet.create({
   },
   metricTile: {
     flex: 1,
+    minWidth: 0,
     borderRadius: 16,
     backgroundColor: 'rgba(0,0,0,0.24)',
     padding: 10,
@@ -836,6 +851,7 @@ const styles = StyleSheet.create({
   },
   structureHeaderCopy: {
     flex: 1,
+    minWidth: 0,
     gap: 4,
   },
   structureTitle: {
@@ -901,6 +917,7 @@ const styles = StyleSheet.create({
   },
   trainerSupportCopy: {
     flex: 1,
+    minWidth: 0,
   },
   trainerSupportLead: {
     fontSize: 14,
@@ -955,6 +972,7 @@ const styles = StyleSheet.create({
   },
   solutionCopy: {
     flex: 1,
+    minWidth: 0,
   },
   solutionTitle: {
     fontSize: 14,
@@ -1004,6 +1022,7 @@ const styles = StyleSheet.create({
   },
   trainerCopy: {
     flex: 1,
+    minWidth: 0,
     justifyContent: 'center',
   },
   trainerName: {
