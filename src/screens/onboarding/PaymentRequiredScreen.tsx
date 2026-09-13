@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Text, TouchableOpacity, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Alert, ScrollView, Text, TouchableOpacity, StyleSheet, useWindowDimensions, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
@@ -24,9 +24,9 @@ const secondsUntil = (expiresAt: string) => Math.max(0, Math.ceil((Date.parse(ex
 const formatTimer = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 const rupees = (paise: number) => `₹${Math.round(paise / 100).toLocaleString('en-IN')}`;
 
-/** Three short lines only — the screen has to hold everything without scrolling. */
+/** Whatever the admin configured on the plan; the local copy is only a fallback. */
 function benefitsForPlan(plan: PaymentPlan, included: string): string[] {
-  if (plan.benefits?.length) return plan.benefits.slice(0, 3);
+  if (plan.benefits?.length) return plan.benefits;
   const members = plan.memberLimit || 1;
   if (members > 1) return [
     `Separate plans for you and ${included}`,
@@ -293,18 +293,25 @@ export function PaymentRequiredScreen({ navigation }: Props) {
         )}
 
         {selectedPlan ? (
-          <View style={[styles.benefitsCard, { paddingVertical: density.benefitPad, gap: density.benefitGap }]}>
+          <View style={[styles.benefitsCard, { paddingVertical: density.benefitPad }]}>
             {included ? (
               <Text style={[styles.includedText, { fontSize: density.benefitText, lineHeight: density.benefitLine }]} numberOfLines={2}>
                 Includes a plan for <Text style={styles.includedName}>{included}</Text>
               </Text>
             ) : null}
-            {benefitsForPlan(selectedPlan, included).map((benefit) => (
-              <View key={benefit} style={styles.benefitRow}>
-                <BenefitCheck />
-                <Text style={[styles.benefitText, { fontSize: density.benefitText, lineHeight: density.benefitLine }]} numberOfLines={2}>{benefit}</Text>
-              </View>
-            ))}
+            <ScrollView
+              style={styles.benefitsScroll}
+              contentContainerStyle={{ gap: density.benefitGap }}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
+              {benefitsForPlan(selectedPlan, included).map((benefit) => (
+                <View key={benefit} style={styles.benefitRow}>
+                  <BenefitCheck />
+                  <Text style={[styles.benefitText, { fontSize: density.benefitText, lineHeight: density.benefitLine }]}>{benefit}</Text>
+                </View>
+              ))}
+            </ScrollView>
           </View>
         ) : null}
       </View>
@@ -390,8 +397,9 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   radioSelected: { backgroundColor: colors.accentFill, borderColor: colors.accent },
-  benefitsCard: { backgroundColor: colors.panel, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: 12, gap: 8 },
-  includedText: { ...typography.caption, color: colors.inkMuted, lineHeight: 17, marginBottom: 1 },
+  benefitsCard: { flexShrink: 1, backgroundColor: colors.panel, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: 12 },
+  benefitsScroll: { flexGrow: 0, flexShrink: 1 },
+  includedText: { ...typography.caption, color: colors.inkMuted, lineHeight: 17, marginBottom: 8 },
   includedName: { color: colors.gold, fontWeight: '700' },
   benefitRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   benefitCheck: { width: 15, height: 15, marginTop: 1, flexShrink: 0 },
