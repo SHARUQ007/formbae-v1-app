@@ -14,7 +14,9 @@ export function SetupOverview({ paid, steps, title, subtitle, action, onContinue
   return <ScreenContainer withBottomInset>
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
       <View style={styles.hero}>
-        <StableImage source={require('../assets/editorial/accountability-plan.jpg')} style={styles.art} resizeMode="contain" accessible={false} accessibilityIgnoresInvertColors />
+        <View style={styles.artFrame}>
+          <StableImage source={require('../assets/editorial/accountability-plan.jpg')} style={styles.art} resizeMode="contain" accessible={false} accessibilityIgnoresInvertColors />
+        </View>
         <View style={styles.heroCopy}>
           <Text style={styles.eyebrow}>{paid ? 'YOUR MEMBERSHIP IS ACTIVE' : 'YOUR FIRST CHAPTER'}</Text>
           <Text style={styles.title}>{title}</Text>
@@ -48,8 +50,10 @@ export function SetupOverview({ paid, steps, title, subtitle, action, onContinue
 const styles = StyleSheet.create({
   content: { paddingBottom: 20 },
   hero: { borderRadius: 24, overflow: 'hidden', backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border },
-  // Match the bundled 1200 × 800 image so neither face is cropped.
-  art: { width: '100%', aspectRatio: 3 / 2 },
+  // Size a plain View first: native bundled Images supply intrinsic dimensions
+  // that can override an aspect-ratio-only height inside a ScrollView.
+  artFrame: { width: '100%', aspectRatio: 3 / 2, overflow: 'hidden' },
+  art: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
   heroCopy: { padding: 20, gap: 10 },
   eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1.8, color: colors.gold },
   title: { fontSize: 30, lineHeight: 35, fontWeight: '800', color: colors.ink, letterSpacing: -0.6 },
