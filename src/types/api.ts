@@ -136,6 +136,9 @@ export type PaymentPlan = {
   benefits?: string[];
 };
 
+/** Who the backend infers the trainee would bring along, from their survey age and gender. */
+export type HouseholdSuggestion = HouseholdMemberProfile & { label: string };
+
 export type HouseholdMemberProfile = {
   relationship: 'mother' | 'father' | 'spouse' | 'child' | 'other' | '';
   ageGroup: 'under-18' | '18-34' | '35-49' | '50+' | '';

@@ -2,7 +2,7 @@ import RazorpayCheckout from 'react-native-razorpay';
 import { apiRequest, getAuthToken } from './apiClient';
 import * as Keychain from 'react-native-keychain';
 import { getActiveCacheSessionId } from './appCache';
-import type { HouseholdMemberProfile, PaymentPlan, UserStatus } from '../types/api';
+import type { HouseholdMemberProfile, HouseholdSuggestion, PaymentPlan, UserStatus } from '../types/api';
 
 export async function fetchPaymentStatus() {
   return apiRequest<{
@@ -15,6 +15,7 @@ export async function fetchPaymentStatus() {
     paymentUrl: string;
     offerExpiresAt?: string;
     offerActive?: boolean;
+    householdSuggestion?: HouseholdSuggestion[];
   }>('/payment/status');
 }
 
