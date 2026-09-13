@@ -12,9 +12,8 @@ import {
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
-import Svg, { Circle, Defs, G, Line, Path, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import LinearGradient from 'react-native-linear-gradient';
 import { ScreenContainer, ScreenTitle } from '../../components/Card';
 import { ErrorState, LoadingState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
@@ -102,6 +101,8 @@ export function AnalysisReportScreen({ navigation }: Props) {
     report.projectionTargetScore ?? report.projectionData?.[report.projectionData.length - 1]?.score ?? 0;
   const cadence = report.cadence || report.weeklySchedule;
   const workoutStyle = report.workoutStyle || report.workoutDirection;
+  const trainerMonths = report.trainerMonths || Number(report.trainerCadence?.match(/\d+/)?.[0]) || 2;
+  const trainerCadence = `One trainer check-in every ${trainerMonths} ${trainerMonths === 1 ? 'month' : 'months'}`;
   const insightChips: Array<[string, string]> = [
     ['Goal', report.goal || 'Stay consistent'],
     ['Blocker', report.blocker || 'Workout friction'],
@@ -133,9 +134,6 @@ export function AnalysisReportScreen({ navigation }: Props) {
       ]}
     >
       <View style={[styles.shell, { borderRadius: layout.shellRadius }]}>
-        <LinearGradient colors={['#0b0d13', '#03050a']} style={StyleSheet.absoluteFill} />
-        <ReportTopGlow />
-
         <ScrollView
           style={styles.shellScroll}
           showsVerticalScrollIndicator={false}
@@ -191,10 +189,7 @@ export function AnalysisReportScreen({ navigation }: Props) {
           </View>
 
           {report.projectionData?.length ? (
-            <LinearGradient
-              colors={['rgba(248,216,132,0.12)', 'rgba(255,255,255,0.045)']}
-              style={styles.projectionCard}
-            >
+            <View style={styles.projectionCard}>
               <View style={[styles.projectionHeader, layout.compact && styles.projectionHeaderCompact]}>
                 <View style={styles.projectionKicker}>
                   <Text style={styles.eyebrowGold}>
@@ -225,7 +220,7 @@ export function AnalysisReportScreen({ navigation }: Props) {
                   <Text style={styles.metricHint}>Sessions, logs, recovery, and diet structure</Text>
                 </View>
               </View>
-            </LinearGradient>
+            </View>
           ) : null}
 
           <View style={styles.plainCard}>
@@ -250,29 +245,22 @@ export function AnalysisReportScreen({ navigation }: Props) {
             </View>
           </View>
 
-          <LinearGradient
-            colors={['rgba(248,216,132,0.16)', 'rgba(255,255,255,0.045)']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.trainerSupportCard}
-          >
-            <Text style={styles.eyebrowGold}>Trainer support</Text>
-            <View style={styles.trainerSupportRow}>
-              <View style={styles.trainerSupportCopy}>
-                <Text style={styles.trainerSupportLead}>Based on your profile:</Text>
-                <Text style={styles.trainerCadence}>
-                  {report.trainerCadence || 'We recommend getting a personal trainer once every 2 months.'}
-                </Text>
+          <View style={styles.trainerSupportCard}>
+            <View style={styles.trainerSupportHeader}>
+              <View style={styles.trainerSupportHeading}>
+                <Text style={styles.eyebrowGold}>Trainer support</Text>
+                <Text style={styles.trainerSupportLead}>Your recommended coaching rhythm</Text>
               </View>
-              <View style={styles.trainerSupportIcon}>
-                <Feather name="users" size={20} color={GOLD} />
-              </View>
+              <TrainerSupportMark />
             </View>
-            <Text style={styles.trainerReason}>
-              {report.trainerReason ||
-                'Use that trainer month as a periodic calibration while you train mostly independently.'}
-            </Text>
-          </LinearGradient>
+            <Text style={styles.trainerCadence}>{trainerCadence}</Text>
+            <View style={styles.trainerReasonPanel}>
+              <Text style={styles.trainerReason}>
+                {report.trainerReason ||
+                  'Review form, progression and your next training block, then keep training independently between check-ins.'}
+              </Text>
+            </View>
+          </View>
 
           <View style={styles.plainCard}>
             <Text style={styles.eyebrowMuted}>FormBae solution map</Text>
@@ -342,17 +330,15 @@ function StructureBars() {
   );
 }
 
-function ReportTopGlow() {
+function TrainerSupportMark() {
   return (
-    <View pointerEvents="none" style={styles.topGlow}>
-      <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
-        <Defs>
-          <RadialGradient id="reportTopGlow" cx="50%" cy="0%" rx="62%" ry="62%">
-            <Stop offset="0%" stopColor={GOLD} stopOpacity="0.16" />
-            <Stop offset="62%" stopColor={GOLD} stopOpacity="0" />
-          </RadialGradient>
-        </Defs>
-        <Rect x="0" y="0" width="100" height="100" fill="url(#reportTopGlow)" />
+    <View pointerEvents="none" style={styles.trainerSupportMark}>
+      <Svg width="44" height="44" viewBox="0 0 44 44">
+        <Circle cx="16" cy="15" r="5" fill="none" stroke={GOLD} strokeWidth="1.8" />
+        <Circle cx="29" cy="17" r="4" fill="none" stroke="rgba(248,216,132,0.58)" strokeWidth="1.6" />
+        <Path d="M7 32c0-6 4-10 9-10s9 4 9 10" fill="none" stroke={GOLD} strokeWidth="1.8" strokeLinecap="round" />
+        <Path d="M25 25c5 0 9 3 9 8" fill="none" stroke="rgba(248,216,132,0.58)" strokeWidth="1.6" strokeLinecap="round" />
+        <Path d="M31 7l1.2 2.4L35 10.6l-2.8 1.2L31 14.4l-1.2-2.6-2.8-1.2 2.8-1.2L31 7z" fill={GOLD} />
       </Svg>
     </View>
   );
@@ -555,13 +541,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 18 },
     elevation: 12,
   },
-  topGlow: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 192,
-  },
   shellScroll: { flex: 1 },
   shellContent: {
     flexGrow: 1,
@@ -725,7 +704,8 @@ const styles = StyleSheet.create({
     marginTop: 12,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(248,216,132,0.22)',
+    borderColor: 'rgba(248,216,132,0.28)',
+    backgroundColor: 'rgba(248,216,132,0.055)',
     padding: 12,
     shadowColor: GOLD,
     shadowOpacity: 0.07,
@@ -900,52 +880,56 @@ const styles = StyleSheet.create({
     marginTop: 12,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(248,216,132,0.24)',
-    padding: 12,
+    borderColor: 'rgba(248,216,132,0.30)',
+    backgroundColor: 'rgba(248,216,132,0.055)',
+    padding: 14,
     shadowColor: GOLD,
     shadowOpacity: 0.07,
     shadowRadius: 32,
     shadowOffset: { width: 0, height: 0 },
-    gap: 8,
+    gap: 12,
   },
-  trainerSupportRow: {
-    marginTop: 2,
+  trainerSupportHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 12,
   },
-  trainerSupportCopy: {
+  trainerSupportHeading: {
     flex: 1,
     minWidth: 0,
   },
   trainerSupportLead: {
-    fontSize: 14,
-    lineHeight: 24,
+    marginTop: 5,
+    fontSize: 12,
+    lineHeight: 18,
     fontWeight: '500',
     color: 'rgba(255,255,255,0.66)',
   },
   trainerCadence: {
-    marginTop: 8,
-    fontSize: 18,
-    lineHeight: 28,
+    fontSize: 19,
+    lineHeight: 25,
     fontWeight: '600',
     color: '#ffffff',
   },
-  trainerSupportIcon: {
+  trainerSupportMark: {
     width: 48,
     height: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(248,216,132,0.22)',
-    backgroundColor: 'rgba(0,0,0,0.24)',
+    borderRadius: 15,
+    backgroundColor: 'rgba(0,0,0,0.26)',
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
+  },
+  trainerReasonPanel: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(248,216,132,0.18)',
+    paddingTop: 11,
   },
   trainerReason: {
-    fontSize: 12,
+    fontSize: 13,
     lineHeight: 20,
-    color: 'rgba(255,255,255,0.58)',
+    color: 'rgba(255,255,255,0.68)',
   },
   solutionRow: {
     flexDirection: 'row',
