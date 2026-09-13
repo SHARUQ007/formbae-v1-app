@@ -13,6 +13,8 @@ export async function fetchPaymentStatus() {
     paywallId?: string;
     flowSlug?: string;
     paymentUrl: string;
+    offerExpiresAt?: string;
+    offerActive?: boolean;
   }>('/payment/status');
 }
 

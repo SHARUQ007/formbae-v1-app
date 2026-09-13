@@ -38,6 +38,8 @@ const GENDERS: Array<{ value: HouseholdMemberProfile['gender']; label: string }>
   { value: 'another', label: 'Prefer not to say' },
 ];
 const emptyMember = (): HouseholdMemberProfile => ({ relationship: '', ageGroup: '', gender: '' });
+const secondsUntil = (expiresAt: string) => Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / 1000) || 0);
+const formatTimer = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 
 export function PaymentRequiredScreen({ navigation }: Props) {
   const { user, status, refreshStatus, logout } = useAuthStore();
@@ -47,6 +49,8 @@ export function PaymentRequiredScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMemberProfile[]>([]);
+  const [offerExpiresAt, setOfferExpiresAt] = useState('');
+  const [offerSeconds, setOfferSeconds] = useState(0);
 
   const selectedPlan = plans.find((plan) => plan.planId === selectedId) || plans[0];
   const additionalMemberCount = Math.max(0, (selectedPlan?.memberLimit || 1) - 1);
@@ -78,10 +82,36 @@ export function PaymentRequiredScreen({ navigation }: Props) {
         setSelectedId(preferred?.planId || '');
         setHouseholdMembers(Array.from({ length: Math.max(0, (preferred?.memberLimit || 1) - 1) }, emptyMember));
         setPaywallId(data.paywallId || data.plans?.[0]?.paywallId || 'monsoon-offer');
+        setOfferExpiresAt(data.offerExpiresAt || '');
+        setOfferSeconds(data.offerExpiresAt ? secondsUntil(data.offerExpiresAt) : 0);
       })
       .catch(() => setPlans([]))
       .finally(() => setLoading(false));
   }, [routeAfterPaid, refreshStatus]);
+
+  useEffect(() => {
+    if (!offerExpiresAt) return;
+    let refreshed = false;
+    const updateTimer = () => {
+      const remaining = secondsUntil(offerExpiresAt);
+      setOfferSeconds(remaining);
+      if (remaining > 0 || refreshed) return;
+      refreshed = true;
+      setPlans((current) => current.map((plan) => plan.originalAmount ? { ...plan, amount: plan.originalAmount } : plan));
+      fetchPaymentStatus()
+        .then((data) => {
+          setPlans(data.plans || []);
+          setPaywallId(data.paywallId || data.plans?.[0]?.paywallId || 'monsoon-offer');
+          setSelectedId((current) => data.plans?.some((plan) => plan.planId === current)
+            ? current
+            : (data.plans?.find((plan) => plan.popular) || data.plans?.[0])?.planId || '');
+        })
+        .catch(() => undefined);
+    };
+    updateTimer();
+    const timer = setInterval(updateTimer, 1000);
+    return () => clearInterval(timer);
+  }, [offerExpiresAt]);
 
   const onPayNative = async () => {
     const plan = plans.find((p) => p.planId === selectedId) || plans[0];
@@ -168,7 +198,17 @@ export function PaymentRequiredScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
         <ScreenTitle>Your plan is ready to unlock</ScreenTitle>
-        <ScreenSubtitle>Choose who you want FormBae to support. You can change plans later.</ScreenSubtitle>
+        <ScreenSubtitle>You’ve already taken the first step. Choose your support and turn today’s intention into a plan you can follow.</ScreenSubtitle>
+
+        {!loading && plans.length ? (
+          <View style={[styles.offerBar, offerSeconds === 0 && styles.offerBarExpired]}>
+            <View style={styles.offerCopy}>
+              <Text style={styles.offerEyebrow}>{offerSeconds > 0 ? 'INTRO PRICE RESERVED' : 'INTRO OFFER ENDED'}</Text>
+              <Text style={styles.offerDetail}>{offerSeconds > 0 ? 'Complete checkout before the timer ends.' : 'Standard monthly pricing now applies.'}</Text>
+            </View>
+            {offerSeconds > 0 ? <Text style={styles.offerTimer}>{formatTimer(offerSeconds)}</Text> : null}
+          </View>
+        ) : null}
 
         {loading ? (
           <LoadingState message="Loading plans…" />
@@ -193,6 +233,9 @@ export function PaymentRequiredScreen({ navigation }: Props) {
                     <View style={styles.priceRow}>
                       <Text style={styles.planPrice}>₹{(plan.amount / 100).toLocaleString('en-IN')}</Text>
                       <Text style={styles.perMonth}>/ month</Text>
+                      {plan.originalAmount && plan.originalAmount > plan.amount ? (
+                        <Text style={styles.originalPrice}>₹{(plan.originalAmount / 100).toLocaleString('en-IN')}</Text>
+                      ) : null}
                     </View>
                     <Text style={styles.planMeta}>{plan.tagline || `${plan.memberLimit || 1} member access`}</Text>
                   </View>
@@ -214,7 +257,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
                 <Text style={styles.benefitText}>{benefit}</Text>
               </View>
             ))}
-            <Text style={styles.coffeeText}>Costs about as much as a coffee each month.</Text>
+            <Text style={styles.coffeeText}>{offerSeconds > 0 ? 'Start today for less than the cost of a coffee.' : 'One monthly plan for steady, personalized support.'}</Text>
           </View>
         ) : null}
 
@@ -300,6 +343,25 @@ const styles = StyleSheet.create({
     paddingLeft: spacing.sm,
   },
   logoutText: { ...typography.caption, color: colors.inkSubtle, flexShrink: 1, fontWeight: '600' },
+  offerBar: {
+    minHeight: 70,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    backgroundColor: colors.accentLight,
+    borderWidth: 1,
+    borderColor: colors.gold,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  offerBarExpired: { backgroundColor: colors.panel, borderColor: colors.border },
+  offerCopy: { flex: 1, minWidth: 0 },
+  offerEyebrow: { ...typography.label, color: colors.gold, fontSize: 10, letterSpacing: 1.4 },
+  offerDetail: { ...typography.caption, color: colors.inkMuted, marginTop: 3 },
+  offerTimer: { fontSize: 24, lineHeight: 28, fontWeight: '800', color: colors.ink, fontVariant: ['tabular-nums'] },
   plans: { gap: spacing.sm, marginBottom: spacing.md },
   planCard: {
     flexDirection: 'row',
@@ -319,6 +381,7 @@ const styles = StyleSheet.create({
   priceRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 3 },
   planPrice: { ...typography.hero, color: colors.accent },
   perMonth: { ...typography.caption, color: colors.inkMuted, marginLeft: 5 },
+  originalPrice: { ...typography.caption, color: colors.inkSubtle, marginLeft: spacing.sm, textDecorationLine: 'line-through' },
   planMeta: { ...typography.caption, color: colors.inkMuted, marginTop: 1 },
   radio: {
     width: 24,

@@ -123,6 +123,7 @@ export type PaymentPlan = {
   planId: string;
   planName: string;
   amount: number;
+  originalAmount?: number;
   planDuration?: string;
   label?: string;
   paywallId?: string;
