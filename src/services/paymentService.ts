@@ -2,7 +2,7 @@ import RazorpayCheckout from 'react-native-razorpay';
 import { apiRequest, getAuthToken } from './apiClient';
 import * as Keychain from 'react-native-keychain';
 import { getActiveCacheSessionId } from './appCache';
-import type { PaymentPlan, UserStatus } from '../types/api';
+import type { HouseholdMemberProfile, PaymentPlan, UserStatus } from '../types/api';
 
 export async function fetchPaymentStatus() {
   return apiRequest<{
@@ -44,6 +44,7 @@ export async function createPaymentSubscription(params: {
   paywallId?: string;
   planId: string;
   selectedTrainerId?: string;
+  householdMembers?: HouseholdMemberProfile[];
 }, token = getAuthToken()) {
   return apiRequest<{
     keyId: string;
@@ -105,6 +106,7 @@ async function performNativeCheckout(params: {
   user: { name: string; mobile: string; email?: string };
   paywallId?: string;
   selectedTrainerId?: string;
+  householdMembers?: HouseholdMemberProfile[];
   /** Prevent renewal flows from ever falling back to a one-time Razorpay order. */
   requireRecurring?: boolean;
 }, identity: string, token: string): Promise<CheckoutResult> {
@@ -125,6 +127,7 @@ async function performNativeCheckout(params: {
         paywallId,
         planId: params.plan.planId,
         selectedTrainerId: params.selectedTrainerId,
+        householdMembers: params.householdMembers,
       }, token);
       checkoutTarget = {
         type: 'subscription',

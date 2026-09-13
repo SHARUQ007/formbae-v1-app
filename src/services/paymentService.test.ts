@@ -55,3 +55,22 @@ test('concurrent taps open only one checkout', async () => {
   expect((await first).success).toBe(true);
   expect(sdk).toHaveBeenCalledTimes(1);
 });
+
+test('household profiles are attached to a recurring checkout', async () => {
+  const householdMembers = [{ relationship: 'mother', ageGroup: '50+', gender: 'female' }] as const;
+  request
+    .mockResolvedValueOnce({ keyId: 'key', subscriptionId: 'sub_1', amount: 9900, currency: 'INR', planName: 'You + 1' })
+    .mockResolvedValueOnce({ success: true, status: { hasPaid: true } });
+  sdk.mockResolvedValueOnce({ razorpay_payment_id: 'pay_1', razorpay_subscription_id: 'sub_1', razorpay_signature: 'proof' } as never);
+
+  const result = await runNativeCheckout({
+    plan: { planId: 'monthly__plus_one', planName: 'You + 1', amount: 9900, billing: 'recurring' },
+    user: { name: 'Test', mobile: '9876543210' },
+    householdMembers: [...householdMembers],
+  });
+
+  expect(result.success).toBe(true);
+  expect(request).toHaveBeenCalledWith('/payment/create-subscription', expect.objectContaining({
+    body: expect.objectContaining({ householdMembers: [...householdMembers] }),
+  }));
+});

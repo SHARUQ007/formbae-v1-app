@@ -129,6 +129,16 @@ export type PaymentPlan = {
   flowSlug?: string;
   billing?: 'one_time' | 'recurring';
   recurringLabel?: string;
+  memberLimit?: number;
+  popular?: boolean;
+  tagline?: string;
+  benefits?: string[];
+};
+
+export type HouseholdMemberProfile = {
+  relationship: 'mother' | 'father' | 'spouse' | 'child' | 'other' | '';
+  ageGroup: 'under-18' | '18-34' | '35-49' | '50+' | '';
+  gender: 'female' | 'male' | 'another' | '';
 };
 
 export type TrainerKind = 'human' | 'ai';
