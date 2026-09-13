@@ -51,10 +51,10 @@ export function SetupOverview({ paid, steps, title, subtitle, action, onContinue
 }
 
 const styles = StyleSheet.create({
-  content: { paddingBottom: 12 },
-  hero: { borderRadius: 24, overflow: 'hidden', backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border },
+  content: { flexGrow: 1, paddingBottom: 12 },
+  hero: { flexGrow: 1, borderRadius: 24, overflow: 'hidden', backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border },
   // Keep native image dimensions out of layout; contain preserves the full photo.
-  artFrame: { width: '100%', overflow: 'hidden', backgroundColor: '#080807' },
+  artFrame: { flexGrow: 1, width: '100%', overflow: 'hidden', backgroundColor: '#080807' },
   art: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
   heroCopy: { padding: 14, gap: 6 },
   eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1.8, color: colors.gold },
