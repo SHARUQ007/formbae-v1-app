@@ -8,9 +8,9 @@ export function SetupWelcomeScreen({ navigation }: NativeStackScreenProps<Onboar
   return <SetupOverview title="Make room for a stronger you."
     subtitle="Training, food and a little accountability. Let’s find what fits your life."
     steps={[
-      { title: 'Tell us about yourself', detail: 'Your goals, starting point and weekly rhythm', icon: 'sliders' },
-      { title: 'Explore your direction', detail: 'See your assessment and membership options', icon: 'compass' },
-      { title: 'Meet your coach. Make your plan.', detail: 'Your first routine, ready when you are', icon: 'activity' },
+      { title: 'Tell us about yourself', detail: 'Your goals, starting point and weekly rhythm', artwork: 'profile' },
+      { title: 'Explore your direction', detail: 'See your assessment and membership options', artwork: 'direction' },
+      { title: 'Meet your coach. Make your plan.', detail: 'Your first routine, ready when you are', artwork: 'plan' },
     ]}
     action="Let’s get started" onContinue={() => navigation.navigate('Questionnaire')}
     onLogout={async () => { await logout(); navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Auth'); }} />;

@@ -27,10 +27,10 @@ export function PaidWelcomeScreen({ navigation }: Props) {
   return <SetupOverview paid={!!status?.hasPaid} title="Your next chapter starts here."
     subtitle="Let’s finish your setup and turn your membership into a routine that fits you."
     steps={[
-      { title: 'Your membership', detail: 'Confirm your existing payment', icon: 'credit-card', complete: status?.hasPaid },
-      { title: 'Your starting point', detail: 'Goals and a schedule that works for you', icon: 'sliders', complete: status?.questionnaireCompleted },
-      { title: 'Your coach', detail: 'Choose from the coaches included in your plan', icon: 'user', complete: status?.trainerAssigned, onChange: status?.hasPaid && status.questionnaireCompleted && status.trainerAssigned && !status.planReady ? () => navigation.navigate('FindingTrainer') : undefined },
-      { title: 'Your first workout plan', detail: 'Built from your profile and coach selection', icon: 'activity', complete: status?.planReady },
+      { title: 'Your membership', detail: 'Confirm your existing payment', artwork: 'membership', complete: status?.hasPaid },
+      { title: 'Your starting point', detail: 'Goals and a schedule that works for you', artwork: 'profile', complete: status?.questionnaireCompleted },
+      { title: 'Your coach', detail: 'Choose from the coaches included in your plan', artwork: 'coach', complete: status?.trainerAssigned, onChange: status?.hasPaid && status.questionnaireCompleted && status.trainerAssigned && !status.planReady ? () => navigation.navigate('FindingTrainer') : undefined },
+      { title: 'Your first workout plan', detail: 'Built from your profile and coach selection', artwork: 'plan', complete: status?.planReady },
     ]}
     action={labels[step]} onContinue={proceed} busy={busy} error={error}
     onLogout={async () => { await logout(); navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Auth'); }} />;

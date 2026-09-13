@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Text, TouchableOpacity, StyleSheet, ActivityIndicator, ViewStyle, View } from 'react-native';
 import Feather from 'react-native-vector-icons/Feather';
 import { colors } from '../theme/colors';
@@ -18,6 +19,7 @@ type Props = {
   variant?: Variant;
   size?: Size;
   icon?: string;
+  iconArtwork?: ReactNode;
   iconPosition?: 'leading' | 'trailing';
   centerTitle?: boolean;
   style?: ViewStyle;
@@ -34,6 +36,7 @@ export function PrimaryButton({
   variant = 'primary',
   size = 'md',
   icon,
+  iconArtwork,
   iconPosition = 'leading',
   centerTitle = false,
   style,
@@ -48,6 +51,8 @@ export function PrimaryButton({
       : variant === 'danger'
         ? colors.error
         : colors.ink;
+
+  const iconElement = iconArtwork ?? (icon ? <Feather name={icon} size={18} color={fg} /> : null);
 
   const handlePress = () => {
     trackMobileInteraction(`/button/${title}`);
@@ -75,20 +80,20 @@ export function PrimaryButton({
         <ActivityIndicator color={fg} />
       ) : (
         <View style={[styles.content, centerTitle && styles.centeredContent, contentStyle]}>
-          {icon && iconPosition === 'leading' ? (
+          {iconElement && iconPosition === 'leading' ? (
             centerTitle ? (
               <View style={[styles.anchoredIcon, styles.anchoredIconLeading]}>
-                <Feather name={icon} size={18} color={fg} />
+                {iconElement}
               </View>
-            ) : <Feather name={icon} size={18} color={fg} />
+            ) : iconElement
           ) : null}
           <Text style={[styles.text, { color: fg }]}>{title}</Text>
-          {icon && iconPosition === 'trailing' ? (
+          {iconElement && iconPosition === 'trailing' ? (
             centerTitle ? (
               <View style={[styles.anchoredIcon, styles.anchoredIconTrailing]}>
-                <Feather name={icon} size={18} color={fg} />
+                {iconElement}
               </View>
-            ) : <Feather name={icon} size={18} color={fg} />
+            ) : iconElement
           ) : null}
         </View>
       )}
