@@ -53,7 +53,7 @@ export function WorkoutHistoryCalendar({ history, onOpenSession }: Props) {
           {date ? <TouchableOpacity style={styles.dayTarget} onPress={() => setSelected(date)} disabled={date > today} accessibilityHint={(sessionCounts.get(date) ?? 0) > 1 ? `${sessionCounts.get(date)} workouts on this date` : undefined} accessibilityRole="button" accessibilityState={{ selected: date === selected, disabled: date > today }} accessibilityLabel={`${date}${sessionCounts.has(date) ? ', workout completed' : ', no workout recorded'}${date === today ? ', today' : ''}`}>
             <View style={[styles.dayFace, sessionCounts.has(date) && styles.completedDay, date === today && styles.today, date === selected && styles.selected]}>
               <Text maxFontSizeMultiplier={1.5} style={[styles.dayText, sessionCounts.has(date) && styles.completedText, date > today && styles.disabled, date === selected && styles.selectedText]}>{Number(date.slice(-2))}</Text>
-              {sessionCounts.has(date) ? <View style={styles.sessionMarks}>{Array.from({ length: Math.min(sessionCounts.get(date) ?? 0, 3) }, (_, dot) => <View key={dot} style={[styles.sessionMark, date === selected && styles.selectedMark]} />)}</View> : null}
+              {sessionCounts.has(date) ? <View style={styles.sessionMarks}>{Array.from({ length: Math.min(sessionCounts.get(date) ?? 0, 3) }, (_, dot) => <View key={dot} style={styles.sessionMark} />)}</View> : null}
             </View>
           </TouchableOpacity> : null}
         </View>)}
@@ -82,11 +82,11 @@ const styles = StyleSheet.create({
   weekdays: { flexDirection: 'row', paddingBottom: 8, marginBottom: 4, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border }, weekday: { flex: 1, textAlign: 'center', ...typography.caption, fontSize: 10, color: colors.inkSubtle },
   week: { flexDirection: 'row' }, cell: { flex: 1, minWidth: 0, paddingHorizontal: 1 }, dayTarget: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   dayFace: { width: 36, maxWidth: '100%', minHeight: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent' },
-  dayText: { ...typography.caption, fontSize: 12, color: colors.inkMuted, fontVariant: ['tabular-nums'] }, completedDay: { backgroundColor: colors.accentLight, borderColor: colors.accentSurface }, completedText: { color: colors.gold, fontWeight: '700' },
-  today: { borderColor: colors.inkMuted }, selected: { backgroundColor: colors.gold, borderColor: colors.gold }, selectedText: { color: colors.onPrimary, fontWeight: '700' },
-  sessionMarks: { position: 'absolute', bottom: 3, flexDirection: 'row', gap: 2 }, sessionMark: { width: 3, height: 3, borderRadius: 2, backgroundColor: colors.gold }, selectedMark: { backgroundColor: colors.onPrimary },
+  dayText: { ...typography.caption, fontSize: 12, color: colors.inkMuted, fontVariant: ['tabular-nums'] }, completedDay: { backgroundColor: colors.panelMuted }, completedText: { color: colors.ink, fontWeight: '700' },
+  today: { borderColor: colors.inkMuted }, selected: { backgroundColor: colors.panelRaised, borderColor: colors.ink }, selectedText: { color: colors.ink, fontWeight: '700' },
+  sessionMarks: { position: 'absolute', bottom: 3, flexDirection: 'row', gap: 2 }, sessionMark: { width: 3, height: 3, borderRadius: 2, backgroundColor: colors.gold },
   disabled: { opacity: 0.35 },
-  legend: { flexDirection: 'row', justifyContent: 'center', gap: 18, paddingTop: 12, paddingBottom: 18 }, legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 }, legendMark: { height: 10, width: 10, borderRadius: 3, backgroundColor: colors.accentLight, borderWidth: 1, borderColor: colors.accentSurface }, legendToday: { height: 10, width: 10, borderRadius: 3, borderWidth: 1, borderColor: colors.inkMuted },
+  legend: { flexDirection: 'row', justifyContent: 'center', gap: 18, paddingTop: 12, paddingBottom: 18 }, legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 }, legendMark: { height: 5, width: 5, borderRadius: 3, backgroundColor: colors.gold }, legendToday: { height: 10, width: 10, borderRadius: 3, borderWidth: 1, borderColor: colors.inkMuted },
   selection: { backgroundColor: colors.panelMuted, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 10, gap: 4 }, selectionHeading: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 6 }, selectionDate: { ...typography.caption, fontSize: 11, color: colors.goldMuted },
   session: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 44 }, sessionName: { ...typography.bodyBold, fontSize: 13, color: colors.ink, flex: 1 },
 });
