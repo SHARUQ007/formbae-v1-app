@@ -23,6 +23,12 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'PaymentRequired'>
 const secondsUntil = (expiresAt: string) => Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / 1000) || 0);
 const formatTimer = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 const rupees = (paise: number) => `₹${Math.round(paise / 100).toLocaleString('en-IN')}`;
+const PLUS_ONE_PEOPLE = ['Mother', 'Father', 'Partner', 'Loved one'] as const;
+
+function planLabel(plan: PaymentPlan): string {
+  if ((plan.memberLimit || 1) === 3) return 'You + 2';
+  return plan.label || plan.planName;
+}
 
 /** Whatever the admin configured on the plan; the local copy is only a fallback. */
 function benefitsForPlan(plan: PaymentPlan, included: string): string[] {
@@ -89,6 +95,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
   const [suggestion, setSuggestion] = useState<HouseholdSuggestion[]>([]);
   const [offerExpiresAt, setOfferExpiresAt] = useState('');
   const [offerSeconds, setOfferSeconds] = useState(0);
+  const [plusOnePersonIndex, setPlusOnePersonIndex] = useState(0);
 
   const selectedPlan = plans.find((plan) => plan.planId === selectedId) || plans[0];
   const included = includedPeople(selectedPlan, suggestion);
@@ -153,6 +160,13 @@ export function PaymentRequiredScreen({ navigation }: Props) {
     const timer = setInterval(updateTimer, 1000);
     return () => clearInterval(timer);
   }, [offerExpiresAt]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setPlusOnePersonIndex((current) => (current + 1) % PLUS_ONE_PEOPLE.length);
+    }, 1800);
+    return () => clearInterval(timer);
+  }, []);
 
   const onPayNative = async () => {
     const plan = plans.find((p) => p.planId === selectedId) || plans[0];
@@ -233,7 +247,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
         <View>
           <Text style={[styles.title, { fontSize: density.title, lineHeight: density.titleLine }]}>Choose your plan</Text>
           <Text style={[styles.subtitle, { fontSize: density.subtitle, lineHeight: density.subtitleLine }]}>
-            Less than a coffee a month. You finished the assessment — most people stop there.
+            You’ve seen what can change. Take the first step toward the life you want.
           </Text>
         </View>
 
@@ -275,11 +289,15 @@ export function PaymentRequiredScreen({ navigation }: Props) {
                   )}
                   <View style={[styles.planBody, { paddingTop: density.cardPadTop, paddingBottom: density.cardPadBottom }]}>
                     <Text style={[styles.planName, { fontSize: density.planName }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-                      {plan.label || plan.planName}
+                      {planLabel(plan)}
                     </Text>
-                    <Text style={[styles.planMeta, { fontSize: density.planMeta }]} numberOfLines={1}>
-                      {(plan.memberLimit || 1) === 1 ? '1 member' : `${plan.memberLimit} members`}
-                    </Text>
+                    {(plan.memberLimit || 1) !== 3 ? (
+                      <Text style={[styles.planMeta, { fontSize: density.planMeta }]} numberOfLines={1}>
+                        {(plan.memberLimit || 1) === 1
+                          ? 'Just you'
+                          : PLUS_ONE_PEOPLE[plusOnePersonIndex]}
+                      </Text>
+                    ) : <View style={styles.planMetaSpacer} />}
                     <Text style={[styles.planPrice, { fontSize: density.price, lineHeight: density.priceLine }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                       {rupees(plan.amount)}
                     </Text>
@@ -394,6 +412,7 @@ const styles = StyleSheet.create({
   planBody: { alignItems: 'center', gap: 2, paddingHorizontal: spacing.sm, paddingTop: 10, paddingBottom: 11 },
   planName: { ...typography.caption, fontSize: 12, lineHeight: 16, fontWeight: '700', color: colors.ink, textAlign: 'center' },
   planMeta: { ...typography.caption, color: colors.inkSubtle, fontSize: 10, lineHeight: 13 },
+  planMetaSpacer: { height: 13 },
   planPrice: { fontSize: 22, lineHeight: 27, fontWeight: '800', color: colors.accent, letterSpacing: -0.3, marginTop: 2 },
   originalPrice: { ...typography.caption, fontSize: 10, lineHeight: 13, color: colors.inkSubtle, textDecorationLine: 'line-through' },
   radio: {

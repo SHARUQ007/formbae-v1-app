@@ -15,9 +15,10 @@ jest.mock('../../services/activityService', () => ({ trackMobileInteraction: jes
 
 const solo = { planId: 'monthly__individual', planName: 'Individual', amount: 5900, originalAmount: 24900, memberLimit: 1, popular: false, billing: 'recurring' };
 const plusOne = { planId: 'monthly__plus_one', planName: 'You + 1', amount: 9900, originalAmount: 49900, memberLimit: 2, popular: true, billing: 'recurring', benefits: ['Two separate plans'] };
+const plusTwo = { planId: 'monthly__family_3', planName: 'Family of 3', amount: 14900, originalAmount: 74900, memberLimit: 3, popular: false, billing: 'recurring', benefits: ['Three separate plans'] };
 const statusPayload = {
   hasPaid: false,
-  plans: [solo, plusOne],
+  plans: [solo, plusOne, plusTwo],
   paywallId: 'app-paywall',
   offerExpiresAt: new Date(Date.now() + 120000).toISOString(),
   householdSuggestion: [{ relationship: 'mother', ageGroup: '50+', gender: 'female', label: 'your mother' }],
@@ -41,6 +42,15 @@ const giftPage = () => (
 );
 const cta = () => renderer.root.findAllByType(PrimaryButton)[0];
 const inputFor = (label: string) => renderer.root.findAllByType(FormInput).find(node => node.props.label === label)!;
+
+it('shows all three plan sizes with the simple household labels', async () => {
+  await render(paywall());
+  const copy = JSON.stringify(renderer.toJSON());
+  expect(copy).toContain('Individual');
+  expect(copy).toContain('You + 1');
+  expect(copy).toContain('You + 2');
+  expect(copy).not.toContain('Family of 3');
+});
 
 it('a plan covering two people collects their details before charging anything', async () => {
   await render(paywall());
