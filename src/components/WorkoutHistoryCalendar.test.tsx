@@ -20,7 +20,6 @@ it('opens at the latest workout month with seven aligned columns and every selec
   const onOpenSession = jest.fn();
   let tree!: ReturnType<typeof create>;
   act(() => { tree = create(<WorkoutHistoryCalendar history={history} onOpenSession={onOpenSession} />); });
-  press(tree, 'Show calendar');
   expect(text(tree)).toContain('August 2026');
   const weeks = tree.root.findAll(node => node.props.testID === 'history-calendar-week' && Array.isArray(node.props.children));
   expect(weeks.length).toBeGreaterThan(0);
@@ -40,7 +39,6 @@ it('opens at the latest workout month with seven aligned columns and every selec
 it('bounds navigation to recorded months through today and disables future dates', () => {
   let tree!: ReturnType<typeof create>;
   act(() => { tree = create(<WorkoutHistoryCalendar history={history} onOpenSession={jest.fn()} />); });
-  press(tree, 'Show calendar');
   expect(tree.root.findAll(node => node.props.accessibilityLabel === 'Previous month' && node.props.disabled).length).toBeGreaterThan(0);
   press(tree, 'Next month');
   expect(text(tree)).toContain('September 2026');
@@ -54,7 +52,6 @@ it('bounds navigation to recorded months through today and disables future dates
 it('allows an empty history to open on the current month', () => {
   let tree!: ReturnType<typeof create>;
   act(() => { tree = create(<WorkoutHistoryCalendar history={[]} onOpenSession={jest.fn()} />); });
-  press(tree, 'Show calendar');
   expect(text(tree)).toContain('September 2026');
   expect(text(tree)).toContain('No session recorded');
   act(() => tree.unmount());

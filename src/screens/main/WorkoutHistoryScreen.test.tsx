@@ -15,21 +15,23 @@ jest.mock('../../services/preloadService', () => ({
   peekTrophyLeaderboardCached: jest.fn(),
 }));
 
-it('exposes every saved date newest first while keeping the calendar optional', async () => {
+it('shows five recent workouts and expands the full history with the calendar open by default', async () => {
   const history = Array.from({ length: 25 }, (_, index) => ({ date: `2026-08-${String(index + 1).padStart(2, '0')}`, planId: 'plan', planDayId: String(index), workoutMode: 'standard' }));
   jest.mocked(fetchProgress).mockResolvedValue({ userId: 'user', adherencePct: 0, completed: 0, planned: 0, currentStreak: 0, bestStreak: 25, completionHistory: history });
   jest.mocked(fetchTrophyLeaderboard).mockResolvedValue({ leaders: [], participantCount: 1 });
   let tree!: ReturnType<typeof create>;
   await act(async () => { tree = create(<WorkoutHistoryScreen navigation={{ goBack: jest.fn() } as never} route={{ key: 'history', name: 'WorkoutHistory' }} />); });
   const list = tree.root.findByType(FlatList);
-  expect(list.props.data).toHaveLength(25);
+  expect(list.props.data).toHaveLength(5);
   expect(list.props.data[0][0]).toBe('2026-08-25');
-  expect(list.props.data[24][0]).toBe('2026-08-01');
+  expect(list.props.data[4][0]).toBe('2026-08-21');
   expect(list.props.showsVerticalScrollIndicator).toBe(false);
-  expect(tree.root.findAllByProps({ accessibilityLabel: 'Previous month' })).toHaveLength(0);
-  const toggle = tree.root.findAll(node => node.props.accessibilityState?.expanded === false && typeof node.props.onPress === 'function')[0];
-  await act(async () => toggle.props.onPress());
   expect(tree.root.findAllByProps({ accessibilityLabel: 'Previous month' }).length).toBeGreaterThan(0);
+  const viewAll = tree.root.findAll(node => node.props.accessibilityLabel === 'View all 25 workouts' && typeof node.props.onPress === 'function')[0];
+  act(() => viewAll.props.onPress());
+  expect(tree.root.findByType(FlatList).props.data).toHaveLength(25);
+  expect(tree.root.findByType(FlatList).props.data[24][0]).toBe('2026-08-01');
+  expect(tree.root.findAllByProps({ accessibilityLabel: 'View all 25 workouts' })).toHaveLength(0);
   act(() => tree.unmount());
 });
 
@@ -58,8 +60,7 @@ it('keeps loaded history and calendar state through refresh failure without hook
     await act(async () => { tree = create(<StrictMode><WorkoutHistoryScreen navigation={{ goBack: jest.fn(), navigate: jest.fn() } as never} route={{ key: 'history', name: 'WorkoutHistory' }} /></StrictMode>); });
     expect(tree.root.findByType(FlatList).props.data).toHaveLength(0);
     await act(async () => resolve(progress));
-    const show = tree.root.findAll(node => node.props.accessibilityLabel === 'Show calendar' && typeof node.props.onPress === 'function')[0];
-    act(() => show.props.onPress());
+    expect(tree.root.findAllByProps({ accessibilityLabel: 'Hide calendar' }).length).toBeGreaterThan(0);
     jest.mocked(fetchProgress).mockRejectedValue(new Error('Offline'));
     await act(async () => tree.root.findByType(RefreshControl).props.onRefresh());
     expect(loadProgressBundleCached).toHaveBeenLastCalledWith({ force: true });
@@ -96,4 +97,22 @@ it('renders warm history immediately while refreshing in the background', async 
     act(() => tree.unmount());
     jest.mocked(peekProgressBundleCached).mockReset();
   }
+});
+
+
+it('limits sessions rather than dates and keeps the calendar’s complete history', async () => {
+  const history = Array.from({ length: 7 }, (_, index) => ({ date: index < 6 ? '2026-08-25' : '2026-08-01', planId: 'old', planDayId: String(index), workoutMode: 'standard', title: `Workout ${index}` }));
+  jest.mocked(fetchProgress).mockResolvedValue({ userId: 'user', adherencePct: 100, completed: 7, planned: 7, currentStreak: 1, bestStreak: 1, completionHistory: history });
+  jest.mocked(fetchTrophyLeaderboard).mockResolvedValue({ leaders: [], participantCount: 1 });
+  let tree!: ReturnType<typeof create>;
+  await act(async () => { tree = create(<WorkoutHistoryScreen navigation={{ goBack: jest.fn() } as never} route={{ key: 'history', name: 'WorkoutHistory' }} />); });
+  const groups = tree.root.findByType(FlatList).props.data;
+  expect(groups).toHaveLength(1);
+  expect(groups[0][1]).toHaveLength(5);
+  expect(tree.root.findAllByProps({ accessibilityLabel: '2026-08-01, workout completed' }).length).toBeGreaterThan(0);
+  const viewAll = tree.root.findAll(node => node.props.accessibilityLabel === 'View all 7 workouts' && typeof node.props.onPress === 'function')[0];
+  act(() => viewAll.props.onPress());
+  expect(tree.root.findByType(FlatList).props.data[0][1]).toHaveLength(6);
+  expect(tree.root.findByType(FlatList).props.data[1][1]).toHaveLength(1);
+  act(() => tree.unmount());
 });
