@@ -1,5 +1,5 @@
 import { StableImage } from './StableImage';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { SetupCompletedMark, SetupContinueArrow, SetupStepArtwork, type SetupArtworkKind } from './SetupStepArtwork';
 import { ScreenContainer } from './Card';
 import { PrimaryButton } from './PrimaryButton';
@@ -11,10 +11,13 @@ export function SetupOverview({ paid, steps, title, subtitle, action, onContinue
   paid?: boolean; steps: SetupStep[]; title: string; subtitle: string; action: string;
   onContinue: () => void; onLogout: () => void; busy?: boolean; error?: string;
 }) {
+  const { height } = useWindowDimensions();
+  const imageHeight = Math.min(180, Math.max(100, height * 0.18));
+
   return <ScreenContainer withBottomInset>
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
       <View style={styles.hero}>
-        <View style={styles.artFrame}>
+        <View style={[styles.artFrame, { height: imageHeight }]}>
           <StableImage source={require('../assets/editorial/accountability-plan.jpg')} style={styles.art} resizeMode="contain" accessible={false} accessibilityIgnoresInvertColors />
         </View>
         <View style={styles.heroCopy}>
@@ -43,29 +46,28 @@ export function SetupOverview({ paid, steps, title, subtitle, action, onContinue
     </ScrollView>
     {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
     <PrimaryButton title={action} iconArtwork={<SetupContinueArrow />} iconPosition="trailing" onPress={onContinue} loading={busy} style={styles.cta} />
-    <PrimaryButton title="Use another account" variant="ghost" onPress={onLogout} disabled={busy} />
+    <PrimaryButton title="Use another account" variant="ghost" size="sm" onPress={onLogout} disabled={busy} />
   </ScreenContainer>;
 }
 
 const styles = StyleSheet.create({
-  content: { paddingBottom: 20 },
+  content: { paddingBottom: 12 },
   hero: { borderRadius: 24, overflow: 'hidden', backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border },
-  // Size a plain View first: native bundled Images supply intrinsic dimensions
-  // that can override an aspect-ratio-only height inside a ScrollView.
-  artFrame: { width: '100%', aspectRatio: 3 / 2, overflow: 'hidden' },
+  // Keep native image dimensions out of layout; contain preserves the full photo.
+  artFrame: { width: '100%', overflow: 'hidden', backgroundColor: '#080807' },
   art: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
-  heroCopy: { padding: 20, gap: 10 },
+  heroCopy: { padding: 14, gap: 6 },
   eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 1.8, color: colors.gold },
-  title: { fontSize: 30, lineHeight: 35, fontWeight: '800', color: colors.ink, letterSpacing: -0.6 },
-  subtitle: { fontSize: 15, lineHeight: 22, color: colors.inkMuted },
-  section: { fontSize: 17, fontWeight: '700', color: colors.ink, marginTop: 24, marginBottom: 12 },
+  title: { fontSize: 26, lineHeight: 30, fontWeight: '800', color: colors.ink, letterSpacing: -0.6 },
+  subtitle: { fontSize: 13, lineHeight: 18, color: colors.inkMuted },
+  section: { fontSize: 17, fontWeight: '700', color: colors.ink, marginTop: 14, marginBottom: 8 },
   steps: { borderRadius: 20, paddingHorizontal: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel },
-  step: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 16 },
+  step: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
   divider: { borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
   artwork: { width: 46, height: 46, flexShrink: 0, justifyContent: 'center', alignItems: 'center' },
   completedMark: { position: 'absolute', right: -2, bottom: -2 },
-  copy: { flex: 1, gap: 4 },
-  stepTitle: { color: colors.ink, fontSize: 15, fontWeight: '700' },
+  copy: { flex: 1, gap: 3 },
+  stepTitle: { color: colors.ink, fontSize: 14, fontWeight: '700' },
   detail: { color: colors.inkMuted, fontSize: 12, lineHeight: 17 },
   changeButton: { minHeight: 44, justifyContent: 'center', paddingLeft: 4 },
   changeText: { fontSize: 12, fontWeight: '700', color: colors.gold },
