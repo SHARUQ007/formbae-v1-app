@@ -16,6 +16,7 @@ jest.mock('../../services/onboardingService', () => ({
   fetchCoachQuestions: jest.fn(), saveCoachQuestions: jest.fn(),
   createOnboardingPlan: jest.fn(), fetchOnboardingPlanState: jest.fn(),
 }));
+jest.mock('../../services/apiClient', () => ({ ApiError: class ApiError extends Error { status = 0; } }));
 jest.mock('../../services/trainerService', () => ({ fetchCoachHub: jest.fn(), changeCoach: jest.fn() }));
 jest.mock('../../services/paymentService', () => ({ runNativeCheckout: jest.fn() }));
 jest.mock('../../services/activityService', () => ({ trackMobileInteraction: jest.fn() }));
@@ -125,5 +126,43 @@ describe('nothing reaches plan building with the questions unanswered', () => {
     await act(async () => { await build.props.onPress(); });
     expect(createOnboardingPlan).not.toHaveBeenCalled();
     expect(navigation.replace).toHaveBeenCalledWith('CoachQuestions');
+  });
+});
+
+describe('a status payload that says nothing still cannot reach plan building', () => {
+  // An older backend sends no coachQuestions flags; the coach endpoint is the source of truth.
+  const silent = { hasPaid: true, questionnaireCompleted: true, trainerAssigned: true, planReady: false };
+
+  beforeEach(() => {
+    refreshStatus.mockResolvedValue(silent);
+    (useAuthStore as jest.Mock).mockReturnValue({ status: silent, refreshStatus });
+    (fetchOnboardingPlanState as jest.Mock).mockResolvedValue({ status: 'idle' });
+    (fetchCoachQuestions as jest.Mock).mockResolvedValue({ questions, answers: {}, completed: false, required: true });
+  });
+
+  it('opening the screen goes straight to the questions', async () => {
+    await act(async () => { renderer = create(<PlanPreparingScreen navigation={navigation as never} route={{ name: 'PlanPreparing', key: 'p' } as never} />); });
+    expect(navigation.replace).toHaveBeenCalledWith('CoachQuestions');
+    expect(createOnboardingPlan).not.toHaveBeenCalled();
+  });
+
+  it('a coach with nothing outstanding is left to build as before', async () => {
+    (fetchCoachQuestions as jest.Mock).mockResolvedValue({ questions, answers: {}, completed: true, required: true });
+    (createOnboardingPlan as jest.Mock).mockResolvedValue({ status: 'completed' });
+    await act(async () => { renderer = create(<PlanPreparingScreen navigation={navigation as never} route={{ name: 'PlanPreparing', key: 'p' } as never} />); });
+    expect(navigation.replace).not.toHaveBeenCalledWith('CoachQuestions');
+    const build = renderer.root.findAllByType(PrimaryButton).slice(-1)[0];
+    await act(async () => { await build.props.onPress(); });
+    expect(createOnboardingPlan).toHaveBeenCalled();
+  });
+
+  it('an unreachable coach endpoint does not block a human coach', async () => {
+    (fetchCoachQuestions as jest.Mock).mockRejectedValue(new Error('offline'));
+    (createOnboardingPlan as jest.Mock).mockResolvedValue({ status: 'completed' });
+    await act(async () => { renderer = create(<PlanPreparingScreen navigation={navigation as never} route={{ name: 'PlanPreparing', key: 'p' } as never} />); });
+    const build = renderer.root.findAllByType(PrimaryButton).slice(-1)[0];
+    await act(async () => { await build.props.onPress(); });
+    expect(navigation.replace).not.toHaveBeenCalledWith('CoachQuestions');
+    expect(createOnboardingPlan).toHaveBeenCalled();
   });
 });

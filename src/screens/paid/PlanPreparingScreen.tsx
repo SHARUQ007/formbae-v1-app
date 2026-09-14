@@ -6,7 +6,7 @@ import { ScreenContainer, ScreenHeader } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState } from '../../components/States';
 import { useAuthStore } from '../../store/authStore';
-import { createOnboardingPlan, fetchOnboardingPlanState, type OnboardingPlanState } from '../../services/onboardingService';
+import { createOnboardingPlan, fetchCoachQuestions, fetchOnboardingPlanState, type OnboardingPlanState } from '../../services/onboardingService';
 import { ApiError } from '../../services/apiClient';
 import type { PaidStackParamList, RootStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
@@ -19,6 +19,15 @@ export function PlanPreparingScreen({ navigation }: NativeStackScreenProps<PaidS
   const alive = useRef(true);
   const requestRunning = useRef(false);
   const checkingRef = useRef(false);
+  const coachQuestionsPending = useCallback(async () => {
+    try {
+      const coach = await fetchCoachQuestions();
+      return Boolean(coach.required && !coach.completed);
+    } catch {
+      return false;
+    }
+  }, []);
+
   const check = useCallback(async () => {
     if (checkingRef.current) return;
     checkingRef.current = true;
@@ -34,10 +43,16 @@ export function PlanPreparingScreen({ navigation }: NativeStackScreenProps<PaidS
   }, []);
   useEffect(() => {
     alive.current = true;
-    check();
+    (async () => {
+      if (await coachQuestionsPending()) {
+        if (alive.current) navigation.replace('CoachQuestions');
+        return;
+      }
+      if (alive.current) check();
+    })();
     const subscription = AppState.addEventListener('change', next => { if (next === 'active') check(); });
     return () => { alive.current = false; subscription.remove(); };
-  }, [check]);
+  }, [check, coachQuestionsPending, navigation]);
   useEffect(() => {
     if (state !== 'building') return;
     const timer = setInterval(() => { if (AppState.currentState === 'active') check(); }, 15000);
@@ -53,7 +68,7 @@ export function PlanPreparingScreen({ navigation }: NativeStackScreenProps<PaidS
         navigation.replace('PaidWelcome'); return;
       }
       // An AI coach has questions of its own; nothing can be built until they are answered.
-      if (fresh.coachQuestionsRequired && !fresh.coachQuestionsCompleted) {
+      if ((fresh.coachQuestionsRequired && !fresh.coachQuestionsCompleted) || await coachQuestionsPending()) {
         navigation.replace('CoachQuestions'); return;
       }
       if (fresh.planReady) { if (alive.current) setState('completed'); return; }
@@ -61,12 +76,9 @@ export function PlanPreparingScreen({ navigation }: NativeStackScreenProps<PaidS
       if (alive.current) setState(result.status);
     } catch (failure) {
       // The server refuses to plan before the coach has asked; send them there, not to a retry.
-      if (failure instanceof ApiError && failure.status === 409) {
-        const latestStatus = await refreshStatus().catch(() => undefined);
-        if (latestStatus?.coachQuestionsRequired && !latestStatus.coachQuestionsCompleted) {
-          navigation.replace('CoachQuestions');
-          return;
-        }
+      if (failure instanceof ApiError && failure.status === 409 && await coachQuestionsPending()) {
+        navigation.replace('CoachQuestions');
+        return;
       }
       // A lost response doesn't mean the server failed. Reconcile before offering a retry.
       try {
