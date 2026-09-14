@@ -80,7 +80,9 @@ export function CoachQuestionsScreen({ navigation }: Props) {
       const fresh = await refreshStatus().catch(() => undefined);
       // They just asked for a plan, so go and build it rather than back to the checklist.
       if (!fresh) { navigation.replace('PlanPreparing', { autoStart: true }); return; }
-      advancePaidSetup(navigation, fresh);
+      if (!advancePaidSetup(navigation, fresh, 'CoachQuestions')) {
+        setError('Your answers were saved, but setup hasn’t caught up yet. Please try again.');
+      }
     } catch {
       setError('Your answers couldn’t be saved. Please try again.');
     } finally {

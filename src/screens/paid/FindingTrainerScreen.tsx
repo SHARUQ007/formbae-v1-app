@@ -47,7 +47,9 @@ export function FindingTrainerScreen({ navigation }: NativeStackScreenProps<Paid
       await changeCoach(selected);
       const fresh = await refreshStatus().catch(() => undefined);
       // An AI coach asks its own questions before any plan is built.
-      advancePaidSetup(navigation, fresh);
+      if (!advancePaidSetup(navigation, fresh, 'FindingTrainer')) {
+        setError('Your coach was saved, but setup hasn’t caught up yet. Please try again.');
+      }
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Your coach couldn’t be saved. Please try again.'); }
     finally { setSaving(false); }
   };
@@ -123,14 +125,14 @@ export function FindingTrainerScreen({ navigation }: NativeStackScreenProps<Paid
         onPress={save}
         loading={saving}
         disabled={!selected || loading}
-        style={styles.cta}
+        style={selected ? styles.cta : styles.ctaWaiting}
       />
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  list: { gap: 12, paddingBottom: 4 },
+  list: { gap: 12, paddingBottom: 16 },
   section: { gap: 12 },
   sectionTitle: { color: colors.gold, fontSize: 11, fontWeight: '700', letterSpacing: 1.4 },
   sectionNote: { color: colors.inkSubtle, fontSize: 13, lineHeight: 19, marginTop: -6 },
@@ -147,4 +149,7 @@ const styles = StyleSheet.create({
   languages: { color: colors.inkSubtle, fontSize: 12 },
   error: { color: colors.error, marginBottom: 12 },
   cta: { backgroundColor: colors.gold, borderColor: colors.gold },
+  // Until a coach is picked the button is inert, so it reads as inert rather than as
+  // gold dimmed by the shared disabled opacity.
+  ctaWaiting: { backgroundColor: colors.panelRaised, borderWidth: 1, borderColor: colors.borderStrong },
 });

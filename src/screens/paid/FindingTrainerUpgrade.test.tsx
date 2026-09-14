@@ -72,3 +72,37 @@ it('a coach with no pricing set up is not offered as an upgrade', async () => {
   expect(texts()).not.toContain('UPGRADE TO A PERSONAL COACH');
   expect(texts()).not.toContain('Manisha');
 });
+
+it('picking the included coach moves on to their questions', async () => {
+  (useAuthStore as jest.Mock).mockReturnValue({
+    user: { name: 'Rafeek', mobile: '9999999999' },
+    status: {},
+    refreshStatus: jest.fn().mockResolvedValue({
+      hasPaid: true, questionnaireCompleted: true, trainerAssigned: true, planReady: false,
+      coachQuestionsRequired: true, coachQuestionsCompleted: false,
+    }),
+  });
+  await render();
+  await act(async () => { cardFor('Ava').props.onPress(); });
+  const cta = renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Continue with this coach')!;
+  await act(async () => { await cta.props.onPress(); });
+  expect(changeCoach).toHaveBeenCalledWith('ava');
+  expect(navigation.replace).toHaveBeenCalledWith('CoachQuestions');
+});
+
+it('a status that has not caught up says so instead of looking like a dead button', async () => {
+  // Replacing this screen with itself is invisible, so the save has to report it.
+  (useAuthStore as jest.Mock).mockReturnValue({
+    user: { name: 'Rafeek', mobile: '9999999999' },
+    status: {},
+    refreshStatus: jest.fn().mockResolvedValue({
+      hasPaid: true, questionnaireCompleted: true, trainerAssigned: false, planReady: false,
+    }),
+  });
+  await render();
+  await act(async () => { cardFor('Ava').props.onPress(); });
+  const cta = renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Continue with this coach')!;
+  await act(async () => { await cta.props.onPress(); });
+  expect(navigation.replace).not.toHaveBeenCalled();
+  expect(texts()).toEqual(expect.arrayContaining([expect.stringContaining('setup hasn’t caught up')]));
+});
