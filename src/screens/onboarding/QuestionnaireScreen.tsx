@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
   progressTop: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm },
   backButton: { width: 40, height: 40, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
   backButtonDisabled: { opacity: 0.28 },
-  continueButton: { minHeight: 62, borderRadius: 18 },
+  continueButton: { minHeight: 62, borderRadius: 18, marginBottom: spacing.md },
   questionScroll: { flex: 1 },
   scroll: { paddingBottom: spacing.lg },
   scrollSingle: { flexGrow: 1 },

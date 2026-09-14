@@ -15,6 +15,7 @@ import Feather from 'react-native-vector-icons/Feather';
 import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenContainer, ScreenTitle } from '../../components/Card';
+import { PrimaryButton } from '../../components/PrimaryButton';
 import { ErrorState, LoadingState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { fetchAnalysis } from '../../services/questionnaireService';
@@ -86,10 +87,19 @@ export function AnalysisReportScreen({ navigation }: Props) {
   }
 
   if (error || !report) {
+    // The report is built from the questionnaire, so a retry alone leaves anyone whose
+    // answers are missing with nowhere to go. Offer the questions as the way out.
     return (
       <ScreenContainer>
         <ScreenTitle>Your fitness analysis</ScreenTitle>
         <ErrorState message={error || 'We could not load your report yet.'} onRetry={reload} />
+        <PrimaryButton
+          title="Answer the questions"
+          icon="edit-3"
+          variant="secondary"
+          onPress={() => navigation.replace('Questionnaire')}
+          style={styles.answerQuestions}
+        />
       </ScreenContainer>
     );
   }
@@ -522,6 +532,9 @@ function ProjectionChart({
 }
 
 const styles = StyleSheet.create({
+  answerQuestions: {
+    marginTop: 12,
+  },
   root: {
     flex: 1,
     backgroundColor: '#000000',
