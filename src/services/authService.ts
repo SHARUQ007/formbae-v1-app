@@ -34,10 +34,12 @@ export async function clearToken() {
   }
 }
 
-export async function login(mobile: string, name?: string, createIfMissing = true) {
+export async function login(mobile: string, name?: string, createIfMissing = true, firebaseIdToken?: string) {
   const response = await apiRequest<LoginResponse>('/auth/login', {
     method: 'POST',
-    body: { mobile, name, createIfMissing },
+    // Omitted rather than sent empty: the backend checks any token it is given, so a blank
+    // one would read as a failed verification instead of an unverified sign in.
+    body: firebaseIdToken ? { mobile, name, createIfMissing, firebaseIdToken } : { mobile, name, createIfMissing },
     token: null,
   });
   await saveToken(response.token);

@@ -4,14 +4,12 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { LoginScreen, normalizeIndianMobile } from './LoginScreen';
 import { ApiError } from '../../services/apiClient';
 
-const mockLogin = jest.fn();
+const mockStartPhoneVerification = jest.fn();
 const mockReplace = jest.fn();
 
-jest.mock('../../store/authStore', () => ({
-  useAuthStore: () => ({
-    login: mockLogin,
-    loading: false,
-  }),
+// Signing in now happens on the verify screen; this one only sends the code.
+jest.mock('../../services/otpService', () => ({
+  startPhoneVerification: (...args: unknown[]) => mockStartPhoneVerification(...args),
 }));
 
 jest.mock('../../services/activityService', () => ({
@@ -25,6 +23,7 @@ function createNavigation(canGoBack = true) {
     canGoBack: jest.fn(() => canGoBack),
     goBack: jest.fn(),
     replace: jest.fn(),
+    navigate: jest.fn(),
     getParent: jest.fn(() => ({ replace: mockReplace })),
   };
 }
@@ -66,7 +65,8 @@ describe('LoginScreen', () => {
   const renderers: ReactTestRenderer[] = [];
 
   beforeEach(() => {
-    mockLogin.mockReset();
+    mockStartPhoneVerification.mockReset();
+    mockStartPhoneVerification.mockResolvedValue({ sessionId: 'otp-1' });
     mockReplace.mockReset();
     jest
       .spyOn(AccessibilityInfo, 'announceForAccessibility')
@@ -87,7 +87,7 @@ describe('LoginScreen', () => {
     const copy = renderedText(renderer);
     expect(copy).toContain('Welcome back');
     expect(copy).toContain('Enter the mobile number linked to your FormBae profile.');
-    expect(renderer.root.findByProps({ accessibilityLabel: 'Sign in' })).toBeTruthy();
+    expect(renderer.root.findByProps({ accessibilityLabel: 'Send code' })).toBeTruthy();
     expect(renderer.root.findAllByProps({ accessibilityLabel: 'First name' })).toHaveLength(0);
   });
 
@@ -98,7 +98,7 @@ describe('LoginScreen', () => {
     const copy = renderedText(renderer);
     expect(copy).toContain('Start your analysis');
     expect(copy).toContain('Enter your details to create your FormBae profile.');
-    expect(renderer.root.findByProps({ accessibilityLabel: 'Continue to analysis' })).toBeTruthy();
+    expect(renderer.root.findByProps({ accessibilityLabel: 'Send my code' })).toBeTruthy();
     expect(renderer.root.findByProps({ accessibilityLabel: 'First name' })).toBeTruthy();
   });
 
@@ -150,20 +150,19 @@ describe('LoginScreen', () => {
       renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('12345');
     });
     await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: 'Sign in' }).props.onPress();
+      renderer.root.findByProps({ accessibilityLabel: 'Send code' }).props.onPress();
       await Promise.resolve();
     });
 
-    expect(mockLogin).not.toHaveBeenCalled();
+    expect(mockStartPhoneVerification).not.toHaveBeenCalled();
     expect(renderedText(renderer)).toContain('Enter a valid 10-digit Indian mobile number.');
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
       'Enter a valid 10-digit Indian mobile number.',
     );
   });
 
-  it('normalizes the input, signs in, and opens the hydrated app path', async () => {
-    mockLogin.mockResolvedValue({ status: { recommendedNextScreen: 'home' } });
-    const { renderer } = renderLogin('login');
+  it('normalizes the input, sends a code, and hands off to verification', async () => {
+    const { navigation, renderer } = renderLogin('login');
     renderers.push(renderer);
 
     act(() => {
@@ -172,35 +171,29 @@ describe('LoginScreen', () => {
         .props.onChangeText('+91 98765 43210');
     });
     await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: 'Sign in' }).props.onPress();
+      renderer.root.findByProps({ accessibilityLabel: 'Send code' }).props.onPress();
       await Promise.resolve();
     });
 
-    expect(mockLogin).toHaveBeenCalledTimes(1);
-    expect(mockLogin).toHaveBeenCalledWith('9876543210', undefined, false);
-    expect(mockReplace).toHaveBeenCalledWith('Splash');
-  });
-
-  it('redirects an unknown number to signup without creating an account', async () => {
-    mockLogin.mockRejectedValue(new ApiError('Create an account', 404, { code: 'ACCOUNT_NOT_FOUND' }));
-    const { navigation, renderer } = renderLogin('login');
-    renderers.push(renderer);
-    act(() => renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('+91 98765 43210'));
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Sign in' }).props.onPress());
-    expect(mockLogin).toHaveBeenCalledWith('9876543210', undefined, false);
-    expect(navigation.replace).toHaveBeenCalledWith('Login', { mode: 'signup', mobile: '9876543210', reduceMotion: true });
-    expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockStartPhoneVerification).toHaveBeenCalledTimes(1);
+    expect(mockStartPhoneVerification).toHaveBeenCalledWith('+919876543210');
+    const params = navigation.navigate.mock.calls[0][1];
+    expect(navigation.navigate).toHaveBeenCalledWith('VerifyOtp', expect.objectContaining({
+      mobile: '9876543210', sessionId: 'otp-1', mode: 'login',
+    }));
+    // The Firebase confirmation must never be smuggled into route params: they have to
+    // survive serialization, and it cannot.
+    expect(JSON.parse(JSON.stringify(params))).toEqual(params);
   });
 
   it('prefills signup and lets the user edit the phone before submitting', async () => {
-    mockLogin.mockResolvedValue({ status: { recommendedNextScreen: 'questionnaire' } });
     const { renderer } = renderLogin('signup', true, '9876543210');
     renderers.push(renderer);
     expect(renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.value).toBe('9876543210');
-    expect(mockLogin).not.toHaveBeenCalled();
+    expect(mockStartPhoneVerification).not.toHaveBeenCalled();
     act(() => renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('9876543211'));
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Continue to analysis' }).props.onPress());
-    expect(mockLogin).toHaveBeenCalledWith('9876543211', undefined, true);
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Send my code' }).props.onPress());
+    expect(mockStartPhoneVerification).toHaveBeenCalledWith('+919876543211');
   });
 
   it.each([
@@ -208,19 +201,18 @@ describe('LoginScreen', () => {
     new ApiError('Service unavailable', 503),
     new ApiError('Route not found', 404),
     new ApiError('Account disabled', 403),
-  ])('keeps ordinary sign-in failures on the sign-in page: %s', async error => {
-    mockLogin.mockRejectedValue(error);
+  ])('keeps a code that could not be sent on this page: %s', async error => {
+    mockStartPhoneVerification.mockRejectedValue(error);
     const { navigation, renderer } = renderLogin('login');
     renderers.push(renderer);
     act(() => renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('9876543210'));
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Sign in' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Send code' }).props.onPress());
     expect(navigation.replace).not.toHaveBeenCalled();
     expect(renderedText(renderer)).toContain(error.message);
   });
 
-  it('submits a trimmed optional name from the analysis path', async () => {
-    mockLogin.mockResolvedValue({ status: { recommendedNextScreen: 'questionnaire' } });
-    const { renderer } = renderLogin('signup');
+  it('carries a trimmed optional name through to verification', async () => {
+    const { navigation, renderer } = renderLogin('signup');
     renderers.push(renderer);
 
     act(() => {
@@ -233,12 +225,14 @@ describe('LoginScreen', () => {
     });
     await act(async () => {
       renderer.root
-        .findByProps({ accessibilityLabel: 'Continue to analysis' })
+        .findByProps({ accessibilityLabel: 'Send my code' })
         .props.onPress();
       await Promise.resolve();
     });
 
-    expect(mockLogin).toHaveBeenCalledWith('9876543210', 'Maya', true);
-    expect(mockReplace).toHaveBeenCalledWith('Onboarding', { screen: 'SetupWelcome' });
+    expect(mockStartPhoneVerification).toHaveBeenCalledWith('+919876543210');
+    expect(navigation.navigate).toHaveBeenCalledWith('VerifyOtp', expect.objectContaining({
+      mobile: '9876543210', name: 'Maya', mode: 'signup',
+    }));
   });
 });

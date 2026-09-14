@@ -6,6 +6,7 @@ import { colors } from '../theme/colors';
 
 const Stack = createNativeStackNavigator<AuthStackParamList>();
 const getLoginScreen = () => require('../screens/auth/LoginScreen').LoginScreen;
+const getVerifyOtpScreen = () => require('../screens/auth/VerifyOtpScreen').VerifyOtpScreen;
 
 export function AuthNavigator() {
   const reduceMotion = useReducedMotion();
@@ -24,6 +25,14 @@ export function AuthNavigator() {
       <Stack.Screen
         name="Login"
         getComponent={getLoginScreen}
+        options={({ route }) => ({
+          animation: route.params?.reduceMotion || reduceMotion ? 'none' : 'slide_from_right',
+          animationDuration: 280,
+        })}
+      />
+      <Stack.Screen
+        name="VerifyOtp"
+        getComponent={getVerifyOtpScreen}
         options={({ route }) => ({
           animation: route.params?.reduceMotion || reduceMotion ? 'none' : 'slide_from_right',
           animationDuration: 280,

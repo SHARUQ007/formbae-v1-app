@@ -153,10 +153,10 @@ export function useAuthStore() {
     }
   }, []);
 
-  const login = useCallback(async (mobile: string, name?: string, createIfMissing = true) => {
+  const login = useCallback(async (mobile: string, name?: string, createIfMissing = true, firebaseIdToken?: string) => {
     setState({ loading: true, error: null });
     try {
-      const response = await loginRequest(mobile, name, createIfMissing);
+      const response = await loginRequest(mobile, name, createIfMissing, firebaseIdToken);
       setCacheSession(response.token, response.user.userId);
       setState({
         ready: true,

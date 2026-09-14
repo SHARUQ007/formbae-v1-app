@@ -99,3 +99,12 @@ jest.mock('react-native-safe-area-context', () => {
     initialWindowMetrics: initialMetrics,
   };
 });
+
+// Firebase never runs under test. Only otpService talks to it, and its own test replaces
+// this with the behaviour it needs; these keep any transitive import inert.
+jest.mock('@react-native-firebase/app', () => ({ getApp: jest.fn() }));
+jest.mock('@react-native-firebase/auth', () => ({
+  getAuth: jest.fn(() => ({})),
+  signInWithPhoneNumber: jest.fn(() => Promise.reject(new Error('Firebase is not available in tests'))),
+  signOut: jest.fn(() => Promise.resolve()),
+}));

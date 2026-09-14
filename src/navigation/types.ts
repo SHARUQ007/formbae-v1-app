@@ -13,6 +13,14 @@ export type RootStackParamList = {
 export type AuthStackParamList = {
   Welcome: undefined;
   Login: { mode?: 'login' | 'signup'; reduceMotion?: boolean; mobile?: string };
+  /** `sessionId` stands in for the Firebase confirmation, which cannot travel in params. */
+  VerifyOtp: {
+    mobile: string;
+    sessionId: string;
+    mode?: 'login' | 'signup';
+    name?: string;
+    reduceMotion?: boolean;
+  };
 };
 
 export type OnboardingStackParamList = {

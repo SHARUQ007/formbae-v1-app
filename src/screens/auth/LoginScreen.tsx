@@ -16,7 +16,6 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import NativeLinearGradient from 'react-native-linear-gradient';
 import { ScreenContainer } from '../../components/Card';
@@ -24,14 +23,12 @@ import { FormInput } from '../../components/FormInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { KeyboardScreen } from '../../components/KeyboardScreen';
 import { Logo } from '../../components/Logo';
-import { ApiError } from '../../services/apiClient';
-import { useAuthStore } from '../../store/authStore';
-import { resolveOnboardingInitialRoute, resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
+import { startPhoneVerification } from '../../services/otpService';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
-import type { AuthStackParamList, RootStackParamList } from '../../navigation/types';
+import type { AuthStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
@@ -41,7 +38,6 @@ const PRIVACY_URL = 'https://formbae.in/privacy-policy';
 type MotionPreference = 'unknown' | 'full' | 'reduce';
 
 export function LoginScreen({ navigation, route }: Props) {
-  const { login, loading } = useAuthStore();
   const { height, fontScale } = useWindowDimensions();
   const compact = height < 700 || fontScale > 1.15;
   const phoneRef = useRef<TextInput>(null);
@@ -52,6 +48,7 @@ export function LoginScreen({ navigation, route }: Props) {
   const [mobile, setMobile] = useState(() => toNationalMobileInput(route.params?.mobile || ''));
   const [name, setName] = useState('');
   const [phoneError, setPhoneError] = useState('');
+  const [sending, setSending] = useState(false);
   const [motionPreference, setMotionPreference] = useState<MotionPreference>(
     route.params?.reduceMotion === true
       ? 'reduce'
@@ -142,38 +139,28 @@ export function LoginScreen({ navigation, route }: Props) {
 
     Keyboard.dismiss();
     submittingRef.current = true;
+    setSending(true);
     setPhoneError('');
     try {
-      const response = await login(digits, isSignup ? name.trim() || undefined : undefined, isSignup);
+      // Whether this number already has an account is settled after the code is checked,
+      // on the verify screen. Asking first would tell any caller which numbers are
+      // registered, which is exactly what sign-in should stop being able to do.
+      const session = await startPhoneVerification(`+91${digits}`);
       await finishScreenTransition();
-      const rootNav = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
-      const root = resolveRootRoute(response.status.recommendedNextScreen);
-      if (root === 'Onboarding') {
-        rootNav?.replace('Onboarding', { screen: resolveOnboardingInitialRoute(response.status.recommendedNextScreen) });
-        return;
-      }
-      if (root === 'PaidTransition') {
-        rootNav?.replace('PaidTransition', { screen: resolvePaidInitialRoute(response.status.recommendedNextScreen) });
-        return;
-      }
-      // Returning users enter through the bounded startup warm-up so their
-      // first Main frame is hydrated instead of immediately showing loaders.
-      rootNav?.replace(root === 'Main' ? 'Splash' : root);
+      navigation.navigate('VerifyOtp', {
+        mobile: digits,
+        sessionId: session.sessionId,
+        mode: isSignup ? 'signup' : 'login',
+        name: isSignup ? name.trim() || undefined : undefined,
+        reduceMotion: motionPreference === 'reduce',
+      });
     } catch (submitError) {
-      if (!isSignup && submitError instanceof ApiError && submitError.status === 404
-        && (submitError.payload as { code?: string } | undefined)?.code === 'ACCOUNT_NOT_FOUND') {
-        navigation.replace('Login', {
-          mode: 'signup',
-          mobile: digits,
-          reduceMotion: motionPreference === 'reduce',
-        });
-        return;
-      }
-      const message = submitError instanceof Error ? submitError.message : 'We could not sign you in. Please try again.';
+      const message = submitError instanceof Error ? submitError.message : 'We could not send your code. Please try again.';
       setPhoneError(message);
       AccessibilityInfo.announceForAccessibility(message);
     } finally {
       submittingRef.current = false;
+      setSending(false);
     }
   };
 
@@ -270,7 +257,7 @@ export function LoginScreen({ navigation, route }: Props) {
                     textContentType="givenName"
                     returnKeyType="next"
                     maxLength={50}
-                    editable={!loading}
+                    editable={!sending}
                     blurOnSubmit={false}
                     onSubmitEditing={() => phoneRef.current?.focus()}
                   />
@@ -288,7 +275,7 @@ export function LoginScreen({ navigation, route }: Props) {
                   textContentType="telephoneNumber"
                   returnKeyType="done"
                   maxLength={14}
-                  editable={!loading}
+                  editable={!sending}
                   autoCorrect={false}
                   spellCheck={false}
                   inputAccessoryViewID={Platform.OS === 'ios' ? PHONE_ACCESSORY_ID : undefined}
@@ -298,12 +285,12 @@ export function LoginScreen({ navigation, route }: Props) {
                 />
 
                 <PrimaryButton
-                  title={isSignup ? 'Continue to analysis' : 'Sign in'}
+                  title={isSignup ? 'Send my code' : 'Send code'}
                   icon="arrow-right"
                   iconPosition="trailing"
                   centerTitle
                   onPress={onSubmit}
-                  loading={loading}
+                  loading={sending}
                   size="lg"
                   style={styles.cta}
                 />
