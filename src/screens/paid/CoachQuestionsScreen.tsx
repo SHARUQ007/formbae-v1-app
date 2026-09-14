@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenHeader } from '../../components/Card';
 import { FormInput } from '../../components/FormInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
@@ -43,10 +44,46 @@ export function CoachQuestionsScreen({ navigation }: Props) {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const SEPARATOR = ', ';
+  const parts = (value: string) => value.split(SEPARATOR).map((part) => part.trim()).filter(Boolean);
+
   const current = questions[index];
   const progress = questions.length ? (index + 1) / questions.length : 0;
-  const answered = useMemo(() => Boolean(current && answers[current.id]?.trim()), [current, answers]);
+  const answered = useMemo(
+    () => Boolean(current && (current.required === false || answers[current.id]?.trim())),
+    [current, answers],
+  );
   const isLast = index === questions.length - 1;
+
+  const selected = useMemo(
+    () => (current ? parts(answers[current.id] || '') : []),
+    [current, answers],
+  );
+  const chosenOptions = useMemo(
+    () => new Set(selected.filter((part) => (current?.options || []).some((option) => option.value === part))),
+    [selected, current],
+  );
+  const notes = useMemo(
+    () => selected.filter((part) => !(current?.options || []).some((option) => option.value === part)).join(SEPARATOR),
+    [selected, current],
+  );
+
+  const writeAnswer = (question: MobileQuestion, chosen: Set<string>, freeText: string) => {
+    const ordered = (question.options || []).filter((option) => chosen.has(option.value)).map((option) => option.value);
+    const value = [...ordered, ...(freeText.trim() ? [freeText.trim()] : [])].join(SEPARATOR);
+    setAnswers((state) => ({ ...state, [question.id]: value }));
+  };
+
+  const toggleOption = (value: string) => {
+    if (!current) return;
+    if (current.type === 'single') {
+      writeAnswer(current, new Set([value]), notes);
+      return;
+    }
+    const next = new Set(chosenOptions);
+    if (next.has(value)) next.delete(value); else next.add(value);
+    writeAnswer(current, next, notes);
+  };
 
   const onNext = async () => {
     if (!current || !answered) return;
@@ -107,36 +144,53 @@ export function CoachQuestionsScreen({ navigation }: Props) {
             <FormInput
               value={answers[current.id] || ''}
               onChangeText={(text) => setAnswers((state) => ({ ...state, [current.id]: text }))}
-              placeholder="Tell your coach in your own words"
+              placeholder={current.notesPlaceholder || 'Tell your coach in your own words'}
               multiline
               autoCapitalize="sentences"
               maxLength={400}
             />
           ) : (
-            <View style={styles.options}>
-              {(current.options || []).map((option) => {
-                const selected = answers[current.id] === option.value;
-                return (
-                  <TouchableOpacity
-                    key={option.value}
-                    activeOpacity={0.85}
-                    accessibilityRole="radio"
-                    accessibilityLabel={option.label}
-                    accessibilityState={{ selected }}
-                    onPress={() => setAnswers((state) => ({ ...state, [current.id]: option.value }))}
-                    style={[styles.option, selected && styles.optionSelected]}
-                  >
-                    <Text style={[styles.optionText, selected && styles.optionTextSelected]}>{option.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <>
+              {current.type === 'multi' ? <Text style={styles.hint}>Pick as many as apply</Text> : null}
+              <View style={styles.options}>
+                {(current.options || []).map((option) => {
+                  const picked = chosenOptions.has(option.value);
+                  return (
+                    <TouchableOpacity
+                      key={option.value}
+                      activeOpacity={0.85}
+                      accessibilityRole={current.type === 'multi' ? 'checkbox' : 'radio'}
+                      accessibilityLabel={option.label}
+                      accessibilityState={current.type === 'multi' ? { checked: picked } : { selected: picked }}
+                      onPress={() => toggleOption(option.value)}
+                      style={[styles.option, picked && styles.optionSelected]}
+                    >
+                      <Text style={[styles.optionText, picked && styles.optionTextSelected]}>{option.label}</Text>
+                      {picked ? <Feather name={current.type === 'multi' ? 'check-square' : 'check'} size={17} color={colors.gold} /> : null}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {current.allowNotes ? (
+                <View style={styles.notes}>
+                  <FormInput
+                    label="Anything else?"
+                    value={notes}
+                    onChangeText={(text) => writeAnswer(current, chosenOptions, text)}
+                    placeholder={current.notesPlaceholder || 'Add it in your own words'}
+                    multiline
+                    autoCapitalize="sentences"
+                    maxLength={240}
+                  />
+                </View>
+              ) : null}
+            </>
           )}
         </ScrollView>
 
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         <PrimaryButton
-          title={isLast ? 'Build my plan' : 'Continue'}
+          title={isLast ? 'Build my plan' : current.required === false && !answers[current.id]?.trim() ? 'Skip' : 'Continue'}
           icon={isLast ? 'check' : 'arrow-right'}
           iconPosition="trailing"
           disabled={!answered}
@@ -158,10 +212,15 @@ const styles = StyleSheet.create({
   intro: { ...typography.caption, color: colors.gold, fontWeight: '700', letterSpacing: 0.3, marginBottom: spacing.sm },
   title: { ...typography.title, color: colors.ink },
   subtitle: { ...typography.caption, color: colors.inkMuted, lineHeight: 19, marginTop: 6 },
-  options: { gap: spacing.sm, marginTop: spacing.md },
+  hint: { ...typography.caption, color: colors.inkSubtle, marginTop: spacing.md },
+  options: { gap: spacing.sm, marginTop: spacing.sm },
+  notes: { marginTop: spacing.md },
   option: {
     minHeight: 56,
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
     borderRadius: radius.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
@@ -169,7 +228,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   optionSelected: { borderColor: colors.gold, backgroundColor: colors.accentLight },
-  optionText: { ...typography.body, color: colors.ink },
+  optionText: { ...typography.body, color: colors.ink, flex: 1 },
   optionTextSelected: { color: colors.gold, fontWeight: '700' },
   error: { color: colors.error, ...typography.caption, marginBottom: spacing.sm },
   cta: { backgroundColor: colors.gold, borderColor: colors.gold },

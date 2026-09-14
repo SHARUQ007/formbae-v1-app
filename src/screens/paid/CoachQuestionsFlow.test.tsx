@@ -166,3 +166,81 @@ describe('a status payload that says nothing still cannot reach plan building', 
     expect(createOnboardingPlan).toHaveBeenCalled();
   });
 });
+
+describe('answering the way the web does', () => {
+  const rich = [
+    { id: 'equipment', title: 'What equipment can you use?', type: 'multi' as const, required: true,
+      options: [
+        { value: 'Dumbbells at home', label: 'Dumbbells at home' },
+        { value: 'Resistance bands', label: 'Resistance bands' },
+        { value: 'Full gym access', label: 'Full gym access' },
+      ],
+      allowNotes: true, notesPlaceholder: 'e.g. treadmill' },
+    { id: 'preferredTime', title: 'When do you prefer to train?', type: 'single' as const, required: false,
+      options: [{ value: 'Morning', label: 'Morning' }, { value: 'Evening', label: 'Evening' }] },
+  ];
+
+  beforeEach(() => {
+    (fetchCoachQuestions as jest.Mock).mockResolvedValue({ questions: rich, answers: {}, completed: false, required: true });
+  });
+
+  const notesField = () => renderer.root.findAll(node => typeof node.props.onChangeText === 'function').slice(-1)[0];
+
+  it('several options can be picked, and unpicked, on one question', async () => {
+    await render();
+    await act(async () => { option('Dumbbells at home').props.onPress(); });
+    await act(async () => { option('Full gym access').props.onPress(); });
+    expect(option('Dumbbells at home').props.accessibilityState).toEqual({ checked: true });
+
+    await act(async () => { option('Dumbbells at home').props.onPress(); });
+    expect(option('Dumbbells at home').props.accessibilityState).toEqual({ checked: false });
+    expect(option('Full gym access').props.accessibilityState).toEqual({ checked: true });
+  });
+
+  it('free text is kept alongside the options, not instead of them', async () => {
+    await render();
+    await act(async () => { option('Resistance bands').props.onPress(); });
+    await act(async () => { notesField().props.onChangeText('a treadmill'); });
+    // Toggling another option must not lose what they typed.
+    await act(async () => { option('Full gym access').props.onPress(); });
+    await act(async () => { await cta().props.onPress(); });
+    await act(async () => { await cta().props.onPress(); });
+
+    expect(saveCoachQuestions).toHaveBeenCalledWith(expect.objectContaining({
+      equipment: 'Resistance bands, Full gym access, a treadmill',
+    }));
+  });
+
+  it('an optional question can be skipped', async () => {
+    await render();
+    await act(async () => { option('Dumbbells at home').props.onPress(); });
+    await act(async () => { await cta().props.onPress(); });
+    // Last question, so the button submits; the point is it is not blocked by a blank answer.
+    expect(cta().props.title).toBe('Build my plan');
+    expect(cta().props.disabled).toBe(false);
+    await act(async () => { await cta().props.onPress(); });
+    expect(saveCoachQuestions).toHaveBeenCalledWith({ equipment: 'Dumbbells at home' });
+  });
+
+  it('an optional question mid-flow offers a skip', async () => {
+    (fetchCoachQuestions as jest.Mock).mockResolvedValue({
+      questions: [rich[1], rich[0]], answers: {}, completed: false, required: true,
+    });
+    await render();
+    expect(cta().props.title).toBe('Skip');
+    await act(async () => { await cta().props.onPress(); });
+    expect(cta().props.title).toBe('Build my plan');
+    expect(cta().props.disabled).toBe(true);
+  });
+
+  it('picking one answer on a single question replaces the last', async () => {
+    await render();
+    await act(async () => { option('Dumbbells at home').props.onPress(); });
+    await act(async () => { await cta().props.onPress(); });
+    await act(async () => { option('Morning').props.onPress(); });
+    await act(async () => { option('Evening').props.onPress(); });
+    expect(option('Morning').props.accessibilityState).toEqual({ selected: false });
+    await act(async () => { await cta().props.onPress(); });
+    expect(saveCoachQuestions).toHaveBeenCalledWith(expect.objectContaining({ preferredTime: 'Evening' }));
+  });
+});

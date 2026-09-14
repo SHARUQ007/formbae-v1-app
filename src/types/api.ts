@@ -75,8 +75,12 @@ export type MobileQuestion = {
   id: string;
   title: string;
   subtitle?: string;
-  type: 'single' | 'text';
+  /** "multi" lets several options be picked; "text" is free text only. */
+  type: 'single' | 'multi' | 'text';
   options?: Array<{ value: string; label: string }>;
+  /** Shows a free-text field alongside the options, for anything they do not cover. */
+  allowNotes?: boolean;
+  notesPlaceholder?: string;
   required?: boolean;
 };
 
