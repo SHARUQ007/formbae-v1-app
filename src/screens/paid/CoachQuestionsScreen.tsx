@@ -7,7 +7,7 @@ import { FormInput } from '../../components/FormInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { ProgressBar } from '../../components/ProgressBar';
 import { LoadingState, ErrorState } from '../../components/States';
-import { fetchCoachQuestions, saveCoachQuestions } from '../../services/onboardingService';
+import { fetchCoachQuestions, saveCoachQuestions, type CoachAnswer } from '../../services/onboardingService';
 import { useAuthStore } from '../../store/authStore';
 import { advancePaidSetup } from '../../utils/paidSetupFlow';
 import type { MobileQuestion } from '../../types/api';
@@ -19,10 +19,12 @@ import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<PaidStackParamList, 'CoachQuestions'>;
 
+const answered = (answer: CoachAnswer | undefined) => Boolean(answer && (answer.options.length || answer.notes.trim()));
+
 export function CoachQuestionsScreen({ navigation }: Props) {
   const { refreshStatus } = useAuthStore();
   const [questions, setQuestions] = useState<MobileQuestion[]>([]);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, CoachAnswer>>({});
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -35,7 +37,7 @@ export function CoachQuestionsScreen({ navigation }: Props) {
       setQuestions(data.questions || []);
       setAnswers(data.answers || {});
       // Resume on the first thing they have not answered rather than starting over.
-      const next = (data.questions || []).findIndex((question) => !(data.answers || {})[question.id]?.trim());
+      const next = (data.questions || []).findIndex((question) => !answered(data.answers?.[question.id]));
       setIndex(next === -1 ? 0 : next);
     } catch {
       setError('We couldn’t load your coach’s questions. Please try again.');
@@ -45,49 +47,32 @@ export function CoachQuestionsScreen({ navigation }: Props) {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const SEPARATOR = ', ';
-  const parts = (value: string) => value.split(SEPARATOR).map((part) => part.trim()).filter(Boolean);
-
   const current = questions[index];
   const progress = questions.length ? (index + 1) / questions.length : 0;
-  const answered = useMemo(
-    () => Boolean(current && (current.required === false || answers[current.id]?.trim())),
-    [current, answers],
-  );
   const isLast = index === questions.length - 1;
+  const answer = current ? answers[current.id] : undefined;
+  const chosenOptions = useMemo(() => new Set(answer?.options || []), [answer]);
+  const notes = answer?.notes || '';
+  const canContinue = Boolean(current && (current.required === false || answered(answer)));
 
-  const selected = useMemo(
-    () => (current ? parts(answers[current.id] || '') : []),
-    [current, answers],
-  );
-  const chosenOptions = useMemo(
-    () => new Set(selected.filter((part) => (current?.options || []).some((option) => option.value === part))),
-    [selected, current],
-  );
-  const notes = useMemo(
-    () => selected.filter((part) => !(current?.options || []).some((option) => option.value === part)).join(SEPARATOR),
-    [selected, current],
-  );
-
-  const writeAnswer = (question: MobileQuestion, chosen: Set<string>, freeText: string) => {
-    const ordered = (question.options || []).filter((option) => chosen.has(option.value)).map((option) => option.value);
-    const value = [...ordered, ...(freeText.trim() ? [freeText.trim()] : [])].join(SEPARATOR);
-    setAnswers((state) => ({ ...state, [question.id]: value }));
+  const writeAnswer = (question: MobileQuestion, options: string[], freeText: string) => {
+    setAnswers((state) => ({ ...state, [question.id]: { options, notes: freeText } }));
   };
 
   const toggleOption = (value: string) => {
     if (!current) return;
     if (current.type === 'single') {
-      writeAnswer(current, new Set([value]), notes);
+      writeAnswer(current, [value], notes);
       return;
     }
-    const next = new Set(chosenOptions);
-    if (next.has(value)) next.delete(value); else next.add(value);
-    writeAnswer(current, next, notes);
+    // Keep the order the options are offered in, however they were tapped.
+    const picked = new Set(chosenOptions);
+    if (picked.has(value)) picked.delete(value); else picked.add(value);
+    writeAnswer(current, (current.options || []).map((option) => option.value).filter((option) => picked.has(option)), notes);
   };
 
   const onNext = async () => {
-    if (!current || !answered) return;
+    if (!current || !canContinue) return;
     if (!isLast) { setIndex(index + 1); return; }
     setSubmitting(true); setError('');
     try {
@@ -145,8 +130,8 @@ export function CoachQuestionsScreen({ navigation }: Props) {
 
           {current.type === 'text' ? (
             <FormInput
-              value={answers[current.id] || ''}
-              onChangeText={(text) => setAnswers((state) => ({ ...state, [current.id]: text }))}
+              value={notes}
+              onChangeText={(text) => writeAnswer(current, [], text)}
               placeholder={current.notesPlaceholder || 'Tell your coach in your own words'}
               multiline
               autoCapitalize="sentences"
@@ -179,7 +164,7 @@ export function CoachQuestionsScreen({ navigation }: Props) {
                   <FormInput
                     label="Anything else?"
                     value={notes}
-                    onChangeText={(text) => writeAnswer(current, chosenOptions, text)}
+                    onChangeText={(text) => writeAnswer(current, answer?.options || [], text)}
                     placeholder={current.notesPlaceholder || 'Add it in your own words'}
                     multiline
                     autoCapitalize="sentences"
@@ -193,10 +178,10 @@ export function CoachQuestionsScreen({ navigation }: Props) {
 
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         <PrimaryButton
-          title={isLast ? 'Build my plan' : current.required === false && !answers[current.id]?.trim() ? 'Skip' : 'Continue'}
+          title={isLast ? 'Build my plan' : current.required === false && !answered(answer) ? 'Skip' : 'Continue'}
           icon={isLast ? 'check' : 'arrow-right'}
           iconPosition="trailing"
-          disabled={!answered}
+          disabled={!canContinue}
           loading={submitting}
           onPress={onNext}
           size="lg"

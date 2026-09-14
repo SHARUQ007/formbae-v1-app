@@ -72,13 +72,18 @@ it('answers are saved and the flow moves on only once', async () => {
   await act(async () => { option('Hard, push me').props.onPress(); });
   await act(async () => { await cta().props.onPress(); });
 
-  expect(saveCoachQuestions).toHaveBeenCalledWith({ goalReason: 'To keep up with my kids', intensity: 'hard' });
+  expect(saveCoachQuestions).toHaveBeenCalledWith({
+    goalReason: { options: [], notes: 'To keep up with my kids' },
+    intensity: { options: ['hard'], notes: '' },
+  });
   // Straight into building, rather than back to the checklist they came from.
   expect(navigation.replace).toHaveBeenCalledWith('PlanPreparing', { autoStart: true });
 });
 
 it('a part-answered questionnaire resumes where it was left', async () => {
-  (fetchCoachQuestions as jest.Mock).mockResolvedValue({ questions, answers: { goalReason: 'Already said' }, completed: false, required: true });
+  (fetchCoachQuestions as jest.Mock).mockResolvedValue({
+    questions, answers: { goalReason: { options: [], notes: 'Already said' } }, completed: false, required: true,
+  });
   await render();
   expect(texts()).toContain('How hard should sessions feel?');
 });
@@ -208,7 +213,7 @@ describe('answering the way the web does', () => {
     await act(async () => { await cta().props.onPress(); });
 
     expect(saveCoachQuestions).toHaveBeenCalledWith(expect.objectContaining({
-      equipment: 'Resistance bands, Full gym access, a treadmill',
+      equipment: { options: ['Resistance bands', 'Full gym access'], notes: 'a treadmill' },
     }));
   });
 
@@ -220,7 +225,7 @@ describe('answering the way the web does', () => {
     expect(cta().props.title).toBe('Build my plan');
     expect(cta().props.disabled).toBe(false);
     await act(async () => { await cta().props.onPress(); });
-    expect(saveCoachQuestions).toHaveBeenCalledWith({ equipment: 'Dumbbells at home' });
+    expect(saveCoachQuestions).toHaveBeenCalledWith({ equipment: { options: ['Dumbbells at home'], notes: '' } });
   });
 
   it('an optional question mid-flow offers a skip', async () => {
@@ -242,7 +247,7 @@ describe('answering the way the web does', () => {
     await act(async () => { option('Evening').props.onPress(); });
     expect(option('Morning').props.accessibilityState).toEqual({ selected: false });
     await act(async () => { await cta().props.onPress(); });
-    expect(saveCoachQuestions).toHaveBeenCalledWith(expect.objectContaining({ preferredTime: 'Evening' }));
+    expect(saveCoachQuestions).toHaveBeenCalledWith(expect.objectContaining({ preferredTime: { options: ['Evening'], notes: '' } }));
   });
 });
 
@@ -278,4 +283,48 @@ describe('finishing the questionnaire lands in a building plan', () => {
     });
     expect(createOnboardingPlan).not.toHaveBeenCalled();
   });
+});
+
+it('an option containing a comma can be selected like any other', async () => {
+  // "Beginner, knows basic exercises" used to be split on its own comma and matched nothing,
+  // so tapping it never showed as selected and it never reached the coach.
+  const withComma = [{
+    id: 'experienceLevel', title: 'What is your training experience?', type: 'single' as const, required: true,
+    options: [
+      { value: 'Complete beginner', label: 'Complete beginner' },
+      { value: 'Beginner, knows basic exercises', label: 'Beginner, knows basic exercises' },
+      { value: 'Intermediate', label: 'Intermediate' },
+    ],
+  }];
+  (fetchCoachQuestions as jest.Mock).mockResolvedValue({ questions: withComma, answers: {}, completed: false, required: true });
+  await render();
+
+  const pick = option('Beginner, knows basic exercises');
+  expect(pick.props.accessibilityState).toEqual({ selected: false });
+  await act(async () => { pick.props.onPress(); });
+  expect(option('Beginner, knows basic exercises').props.accessibilityState).toEqual({ selected: true });
+  expect(option('Complete beginner').props.accessibilityState).toEqual({ selected: false });
+
+  await act(async () => { await cta().props.onPress(); });
+  expect(saveCoachQuestions).toHaveBeenCalledWith({
+    experienceLevel: { options: ['Beginner, knows basic exercises'], notes: '' },
+  });
+});
+
+it('an answer with a comma comes back selected when the questionnaire resumes', async () => {
+  const withComma = [
+    { id: 'experienceLevel', title: 'Experience?', type: 'single' as const, required: true,
+      options: [{ value: 'Beginner, knows basic exercises', label: 'Beginner, knows basic exercises' }] },
+    { id: 'intensity', title: 'Intensity?', type: 'single' as const, required: true,
+      options: [{ value: 'Gentle', label: 'Gentle' }] },
+  ];
+  (fetchCoachQuestions as jest.Mock).mockResolvedValue({
+    questions: withComma,
+    answers: { experienceLevel: { options: ['Beginner, knows basic exercises'], notes: '' } },
+    completed: false,
+    required: true,
+  });
+  await render();
+  // It resumes past the answered question rather than treating it as blank.
+  expect(texts()).toContain('Intensity?');
 });
