@@ -31,8 +31,13 @@ export type PaidStackParamList = {
   GiftedMembership: undefined;
   PaidWelcome: undefined;
   FindingTrainer: undefined;
+  CoachUpgrade: { trainerId: string };
+  CoachUnlocked: { trainerId: string };
   PlanPreparing: undefined;
 };
+
+/** Paid routes the app can land on directly — the ones that need no params. */
+export type PaidEntryRoute = Exclude<keyof PaidStackParamList, 'CoachUpgrade' | 'CoachUnlocked'>;
 
 export type MainTabParamList = {
   Workouts: NavigatorScreenParams<WorkoutStackParamList> | undefined;

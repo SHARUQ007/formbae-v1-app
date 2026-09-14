@@ -38,7 +38,7 @@ export function resolveOnboardingInitialRoute(screen: RecommendedNextScreen): ke
   }
 }
 
-export function resolvePaidInitialRoute(screen: RecommendedNextScreen): keyof import('../navigation/types').PaidStackParamList {
+export function resolvePaidInitialRoute(screen: RecommendedNextScreen): import('../navigation/types').PaidEntryRoute {
   switch (screen) {
     case 'payment_sync':
       return 'PaymentSync';

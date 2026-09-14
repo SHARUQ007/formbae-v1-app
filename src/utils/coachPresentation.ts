@@ -7,7 +7,10 @@ export function formatCoachLabel(coach: Pick<CoachOption, 'expertise' | 'trainer
   if (String(coach.trainerKind || '').toLowerCase() === 'ai' || normalized === 'female_ai' || normalized === 'male_ai') {
     return 'AI trainer';
   }
-  return titleCase(raw) || 'Personal trainer';
+  if (!raw) return 'Personal trainer';
+  // The backend already writes these for a reader; only a stored key needs spelling out,
+  // otherwise "Strength and Training Coach" comes back as "Strength And Training Coach".
+  return /[_-]/.test(raw) ? titleCase(raw) : raw;
 }
 
 export function isIncludedCoach(coach: CoachOption): boolean {

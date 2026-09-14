@@ -26,6 +26,11 @@ const ava = () => coach({
   expertise: 'AI Trainer', monthlyFee: '0', canSelect: true, includedInMembership: true, paywallId: '',
 });
 
+it('leaves a label the backend already wrote for a reader alone', () => {
+  expect(formatCoachLabel({ expertise: 'Strength and Training Coach', trainerPersona: '', trainerKind: 'human' })).toBe('Strength and Training Coach');
+  expect(formatCoachLabel({ expertise: 'AI coach', trainerPersona: '', trainerKind: 'human' })).toBe('AI coach');
+});
+
 it('never shows a stored persona key to a trainee', () => {
   expect(formatCoachLabel({ expertise: '', trainerPersona: 'strength_training_coach', trainerKind: 'human' })).toBe('Strength Training Coach');
   expect(formatCoachLabel({ expertise: '', trainerPersona: 'nutrition_coach', trainerKind: 'human' })).toBe('Nutrition Coach');
