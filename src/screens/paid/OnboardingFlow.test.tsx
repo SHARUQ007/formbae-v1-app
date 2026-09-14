@@ -91,8 +91,8 @@ it('coach selection only offers selectable coaches and persists the selected coa
   const coach = { trainerId: 'ava', name: 'Ava', expertise: 'AI coach', canSelect: true, languages: ['English'], photoUrl: '' };
   (fetchCoachHub as jest.Mock).mockResolvedValue({ currentTrainer: null, trainers: [coach, { ...coach, trainerId: 'locked', name: 'Locked coach', canSelect: false }] });
   await render(<FindingTrainerScreen navigation={navigation as never} route={{ name: 'FindingTrainer', key: 'coach' }} />);
-  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Locked coach, AI coach' })).toHaveLength(0);
-  await act(async () => { renderer.root.findAllByProps({ accessibilityLabel: 'Ava, AI coach' })[0].props.onPress(); });
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Locked coach, AI Coach' })).toHaveLength(0);
+  await act(async () => { renderer.root.findAllByProps({ accessibilityLabel: 'Ava, AI Coach' })[0].props.onPress(); });
   await act(async () => { await renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Continue with this coach')!.props.onPress(); });
   expect(changeCoach).toHaveBeenCalledWith('ava');
   expect(navigation.replace).toHaveBeenCalledWith('PaidWelcome');

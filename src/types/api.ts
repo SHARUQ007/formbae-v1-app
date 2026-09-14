@@ -564,6 +564,9 @@ export type CoachOption = {
   changeKind: CoachChangeKind;
   blockedUntil: string;
   canSelect: boolean;
+  includedInMembership?: boolean;
+  requiresUpgrade?: boolean;
+  upgradeAmountPaise?: number;
   reason: string;
   paywallId: string;
 };

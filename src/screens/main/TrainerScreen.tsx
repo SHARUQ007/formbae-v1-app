@@ -22,6 +22,8 @@ import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { changeCoach, fetchCoachHubPhotoFallbacks } from '../../services/trainerService';
+import { runNativeCheckout } from '../../services/paymentService';
+import { coachAccessPrice, coachCheckoutPlan, coachPricePaise, formatCoachLabel, isIncludedCoach } from '../../utils/coachPresentation';
 import { loadCoachBundleCached, peekCoachBundleCached } from '../../services/preloadService';
 import { useAuthStore } from '../../store/authStore';
 import type { CoachHubPayload, CoachOption } from '../../types/api';
@@ -40,21 +42,6 @@ function formatPrice(value: string) {
   const amount = Number(String(value || '').replace(/,/g, '').trim());
   if (!Number.isFinite(amount) || amount <= 0) return 'Included';
   return `₹${amount.toLocaleString('en-IN')}/mo`;
-}
-
-function coachAccessPrice(coach: CoachOption) {
-  // Every coach is included in a membership now.
-  if (coach.canSelect) return 'Included';
-  return formatPrice(coach.monthlyFee);
-}
-
-function formatCoachLabel(coach: CoachOption) {
-  const raw = String(coach.expertise || coach.trainerPersona || '').trim();
-  const kind = String(coach.trainerKind || '').trim().toLowerCase();
-  if (kind === 'ai' || raw === 'female_ai' || raw === 'male_ai') return 'AI trainer';
-  const normalized = raw.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
-  if (!normalized) return 'Personal trainer';
-  return normalized.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function coachBlurb(coach: CoachOption) {
@@ -122,9 +109,10 @@ export function TrainerScreen() {
   const [filter, setFilter] = useState<CoachFilter>('all');
   const [viewingCoach, setViewingCoach] = useState<CoachOption | null>(null);
   const [changingId, setChangingId] = useState('');
+  const [payingTrainerId, setPayingTrainerId] = useState('');
   const [coachImageRevision, setCoachImageRevision] = useState(0);
   const coachImageRecoveryAttempted = useRef(false);
-  const { refreshStatus } = useAuthStore();
+  const { user, status, refreshStatus } = useAuthStore();
 
   const { data, loading, error, reload, refresh, refreshing, setData } = useAsync((mode) =>
     loadCoachBundleCached({ force: mode === 'refresh' }),
@@ -190,6 +178,9 @@ export function TrainerScreen() {
       Number(b.trainerId === currentCoach?.trainerId) - Number(a.trainerId === currentCoach?.trainerId)
     ));
   }, [activeFilter, availableCoaches, currentCoach?.trainerId]);
+  // What the membership already covers is shown apart from what costs extra.
+  const includedCoaches = useMemo(() => visibleCoaches.filter(isIncludedCoach), [visibleCoaches]);
+  const paidCoaches = useMemo(() => visibleCoaches.filter((coach) => !isIncludedCoach(coach)), [visibleCoaches]);
   const stackCoachCards = viewportWidth < 390 || fontScale >= 1.2;
 
   useEffect(() => {
@@ -213,6 +204,57 @@ export function TrainerScreen() {
   }, [availableCoaches, data, route.key, route.params?.initialView, route.params?.trainerId]);
 
   const activeTab: CoachTab = !currentCoach && tab === 'about' ? 'change' : tab;
+
+  const startCoachCheckout = useCallback(
+    async (coach: CoachOption) => {
+      const plan = coachCheckoutPlan(coach);
+      if (!plan) {
+        Alert.alert('Coach unavailable', 'This coach does not have pricing set up yet. Please pick another coach.');
+        return;
+      }
+      setPayingTrainerId(coach.trainerId);
+      try {
+        const result = await runNativeCheckout({
+          plan,
+          paywallId: coach.paywallId,
+          selectedTrainerId: coach.trainerId,
+          user: {
+            name: status?.name || user?.name || 'FormBae Trainee',
+            mobile: status?.phone || user?.mobile || '',
+            email: status?.email,
+          },
+        });
+        if (result.cancelled) return;
+        if (!result.success) {
+          Alert.alert('Payment issue', result.error || 'Payment could not be completed.');
+          return;
+        }
+        await refreshStatus().catch(() => undefined);
+        await loadCoachBundleCached({ force: true }).catch(() => undefined);
+        await reload();
+        setViewingCoach(null);
+        setTab('about');
+      } finally {
+        setPayingTrainerId('');
+      }
+    },
+    [reload, refreshStatus, status, user],
+  );
+
+  const confirmCoachPurchase = useCallback(
+    (coach: CoachOption) => {
+      const amount = coachPricePaise(coach);
+      Alert.alert(
+        `Unlock ${coach.name}?`,
+        `${coach.name} is a personal coach at ₹${Math.round(amount / 100).toLocaleString('en-IN')} a month, on top of your membership.`,
+        [
+          { text: 'Not now', style: 'cancel' },
+          { text: 'Continue to pay', onPress: () => startCoachCheckout(coach) },
+        ],
+      );
+    },
+    [startCoachCheckout],
+  );
 
   const confirmChangeCoach = useCallback(
     (coach: CoachOption) => {
@@ -312,22 +354,51 @@ export function TrainerScreen() {
             showFilters={showFilters}
             onFilter={setFilter}
           />
-          <View key={`coach-list-${coachImageRevision}`} style={[styles.coachList, stackCoachCards && styles.coachListStack]}>
-            {visibleCoaches.map((coach) => (
-              <CoachOptionCard
-                key={coach.trainerId}
-                coach={coach}
-                onImageError={recoverCoachImages}
-                current={coach.trainerId === currentCoach?.trainerId}
-                changing={changingId === coach.trainerId}
-                fullWidth={stackCoachCards}
-                onPress={() => {
-                  setViewingCoach(coach);
-                  setTab('detail');
-                }}
-              />
-            ))}
-          </View>
+          {includedCoaches.length ? (
+            <View style={styles.coachSection}>
+              <Text style={styles.coachSectionTitle}>INCLUDED IN YOUR PLAN</Text>
+              <Text style={styles.coachSectionNote}>Comes with your ₹49 membership — no extra charge.</Text>
+              <View key={`coach-included-${coachImageRevision}`} style={styles.coachListStack}>
+                {includedCoaches.map((coach) => (
+                  <CoachOptionCard
+                    key={coach.trainerId}
+                    coach={coach}
+                    onImageError={recoverCoachImages}
+                    current={coach.trainerId === currentCoach?.trainerId}
+                    changing={changingId === coach.trainerId}
+                    fullWidth
+                    onPress={() => {
+                      setViewingCoach(coach);
+                      setTab('detail');
+                    }}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
+
+          {paidCoaches.length ? (
+            <View style={styles.coachSection}>
+              <Text style={styles.coachSectionTitle}>PERSONAL COACHES</Text>
+              <Text style={styles.coachSectionNote}>A real coach of your own, charged monthly on top of your membership.</Text>
+              <View key={`coach-list-${coachImageRevision}`} style={[styles.coachList, stackCoachCards && styles.coachListStack]}>
+                {paidCoaches.map((coach) => (
+                  <CoachOptionCard
+                    key={coach.trainerId}
+                    coach={coach}
+                    onImageError={recoverCoachImages}
+                    current={coach.trainerId === currentCoach?.trainerId}
+                    changing={changingId === coach.trainerId}
+                    fullWidth={stackCoachCards}
+                    onPress={() => {
+                      setViewingCoach(coach);
+                      setTab('detail');
+                    }}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
         </ScrollView>
       ) : null}
 
@@ -337,7 +408,7 @@ export function TrainerScreen() {
           coach={viewingCoach}
           onImageError={recoverCoachImages}
           current={viewingCoach.trainerId === currentCoach?.trainerId}
-          loading={changingId === viewingCoach.trainerId}
+          loading={changingId === viewingCoach.trainerId || payingTrainerId === viewingCoach.trainerId}
           tabBarHeight={tabBarHeight}
           onContinue={() => {
             if (viewingCoach.blockedUntil) {
@@ -347,11 +418,15 @@ export function TrainerScreen() {
               );
               return;
             }
-            if (!viewingCoach.canSelect) {
-              Alert.alert('Coach unavailable', viewingCoach.reason || 'This coach is not available right now.');
+            if (viewingCoach.canSelect) {
+              confirmChangeCoach(viewingCoach);
               return;
             }
-            confirmChangeCoach(viewingCoach);
+            if (coachCheckoutPlan(viewingCoach)) {
+              confirmCoachPurchase(viewingCoach);
+              return;
+            }
+            Alert.alert('Coach unavailable', viewingCoach.reason || 'This coach is not available right now.');
           }}
         />
       ) : null}
@@ -427,7 +502,7 @@ function CoachAbout({
         <Text style={styles.aboutTitle}>{ai ? 'How Ava helps' : 'Coach profile'}</Text>
         <Text style={styles.aboutBody}>{bio}</Text>
         <View style={styles.quickGrid}>
-          <InfoTile icon="activity" label="Plan style" value={ai ? 'Adaptive AI' : coach.expertise || 'Personal trainer'} />
+          <InfoTile icon="activity" label="Plan style" value={ai ? 'Adaptive AI' : formatCoachLabel(coach)} />
           <InfoTile icon="refresh-cw" label="Updates" value={ai ? '2-week plans' : 'Coach guided'} />
           <InfoTile icon="credit-card" label="Access" value={formatPrice(coach.monthlyFee)} />
         </View>
@@ -556,7 +631,9 @@ function CoachDetailPage({
   const firstName = coach.name.trim().split(/\s+/)[0] || 'coach';
   const isAi = isAiCoach(coach);
   const isLocked = Boolean(coach.blockedUntil);
-  const isUnavailable = !current && !coach.canSelect && !isLocked;
+  // A coach you have not paid for is still choosable - the profile is where you pay.
+  const purchasable = !current && !coach.canSelect && Boolean(coachCheckoutPlan(coach));
+  const isUnavailable = !current && !coach.canSelect && !purchasable && !isLocked;
   const languages = coach.languages?.filter(Boolean).join(', ') || '';
   const availability = coach.availableSlotCount > 0 ? `${coach.availableSlotCount} slots open` : '';
   const nextOpening = coach.nextSlotAt && Number.isFinite(new Date(coach.nextSlotAt).getTime())
@@ -584,7 +661,9 @@ function CoachDetailPage({
       ? `Available ${formatUnlockDate(coach.blockedUntil)}`
       : isUnavailable
         ? 'Not available'
-        : `Choose ${firstName}`;
+        : purchasable
+          ? `Unlock ${firstName}`
+          : `Choose ${firstName}`;
 
   useEffect(() => setImageFailed(false), [image]);
 
@@ -663,14 +742,18 @@ function CoachDetailPage({
               ? 'This is your current coach'
               : isUnavailable
                 ? 'Currently unavailable'
-                : 'Your progress stays connected'}
+                : purchasable
+                  ? 'Secure coach access'
+                  : 'Your progress stays connected'}
           </Text>
           <Text style={styles.checkoutNoteBody}>
             {current
               ? 'Your current plan and workout history are already connected to this coach.'
               : isUnavailable
                 ? coach.reason || 'This coach is not available right now.'
-                : 'Changing coaches keeps your workout history and current progress intact.'}
+                : purchasable
+                  ? 'Personal coaching is charged monthly on top of your membership. Your workout history stays connected.'
+                  : 'Changing coaches keeps your workout history and current progress intact.'}
           </Text>
         </View>
       </Card>
@@ -680,7 +763,7 @@ function CoachDetailPage({
       <View style={styles.detailActions}>
         <PrimaryButton
           title={actionTitle}
-          icon={current ? 'check' : isLocked ? 'lock' : 'arrow-right'}
+          icon={current ? 'check' : isLocked ? 'lock' : purchasable ? 'lock' : 'arrow-right'}
           size="lg"
           loading={loading}
           disabled={current || isLocked || isUnavailable}
@@ -748,7 +831,7 @@ function CoachOptionCard({
   const label = formatCoachLabel(coach);
   const disabled = changing;
   const locked = Boolean(coach.blockedUntil);
-  const status = current ? 'Current' : coach.canSelect ? 'Included' : 'View';
+  const status = current ? 'Current' : isIncludedCoach(coach) ? 'Included' : coachPricePaise(coach) > 0 ? 'Paid' : 'View';
 
   useEffect(() => setImageFailed(false), [image]);
 
@@ -796,7 +879,13 @@ function CoachOptionCard({
       </View>
       <View style={styles.optionFooter}>
         <Text style={styles.optionPrice} numberOfLines={1}>
-          {current ? 'View profile' : !coach.canSelect ? 'View availability' : coachAccessPrice(coach)}
+          {current
+            ? 'View profile'
+            : isIncludedCoach(coach)
+              ? 'Included'
+              : coachPricePaise(coach) > 0
+                ? `₹${Math.round(coachPricePaise(coach) / 100).toLocaleString('en-IN')}/mo`
+                : 'View availability'}
         </Text>
         {changing ? <ActivityIndicator size="small" color={colors.ink} /> : <Feather name="arrow-right" size={17} color={colors.ink} />}
       </View>
@@ -947,6 +1036,9 @@ const styles = StyleSheet.create({
   filterButtonSelected: { backgroundColor: colors.primaryAction },
   filterText: { ...typography.caption, color: colors.inkMuted, fontWeight: '800' },
   filterTextSelected: { color: colors.onPrimary },
+  coachSection: { marginBottom: spacing.lg },
+  coachSectionTitle: { ...typography.label, color: colors.gold, fontSize: 9, letterSpacing: 1.4 },
+  coachSectionNote: { ...typography.caption, color: colors.inkSubtle, lineHeight: 16, marginTop: 3, marginBottom: spacing.sm },
   coachList: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: spacing.sm },
   coachListStack: { flexDirection: 'column' },
   detailScroll: { paddingTop: spacing.xs },

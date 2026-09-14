@@ -8,6 +8,7 @@ import { LoadingState } from '../../components/States';
 import { fetchCoachHub, changeCoach } from '../../services/trainerService';
 import { useAuthStore } from '../../store/authStore';
 import { getCoachArtworkSource } from '../../utils/coachArtwork';
+import { formatCoachLabel } from '../../utils/coachPresentation';
 import type { CoachOption } from '../../types/api';
 import type { PaidStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
@@ -47,11 +48,11 @@ export function FindingTrainerScreen({ navigation }: NativeStackScreenProps<Paid
         const chosen = selected === coach.trainerId;
         const art = getCoachArtworkSource(coach);
         return <TouchableOpacity key={coach.trainerId} disabled={saving} activeOpacity={0.85}
-          accessibilityRole="radio" accessibilityState={{ selected: chosen, disabled: saving }} accessibilityLabel={`${coach.name}, ${coach.expertise}`}
+          accessibilityRole="radio" accessibilityState={{ selected: chosen, disabled: saving }} accessibilityLabel={`${coach.name}, ${formatCoachLabel(coach)}`}
           onPress={() => setSelected(coach.trainerId)} style={[styles.card, chosen && styles.chosen]}>
           <View style={styles.row}>
             {art ? <Image source={art} style={styles.portrait} /> : <View style={styles.fallback}><Feather name="user" size={26} color={colors.gold} /></View>}
-            <View style={styles.copy}><Text style={styles.name}>{coach.name}</Text><Text style={styles.specialty}>{coach.expertise}</Text></View>
+            <View style={styles.copy}><Text style={styles.name}>{coach.name}</Text><Text style={styles.specialty}>{formatCoachLabel(coach)}</Text></View>
             <Feather name={chosen ? 'check-circle' : 'circle'} size={24} color={chosen ? colors.gold : colors.inkSubtle} />
           </View>
           <Text style={styles.description}>{coach.description || 'Coaching and a workout routine shaped around your goals.'}</Text>
