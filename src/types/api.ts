@@ -36,6 +36,9 @@ export type UserStatus = {
   questionnaireCompleted: boolean;
   analysisReady: boolean;
   trainerAssigned: boolean;
+  /** An AI coach plans from its own questions; these say whether that step is done. */
+  coachQuestionsRequired?: boolean;
+  coachQuestionsCompleted?: boolean;
   planReady: boolean;
   onboardingStatus: OnboardingStatus;
   recommendedNextScreen: RecommendedNextScreen;

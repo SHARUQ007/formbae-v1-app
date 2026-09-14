@@ -12,7 +12,7 @@ export function PaidWelcomeScreen({ navigation }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const step = status ? nextPaidSetupStep(status) : 'PaymentSync';
-  const labels = { PaymentSync: 'Check membership', ProfileSetup: 'Complete my profile', FindingTrainer: 'Choose my coach', PlanPreparing: 'Create my workout plan', Main: 'Enter FormBae' };
+  const labels = { PaymentSync: 'Check membership', ProfileSetup: 'Complete my profile', FindingTrainer: 'Choose my coach', CoachQuestions: 'Answer my coach’s questions', PlanPreparing: 'Create my workout plan', Main: 'Enter FormBae' };
   const proceed = async () => {
     setBusy(true); setError('');
     try {
@@ -30,7 +30,10 @@ export function PaidWelcomeScreen({ navigation }: Props) {
       { title: 'Your membership', detail: 'Confirm your existing payment', artwork: 'membership', complete: status?.hasPaid },
       { title: 'Your starting point', detail: 'Goals and a schedule that works for you', artwork: 'profile', complete: status?.questionnaireCompleted },
       { title: 'Your coach', detail: 'Choose from the coaches included in your plan', artwork: 'coach', complete: status?.trainerAssigned, onChange: status?.hasPaid && status.questionnaireCompleted && status.trainerAssigned && !status.planReady ? () => navigation.navigate('FindingTrainer') : undefined },
-      { title: 'Your first workout plan', detail: 'Built from your profile and coach selection', artwork: 'plan', complete: status?.planReady },
+      ...(status?.coachQuestionsRequired
+        ? [{ title: 'Your coach’s questions', detail: 'What your coach needs before writing your plan', artwork: 'profile' as const, complete: status?.coachQuestionsCompleted }]
+        : []),
+      { title: 'Your first workout plan', detail: 'Built from your answers and coach selection', artwork: 'plan', complete: status?.planReady },
     ]}
     action={labels[step]} onContinue={proceed} busy={busy} error={error} />;
 }

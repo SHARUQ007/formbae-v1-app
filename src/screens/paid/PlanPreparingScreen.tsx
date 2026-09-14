@@ -7,6 +7,7 @@ import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState } from '../../components/States';
 import { useAuthStore } from '../../store/authStore';
 import { createOnboardingPlan, fetchOnboardingPlanState, type OnboardingPlanState } from '../../services/onboardingService';
+import { ApiError } from '../../services/apiClient';
 import type { PaidStackParamList, RootStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 
@@ -51,10 +52,22 @@ export function PlanPreparingScreen({ navigation }: NativeStackScreenProps<PaidS
       if (!fresh?.hasPaid || !fresh.questionnaireCompleted || !fresh.trainerAssigned) {
         navigation.replace('PaidWelcome'); return;
       }
+      // An AI coach has questions of its own; nothing can be built until they are answered.
+      if (fresh.coachQuestionsRequired && !fresh.coachQuestionsCompleted) {
+        navigation.replace('CoachQuestions'); return;
+      }
       if (fresh.planReady) { if (alive.current) setState('completed'); return; }
       const result = await createOnboardingPlan();
       if (alive.current) setState(result.status);
-    } catch {
+    } catch (failure) {
+      // The server refuses to plan before the coach has asked; send them there, not to a retry.
+      if (failure instanceof ApiError && failure.status === 409) {
+        const latestStatus = await refreshStatus().catch(() => undefined);
+        if (latestStatus?.coachQuestionsRequired && !latestStatus.coachQuestionsCompleted) {
+          navigation.replace('CoachQuestions');
+          return;
+        }
+      }
       // A lost response doesn't mean the server failed. Reconcile before offering a retry.
       try {
         const latest = await fetchOnboardingPlanState();

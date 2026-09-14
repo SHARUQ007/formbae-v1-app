@@ -2,13 +2,20 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { CoachQuestionsScreen } from './CoachQuestionsScreen';
 import { FindingTrainerScreen } from './FindingTrainerScreen';
+import { PlanPreparingScreen } from './PlanPreparingScreen';
+import { PaidWelcomeScreen } from './PaidWelcomeScreen';
+import { SetupOverview } from '../../components/SetupOverview';
+import { createOnboardingPlan, fetchOnboardingPlanState } from '../../services/onboardingService';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { useAuthStore } from '../../store/authStore';
 import { fetchCoachQuestions, saveCoachQuestions } from '../../services/onboardingService';
 import { changeCoach, fetchCoachHub } from '../../services/trainerService';
 
 jest.mock('../../store/authStore', () => ({ useAuthStore: jest.fn() }));
-jest.mock('../../services/onboardingService', () => ({ fetchCoachQuestions: jest.fn(), saveCoachQuestions: jest.fn() }));
+jest.mock('../../services/onboardingService', () => ({
+  fetchCoachQuestions: jest.fn(), saveCoachQuestions: jest.fn(),
+  createOnboardingPlan: jest.fn(), fetchOnboardingPlanState: jest.fn(),
+}));
 jest.mock('../../services/trainerService', () => ({ fetchCoachHub: jest.fn(), changeCoach: jest.fn() }));
 jest.mock('../../services/paymentService', () => ({ runNativeCheckout: jest.fn() }));
 jest.mock('../../services/activityService', () => ({ trackMobileInteraction: jest.fn() }));
@@ -90,4 +97,33 @@ it('choosing an AI coach goes to its questions, not straight to the plan', async
 
   expect(changeCoach).toHaveBeenCalledWith('ava');
   expect(navigation.replace).toHaveBeenCalledWith('CoachQuestions');
+});
+
+describe('nothing reaches plan building with the questions unanswered', () => {
+  const pending = {
+    hasPaid: true, questionnaireCompleted: true, trainerAssigned: true, planReady: false,
+    coachQuestionsRequired: true, coachQuestionsCompleted: false,
+  };
+
+  it('the setup screen sends them to the questions, not to plan building', async () => {
+    refreshStatus.mockResolvedValue(pending);
+    (useAuthStore as jest.Mock).mockReturnValue({ status: pending, refreshStatus });
+    await act(async () => { renderer = create(<PaidWelcomeScreen navigation={navigation as never} route={{ name: 'PaidWelcome', key: 'w' } as never} />); });
+    const overview = renderer.root.findByType(SetupOverview);
+    expect(overview.props.action).toBe('Answer my coach’s questions');
+    await act(async () => { await overview.props.onContinue(); });
+    expect(navigation.navigate).toHaveBeenCalledWith('CoachQuestions');
+    expect(createOnboardingPlan).not.toHaveBeenCalled();
+  });
+
+  it('opening plan building directly bounces to the questions', async () => {
+    refreshStatus.mockResolvedValue(pending);
+    (useAuthStore as jest.Mock).mockReturnValue({ status: pending, refreshStatus });
+    (fetchOnboardingPlanState as jest.Mock).mockResolvedValue({ status: 'idle' });
+    await act(async () => { renderer = create(<PlanPreparingScreen navigation={navigation as never} route={{ name: 'PlanPreparing', key: 'p' } as never} />); });
+    const build = renderer.root.findAllByType(PrimaryButton).slice(-1)[0];
+    await act(async () => { await build.props.onPress(); });
+    expect(createOnboardingPlan).not.toHaveBeenCalled();
+    expect(navigation.replace).toHaveBeenCalledWith('CoachQuestions');
+  });
 });
