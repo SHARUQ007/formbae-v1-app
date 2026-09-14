@@ -154,7 +154,9 @@ export function CoachQuestionsScreen({ navigation }: Props) {
                       style={[styles.option, picked && styles.optionSelected]}
                     >
                       <Text style={[styles.optionText, picked && styles.optionTextSelected]}>{option.label}</Text>
-                      {picked ? <Feather name={current.type === 'multi' ? 'check-square' : 'check'} size={17} color={colors.gold} /> : null}
+                      <View style={styles.optionTick}>
+                        {picked ? <Feather name={current.type === 'multi' ? 'check-square' : 'check'} size={17} color={colors.gold} /> : null}
+                      </View>
                     </TouchableOpacity>
                   );
                 })}
@@ -217,6 +219,7 @@ const styles = StyleSheet.create({
   },
   optionSelected: { borderColor: colors.gold, backgroundColor: colors.accentLight },
   optionText: { ...typography.body, color: colors.ink, flex: 1 },
+  optionTick: { width: 17, alignItems: 'center', flexShrink: 0 },
   optionTextSelected: { color: colors.gold, fontWeight: '700' },
   error: { color: colors.error, ...typography.caption, marginBottom: spacing.sm },
   cta: { backgroundColor: colors.gold, borderColor: colors.gold },

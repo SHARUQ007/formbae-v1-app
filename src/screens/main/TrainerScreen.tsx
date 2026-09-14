@@ -359,7 +359,7 @@ export function TrainerScreen() {
             <View style={styles.coachSection}>
               <Text style={styles.coachSectionTitle}>INCLUDED IN YOUR PLAN</Text>
               <Text style={styles.coachSectionNote}>Comes with your ₹49 membership — no extra charge.</Text>
-              <View key={`coach-included-${coachImageRevision}`} style={styles.coachListStack}>
+              <View key={`coach-included-${coachImageRevision}`} style={[styles.coachList, stackCoachCards && styles.coachListStack]}>
                 {includedCoaches.map((coach) => (
                   <CoachOptionCard
                     key={coach.trainerId}
@@ -367,7 +367,7 @@ export function TrainerScreen() {
                     onImageError={recoverCoachImages}
                     current={coach.trainerId === currentCoach?.trainerId}
                     changing={changingId === coach.trainerId}
-                    fullWidth
+                    fullWidth={stackCoachCards}
                     onPress={() => {
                       setViewingCoach(coach);
                       setTab('detail');
