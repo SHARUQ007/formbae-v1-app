@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, Text, TouchableOpacity, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Alert, Linking, ScrollView, Text, TouchableOpacity, StyleSheet, useWindowDimensions, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
@@ -30,20 +30,20 @@ function planLabel(plan: PaymentPlan): string {
   return plan.label || plan.planName;
 }
 
-/** Whatever the admin configured on the plan; the local copy is only a fallback. */
 function benefitsForPlan(plan: PaymentPlan, included: string): string[] {
-  if (plan.benefits?.length) return plan.benefits;
   const members = plan.memberLimit || 1;
-  if (members > 1) return [
-    `Separate plans for you and ${included}`,
-    'Each one shaped by that person’s age and gender',
-    'Daily AI coaching, diet guidance and progress',
-  ];
-  return [
-    'Workouts personalized to your goal and schedule',
-    'Practical diet guidance and progress tracking',
-    'Daily AI coaching, reminders and accountability',
-  ];
+  const core = members > 1
+    ? [
+        `${members} personalized member profiles`,
+        included ? `A separate plan for you and ${included}` : 'A separate plan for every member',
+        'Plans shaped by each person’s age and gender',
+      ]
+    : [
+        'AI trainer',
+        'Personalized workout and diet plans',
+        'Daily guidance and progress tracking',
+      ];
+  return [...core, '5-day refund money-back policy', 'Professional coach upgrade at ₹999'];
 }
 
 /** Names the people this plan covers, from what the survey implies. */
@@ -72,14 +72,9 @@ function useDensity() {
       planMeta: pick([10, 11, 12]),
       price: pick([22, 26, 30]),
       priceLine: pick([27, 32, 36]),
-      cardPadTop: pick([10, 18, 26]),
-      cardPadBottom: pick([11, 19, 27]),
-      radio: pick([20, 23, 26]),
-      benefitPad: pick([12, 18, 24]),
       benefitText: pick([12, 13, 14]),
       benefitLine: pick([17, 20, 22]),
-      benefitGap: pick([8, 12, 16]),
-      blockGap: pick([10, 14, 18]),
+      contentGap: pick([12, 16, 20]),
     };
   }, [height]);
 }
@@ -217,8 +212,18 @@ export function PaymentRequiredScreen({ navigation }: Props) {
     ]);
   };
 
+  const openPolicy = (path: string) => {
+    Linking.openURL(`https://formbae.in/${path}`).catch(() => {
+      Alert.alert('Could not open this page', 'Please try again when you are connected.');
+    });
+  };
+
+  const checkoutName = status?.name || user?.name || 'FormBae member';
+  const checkoutMobile = status?.phone || user?.mobile || '';
+  const selectedBenefits = selectedPlan ? benefitsForPlan(selectedPlan, included) : [];
+
   return (
-    <ScreenContainer withBottomInset>
+    <ScreenContainer withBottomInset style={styles.screen}>
       <View style={styles.topActions}>
         <TouchableOpacity
           onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.replace('AnalysisReport'))}
@@ -242,32 +247,35 @@ export function PaymentRequiredScreen({ navigation }: Props) {
         </TouchableOpacity>
       </View>
 
-      {/* Sized to the viewport: no scrolling, and the slack is spread between blocks. */}
-      <View style={[styles.body, { gap: density.blockGap }]}>
-        <View>
-          <Text style={[styles.title, { fontSize: density.title, lineHeight: density.titleLine }]}>Choose your plan</Text>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.content, { gap: density.contentGap }]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.intro}>
+          <Text style={[styles.title, { fontSize: density.title, lineHeight: density.titleLine }]}>Get started with your fitness journey.</Text>
           <Text style={[styles.subtitle, { fontSize: density.subtitle, lineHeight: density.subtitleLine }]}>
-            You’ve seen what can change. Take the first step toward the life you want.
+            Your preliminary report is ready. Unlock app access, trainer guidance, workout and diet direction.
           </Text>
         </View>
 
         {offerExpiresAt && !loading && plans.length ? (
           <View style={[styles.offerBar, { minHeight: density.offerHeight }, offerSeconds === 0 && styles.offerBarExpired]}>
-            <Text style={styles.offerDetail} numberOfLines={1}>
-              {offerSeconds === 0
-                ? 'Intro offer ended · standard pricing'
-                : selectedFullPrice
-                  ? `Intro price · back to ${rupees(selectedFullPrice)} in`
-                  : 'Intro price reserved for you'}
-            </Text>
+            <View style={styles.offerLabel}>
+              <ClockArtwork expired={offerSeconds === 0} />
+              <Text style={[styles.offerDetail, offerSeconds === 0 && styles.offerDetailExpired]} numberOfLines={1}>
+                {offerSeconds === 0 ? 'Regular price applies' : 'Discounted price reserved'}
+              </Text>
+            </View>
             {offerSeconds > 0 ? <Text style={[styles.offerTimer, { fontSize: density.offerTimer, lineHeight: density.offerTimer + 4 }]}>{formatTimer(offerSeconds)}</Text> : null}
           </View>
         ) : null}
 
         {loading ? (
           <LoadingState message="Loading plans…" />
-        ) : (
-          <View style={styles.plans}>
+        ) : plans.length > 1 ? (
+          <View style={styles.planChoices} accessibilityRole="radiogroup">
             {plans.map((plan) => {
               const selected = plan.planId === selectedId;
               return (
@@ -275,87 +283,117 @@ export function PaymentRequiredScreen({ navigation }: Props) {
                   key={plan.planId || plan.planName}
                   activeOpacity={0.85}
                   onPress={() => setSelectedId(plan.planId)}
-                  style={[styles.planCard, plan.popular && styles.planPopular, selected && styles.planSelected]}
+                  style={[styles.planChoice, plan.popular && styles.planChoicePopular, selected && styles.planChoiceSelected]}
                   accessibilityRole="radio"
                   accessibilityState={{ selected }}
+                  accessibilityLabel={`${planLabel(plan)}, ${rupees(plan.amount)} per month`}
                 >
                   {plan.popular ? (
-                    <View style={styles.popularStrip}>
-                      <Text style={styles.popularStripText} numberOfLines={1}>POPULAR</Text>
+                    <View style={styles.popularBadge}>
+                      <Text style={styles.popularBadgeText} numberOfLines={1}>POPULAR</Text>
                     </View>
-                  ) : (
-                    // Keeps every card's content on the same baseline as the popular one.
-                    <View style={styles.popularSpacer} />
-                  )}
-                  <View style={[styles.planBody, { paddingTop: density.cardPadTop, paddingBottom: density.cardPadBottom }]}>
+                  ) : null}
+                  <View style={styles.planChoiceBody}>
                     <Text style={[styles.planName, { fontSize: density.planName }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
                       {planLabel(plan)}
                     </Text>
-                    {(plan.memberLimit || 1) !== 3 ? (
-                      <Text style={[styles.planMeta, { fontSize: density.planMeta }]} numberOfLines={1}>
-                        {(plan.memberLimit || 1) === 1
-                          ? 'Just you'
-                          : PLUS_ONE_PEOPLE[plusOnePersonIndex]}
-                      </Text>
-                    ) : <View style={styles.planMetaSpacer} />}
-                    <Text style={[styles.planPrice, { fontSize: density.price, lineHeight: density.priceLine }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                    <Text style={styles.planChoicePrice} numberOfLines={1}>
                       {rupees(plan.amount)}
                     </Text>
-                    <Text style={styles.originalPrice} numberOfLines={1}>
-                      {plan.originalAmount && plan.originalAmount > plan.amount ? rupees(plan.originalAmount) : ' '}
-                    </Text>
-                    <View style={[styles.radio, { width: density.radio, height: density.radio }, selected && styles.radioSelected]}>
-                      {selected ? <Feather name="check" size={12} color={colors.white} /> : null}
-                    </View>
+                    {(plan.memberLimit || 1) === 2 ? (
+                      <Text style={[styles.planMeta, { fontSize: density.planMeta }]} numberOfLines={1}>{PLUS_ONE_PEOPLE[plusOnePersonIndex]}</Text>
+                    ) : <View style={styles.planMetaSpacer} />}
                   </View>
                 </TouchableOpacity>
               );
             })}
           </View>
-        )}
+        ) : null}
 
         {selectedPlan ? (
-          <View style={[styles.benefitsCard, { paddingVertical: density.benefitPad }]}>
-            {included ? (
-              <Text style={[styles.includedText, { fontSize: density.benefitText, lineHeight: density.benefitLine }]} numberOfLines={2}>
-                Includes a plan for <Text style={styles.includedName}>{included}</Text>
-              </Text>
-            ) : null}
-            <ScrollView
-              style={styles.benefitsScroll}
-              contentContainerStyle={{ gap: density.benefitGap }}
-              showsVerticalScrollIndicator={false}
-              bounces={false}
-            >
-              {benefitsForPlan(selectedPlan, included).map((benefit) => (
+          <View style={styles.selectedCard}>
+            <View style={styles.selectedHeader}>
+              <View style={styles.selectedHeadingCopy}>
+                <Text style={styles.selectedName}>Monthly · {(selectedPlan.memberLimit || 1) === 1 ? 'Just you' : planLabel(selectedPlan)}</Text>
+                <View style={styles.priceRow}>
+                  {selectedFullPrice ? <Text style={styles.selectedOriginalPrice}>{rupees(selectedFullPrice)}</Text> : null}
+                  <Text style={[styles.selectedPrice, { fontSize: density.price + 10, lineHeight: density.priceLine + 11 }]}>{rupees(selectedPlan.amount)}</Text>
+                  <Text style={styles.perMonth}>/ month</Text>
+                </View>
+              </View>
+              <SelectedArtwork />
+            </View>
+            <View style={styles.benefitsList}>
+              {selectedBenefits.map((benefit) => (
                 <View key={benefit} style={styles.benefitRow}>
                   <BenefitCheck />
                   <Text style={[styles.benefitText, { fontSize: density.benefitText, lineHeight: density.benefitLine }]}>{benefit}</Text>
                 </View>
               ))}
-            </ScrollView>
+            </View>
           </View>
         ) : null}
-      </View>
 
-      <View style={styles.footer}>
-        <PrimaryButton
-          title={
-            !selectedPlan
-              ? 'Choose a plan'
-              : (selectedPlan.memberLimit || 1) > 1
-                ? 'Continue'
-                : `Pay ${rupees(selectedPlan.amount)} & continue`
-          }
-          icon={(selectedPlan?.memberLimit || 1) > 1 ? 'arrow-right' : 'lock'}
-          onPress={onPayNative}
-          loading={paying}
-          size="lg"
-          style={styles.payBtn}
-        />
-        <Text style={styles.note}>Secure Razorpay checkout · cancel anytime</Text>
-      </View>
+        <View style={styles.paymentNote}>
+          <Text style={styles.paymentNoteText}>Payments are processed securely through Razorpay. Access stays linked to this account.</Text>
+        </View>
+
+        <View style={styles.checkoutCard}>
+          <View style={styles.contactField}>
+            <Text style={styles.contactText} numberOfLines={1}>{checkoutName}</Text>
+          </View>
+          <View style={styles.contactField}>
+            <Text style={styles.contactText} numberOfLines={1}>{checkoutMobile || 'Verified mobile number'}</Text>
+          </View>
+          <PrimaryButton
+            title={
+              !selectedPlan
+                ? 'Choose a plan'
+                : (selectedPlan.memberLimit || 1) > 1
+                  ? `Continue · ${rupees(selectedPlan.amount)}`
+                  : `Get started · ${rupees(selectedPlan.amount)}`
+            }
+            icon="arrow-right"
+            onPress={onPayNative}
+            loading={paying}
+            size="lg"
+            style={styles.payBtn}
+          />
+          <View style={styles.policyRow}>
+            <Text style={styles.policyText}>By continuing, you agree to the </Text>
+            <TouchableOpacity onPress={() => openPolicy('terms-of-use')} accessibilityRole="link">
+              <Text style={styles.policyLink}>FormBae policies</Text>
+            </TouchableOpacity>
+            <Text style={styles.policyText}> and </Text>
+            <TouchableOpacity onPress={() => openPolicy('refund-policy')} accessibilityRole="link">
+              <Text style={styles.policyLink}>5-day refund policy</Text>
+            </TouchableOpacity>
+            <Text style={styles.policyText}>.</Text>
+          </View>
+        </View>
+      </ScrollView>
     </ScreenContainer>
+  );
+}
+
+function ClockArtwork({ expired }: { expired: boolean }) {
+  const color = expired ? colors.inkSubtle : colors.gold;
+  return (
+    <Svg width="22" height="22" viewBox="0 0 24 24">
+      <Circle cx="12" cy="12" r="8.5" fill="none" stroke={color} strokeWidth="1.8" />
+      <Path d="M12 7.4v5l3.4 1.9" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function SelectedArtwork() {
+  return (
+    <View style={styles.selectedArtwork} pointerEvents="none">
+      <Svg width="38" height="38" viewBox="0 0 40 40">
+        <Circle cx="20" cy="20" r="19" fill={colors.primaryAction} />
+        <Path d="M12.5 20.4l5 5 10.6-11" fill="none" stroke={colors.onPrimary} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+    </View>
   );
 }
 
@@ -371,69 +409,80 @@ function BenefitCheck() {
 }
 
 const styles = StyleSheet.create({
+  screen: { paddingHorizontal: spacing.lg },
   topActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.xs },
-  quietAction: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 3, opacity: 0.75 },
+  quietAction: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 3, opacity: 0.62 },
   quietActionText: { fontSize: 11, lineHeight: 15, fontWeight: '500', letterSpacing: 0.2, color: colors.inkSubtle },
-  // Spreads whatever height is left over between the blocks instead of pooling it at the bottom.
-  body: { flex: 1, justifyContent: 'space-between', paddingVertical: spacing.sm },
-  title: { ...typography.title, fontSize: 23, lineHeight: 28, color: colors.ink },
-  subtitle: { ...typography.caption, color: colors.inkMuted, lineHeight: 17, marginTop: 4 },
+  scroll: { flex: 1 },
+  content: { paddingTop: spacing.sm, paddingBottom: spacing.sm },
+  intro: { gap: 7 },
+  title: { ...typography.title, color: colors.ink, letterSpacing: -0.5 },
+  subtitle: { ...typography.body, color: colors.inkMuted },
   offerBar: {
-    minHeight: 42,
+    minHeight: 50,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
     backgroundColor: colors.accentLight,
     borderWidth: 1,
-    borderColor: colors.gold,
-    borderRadius: radius.md,
+    borderColor: colors.goldMuted,
+    borderRadius: radius.lg,
     paddingHorizontal: spacing.md,
-    paddingVertical: 6,
+    paddingVertical: spacing.sm,
   },
   offerBarExpired: { backgroundColor: colors.panel, borderColor: colors.border },
-  offerDetail: { ...typography.caption, color: colors.gold, fontWeight: '700', flexShrink: 1, letterSpacing: 0.2 },
-  offerTimer: { fontSize: 19, lineHeight: 23, fontWeight: '800', color: colors.ink, fontVariant: ['tabular-nums'] },
-  plans: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm },
-  planCard: {
+  offerLabel: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  offerDetail: { ...typography.caption, color: colors.gold, fontWeight: '800', flexShrink: 1, letterSpacing: 1.7, textTransform: 'uppercase' },
+  offerDetailExpired: { color: colors.inkMuted },
+  offerTimer: { fontWeight: '800', color: colors.ink, fontVariant: ['tabular-nums'] },
+  planChoices: { flexDirection: 'row', alignItems: 'stretch', gap: spacing.sm },
+  planChoice: {
     flex: 1,
     minWidth: 0,
+    minHeight: 82,
     backgroundColor: colors.panel,
     borderRadius: radius.md,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: colors.border,
     overflow: 'hidden',
   },
-  planPopular: { borderColor: colors.goldMuted },
-  planSelected: { borderColor: colors.accent, backgroundColor: colors.accentLight },
-  popularStrip: { alignItems: 'center', justifyContent: 'center', height: 17, backgroundColor: colors.gold },
-  popularSpacer: { height: 17 },
-  popularStripText: { fontSize: 8, lineHeight: 11, letterSpacing: 1, fontWeight: '800', color: colors.onPrimary },
-  planBody: { alignItems: 'center', gap: 2, paddingHorizontal: spacing.sm, paddingTop: 10, paddingBottom: 11 },
-  planName: { ...typography.caption, fontSize: 12, lineHeight: 16, fontWeight: '700', color: colors.ink, textAlign: 'center' },
-  planMeta: { ...typography.caption, color: colors.inkSubtle, fontSize: 10, lineHeight: 13 },
+  planChoicePopular: { borderColor: colors.goldMuted },
+  planChoiceSelected: { borderColor: colors.ink, backgroundColor: colors.panelRaised },
+  popularBadge: { height: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.gold },
+  popularBadgeText: { fontSize: 7, lineHeight: 10, letterSpacing: 1.2, fontWeight: '900', color: colors.onPrimary },
+  planChoiceBody: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, paddingVertical: 8, gap: 2 },
+  planName: { ...typography.caption, fontWeight: '700', color: colors.ink, textAlign: 'center' },
+  planChoicePrice: { fontSize: 18, lineHeight: 22, fontWeight: '800', color: colors.gold },
+  planMeta: { ...typography.caption, color: colors.inkSubtle, textAlign: 'center' },
   planMetaSpacer: { height: 13 },
-  planPrice: { fontSize: 22, lineHeight: 27, fontWeight: '800', color: colors.accent, letterSpacing: -0.3, marginTop: 2 },
-  originalPrice: { ...typography.caption, fontSize: 10, lineHeight: 13, color: colors.inkSubtle, textDecorationLine: 'line-through' },
-  radio: {
-    width: 20,
-    height: 20,
-    borderRadius: radius.pill,
-    borderWidth: 2,
-    borderColor: colors.borderStrong,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 6,
+  selectedCard: {
+    backgroundColor: colors.panelRaised,
+    borderRadius: radius.xl,
+    borderWidth: 1.5,
+    borderColor: colors.ink,
+    padding: spacing.lg,
+    gap: spacing.lg,
   },
-  radioSelected: { backgroundColor: colors.accentFill, borderColor: colors.accent },
-  benefitsCard: { flexShrink: 1, backgroundColor: colors.panel, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: 12 },
-  benefitsScroll: { flexGrow: 0, flexShrink: 1 },
-  includedText: { ...typography.caption, color: colors.inkMuted, lineHeight: 17, marginBottom: 8 },
-  includedName: { color: colors.gold, fontWeight: '700' },
+  selectedHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md },
+  selectedHeadingCopy: { flex: 1, minWidth: 0 },
+  selectedName: { ...typography.title, color: colors.ink, fontSize: 21, lineHeight: 27 },
+  selectedArtwork: { flexShrink: 0 },
+  priceRow: { flexDirection: 'row', alignItems: 'flex-end', flexWrap: 'wrap', gap: 7, marginTop: spacing.md },
+  selectedOriginalPrice: { ...typography.bodyBold, color: colors.inkSubtle, textDecorationLine: 'line-through', paddingBottom: 4 },
+  selectedPrice: { fontWeight: '800', color: colors.ink, letterSpacing: -1 },
+  perMonth: { ...typography.body, color: colors.inkMuted, paddingBottom: 5 },
+  benefitsList: { gap: spacing.md },
   benefitRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  benefitCheck: { width: 15, height: 15, marginTop: 1, flexShrink: 0 },
-  benefitText: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 17 },
-  footer: { paddingTop: spacing.xs },
-  payBtn: { minHeight: 56 },
-  note: { ...typography.caption, color: colors.inkSubtle, fontSize: 11, textAlign: 'center', marginTop: 7 },
+  benefitCheck: { width: 15, height: 15, marginTop: 2, flexShrink: 0 },
+  benefitText: { ...typography.body, color: colors.inkMuted, flex: 1 },
+  paymentNote: { borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.md },
+  paymentNoteText: { ...typography.caption, color: colors.inkMuted, lineHeight: 19 },
+  checkoutCard: { borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.md, gap: spacing.sm },
+  contactField: { minHeight: 54, justifyContent: 'center', borderRadius: radius.md, backgroundColor: colors.primaryAction, paddingHorizontal: spacing.md },
+  contactText: { ...typography.body, color: colors.onPrimary, fontSize: 16 },
+  payBtn: { minHeight: 62, marginTop: spacing.xs },
+  policyRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.sm, marginTop: spacing.xs },
+  policyText: { ...typography.caption, color: colors.inkSubtle, lineHeight: 18 },
+  policyLink: { ...typography.caption, color: colors.inkMuted, fontWeight: '700', lineHeight: 18, textDecorationLine: 'underline' },
 });
