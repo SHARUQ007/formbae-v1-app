@@ -1,7 +1,9 @@
 import React from 'react';
+import { TouchableOpacity } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { QuestionnaireFlow } from './QuestionnaireScreen';
 import { PrimaryButton } from '../../components/PrimaryButton';
+import { FormInput } from '../../components/FormInput';
 import { fetchQuestionnaire, submitQuestionnaire } from '../../services/questionnaireService';
 import { loadQuestionnaireDraft } from '../../store/onboardingStore';
 
@@ -44,4 +46,23 @@ it('paid profile setup uses its completion callback without entering analysis or
   await act(async () => { await renderer.root.findByType(PrimaryButton).props.onPress(); });
   expect(submitQuestionnaire).toHaveBeenCalledWith({ goal: 'strength', location: 'home' });
   expect(complete).toHaveBeenCalledTimes(1);
+});
+it('offers quick coach notes while preserving an editable answer', async () => {
+  (fetchQuestionnaire as jest.Mock).mockResolvedValue({
+    questions: [{
+      id: 'injuries',
+      title: 'Anything your coach should know?',
+      subtitle: 'Share anything useful.',
+      type: 'text',
+      required: false,
+    }],
+    answers: {},
+  });
+  await render();
+  const options = renderer.root.findAll(node => node.type === TouchableOpacity && node.props.accessibilityRole === 'checkbox');
+  expect(options).toHaveLength(4);
+  await act(async () => { await options[1].props.onPress(); });
+  expect(renderer.root.findByType(FormInput).props.value).toBe('I have knee or back discomfort.');
+  await act(async () => { await renderer.root.findByType(FormInput).props.onChangeText('Custom coach note'); });
+  expect(renderer.root.findByType(FormInput).props.value).toBe('Custom coach note');
 });

@@ -21,6 +21,13 @@ import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'Questionnaire'>;
 
+const COACH_NOTE_PROMPTS = [
+  { label: 'No injuries', value: 'No injuries or movement limitations.' },
+  { label: 'Knee or back discomfort', value: 'I have knee or back discomfort.' },
+  { label: 'Limited movement', value: 'I have some movement limitations.' },
+  { label: 'Home equipment', value: 'I train at home with limited equipment.' },
+] as const;
+
 export function QuestionnaireScreen({ navigation }: Props) {
   return <QuestionnaireFlow onComplete={() => navigation.replace('AnalysisLoading')} />;
 }
@@ -69,6 +76,20 @@ export function QuestionnaireFlow({ onComplete }: {
     }
   };
 
+  const toggleCoachNote = (value: string) => {
+    const existing = answers[current.id]?.trim() || '';
+    if (value === COACH_NOTE_PROMPTS[0].value) {
+      setAnswer(existing === value ? '' : value);
+      return;
+    }
+    const withoutNone = existing.replace(COACH_NOTE_PROMPTS[0].value, '').trim();
+    if (withoutNone.includes(value)) {
+      setAnswer(withoutNone.replace(value, '').replace(/\s{2,}/g, ' ').trim());
+      return;
+    }
+    setAnswer([withoutNone, value].filter(Boolean).join(' '));
+  };
+
   const onNext = async () => {
     if (!current) return;
     if (current.required !== false && current.type === 'single' && !answers[current.id]) return;
@@ -92,13 +113,37 @@ export function QuestionnaireFlow({ onComplete }: {
     if (!current) return null;
     if (current.type === 'text') {
       return (
-        <FormInput
-          value={answers[current.id] || ''}
-          onChangeText={setAnswer}
-          placeholder="Type your answer"
-          multiline
-          autoCapitalize="sentences"
-        />
+        <View style={styles.textAnswerBlock}>
+          {current.id === 'injuries' ? (
+            <View>
+              <Text style={styles.quickPrompt}>Choose any that apply</Text>
+              <View style={styles.quickOptions}>
+                {COACH_NOTE_PROMPTS.map(prompt => {
+                  const selected = (answers[current.id] || '').includes(prompt.value);
+                  return (
+                    <TouchableOpacity
+                      key={prompt.label}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: selected }}
+                      activeOpacity={0.82}
+                      onPress={() => toggleCoachNote(prompt.value)}
+                      style={[styles.quickOption, selected && styles.quickOptionSelected]}
+                    >
+                      <Text style={[styles.quickOptionText, selected && styles.quickOptionTextSelected]}>{prompt.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+          <FormInput
+            value={answers[current.id] || ''}
+            onChangeText={setAnswer}
+            placeholder="Add anything else for your coach"
+            multiline
+            autoCapitalize="sentences"
+          />
+        </View>
       );
     }
     return (
@@ -144,7 +189,7 @@ export function QuestionnaireFlow({ onComplete }: {
 
   return (
     <LinearGradient colors={['#05070c', '#02040a']} style={styles.root}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.safeArea, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.md }]}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.safeArea, { paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.lg }]}>
       <View style={styles.progressHeader}>
         <View style={styles.progressTop}>
           <TouchableOpacity
@@ -165,7 +210,7 @@ export function QuestionnaireFlow({ onComplete }: {
         style={styles.questionScroll}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scroll, current.type === 'single' && styles.scrollSingle]}
+        contentContainerStyle={[styles.scroll, current.type === 'single' ? styles.scrollSingle : styles.scrollText]}
       >
         <Text style={styles.title}>{current.title}</Text>
         {current.subtitle ? <Text style={styles.subtitle}>{current.subtitle}</Text> : null}
@@ -208,6 +253,7 @@ const styles = StyleSheet.create({
   questionScroll: { flex: 1 },
   scroll: { paddingBottom: spacing.lg },
   scrollSingle: { flexGrow: 1 },
+  scrollText: { flexGrow: 1 },
   title: { fontSize: 28, lineHeight: 34, fontWeight: '700', letterSpacing: -0.4, color: colors.white, marginBottom: spacing.sm },
   subtitle: { ...typography.body, color: 'rgba(255,255,255,0.62)', marginBottom: spacing.lg },
   options: { flex: 1, gap: spacing.sm, marginTop: spacing.sm },
@@ -226,6 +272,22 @@ const styles = StyleSheet.create({
   optionSelected: { borderColor: 'rgba(255,255,255,0.64)', backgroundColor: 'rgba(255,255,255,0.12)' },
   optionText: { ...typography.bodyBold, color: colors.white, flex: 1, paddingRight: spacing.sm },
   optionTextSelected: { color: colors.white, fontWeight: '700' },
+  textAnswerBlock: { gap: spacing.md },
+  quickPrompt: { ...typography.caption, color: 'rgba(255,255,255,0.56)', marginBottom: spacing.sm },
+  quickOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  quickOption: {
+    minHeight: 42,
+    justifyContent: 'center',
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.055)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  quickOptionSelected: { borderColor: colors.gold, backgroundColor: colors.panelWarm },
+  quickOptionText: { ...typography.caption, color: 'rgba(255,255,255,0.74)', fontWeight: '600' },
+  quickOptionTextSelected: { color: colors.gold },
   radio: {
     width: 24,
     height: 24,
@@ -242,7 +304,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warnLight,
     borderRadius: radius.md,
     padding: spacing.md,
-    marginTop: spacing.lg,
+    marginTop: 'auto',
   },
   disclaimerText: { ...typography.caption, color: colors.warn, flex: 1, lineHeight: 17 },
 });
