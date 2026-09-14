@@ -41,7 +41,7 @@ const cardFor = (name: string) => renderer.root.findAllByProps({ accessibilityLa
 
 it('shows Ava as included and personal coaching with its price', async () => {
   await render();
-  expect(texts()).toEqual(expect.arrayContaining(['INCLUDED WITH YOUR MEMBERSHIP', 'Ava', 'Included', 'PERSONAL COACHING', 'Manisha', '₹999/month']));
+  expect(texts()).toEqual(expect.arrayContaining(['Included in your plan', 'Ava', 'Included', 'Personal coaches', 'Manisha', '₹999/month']));
   expect(texts().indexOf('Ava')).toBeLessThan(texts().indexOf('Manisha'));
 });
 
