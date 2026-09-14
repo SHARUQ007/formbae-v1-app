@@ -11,6 +11,7 @@ describe('root routing', () => {
     expect(resolveOnboardingInitialRoute('analysis_report')).toBe('AnalysisReport');
     expect(resolveRootRoute('plan_preparing')).toBe('PaidTransition');
     expect(resolvePaidInitialRoute('plan_preparing')).toBe('PlanPreparing');
+    expect(resolvePaidInitialRoute('gifted_welcome')).toBe('GiftedMembership');
     expect(resolveRootRoute('home')).toBe('Main');
     expect(resolveRootRoute('renewal')).toBe('Renewal');
   });

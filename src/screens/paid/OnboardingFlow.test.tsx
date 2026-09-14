@@ -4,17 +4,20 @@ import { PaidWelcomeScreen } from './PaidWelcomeScreen';
 import { PlanPreparingScreen } from './PlanPreparingScreen';
 import { PaymentSyncScreen } from './PaymentSyncScreen';
 import { FindingTrainerScreen } from './FindingTrainerScreen';
+import { GiftedMembershipScreen } from './GiftedMembershipScreen';
 import { SetupOverview } from '../../components/SetupOverview';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { useAuthStore } from '../../store/authStore';
 import { createOnboardingPlan, fetchOnboardingPlanState } from '../../services/onboardingService';
 import { syncPayment } from '../../services/paymentService';
 import { changeCoach, fetchCoachHub } from '../../services/trainerService';
+import { acknowledgeMembershipGift } from '../../services/membershipGiftService';
 
 jest.mock('../../store/authStore', () => ({ useAuthStore: jest.fn() }));
 jest.mock('../../services/onboardingService', () => ({ createOnboardingPlan: jest.fn(), fetchOnboardingPlanState: jest.fn() }));
 jest.mock('../../services/paymentService', () => ({ syncPayment: jest.fn() }));
 jest.mock('../../services/trainerService', () => ({ changeCoach: jest.fn(), fetchCoachHub: jest.fn() }));
+jest.mock('../../services/membershipGiftService', () => ({ acknowledgeMembershipGift: jest.fn() }));
 jest.mock('../../services/activityService', () => ({ trackMobileInteraction: jest.fn() }));
 const paid = { hasPaid: true, questionnaireCompleted: true, trainerAssigned: true, planReady: false, recommendedNextScreen: 'paid_welcome' };
 const refreshStatus = jest.fn();
@@ -63,6 +66,26 @@ it('failed payment verification does not claim membership is active', async () =
   await render(<PaymentSyncScreen navigation={navigation as never} route={{ name: 'PaymentSync', key: 'sync' }} />);
   expect(navigation.replace).not.toHaveBeenCalled();
   expect(renderer.root.findAllByType(PrimaryButton).some(node => node.props.title === 'Check again')).toBe(true);
+});
+it('reveals who gifted premium and acknowledges it from the fixed CTA', async () => {
+  const gifted = {
+    ...paid,
+    questionnaireCompleted: false,
+    trainerAssigned: false,
+    membershipGift: { giftId: 'gift-1', giftedByName: 'Asha' },
+    recommendedNextScreen: 'gifted_welcome',
+  };
+  (useAuthStore as jest.Mock).mockReturnValue({ status: gifted, refreshStatus, logout: jest.fn() });
+  (acknowledgeMembershipGift as jest.Mock).mockResolvedValue({ ok: true });
+  refreshStatus.mockResolvedValue({ ...gifted, membershipGift: undefined, recommendedNextScreen: 'paid_welcome' });
+  await render(<GiftedMembershipScreen navigation={navigation as never} route={{ name: 'GiftedMembership', key: 'gifted' }} />);
+  expect(JSON.stringify(renderer.toJSON())).toContain('Asha');
+  expect(JSON.stringify(renderer.toJSON())).toContain(' bought you FormBae Premium.');
+  expect(JSON.stringify(renderer.toJSON())).toContain('Your membership is taken care of.');
+  const button = renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Start my journey')!;
+  await act(async () => { await button.props.onPress(); });
+  expect(acknowledgeMembershipGift).toHaveBeenCalledTimes(1);
+  expect(navigation.replace).toHaveBeenCalledWith('PaidWelcome');
 });
 it('coach selection only offers selectable coaches and persists the selected coach', async () => {
   const coach = { trainerId: 'ava', name: 'Ava', expertise: 'AI coach', canSelect: true, languages: ['English'], photoUrl: '' };

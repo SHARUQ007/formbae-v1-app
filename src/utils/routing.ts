@@ -8,6 +8,7 @@ export function resolveRootRoute(screen: RecommendedNextScreen): keyof RootStack
     case 'renewal':
       return 'Renewal';
     case 'payment_sync':
+    case 'gifted_welcome':
     case 'paid_welcome':
     case 'plan_preparing':
     case 'finding_trainer':
@@ -41,6 +42,8 @@ export function resolvePaidInitialRoute(screen: RecommendedNextScreen): keyof im
   switch (screen) {
     case 'payment_sync':
       return 'PaymentSync';
+    case 'gifted_welcome':
+      return 'GiftedMembership';
     case 'plan_preparing':
       return 'PlanPreparing';
     case 'finding_trainer':

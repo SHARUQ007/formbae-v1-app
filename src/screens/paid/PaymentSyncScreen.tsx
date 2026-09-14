@@ -19,6 +19,7 @@ export function PaymentSyncScreen({ navigation }: Props) {
       await syncPayment();
       const fresh = await refreshStatus();
       if (fresh?.recommendedNextScreen === 'home') navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Main');
+      else if (fresh?.recommendedNextScreen === 'gifted_welcome') navigation.replace('GiftedMembership');
       else if (fresh?.hasPaid) navigation.replace('PaidWelcome');
       else setError('Your membership hasn’t been confirmed yet. If you paid on the web, use the same phone number here.');
     } catch { setError('We couldn’t verify your payment. Please try again.'); }

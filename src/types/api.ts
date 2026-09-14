@@ -16,6 +16,7 @@ export type RecommendedNextScreen =
   | 'analysis_report'
   | 'payment'
   | 'payment_sync'
+  | 'gifted_welcome'
   | 'renewal'
   | 'paid_welcome'
   | 'plan_preparing'
@@ -37,6 +38,13 @@ export type UserStatus = {
   planReady: boolean;
   onboardingStatus: OnboardingStatus;
   recommendedNextScreen: RecommendedNextScreen;
+  membershipGift?: {
+    giftId: string;
+    giftedByName: string;
+    recipientName?: string;
+    relationship?: string;
+    giftedAt?: string;
+  };
   subscription?: {
     state: 'active' | 'grace' | 'expired' | 'open';
     premiumEndDate: string;

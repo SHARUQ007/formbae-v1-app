@@ -28,6 +28,7 @@ export type OnboardingStackParamList = {
 export type PaidStackParamList = {
   ProfileSetup: undefined;
   PaymentSync: undefined;
+  GiftedMembership: undefined;
   PaidWelcome: undefined;
   FindingTrainer: undefined;
   PlanPreparing: undefined;
