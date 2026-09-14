@@ -55,26 +55,26 @@ function includedPeople(plan: PaymentPlan | undefined, suggestion: HouseholdSugg
   return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
-/** Three sizes of the same layout, so tall screens fill with design rather than empty space. */
+/** Keep the complete checkout visible on common phones; scrolling remains a small-screen fallback. */
 function useDensity() {
   const { height } = useWindowDimensions();
   return useMemo(() => {
-    const tier = height >= 880 ? 2 : height >= 780 ? 1 : 0;
+    const tier = height >= 900 ? 2 : height >= 760 ? 1 : 0;
     const pick = (values: [number, number, number]) => values[tier];
     return {
-      title: pick([23, 27, 30]),
-      titleLine: pick([28, 33, 36]),
-      subtitle: pick([12, 13, 14]),
-      subtitleLine: pick([17, 19, 21]),
-      offerHeight: pick([42, 50, 58]),
-      offerTimer: pick([19, 22, 25]),
+      title: pick([21, 23, 25]),
+      titleLine: pick([26, 28, 30]),
+      subtitle: pick([11, 12, 13]),
+      subtitleLine: pick([16, 17, 19]),
+      offerHeight: pick([40, 43, 46]),
+      offerTimer: pick([18, 19, 21]),
       planName: pick([12, 14, 15]),
       planMeta: pick([10, 11, 12]),
-      price: pick([22, 26, 30]),
-      priceLine: pick([27, 32, 36]),
-      benefitText: pick([12, 13, 14]),
-      benefitLine: pick([17, 20, 22]),
-      contentGap: pick([12, 16, 20]),
+      price: pick([20, 22, 24]),
+      priceLine: pick([25, 27, 29]),
+      benefitText: pick([11, 12, 13]),
+      benefitLine: pick([15, 17, 18]),
+      contentGap: pick([7, 8, 10]),
     };
   }, [height]);
 }
@@ -334,11 +334,8 @@ export function PaymentRequiredScreen({ navigation }: Props) {
           </View>
         ) : null}
 
-        <View style={styles.paymentNote}>
-          <Text style={styles.paymentNoteText}>Payments are processed securely through Razorpay. Access stays linked to this account.</Text>
-        </View>
-
         <View style={styles.checkoutCard}>
+          <Text style={styles.paymentNoteText}>Secure checkout through Razorpay · Access stays linked to this account</Text>
           <View style={styles.contactField}>
             <Text style={styles.contactText} numberOfLines={1}>{checkoutName}</Text>
           </View>
@@ -410,12 +407,12 @@ function BenefitCheck() {
 
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: spacing.lg },
-  topActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, marginBottom: spacing.xs },
-  quietAction: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 3, opacity: 0.62 },
+  topActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  quietAction: { minHeight: 26, flexDirection: 'row', alignItems: 'center', gap: 3, opacity: 0.52 },
   quietActionText: { fontSize: 11, lineHeight: 15, fontWeight: '500', letterSpacing: 0.2, color: colors.inkSubtle },
   scroll: { flex: 1 },
-  content: { paddingTop: spacing.sm, paddingBottom: spacing.sm },
-  intro: { gap: 7 },
+  content: { flexGrow: 1, justifyContent: 'space-between', paddingTop: 4, paddingBottom: 2 },
+  intro: { gap: 5 },
   title: { ...typography.title, color: colors.ink, letterSpacing: -0.5 },
   subtitle: { ...typography.body, color: colors.inkMuted },
   offerBar: {
@@ -429,7 +426,7 @@ const styles = StyleSheet.create({
     borderColor: colors.goldMuted,
     borderRadius: radius.lg,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: 7,
   },
   offerBarExpired: { backgroundColor: colors.panel, borderColor: colors.border },
   offerLabel: { minWidth: 0, flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
@@ -461,28 +458,28 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     borderWidth: 1.5,
     borderColor: colors.ink,
-    padding: spacing.lg,
-    gap: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 13,
+    gap: 11,
   },
   selectedHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md },
   selectedHeadingCopy: { flex: 1, minWidth: 0 },
-  selectedName: { ...typography.title, color: colors.ink, fontSize: 21, lineHeight: 27 },
+  selectedName: { ...typography.title, color: colors.ink, fontSize: 18, lineHeight: 23 },
   selectedArtwork: { flexShrink: 0 },
-  priceRow: { flexDirection: 'row', alignItems: 'flex-end', flexWrap: 'wrap', gap: 7, marginTop: spacing.md },
+  priceRow: { flexDirection: 'row', alignItems: 'flex-end', flexWrap: 'wrap', gap: 6, marginTop: 8 },
   selectedOriginalPrice: { ...typography.bodyBold, color: colors.inkSubtle, textDecorationLine: 'line-through', paddingBottom: 4 },
   selectedPrice: { fontWeight: '800', color: colors.ink, letterSpacing: -1 },
   perMonth: { ...typography.body, color: colors.inkMuted, paddingBottom: 5 },
-  benefitsList: { gap: spacing.md },
+  benefitsList: { gap: 8 },
   benefitRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   benefitCheck: { width: 15, height: 15, marginTop: 2, flexShrink: 0 },
   benefitText: { ...typography.body, color: colors.inkMuted, flex: 1 },
-  paymentNote: { borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.md },
-  paymentNoteText: { ...typography.caption, color: colors.inkMuted, lineHeight: 19 },
-  checkoutCard: { borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: spacing.md, gap: spacing.sm },
-  contactField: { minHeight: 54, justifyContent: 'center', borderRadius: radius.md, backgroundColor: colors.primaryAction, paddingHorizontal: spacing.md },
-  contactText: { ...typography.body, color: colors.onPrimary, fontSize: 16 },
-  payBtn: { minHeight: 62, marginTop: spacing.xs },
-  policyRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.sm, marginTop: spacing.xs },
-  policyText: { ...typography.caption, color: colors.inkSubtle, lineHeight: 18 },
-  policyLink: { ...typography.caption, color: colors.inkMuted, fontWeight: '700', lineHeight: 18, textDecorationLine: 'underline' },
+  paymentNoteText: { ...typography.caption, color: colors.inkMuted, fontSize: 10, lineHeight: 14, textAlign: 'center' },
+  checkoutCard: { borderRadius: radius.xl, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.panel, padding: 11, gap: 7 },
+  contactField: { minHeight: 43, justifyContent: 'center', borderRadius: radius.md, backgroundColor: colors.primaryAction, paddingHorizontal: spacing.md },
+  contactText: { ...typography.body, color: colors.onPrimary, fontSize: 14 },
+  payBtn: { minHeight: 52 },
+  policyRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  policyText: { ...typography.caption, color: colors.inkSubtle, fontSize: 10, lineHeight: 14 },
+  policyLink: { ...typography.caption, color: colors.inkMuted, fontSize: 10, fontWeight: '700', lineHeight: 14, textDecorationLine: 'underline' },
 });
