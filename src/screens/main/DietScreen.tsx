@@ -92,6 +92,7 @@ import { shadows } from '../../theme/shadows';
 import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
 import { reportTypography } from '../../theme/reportTypography';
+import { DietEvidenceArt } from '../../components/DietEvidenceArt';
 import { getDietReportEmptyArtwork, getReportEditorialArtwork } from '../../utils/reportArtwork';
 import { isDateInCurrentWeek } from '../../utils/weeklyMuscles';
 import {
@@ -657,6 +658,7 @@ export function DietReportPendingState({
           </Text>
         </View>
       </View>
+      <DietEvidenceArt filled={enrichment.available ? enrichment.progress : 0} />
     </View>
   );
 }
@@ -3919,6 +3921,7 @@ const styles = StyleSheet.create({
   reportMealGuideAdvice: { fontSize: 13, lineHeight: 19, color: colors.inkMuted, flex: 1 },
   reportEmpty: { fontSize: 14, lineHeight: 21, color: colors.inkMuted, paddingVertical: spacing.lg },
   reportPendingHero: {
+    flex: 1,
     alignItems: 'flex-start',
     paddingTop: spacing.md,
     paddingBottom: 0,

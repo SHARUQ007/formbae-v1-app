@@ -22,7 +22,8 @@ jest.mock('../../services/activityService', () => ({ trackMobileInteraction: jes
 const paid = { hasPaid: true, questionnaireCompleted: true, trainerAssigned: true, planReady: false, recommendedNextScreen: 'paid_welcome' };
 const refreshStatus = jest.fn();
 let renderer: ReactTestRenderer;
-const navigation = { navigate: jest.fn(), replace: jest.fn(), getParent: jest.fn(() => ({ replace: jest.fn() })) };
+const rootReplace = jest.fn();
+const navigation = { navigate: jest.fn(), replace: jest.fn(), getParent: jest.fn(() => ({ replace: rootReplace })) };
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -39,27 +40,31 @@ it('paid member continues from fresh server facts rather than a stale coach sele
   await act(async () => { await renderer.root.findByType(SetupOverview).props.onContinue(); });
   expect(navigation.navigate).toHaveBeenCalledWith('FindingTrainer');
 });
-it('creating a first plan is an explicit action, then shows a ready state', async () => {
+it('creating a first plan is an explicit action, then lets itself in', async () => {
   (createOnboardingPlan as jest.Mock).mockResolvedValue({ status: 'completed', planId: 'p1' });
+  refreshStatus.mockResolvedValue({ ...paid, recommendedNextScreen: 'home' });
   await render(<PlanPreparingScreen navigation={navigation as never} route={{ name: 'PlanPreparing', key: 'plan' }} />);
   expect(createOnboardingPlan).not.toHaveBeenCalled();
   const button = renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Create my workout plan')!;
   await act(async () => { await button.props.onPress(); });
   expect(createOnboardingPlan).toHaveBeenCalledTimes(1);
-  expect(renderer.root.findAllByType(PrimaryButton).some(node => node.props.title === 'Enter FormBae')).toBe(true);
+  // A finished plan carries on by itself rather than offering another button to press.
+  expect(rootReplace).toHaveBeenCalledWith('Main');
 });
 it('resumes a running build without starting another request', async () => {
   (fetchOnboardingPlanState as jest.Mock).mockResolvedValue({ status: 'building' });
   await render(<PlanPreparingScreen navigation={navigation as never} route={{ name: 'PlanPreparing', key: 'plan' }} />);
   expect(createOnboardingPlan).not.toHaveBeenCalled();
-  expect(renderer.root.findAllByType(PrimaryButton).some(node => node.props.title === 'Check plan status')).toBe(true);
+  // Nothing to press while it works; the screen polls and moves on when the plan lands.
+  expect(renderer.root.findAllByType(PrimaryButton)).toHaveLength(0);
 });
 it('a lost build response is reconciled with the saved plan', async () => {
   (createOnboardingPlan as jest.Mock).mockRejectedValue(new Error('timeout'));
+  refreshStatus.mockResolvedValue({ ...paid, recommendedNextScreen: 'home' });
   await render(<PlanPreparingScreen navigation={navigation as never} route={{ name: 'PlanPreparing', key: 'plan' }} />);
   (fetchOnboardingPlanState as jest.Mock).mockResolvedValue({ status: 'completed', planId: 'p1' });
   await act(async () => { await renderer.root.findAllByType(PrimaryButton)[0].props.onPress(); });
-  expect(renderer.root.findAllByType(PrimaryButton).some(node => node.props.title === 'Enter FormBae')).toBe(true);
+  expect(rootReplace).toHaveBeenCalledWith('Main');
 });
 it('failed payment verification does not claim membership is active', async () => {
   (syncPayment as jest.Mock).mockRejectedValue(new Error('offline'));
