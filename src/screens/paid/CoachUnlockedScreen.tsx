@@ -98,7 +98,7 @@ export function CoachUnlockedScreen({ navigation, route }: Props) {
         </Card>
       </ScrollView>
 
-      <PrimaryButton title="Continue" icon="arrow-right" iconPosition="trailing" loading={busy} onPress={onContinue} size="lg" />
+      <PrimaryButton title="Continue" icon="arrow-right" iconPosition="trailing" loading={busy} onPress={onContinue} size="lg" style={styles.cta} />
     </ScreenContainer>
   );
 }
@@ -141,4 +141,5 @@ const styles = StyleSheet.create({
   nextTitle: { ...typography.bodyBold, color: colors.ink },
   nextRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   nextText: { ...typography.caption, color: colors.inkMuted, flex: 1, lineHeight: 19 },
+  cta: { backgroundColor: colors.gold, borderColor: colors.gold },
 });

@@ -148,10 +148,11 @@ export function CoachUpgradeScreen({ navigation, route }: Props) {
 
       <PrimaryButton
         title={`Unlock ${firstName} · ${monthly(coach)}`}
-        icon="lock"
+        icon="unlock"
         loading={paying}
         onPress={pay}
         size="lg"
+        style={styles.cta}
       />
     </ScreenContainer>
   );
@@ -177,4 +178,5 @@ const styles = StyleSheet.create({
   priceValue: { ...typography.bodyBold, color: colors.gold },
   fineprint: { ...typography.caption, color: colors.inkSubtle, lineHeight: 17 },
   error: { color: colors.error, ...typography.caption },
+  cta: { backgroundColor: colors.gold, borderColor: colors.gold },
 });

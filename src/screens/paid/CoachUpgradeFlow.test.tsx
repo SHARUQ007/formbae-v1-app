@@ -1,9 +1,11 @@
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { CoachUpgradeScreen } from './CoachUpgradeScreen';
 import { CoachUnlockedScreen } from './CoachUnlockedScreen';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { useAuthStore } from '../../store/authStore';
+import { colors } from '../../theme/colors';
 import { changeCoach, fetchCoachHub } from '../../services/trainerService';
 import { runNativeCheckout } from '../../services/paymentService';
 
@@ -52,6 +54,9 @@ it('the coach page is where you read about them and see what you pay', async () 
   ]));
   expect(texts().join(' ')).toContain('added to the same subscription');
   expect(cta().props.title).toBe('Unlock Amal · ₹999/mo');
+  // The paying action reads as the flow's primary: gold, with an unlock icon.
+  expect(cta().props.icon).toBe('unlock');
+  expect(StyleSheet.flatten(cta().props.style)).toMatchObject({ backgroundColor: colors.gold });
 });
 
 it('paying takes you to the confirmation rather than straight back into the flow', async () => {
