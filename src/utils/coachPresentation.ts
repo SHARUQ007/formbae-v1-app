@@ -1,5 +1,5 @@
 import type { CoachOption, PaymentPlan } from '../types/api';
-import { titleCase } from './format';
+import { rupees, titleCase } from './format';
 
 export function formatCoachLabel(coach: Pick<CoachOption, 'expertise' | 'trainerPersona' | 'trainerKind'>): string {
   const raw = String(coach.expertise || coach.trainerPersona || '').trim();
@@ -21,14 +21,19 @@ export function isIncludedCoach(coach: CoachOption): boolean {
 export function coachPricePaise(coach: CoachOption): number {
   const explicit = Number(coach.upgradeAmountPaise || 0);
   if (Number.isFinite(explicit) && explicit > 0) return Math.round(explicit);
-  const rupees = Number(String(coach.monthlyFee || '').replace(/,/g, '').trim());
-  return Number.isFinite(rupees) && rupees > 0 ? Math.round(rupees * 100) : 0;
+  const monthlyFee = Number(String(coach.monthlyFee || '').replace(/,/g, '').trim());
+  return Number.isFinite(monthlyFee) && monthlyFee > 0 ? Math.round(monthlyFee * 100) : 0;
 }
 
 export function coachAccessPrice(coach: CoachOption): string {
   if (isIncludedCoach(coach)) return 'Included with ₹49 membership';
   const amount = coachPricePaise(coach);
-  return amount > 0 ? `₹${Math.round(amount / 100).toLocaleString('en-IN')}/month` : 'Pricing unavailable';
+  return amount > 0 ? `${rupees(amount)}/month` : 'Pricing unavailable';
+}
+
+/** A coach's price as it appears on cards and buttons. */
+export function coachMonthlyLabel(coach: CoachOption): string {
+  return `${rupees(coachPricePaise(coach))}/mo`;
 }
 
 export function coachCheckoutPlan(coach: CoachOption): PaymentPlan | null {

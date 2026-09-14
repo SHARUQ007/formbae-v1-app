@@ -13,6 +13,7 @@ import { useAuthStore } from '../../store/authStore';
 import { resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
 import type { HouseholdSuggestion, PaymentPlan } from '../../types/api';
 import type { OnboardingStackParamList, RootStackParamList } from '../../navigation/types';
+import { rupees } from '../../utils/format';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
@@ -22,7 +23,6 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'PaymentRequired'>
 
 const secondsUntil = (expiresAt: string) => Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / 1000) || 0);
 const formatTimer = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-const rupees = (paise: number) => `₹${Math.round(paise / 100).toLocaleString('en-IN')}`;
 const PLUS_ONE_PEOPLE = ['Mother', 'Father', 'Partner', 'Loved one'] as const;
 
 function planLabel(plan: PaymentPlan): string {

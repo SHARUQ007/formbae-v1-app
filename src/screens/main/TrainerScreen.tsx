@@ -23,7 +23,8 @@ import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { changeCoach, fetchCoachHubPhotoFallbacks } from '../../services/trainerService';
 import { runNativeCheckout } from '../../services/paymentService';
-import { coachAccessPrice, coachCheckoutPlan, coachPricePaise, formatCoachLabel, isIncludedCoach } from '../../utils/coachPresentation';
+import { coachAccessPrice, coachCheckoutPlan, coachMonthlyLabel, coachPricePaise, formatCoachLabel, isIncludedCoach } from '../../utils/coachPresentation';
+import { rupees } from '../../utils/format';
 import { loadCoachBundleCached, peekCoachBundleCached } from '../../services/preloadService';
 import { useAuthStore } from '../../store/authStore';
 import type { CoachHubPayload, CoachOption } from '../../types/api';
@@ -41,7 +42,7 @@ type CoachRoute = RouteProp<{ Coach: CoachScreenParams | undefined }, 'Coach'>;
 function formatPrice(value: string) {
   const amount = Number(String(value || '').replace(/,/g, '').trim());
   if (!Number.isFinite(amount) || amount <= 0) return 'Included';
-  return `₹${amount.toLocaleString('en-IN')}/mo`;
+  return `${rupees(amount * 100)}/mo`;
 }
 
 function coachBlurb(coach: CoachOption) {
@@ -246,7 +247,7 @@ export function TrainerScreen() {
       const amount = coachPricePaise(coach);
       Alert.alert(
         `Unlock ${coach.name}?`,
-        `${coach.name} is a personal coach at ₹${Math.round(amount / 100).toLocaleString('en-IN')} a month, on top of your membership.`,
+        `${coach.name} is a personal coach at ${rupees(amount)} a month, on top of your membership.`,
         [
           { text: 'Not now', style: 'cancel' },
           { text: 'Continue to pay', onPress: () => startCoachCheckout(coach) },
@@ -884,7 +885,7 @@ function CoachOptionCard({
             : isIncludedCoach(coach)
               ? 'Included'
               : coachPricePaise(coach) > 0
-                ? `₹${Math.round(coachPricePaise(coach) / 100).toLocaleString('en-IN')}/mo`
+                ? coachMonthlyLabel(coach)
                 : 'View availability'}
         </Text>
         {changing ? <ActivityIndicator size="small" color={colors.ink} /> : <Feather name="arrow-right" size={17} color={colors.ink} />}

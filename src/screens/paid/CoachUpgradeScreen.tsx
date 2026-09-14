@@ -9,7 +9,7 @@ import { fetchCoachHub } from '../../services/trainerService';
 import { runNativeCheckout } from '../../services/paymentService';
 import { useAuthStore } from '../../store/authStore';
 import { getCoachArtworkSource } from '../../utils/coachArtwork';
-import { coachCheckoutPlan, coachPricePaise, formatCoachLabel } from '../../utils/coachPresentation';
+import { coachCheckoutPlan, coachMonthlyLabel, formatCoachLabel } from '../../utils/coachPresentation';
 import type { CoachOption } from '../../types/api';
 import type { PaidStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
@@ -18,8 +18,6 @@ import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<PaidStackParamList, 'CoachUpgrade'>;
-
-const monthly = (coach: CoachOption) => `₹${Math.round(coachPricePaise(coach) / 100).toLocaleString('en-IN')}/mo`;
 
 const WHAT_YOU_GET = [
   'A plan written for you by your coach, not a template',
@@ -110,7 +108,7 @@ export function CoachUpgradeScreen({ navigation, route }: Props) {
           <View style={styles.heroCopy}>
             <Text style={styles.name}>{coach.name}</Text>
             <Text style={styles.role}>{formatCoachLabel(coach)}</Text>
-            <Text style={styles.price}>{monthly(coach)}</Text>
+            <Text style={styles.price}>{coachMonthlyLabel(coach)}</Text>
           </View>
         </View>
 
@@ -136,7 +134,7 @@ export function CoachUpgradeScreen({ navigation, route }: Props) {
           <Text style={styles.blockTitle}>What you pay</Text>
           <View style={styles.priceRow}>
             <Text style={styles.priceLabel}>{coach.name} personal coaching</Text>
-            <Text style={styles.priceValue}>{monthly(coach)}</Text>
+            <Text style={styles.priceValue}>{coachMonthlyLabel(coach)}</Text>
           </View>
           <Text style={styles.fineprint}>
             Charged monthly on top of your membership, and added to the same subscription. Cancel anytime.
@@ -147,7 +145,7 @@ export function CoachUpgradeScreen({ navigation, route }: Props) {
       </ScrollView>
 
       <PrimaryButton
-        title={`Unlock ${firstName} · ${monthly(coach)}`}
+        title={`Unlock ${firstName} · ${coachMonthlyLabel(coach)}`}
         icon="unlock"
         loading={paying}
         onPress={pay}

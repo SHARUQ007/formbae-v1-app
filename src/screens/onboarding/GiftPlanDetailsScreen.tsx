@@ -24,6 +24,7 @@ import { useAuthStore } from '../../store/authStore';
 import { resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
 import type { HouseholdGiftMember, HouseholdSuggestion, PaymentPlan } from '../../types/api';
 import type { OnboardingStackParamList, RootStackParamList } from '../../navigation/types';
+import { rupees } from '../../utils/format';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
@@ -40,7 +41,6 @@ const RELATIONSHIPS: Array<{ value: Relationship; label: string }> = [
   { value: 'other', label: 'Someone else' },
 ];
 
-const rupees = (paise: number) => `₹${Math.round(paise / 100).toLocaleString('en-IN')}`;
 const relationshipLabel = (value: Relationship) => RELATIONSHIPS.find((item) => item.value === value)?.label || 'Someone else';
 /** Ten digits, however it was typed or pasted - "+91 98765 43210" is the same number. */
 const digitsOnly = (value: string) => {

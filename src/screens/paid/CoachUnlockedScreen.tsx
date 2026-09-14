@@ -10,6 +10,7 @@ import { useAuthStore } from '../../store/authStore';
 import { getCoachArtworkSource } from '../../utils/coachArtwork';
 import { advancePaidSetup } from '../../utils/paidSetupFlow';
 import { coachPricePaise, formatCoachLabel } from '../../utils/coachPresentation';
+import { rupees } from '../../utils/format';
 import type { CoachOption } from '../../types/api';
 import type { PaidStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
@@ -78,7 +79,7 @@ export function CoachUnlockedScreen({ navigation, route }: Props) {
             {price > 0 ? (
               <View style={styles.receiptRow}>
                 <Text style={styles.receiptLabel}>Added to your subscription</Text>
-                <Text style={styles.receiptValue}>₹{Math.round(price / 100).toLocaleString('en-IN')}/mo</Text>
+                <Text style={styles.receiptValue}>{rupees(price)}/mo</Text>
               </View>
             ) : null}
           </Card>

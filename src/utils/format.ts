@@ -21,3 +21,8 @@ export function titleCase(value: string): string {
     .replace(/[_-]+/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+/** Whole rupees from paise, the way prices are written throughout the app. */
+export function rupees(paise: number): string {
+  return `₹${Math.round(paise / 100).toLocaleString('en-IN')}`;
+}

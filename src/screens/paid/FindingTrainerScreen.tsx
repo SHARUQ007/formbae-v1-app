@@ -9,12 +9,10 @@ import { fetchCoachHub, changeCoach } from '../../services/trainerService';
 import { useAuthStore } from '../../store/authStore';
 import { getCoachArtworkSource } from '../../utils/coachArtwork';
 import { advancePaidSetup } from '../../utils/paidSetupFlow';
-import { coachCheckoutPlan, coachPricePaise, formatCoachLabel } from '../../utils/coachPresentation';
+import { coachCheckoutPlan, coachMonthlyLabel, formatCoachLabel } from '../../utils/coachPresentation';
 import type { CoachOption } from '../../types/api';
 import type { PaidStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
-
-const monthlyPrice = (coach: CoachOption) => `₹${Math.round(coachPricePaise(coach) / 100).toLocaleString('en-IN')}/mo`;
 
 export function FindingTrainerScreen({ navigation }: NativeStackScreenProps<PaidStackParamList, 'FindingTrainer'>) {
   const { refreshStatus } = useAuthStore();
@@ -64,7 +62,7 @@ export function FindingTrainerScreen({ navigation }: NativeStackScreenProps<Paid
         activeOpacity={0.85}
         accessibilityRole={upgrade ? 'button' : 'radio'}
         accessibilityState={{ selected: chosen, disabled: saving }}
-        accessibilityLabel={`${coach.name}, ${formatCoachLabel(coach)}${upgrade ? `, ${monthlyPrice(coach)}` : ''}`}
+        accessibilityLabel={`${coach.name}, ${formatCoachLabel(coach)}${upgrade ? `, ${coachMonthlyLabel(coach)}` : ''}`}
         accessibilityHint={upgrade ? 'Opens their profile, then payment' : undefined}
         onPress={() => (upgrade ? navigation.navigate('CoachUpgrade', { trainerId: coach.trainerId }) : setSelected(coach.trainerId))}
         style={[styles.card, chosen && styles.chosen]}
@@ -74,7 +72,7 @@ export function FindingTrainerScreen({ navigation }: NativeStackScreenProps<Paid
           <View style={styles.copy}>
             <Text style={styles.name}>{coach.name}</Text>
             <Text style={styles.specialty}>{formatCoachLabel(coach)}</Text>
-            {upgrade ? <Text style={styles.price}>{monthlyPrice(coach)}</Text> : null}
+            {upgrade ? <Text style={styles.price}>{coachMonthlyLabel(coach)}</Text> : null}
           </View>
           {upgrade
             ? <Feather name="chevron-right" size={22} color={colors.inkSubtle} />
