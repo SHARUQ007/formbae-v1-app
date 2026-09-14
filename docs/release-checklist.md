@@ -7,6 +7,7 @@
 
 ## Versioning
 - Marketing version: `1.0.0` (iOS `MARKETING_VERSION`, Android `versionName`).
+- Set `APP_VERSION` to the same marketing version so the required-update gate compares the installed build correctly.
 - Build number: increment for every store upload (iOS `CURRENT_PROJECT_VERSION`, Android `versionCode`).
 - Strategy: bump `versionName` on user-facing releases; always bump build/`versionCode`.
 

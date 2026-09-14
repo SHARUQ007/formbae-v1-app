@@ -41,8 +41,23 @@ const cardFor = (name: string) => renderer.root.findAllByProps({ accessibilityLa
 
 it('shows Ava as included and personal coaching with its price', async () => {
   await render();
-  expect(texts()).toEqual(expect.arrayContaining(['Included in your plan', 'Ava', 'Included', 'Personal coaches', 'Manisha', '₹999/month']));
+  expect(texts()).toEqual(expect.arrayContaining(['Included with your plan', 'Ava', 'Included', 'Coach upgrades', 'Manisha', '₹999/month']));
   expect(texts().indexOf('Ava')).toBeLessThan(texts().indexOf('Manisha'));
+});
+
+it('keeps the current coach at the top and lets the user continue without changing coaches', async () => {
+  (fetchCoachHub as jest.Mock).mockResolvedValue(hub([paid, ava], paid));
+  await render();
+  const copy = texts();
+  expect(copy.indexOf('Manisha')).toBeLessThan(copy.indexOf('Ava'));
+  expect(copy).toContain('Current');
+  expect(copy).toContain('Continue with Manisha');
+  await act(async () => {
+    renderer.root.findByProps({ accessibilityLabel: 'Continue with Manisha' }).props.onPress();
+  });
+  expect(navigation.navigate).toHaveBeenCalledWith('PaidWelcome');
+  expect(changeCoach).not.toHaveBeenCalled();
+  expect(runNativeCheckout).not.toHaveBeenCalled();
 });
 
 it('moves every included coach above paid coaches regardless of API order', async () => {

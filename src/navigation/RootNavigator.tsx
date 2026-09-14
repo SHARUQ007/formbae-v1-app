@@ -1,6 +1,7 @@
 import { DarkTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import { TrophyInviteGate } from '../components/TrophyInviteGate';
 import { SplashScreen } from '../screens/auth/SplashScreen';
 import { useAuthStore } from '../store/authStore';
@@ -15,6 +16,8 @@ import {
 import type { RootStackParamList } from './types';
 import { colors } from '../theme/colors';
 import { useReducedMotion } from '../hooks/useReducedMotion';
+import { UpdateRequiredScreen } from '../screens/system/UpdateRequiredScreen';
+import { fetchAppVersionPolicy, requiredAppUpdate, type RequiredAppUpdate } from '../services/appUpdateService';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -60,7 +63,22 @@ export function RootNavigator() {
   const lastTrackedPathRef = useRef('');
   const [navigationReady, setNavigationReady] = useState(false);
   const [activeRoot, setActiveRoot] = useState('Splash');
+  const [requiredUpdate, setRequiredUpdate] = useState<RequiredAppUpdate | null>(null);
   const { ready, token, status } = useAuthStore();
+
+  const checkVersionPolicy = useCallback(async () => {
+    const policy = await fetchAppVersionPolicy();
+    setRequiredUpdate(requiredAppUpdate(policy));
+  }, []);
+
+  useEffect(() => {
+    checkVersionPolicy().catch(() => undefined);
+    const interval = setInterval(() => checkVersionPolicy().catch(() => undefined), 5 * 60 * 1000);
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') checkVersionPolicy().catch(() => undefined);
+    });
+    return () => { clearInterval(interval); subscription.remove(); };
+  }, [checkVersionPolicy]);
 
   const queuePageView = useCallback((path: string) => {
     if (!token) return;
@@ -117,6 +135,8 @@ export function RootNavigator() {
   useEffect(() => () => {
     if (pageViewTimerRef.current) clearTimeout(pageViewTimerRef.current);
   }, []);
+
+  if (requiredUpdate) return <UpdateRequiredScreen update={requiredUpdate} onCheckAgain={checkVersionPolicy} />;
 
   return (
     <>
