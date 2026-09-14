@@ -75,13 +75,18 @@ export type MobileQuestion = {
   id: string;
   title: string;
   subtitle?: string;
-  /** "multi" lets several options be picked; "text" is free text only. */
-  type: 'single' | 'multi' | 'text';
+  /** "multi" lets several options be picked; "number" is one measurement; "text" is free text. */
+  type: 'single' | 'multi' | 'number' | 'text';
   options?: Array<{ value: string; label: string }>;
   /** Shows a free-text field alongside the options, for anything they do not cover. */
   allowNotes?: boolean;
   notesPlaceholder?: string;
   required?: boolean;
+  /** Number questions only: the accepted span, what the figure is in, and an example. */
+  min?: number;
+  max?: number;
+  unit?: string;
+  placeholder?: string;
 };
 
 export type AnalysisReport = {

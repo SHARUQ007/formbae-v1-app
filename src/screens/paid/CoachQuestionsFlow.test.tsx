@@ -20,6 +20,10 @@ jest.mock('../../services/apiClient', () => ({ ApiError: class ApiError extends 
 jest.mock('../../services/trainerService', () => ({ fetchCoachHub: jest.fn(), changeCoach: jest.fn() }));
 jest.mock('../../services/paymentService', () => ({ runNativeCheckout: jest.fn() }));
 jest.mock('../../services/activityService', () => ({ trackMobileInteraction: jest.fn() }));
+jest.mock('../../services/preloadService', () => ({
+  peekProfileSettingsCached: jest.fn(() => null),
+  loadProfileSettingsCached: jest.fn(() => Promise.resolve({ profile: { gender: 'male' } })),
+}));
 
 const questions = [
   { id: 'goalReason', title: 'Why does this goal matter?', type: 'text' as const },

@@ -21,6 +21,27 @@ import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'Questionnaire'>;
 
+/** Multi-select answers travel as one comma-separated string, the way the backend reads them. */
+const pickedOptions = (answer: string) => answer.split(',').map((part) => part.trim()).filter(Boolean);
+
+const toggleOption = (answer: string, value: string) => {
+  const picked = pickedOptions(answer);
+  const next = picked.includes(value) ? picked.filter((option) => option !== value) : [...picked, value];
+  return next.join(', ');
+};
+
+/** Empty when the figure is usable; otherwise what is wrong with it. */
+function measurementProblem(question: MobileQuestion, answer: string) {
+  const raw = answer.trim();
+  if (!raw) return question.required === false ? '' : 'Enter a number to continue.';
+  const value = Number(raw);
+  const min = question.min ?? 0;
+  const max = question.max ?? Number.MAX_SAFE_INTEGER;
+  if (!Number.isFinite(value)) return 'Enter numbers only.';
+  if (value < min || value > max) return `Enter a value between ${min} and ${max}${question.unit ? ` ${question.unit}` : ''}.`;
+  return '';
+}
+
 const COACH_NOTE_PROMPTS = [
   { label: 'No injuries', value: 'No injuries or movement limitations.' },
   { label: 'Knee or back discomfort', value: 'I have knee or back discomfort.' },
@@ -42,6 +63,9 @@ export function QuestionnaireFlow({ onComplete }: {
   const [questions, setQuestions] = useState<MobileQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [index, setIndex] = useState(0);
+  // A measurement is only marked wrong once they have tried to move on, so the very first
+  // keystroke is not met with an error.
+  const [touched, setTouched] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -66,6 +90,7 @@ export function QuestionnaireFlow({ onComplete }: {
   const progress = questions.length ? (index + 1) / questions.length : 0;
 
   const setAnswer = async (value: string) => {
+    setTouched(false);
     const next = { ...answers, [current.id]: value };
     setAnswers(next);
     await saveLocalDraft(userId, next).catch(() => undefined);
@@ -92,9 +117,14 @@ export function QuestionnaireFlow({ onComplete }: {
 
   const onNext = async () => {
     if (!current) return;
+    if (current.type === 'number' && measurementProblem(current, answers[current.id] || '')) {
+      setTouched(true);
+      return;
+    }
     if (current.required !== false && current.type === 'single' && !answers[current.id]) return;
     if (index < questions.length - 1) {
       setIndex(index + 1);
+      setTouched(false);
       return;
     }
     setSubmitting(true);
@@ -111,6 +141,47 @@ export function QuestionnaireFlow({ onComplete }: {
 
   const renderBody = () => {
     if (!current) return null;
+    if (current.type === 'number') {
+      const answer = answers[current.id] || '';
+      const problem = touched ? measurementProblem(current, answer) : '';
+      return (
+        <View style={styles.measureBlock}>
+          <FormInput
+            value={answer}
+            onChangeText={(value) => setAnswer(value.replace(/[^0-9]/g, '').slice(0, 3))}
+            placeholder={current.placeholder || ''}
+            keyboardType="numeric"
+            maxLength={3}
+            suffix={current.unit}
+            error={problem}
+            helperText={`Between ${current.min} and ${current.max} ${current.unit || ''}`.trim()}
+          />
+        </View>
+      );
+    }
+    if (current.type === 'multi') {
+      const picked = pickedOptions(answers[current.id] || '');
+      return (
+        <View style={styles.quickOptions}>
+          {current.options?.map((opt) => {
+            const selected = picked.includes(opt.value);
+            return (
+              <TouchableOpacity
+                key={opt.value}
+                accessibilityRole="checkbox"
+                accessibilityLabel={opt.label}
+                accessibilityState={{ checked: selected }}
+                activeOpacity={0.82}
+                onPress={() => setAnswer(toggleOption(answers[current.id] || '', opt.value))}
+                style={[styles.quickOption, selected && styles.quickOptionSelected]}
+              >
+                <Text style={[styles.quickOptionText, selected && styles.quickOptionTextSelected]}>{opt.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      );
+    }
     if (current.type === 'text') {
       return (
         <View style={styles.textAnswerBlock}>
@@ -193,7 +264,7 @@ export function QuestionnaireFlow({ onComplete }: {
       <View style={styles.progressHeader}>
         <View style={styles.progressTop}>
           <TouchableOpacity
-            onPress={() => index > 0 && setIndex(index - 1)}
+            onPress={() => { if (index > 0) { setIndex(index - 1); setTouched(false); } }}
             disabled={index === 0}
             style={[styles.backButton, index === 0 && styles.backButtonDisabled]}
             accessibilityRole="button"
@@ -228,7 +299,7 @@ export function QuestionnaireFlow({ onComplete }: {
 
       {error ? <Text accessibilityRole="alert" style={styles.subtitle}>{error}</Text> : null}
       <PrimaryButton
-        disabled={current.required !== false && !answers[current.id]?.trim()}
+        disabled={current.required !== false && current.type !== 'number' && !answers[current.id]?.trim()}
         title={index === questions.length - 1 ? 'Submit answers' : 'Continue'}
         icon={index === questions.length - 1 ? 'check' : 'arrow-right'}
         onPress={onNext}
@@ -256,6 +327,7 @@ const styles = StyleSheet.create({
   scrollText: { flexGrow: 1 },
   title: { fontSize: 28, lineHeight: 34, fontWeight: '700', letterSpacing: -0.4, color: colors.white, marginBottom: spacing.sm },
   subtitle: { ...typography.body, color: 'rgba(255,255,255,0.62)', marginBottom: spacing.lg },
+  measureBlock: { marginTop: spacing.md },
   options: { flex: 1, gap: spacing.sm, marginTop: spacing.sm },
   option: {
     flex: 1,

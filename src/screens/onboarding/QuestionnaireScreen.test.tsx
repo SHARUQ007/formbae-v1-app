@@ -66,3 +66,52 @@ it('offers quick coach notes while preserving an editable answer', async () => {
   await act(async () => { await renderer.root.findByType(FormInput).props.onChangeText('Custom coach note'); });
   expect(renderer.root.findByType(FormInput).props.value).toBe('Custom coach note');
 });
+
+describe('exact measurements and preferred languages', () => {
+  const measure = { id: 'p_height', title: 'What is your height?', type: 'number', unit: 'cm', min: 120, max: 230, placeholder: 'e.g. 172' };
+  const languages = {
+    id: 'languages', title: 'Which languages do you prefer?', type: 'multi', required: false,
+    options: [{ value: 'English', label: 'English' }, { value: 'Malayalam', label: 'Malayalam' }],
+  };
+  const input = () => renderer.root.findByType(FormInput);
+  const cta = () => renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Submit answers')!;
+
+  it('keeps a measurement to digits and refuses one outside the range', async () => {
+    (fetchQuestionnaire as jest.Mock).mockResolvedValue({ questions: [measure], answers: {} });
+    await render();
+    await act(async () => { await input().props.onChangeText('17a2cm'); });
+    expect(input().props.value).toBe('172');
+
+    await act(async () => { await input().props.onChangeText('900'); });
+    await act(async () => { await cta().props.onPress(); });
+    expect(submitQuestionnaire).not.toHaveBeenCalled();
+    expect(input().props.error).toContain('between 120 and 230');
+  });
+
+  it('submits the exact figure once it is in range', async () => {
+    (fetchQuestionnaire as jest.Mock).mockResolvedValue({ questions: [measure], answers: {} });
+    (submitQuestionnaire as jest.Mock).mockResolvedValue({ ok: true });
+    await render();
+    await act(async () => { await input().props.onChangeText('172'); });
+    await act(async () => { await cta().props.onPress(); });
+    expect(submitQuestionnaire).toHaveBeenCalledWith({ p_height: '172' });
+  });
+
+  it('collects several languages into one answer and lets them be unpicked', async () => {
+    (fetchQuestionnaire as jest.Mock).mockResolvedValue({ questions: [languages], answers: {} });
+    (submitQuestionnaire as jest.Mock).mockResolvedValue({ ok: true });
+    await render();
+    const chip = (label: string) => renderer.root.findAll(node =>
+      node.type === TouchableOpacity && node.props.accessibilityLabel === label)[0];
+    await act(async () => { await chip('English').props.onPress(); });
+    await act(async () => { await chip('Malayalam').props.onPress(); });
+    await act(async () => { await cta().props.onPress(); });
+    expect(submitQuestionnaire).toHaveBeenCalledWith({ languages: 'English, Malayalam' });
+  });
+
+  it('an optional language question does not block the continue button', async () => {
+    (fetchQuestionnaire as jest.Mock).mockResolvedValue({ questions: [languages], answers: {} });
+    await render();
+    expect(cta().props.disabled).toBe(false);
+  });
+});

@@ -19,6 +19,10 @@ jest.mock('../../services/paymentService', () => ({ syncPayment: jest.fn() }));
 jest.mock('../../services/trainerService', () => ({ changeCoach: jest.fn(), fetchCoachHub: jest.fn() }));
 jest.mock('../../services/membershipGiftService', () => ({ acknowledgeMembershipGift: jest.fn() }));
 jest.mock('../../services/activityService', () => ({ trackMobileInteraction: jest.fn() }));
+jest.mock('../../services/preloadService', () => ({
+  peekProfileSettingsCached: jest.fn(() => null),
+  loadProfileSettingsCached: jest.fn(() => Promise.resolve({ profile: { gender: 'female' } })),
+}));
 const paid = { hasPaid: true, questionnaireCompleted: true, trainerAssigned: true, planReady: false, recommendedNextScreen: 'paid_welcome' };
 const refreshStatus = jest.fn();
 let renderer: ReactTestRenderer;
