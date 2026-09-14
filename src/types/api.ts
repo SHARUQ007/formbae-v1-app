@@ -22,6 +22,7 @@ export type RecommendedNextScreen =
   | 'plan_preparing'
   | 'trainer_match'
   | 'finding_trainer'
+  | 'coach_questions'
   | 'home';
 
 export type UserStatus = {

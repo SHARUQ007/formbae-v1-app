@@ -31,6 +31,7 @@ export type PaidStackParamList = {
   GiftedMembership: undefined;
   PaidWelcome: undefined;
   FindingTrainer: undefined;
+  CoachQuestions: undefined;
   CoachUpgrade: { trainerId: string };
   CoachUnlocked: { trainerId: string };
   PlanPreparing: undefined;

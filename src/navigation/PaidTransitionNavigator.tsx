@@ -27,6 +27,7 @@ export function PaidTransitionNavigator() {
       <Stack.Screen name="ProfileSetup" getComponent={() => require('../screens/paid/ProfileSetupScreen').ProfileSetupScreen} />
       <Stack.Screen name="PaidWelcome" component={PaidWelcomeScreen} />
       <Stack.Screen name="FindingTrainer" component={FindingTrainerScreen} />
+      <Stack.Screen name="CoachQuestions" getComponent={() => require('../screens/paid/CoachQuestionsScreen').CoachQuestionsScreen} />
       <Stack.Screen name="CoachUpgrade" getComponent={() => require('../screens/paid/CoachUpgradeScreen').CoachUpgradeScreen} />
       <Stack.Screen name="CoachUnlocked" getComponent={() => require('../screens/paid/CoachUnlockedScreen').CoachUnlockedScreen} />
       <Stack.Screen name="PlanPreparing" component={PlanPreparingScreen} />

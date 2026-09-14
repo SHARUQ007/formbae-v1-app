@@ -8,6 +8,7 @@ import { PrimaryButton } from '../../components/PrimaryButton';
 import { fetchCoachHub, changeCoach } from '../../services/trainerService';
 import { useAuthStore } from '../../store/authStore';
 import { getCoachArtworkSource } from '../../utils/coachArtwork';
+import { resolvePaidInitialRoute } from '../../utils/routing';
 import { coachPricePaise, formatCoachLabel } from '../../utils/coachPresentation';
 import type { CoachOption } from '../../types/api';
 import type { PaidStackParamList } from '../../navigation/types';
@@ -43,8 +44,8 @@ export function CoachUnlockedScreen({ navigation, route }: Props) {
   const onContinue = async () => {
     setBusy(true);
     try {
-      await refreshStatus().catch(() => undefined);
-      navigation.replace('PaidWelcome');
+      const fresh = await refreshStatus().catch(() => undefined);
+      navigation.replace(resolvePaidInitialRoute(fresh?.recommendedNextScreen || 'paid_welcome'));
     } finally {
       setBusy(false);
     }

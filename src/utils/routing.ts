@@ -12,6 +12,7 @@ export function resolveRootRoute(screen: RecommendedNextScreen): keyof RootStack
     case 'paid_welcome':
     case 'plan_preparing':
     case 'finding_trainer':
+    case 'coach_questions':
       return 'PaidTransition';
     case 'questionnaire':
     case 'analysis_report':
@@ -48,6 +49,8 @@ export function resolvePaidInitialRoute(screen: RecommendedNextScreen): import('
       return 'PlanPreparing';
     case 'finding_trainer':
       return 'FindingTrainer';
+    case 'coach_questions':
+      return 'CoachQuestions';
     case 'paid_welcome':
     default:
       return 'PaidWelcome';

@@ -8,6 +8,7 @@ import { LoadingState } from '../../components/States';
 import { fetchCoachHub, changeCoach } from '../../services/trainerService';
 import { useAuthStore } from '../../store/authStore';
 import { getCoachArtworkSource } from '../../utils/coachArtwork';
+import { resolvePaidInitialRoute } from '../../utils/routing';
 import { coachCheckoutPlan, coachPricePaise, formatCoachLabel } from '../../utils/coachPresentation';
 import type { CoachOption } from '../../types/api';
 import type { PaidStackParamList } from '../../navigation/types';
@@ -46,8 +47,9 @@ export function FindingTrainerScreen({ navigation }: NativeStackScreenProps<Paid
     setSaving(true); setError('');
     try {
       await changeCoach(selected);
-      await refreshStatus();
-      navigation.replace('PaidWelcome');
+      const fresh = await refreshStatus();
+      // An AI coach asks its own questions before any plan is built.
+      navigation.replace(resolvePaidInitialRoute(fresh?.recommendedNextScreen || 'paid_welcome'));
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Your coach couldn’t be saved. Please try again.'); }
     finally { setSaving(false); }
   };
