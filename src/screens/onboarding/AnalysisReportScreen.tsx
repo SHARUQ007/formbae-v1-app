@@ -22,6 +22,7 @@ import { useAuthStore } from '../../store/authStore';
 import type { OnboardingStackParamList } from '../../navigation/types';
 import type { AnalysisReport } from '../../types/api';
 import { getCoachArtworkSource } from '../../utils/coachArtwork';
+import { titleCase } from '../../utils/format';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'AnalysisReport'>;
 
@@ -374,7 +375,7 @@ function TrainerMatchCard({
             {trainer.name}
           </Text>
           <Text style={styles.trainerMeta}>
-            {trainer.coachType || 'Personal trainer'}
+            {titleCase(trainer.coachType) || 'Personal trainer'}
           </Text>
         </View>
       </View>

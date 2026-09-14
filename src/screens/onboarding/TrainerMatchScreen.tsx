@@ -11,6 +11,7 @@ import { useAsync } from '../../hooks/useAsync';
 import { fetchRecommendedTrainer } from '../../services/trainerService';
 import type { OnboardingStackParamList } from '../../navigation/types';
 import { getCoachArtworkSource } from '../../utils/coachArtwork';
+import { titleCase } from '../../utils/format';
 import { colors } from '../../theme/colors';
 import { radius } from '../../theme/radius';
 import { spacing } from '../../theme/spacing';
@@ -28,7 +29,7 @@ export function TrainerMatchScreen({ navigation }: Props) {
     () => getCoachArtworkSource({ name: trainerName, photoUrl: trainer?.photoUrl }),
     [trainer?.photoUrl, trainerName],
   );
-  const coachType = String(trainer?.coachType || '').trim() || 'FormBae trainer';
+  const coachType = titleCase(String(trainer?.coachType || '').trim()) || 'FormBae trainer';
   const description = String(trainer?.description || '').trim();
   const whyThisMatch = String(trainer?.why || '').trim();
   const trainerBadge = String(trainer?.badge || '').trim();
