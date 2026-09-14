@@ -26,7 +26,7 @@ export function coachPricePaise(coach: CoachOption): number {
 }
 
 export function coachAccessPrice(coach: CoachOption): string {
-  if (isIncludedCoach(coach)) return 'Included with ₹49 membership';
+  if (isIncludedCoach(coach)) return 'Included';
   const amount = coachPricePaise(coach);
   return amount > 0 ? `${rupees(amount)}/month` : 'Pricing unavailable';
 }

@@ -55,7 +55,7 @@ it('prices a paid coach from the server amount, falling back to their monthly fe
   expect(coachPricePaise(coach({ upgradeAmountPaise: 99900 }))).toBe(99900);
   expect(coachPricePaise(coach({ monthlyFee: '1,499' }))).toBe(149900);
   expect(coachPricePaise(coach({ monthlyFee: '', upgradeAmountPaise: 0 }))).toBe(0);
-  expect(coachAccessPrice(ava())).toBe('Included with ₹49 membership');
+  expect(coachAccessPrice(ava())).toBe('Included');
   expect(coachAccessPrice(coach({ upgradeAmountPaise: 99900 }))).toBe('₹999/month');
   expect(coachAccessPrice(coach({ monthlyFee: '', upgradeAmountPaise: 0 }))).toBe('Pricing unavailable');
 });
