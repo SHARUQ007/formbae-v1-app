@@ -12,6 +12,15 @@ project.ext.vectoricons = [
 ]
 apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"
 
+// Firebase phone sign-in. Applied only when the config file is there: without it the
+// plugin fails the build outright, and every other feature would stop building over an
+// account nobody has created yet. Sign-in falls back to its "unavailable" path instead.
+if (file("google-services.json").exists()) {
+    apply plugin: "com.google.gms.google-services"
+} else {
+    logger.warn("google-services.json is missing: Firebase phone sign-in will not work in this build.")
+}
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
