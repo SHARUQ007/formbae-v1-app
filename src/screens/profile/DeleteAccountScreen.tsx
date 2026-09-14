@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { ScrollView, Text, StyleSheet, View, Alert } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { useNavigation } from '@react-navigation/native';
 import Feather from 'react-native-vector-icons/Feather';
-import { ScreenContainer, Card } from '../../components/Card';
+import { ScreenContainer, ScreenHeader, Card } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { FormInput } from '../../components/FormInput';
 import { KeyboardScreen } from '../../components/KeyboardScreen';
@@ -14,6 +15,7 @@ import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
 
 export function DeleteAccountScreen() {
+  const navigation = useNavigation();
   const { logout } = useAuthStore();
   const tabBarHeight = useBottomTabBarHeight();
   const [reason, setReason] = useState('');
@@ -53,6 +55,7 @@ export function DeleteAccountScreen() {
   return (
     <KeyboardScreen>
       <ScreenContainer>
+        <ScreenHeader title="Delete account" onBack={() => navigation.goBack()} />
         <ScrollView
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"

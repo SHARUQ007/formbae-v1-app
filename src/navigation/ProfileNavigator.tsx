@@ -16,16 +16,10 @@ export function ProfileNavigator() {
   return (
     <Stack.Navigator
       screenOptions={{
+        headerShown: false,
         gestureEnabled: true,
         animation: reduceMotion ? 'none' : 'slide_from_right',
         animationDuration: 260,
-        headerTitle: '',
-        headerBackButtonDisplayMode: 'minimal',
-        headerBackTitle: '',
-        headerTintColor: colors.accentDark,
-        headerStyle: { backgroundColor: colors.bg },
-        headerShadowVisible: false,
-        headerTitleStyle: { color: colors.ink },
         contentStyle: { backgroundColor: colors.bg },
       }}
     >

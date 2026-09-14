@@ -1,5 +1,6 @@
 import { ScrollView, Text, StyleSheet, View, Linking, Alert } from 'react-native';
-import { ScreenContainer, Card, SectionTitle } from '../../components/Card';
+import { useNavigation } from '@react-navigation/native';
+import { ScreenContainer, ScreenHeader, Card, SectionTitle } from '../../components/Card';
 import { ListRow } from '../../components/ListRow';
 import { Divider } from '../../components/Divider';
 import { LoadingState, ErrorState } from '../../components/States';
@@ -20,11 +21,14 @@ async function openUrl(url: string) {
 }
 
 export function LegalScreen() {
+  const navigation = useNavigation();
   const { data, loading, error, reload } = useAsync(() => fetchLegal());
+  const header = <ScreenHeader title="Legal" onBack={() => navigation.goBack()} />;
 
   if (loading) {
     return (
       <ScreenContainer>
+        {header}
         <LoadingState />
       </ScreenContainer>
     );
@@ -33,6 +37,7 @@ export function LegalScreen() {
   if (error || !data) {
     return (
       <ScreenContainer>
+        {header}
         <ErrorState message={error || 'Could not load legal links.'} onRetry={reload} />
       </ScreenContainer>
     );
@@ -47,6 +52,7 @@ export function LegalScreen() {
 
   return (
     <ScreenContainer>
+      {header}
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         <SectionTitle>Documents</SectionTitle>
         <Card>
