@@ -832,7 +832,7 @@ function CoachOptionCard({
   const label = formatCoachLabel(coach);
   const disabled = changing;
   const locked = Boolean(coach.blockedUntil);
-  const status = current ? 'Current' : isIncludedCoach(coach) ? 'Included' : coachPricePaise(coach) > 0 ? 'Paid' : 'View';
+  const status = current ? 'Current' : isIncludedCoach(coach) ? 'Included' : '';
 
   useEffect(() => setImageFailed(false), [image]);
 
@@ -869,10 +869,12 @@ function CoachOptionCard({
             <Text style={styles.optionFallbackInitial}>{coach.name.slice(0, 1).toUpperCase()}</Text>
           </View>
         )}
-        <View style={[styles.optionStatus, current && styles.optionStatusCurrent]}>
-          <Feather name={current ? 'check' : 'arrow-right'} size={12} color={current ? colors.onPrimary : colors.ink} />
-          <Text style={[styles.optionStatusText, current && styles.optionStatusTextDark]}>{status}</Text>
-        </View>
+        {status ? (
+          <View style={[styles.optionStatus, current && styles.optionStatusCurrent]}>
+            <Feather name={current ? 'check' : 'arrow-right'} size={12} color={current ? colors.onPrimary : colors.ink} />
+            <Text style={[styles.optionStatusText, current && styles.optionStatusTextDark]}>{status}</Text>
+          </View>
+        ) : null}
         <View style={styles.optionCaption}>
           <Text style={styles.optionName} numberOfLines={1}>{coach.name}</Text>
           <Text style={styles.optionMeta} numberOfLines={1}>{label}</Text>
