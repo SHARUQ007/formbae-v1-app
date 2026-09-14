@@ -11,12 +11,13 @@ import { ApiError } from '../../services/apiClient';
 import type { PaidStackParamList, RootStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 
-export function PlanPreparingScreen({ navigation }: NativeStackScreenProps<PaidStackParamList, 'PlanPreparing'>) {
+export function PlanPreparingScreen({ navigation, route }: NativeStackScreenProps<PaidStackParamList, 'PlanPreparing'>) {
   const { refreshStatus } = useAuthStore();
   const [state, setState] = useState<OnboardingPlanState['status']>('idle');
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState('');
   const alive = useRef(true);
+  const buildRef = useRef<(() => Promise<void>) | null>(null);
   const requestRunning = useRef(false);
   const checkingRef = useRef(false);
   const coachQuestionsPending = useCallback(async () => {
@@ -48,11 +49,14 @@ export function PlanPreparingScreen({ navigation }: NativeStackScreenProps<PaidS
         if (alive.current) navigation.replace('CoachQuestions');
         return;
       }
-      if (alive.current) check();
+      if (!alive.current) return;
+      // Arriving from a step that already said "build my plan" should not ask again.
+      if (route.params?.autoStart) buildRef.current?.();
+      else check();
     })();
     const subscription = AppState.addEventListener('change', next => { if (next === 'active') check(); });
     return () => { alive.current = false; subscription.remove(); };
-  }, [check, coachQuestionsPending, navigation]);
+  }, [check, coachQuestionsPending, navigation, route.params?.autoStart]);
   useEffect(() => {
     if (state !== 'building') return;
     const timer = setInterval(() => { if (AppState.currentState === 'active') check(); }, 15000);
@@ -90,6 +94,8 @@ export function PlanPreparingScreen({ navigation }: NativeStackScreenProps<PaidS
       } catch { if (alive.current) setError('Connection interrupted. Check your plan status before trying again.'); }
     } finally { requestRunning.current = false; }
   };
+  buildRef.current = build;
+
   const enter = async () => {
     setChecking(true); setError('');
     try {

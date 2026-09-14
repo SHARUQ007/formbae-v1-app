@@ -34,7 +34,7 @@ const navigation = { replace: jest.fn(), navigate: jest.fn(), goBack: jest.fn() 
 
 beforeEach(() => {
   jest.clearAllMocks();
-  refreshStatus.mockResolvedValue({ recommendedNextScreen: 'plan_preparing' });
+  refreshStatus.mockResolvedValue({ hasPaid: true, questionnaireCompleted: true, trainerAssigned: true, planReady: false });
   (useAuthStore as jest.Mock).mockReturnValue({ user: {}, status: {}, refreshStatus });
   (fetchCoachQuestions as jest.Mock).mockResolvedValue({ questions, answers: {}, completed: false, required: true });
   (saveCoachQuestions as jest.Mock).mockResolvedValue({ ok: true, completed: true });
@@ -73,7 +73,8 @@ it('answers are saved and the flow moves on only once', async () => {
   await act(async () => { await cta().props.onPress(); });
 
   expect(saveCoachQuestions).toHaveBeenCalledWith({ goalReason: 'To keep up with my kids', intensity: 'hard' });
-  expect(navigation.replace).toHaveBeenCalledWith('PlanPreparing');
+  // Straight into building, rather than back to the checklist they came from.
+  expect(navigation.replace).toHaveBeenCalledWith('PlanPreparing', { autoStart: true });
 });
 
 it('a part-answered questionnaire resumes where it was left', async () => {
@@ -89,7 +90,7 @@ it('choosing an AI coach goes to its questions, not straight to the plan', async
     blockedUntil: '', canSelect: true, includedInMembership: true, reason: '', upgradeAmountPaise: 0, paywallId: '',
   };
   (fetchCoachHub as jest.Mock).mockResolvedValue({ currentTrainer: null, trainers: [ava], access: {} });
-  refreshStatus.mockResolvedValue({ recommendedNextScreen: 'coach_questions' });
+  refreshStatus.mockResolvedValue({ ...{ hasPaid: true, questionnaireCompleted: true, trainerAssigned: true, planReady: false }, coachQuestionsRequired: true, coachQuestionsCompleted: false });
   await act(async () => { renderer = create(<FindingTrainerScreen navigation={navigation as never} route={{ name: 'FindingTrainer', key: 'c' } as never} />); });
   const card = renderer.root.findAll(node => typeof node.props.accessibilityLabel === 'string' && node.props.accessibilityLabel.startsWith('Ava,'))[0];
   await act(async () => { card.props.onPress(); });
@@ -242,5 +243,39 @@ describe('answering the way the web does', () => {
     expect(option('Morning').props.accessibilityState).toEqual({ selected: false });
     await act(async () => { await cta().props.onPress(); });
     expect(saveCoachQuestions).toHaveBeenCalledWith(expect.objectContaining({ preferredTime: 'Evening' }));
+  });
+});
+
+describe('finishing the questionnaire lands in a building plan', () => {
+  const done = { hasPaid: true, questionnaireCompleted: true, trainerAssigned: true, planReady: false };
+
+  it('plan building starts on arrival rather than asking again', async () => {
+    (useAuthStore as jest.Mock).mockReturnValue({ status: done, refreshStatus });
+    refreshStatus.mockResolvedValue(done);
+    (fetchCoachQuestions as jest.Mock).mockResolvedValue({ questions, answers: {}, completed: true, required: true });
+    (fetchOnboardingPlanState as jest.Mock).mockResolvedValue({ status: 'idle' });
+    (createOnboardingPlan as jest.Mock).mockResolvedValue({ status: 'completed' });
+
+    await act(async () => {
+      renderer = create(
+        <PlanPreparingScreen
+          navigation={navigation as never}
+          route={{ name: 'PlanPreparing', key: 'p', params: { autoStart: true } } as never}
+        />,
+      );
+    });
+    expect(createOnboardingPlan).toHaveBeenCalledTimes(1);
+  });
+
+  it('arriving without that instruction still waits to be asked', async () => {
+    (useAuthStore as jest.Mock).mockReturnValue({ status: done, refreshStatus });
+    refreshStatus.mockResolvedValue(done);
+    (fetchCoachQuestions as jest.Mock).mockResolvedValue({ questions, answers: {}, completed: true, required: true });
+    (fetchOnboardingPlanState as jest.Mock).mockResolvedValue({ status: 'idle' });
+
+    await act(async () => {
+      renderer = create(<PlanPreparingScreen navigation={navigation as never} route={{ name: 'PlanPreparing', key: 'p' } as never} />);
+    });
+    expect(createOnboardingPlan).not.toHaveBeenCalled();
   });
 });

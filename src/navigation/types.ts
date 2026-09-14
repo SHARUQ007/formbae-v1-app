@@ -34,7 +34,8 @@ export type PaidStackParamList = {
   CoachQuestions: undefined;
   CoachUpgrade: { trainerId: string };
   CoachUnlocked: { trainerId: string };
-  PlanPreparing: undefined;
+  /** autoStart begins the build straight away, for a step that already asked to build. */
+  PlanPreparing: { autoStart?: boolean } | undefined;
 };
 
 /** Paid routes the app can land on directly — the ones that need no params. */

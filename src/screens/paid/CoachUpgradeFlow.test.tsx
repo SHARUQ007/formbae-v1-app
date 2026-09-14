@@ -90,9 +90,10 @@ it('the thank you screen confirms the coach and what was added to the subscripti
 it('the flow only continues from the thank you screen, after a status refresh', async () => {
   await renderUnlocked();
   expect(navigation.replace).not.toHaveBeenCalled();
+  refreshStatus.mockResolvedValue({ hasPaid: true, questionnaireCompleted: true, trainerAssigned: true, planReady: false });
   await act(async () => { await cta().props.onPress(); });
   expect(refreshStatus).toHaveBeenCalled();
-  expect(navigation.replace).toHaveBeenCalledWith('PaidWelcome');
+  expect(navigation.replace).toHaveBeenCalledWith('PlanPreparing', { autoStart: true });
 });
 
 it('the coach is assigned even if checkout did not do it server-side', async () => {

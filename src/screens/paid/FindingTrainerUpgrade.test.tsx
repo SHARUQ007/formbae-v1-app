@@ -28,7 +28,7 @@ const hub = (trainers: unknown[], currentTrainer: unknown = null) => ({ currentT
 
 beforeEach(() => {
   jest.clearAllMocks();
-  (useAuthStore as jest.Mock).mockReturnValue({ user: { name: 'Rafeek', mobile: '9999999999' }, status: {}, refreshStatus: jest.fn().mockResolvedValue({}) });
+  (useAuthStore as jest.Mock).mockReturnValue({ user: { name: 'Rafeek', mobile: '9999999999' }, status: {}, refreshStatus: jest.fn().mockResolvedValue({ hasPaid: true, questionnaireCompleted: true, trainerAssigned: true, planReady: false }) });
   (fetchCoachHub as jest.Mock).mockResolvedValue(hub([ava, paid]));
   (runNativeCheckout as jest.Mock).mockResolvedValue({ success: true });
 });
@@ -62,7 +62,8 @@ it('a coach already bought on the web is ready to pick here', async () => {
   await act(async () => { await cta.props.onPress(); });
   expect(runNativeCheckout).not.toHaveBeenCalled();
   expect(changeCoach).toHaveBeenCalledWith('coach-1');
-  expect(navigation.replace).toHaveBeenCalledWith('PaidWelcome');
+  // A human coach needs no questionnaire, so the next outstanding step is the plan.
+  expect(navigation.replace).toHaveBeenCalledWith('PlanPreparing', { autoStart: true });
 });
 
 it('a coach with no pricing set up is not offered as an upgrade', async () => {

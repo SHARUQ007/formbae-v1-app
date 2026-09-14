@@ -9,6 +9,7 @@ import { ProgressBar } from '../../components/ProgressBar';
 import { LoadingState, ErrorState } from '../../components/States';
 import { fetchCoachQuestions, saveCoachQuestions } from '../../services/onboardingService';
 import { useAuthStore } from '../../store/authStore';
+import { advancePaidSetup } from '../../utils/paidSetupFlow';
 import type { MobileQuestion } from '../../types/api';
 import type { PaidStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
@@ -91,8 +92,10 @@ export function CoachQuestionsScreen({ navigation }: Props) {
     setSubmitting(true); setError('');
     try {
       await saveCoachQuestions(answers);
-      const fresh = await refreshStatus();
-      navigation.replace(fresh?.recommendedNextScreen === 'plan_preparing' ? 'PlanPreparing' : 'PaidWelcome');
+      const fresh = await refreshStatus().catch(() => undefined);
+      // They just asked for a plan, so go and build it rather than back to the checklist.
+      if (!fresh) { navigation.replace('PlanPreparing', { autoStart: true }); return; }
+      advancePaidSetup(navigation, fresh);
     } catch {
       setError('Your answers couldn’t be saved. Please try again.');
     } finally {

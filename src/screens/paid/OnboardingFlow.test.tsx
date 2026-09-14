@@ -95,5 +95,5 @@ it('coach selection only offers selectable coaches and persists the selected coa
   await act(async () => { renderer.root.findAllByProps({ accessibilityLabel: 'Ava, AI coach' })[0].props.onPress(); });
   await act(async () => { await renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Continue with this coach')!.props.onPress(); });
   expect(changeCoach).toHaveBeenCalledWith('ava');
-  expect(navigation.replace).toHaveBeenCalledWith('PaidWelcome');
+  expect(navigation.replace).toHaveBeenCalledWith('PlanPreparing', { autoStart: true });
 });
