@@ -18,7 +18,7 @@ export type AuthStackParamList = {
 export type OnboardingStackParamList = {
   SetupWelcome: undefined;
   Questionnaire: undefined;
-  AnalysisLoading: undefined;
+  AnalysisLoading: { answers?: Record<string, string> } | undefined;
   AnalysisReport: undefined;
   TrainerMatch: undefined;
   PaymentRequired: undefined;

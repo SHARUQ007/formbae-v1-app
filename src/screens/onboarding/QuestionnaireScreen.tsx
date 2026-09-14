@@ -50,11 +50,11 @@ const COACH_NOTE_PROMPTS = [
 ] as const;
 
 export function QuestionnaireScreen({ navigation }: Props) {
-  return <QuestionnaireFlow onComplete={() => navigation.replace('AnalysisLoading')} />;
+  return <QuestionnaireFlow onComplete={(answers) => navigation.replace('AnalysisLoading', { answers })} />;
 }
 
 export function QuestionnaireFlow({ onComplete }: {
-  onComplete: () => void | Promise<void>;
+  onComplete: (answers: Record<string, string>) => void | Promise<void>;
 }) {
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
@@ -131,7 +131,7 @@ export function QuestionnaireFlow({ onComplete }: {
     try {
       await submitQuestionnaire(answers);
       await clearQuestionnaireDraft(userId).catch(() => undefined);
-      await onComplete();
+      await onComplete(answers);
     } catch {
       setError('Your answers couldn’t be submitted. Please try again.');
     } finally {
