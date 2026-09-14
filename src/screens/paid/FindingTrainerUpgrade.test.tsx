@@ -41,7 +41,17 @@ const cardFor = (name: string) => renderer.root.findAllByProps({ accessibilityLa
 
 it('shows Ava as included and personal coaching with its price', async () => {
   await render();
-  expect(texts()).toEqual(expect.arrayContaining(['FIND THE RIGHT SUPPORT', 'Ava', 'Included', 'Manisha', '₹999/month']));
+  expect(texts()).toEqual(expect.arrayContaining(['INCLUDED WITH YOUR MEMBERSHIP', 'Ava', 'Included', 'PERSONAL COACHING', 'Manisha', '₹999/month']));
+  expect(texts().indexOf('Ava')).toBeLessThan(texts().indexOf('Manisha'));
+});
+
+it('moves every included coach above paid coaches regardless of API order', async () => {
+  const secondIncluded = { ...ava, trainerId: 'included-2', name: 'Ari' };
+  (fetchCoachHub as jest.Mock).mockResolvedValue(hub([paid, secondIncluded, ava]));
+  await render();
+  const copy = texts();
+  expect(copy.indexOf('Ari')).toBeLessThan(copy.indexOf('Manisha'));
+  expect(copy.indexOf('Ava')).toBeLessThan(copy.indexOf('Manisha'));
 });
 
 it('a paid coach opens their own page instead of being selected here', async () => {
