@@ -358,7 +358,6 @@ export function TrainerScreen() {
           {includedCoaches.length ? (
             <View style={styles.coachSection}>
               <Text style={styles.coachSectionTitle}>INCLUDED IN YOUR PLAN</Text>
-              <Text style={styles.coachSectionNote}>Comes with your ₹49 membership — no extra charge.</Text>
               <View key={`coach-included-${coachImageRevision}`} style={[styles.coachList, stackCoachCards && styles.coachListStack]}>
                 {includedCoaches.map((coach) => (
                   <CoachOptionCard
