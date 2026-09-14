@@ -1,7 +1,6 @@
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { FindingTrainerScreen } from './FindingTrainerScreen';
-import { PrimaryButton } from '../../components/PrimaryButton';
 import { useAuthStore } from '../../store/authStore';
 import { changeCoach, fetchCoachHub } from '../../services/trainerService';
 import { runNativeCheckout } from '../../services/paymentService';
@@ -38,11 +37,11 @@ const render = async () => { await act(async () => { renderer = create(<FindingT
 const texts = () => renderer.root
   .findAll(node => typeof node.type === 'string' && node.type.includes('Text'))
   .map(node => node.children.map(child => (typeof child === 'string' ? child : '')).join(''));
-const cardFor = (name: string) => renderer.root.findAll(node => typeof node.props.accessibilityLabel === 'string' && node.props.accessibilityLabel.startsWith(`${name},`))[0];
+const cardFor = (name: string) => renderer.root.findAllByProps({ accessibilityLabel: `View ${name} coach profile` })[0];
 
-it('offers an upgrade alongside the coach the membership covers', async () => {
+it('shows Ava as included and personal coaching with its price', async () => {
   await render();
-  expect(texts()).toEqual(expect.arrayContaining(['INCLUDED IN YOUR MEMBERSHIP', 'UPGRADE TO A PERSONAL COACH', 'Ava', 'Manisha', '₹999/mo']));
+  expect(texts()).toEqual(expect.arrayContaining(['FIND THE RIGHT SUPPORT', 'Ava', 'Included', 'Manisha', '₹999/month']));
 });
 
 it('a paid coach opens their own page instead of being selected here', async () => {
@@ -53,56 +52,17 @@ it('a paid coach opens their own page instead of being selected here', async () 
   expect(runNativeCheckout).not.toHaveBeenCalled();
 });
 
-it('a coach already bought on the web is ready to pick here', async () => {
-  // The backend marks a purchased coach selectable, so they sit with the included one.
+it('a coach already bought on the web still opens their profile first', async () => {
   (fetchCoachHub as jest.Mock).mockResolvedValue(hub([ava, { ...paid, canSelect: true, reason: 'Current coach' }]));
   await render();
   await act(async () => { cardFor('Manisha').props.onPress(); });
-  const cta = renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Continue with this coach')!;
-  await act(async () => { await cta.props.onPress(); });
+  expect(navigation.navigate).toHaveBeenCalledWith('CoachUpgrade', { trainerId: 'coach-1' });
   expect(runNativeCheckout).not.toHaveBeenCalled();
-  expect(changeCoach).toHaveBeenCalledWith('coach-1');
-  // A human coach needs no questionnaire, so the next outstanding step is the plan.
-  expect(navigation.replace).toHaveBeenCalledWith('PlanPreparing', { autoStart: true });
+  expect(changeCoach).not.toHaveBeenCalled();
 });
 
-it('a coach with no pricing set up is not offered as an upgrade', async () => {
+it('a coach with no pricing is not presented as purchasable', async () => {
   (fetchCoachHub as jest.Mock).mockResolvedValue(hub([ava, { ...paid, paywallId: '', monthlyFee: '', upgradeAmountPaise: 0 }]));
   await render();
-  expect(texts()).not.toContain('UPGRADE TO A PERSONAL COACH');
   expect(texts()).not.toContain('Manisha');
-});
-
-it('picking the included coach moves on to their questions', async () => {
-  (useAuthStore as jest.Mock).mockReturnValue({
-    user: { name: 'Rafeek', mobile: '9999999999' },
-    status: {},
-    refreshStatus: jest.fn().mockResolvedValue({
-      hasPaid: true, questionnaireCompleted: true, trainerAssigned: true, planReady: false,
-      coachQuestionsRequired: true, coachQuestionsCompleted: false,
-    }),
-  });
-  await render();
-  await act(async () => { cardFor('Ava').props.onPress(); });
-  const cta = renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Continue with this coach')!;
-  await act(async () => { await cta.props.onPress(); });
-  expect(changeCoach).toHaveBeenCalledWith('ava');
-  expect(navigation.replace).toHaveBeenCalledWith('CoachQuestions');
-});
-
-it('a status that has not caught up says so instead of looking like a dead button', async () => {
-  // Replacing this screen with itself is invisible, so the save has to report it.
-  (useAuthStore as jest.Mock).mockReturnValue({
-    user: { name: 'Rafeek', mobile: '9999999999' },
-    status: {},
-    refreshStatus: jest.fn().mockResolvedValue({
-      hasPaid: true, questionnaireCompleted: true, trainerAssigned: false, planReady: false,
-    }),
-  });
-  await render();
-  await act(async () => { cardFor('Ava').props.onPress(); });
-  const cta = renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Continue with this coach')!;
-  await act(async () => { await cta.props.onPress(); });
-  expect(navigation.replace).not.toHaveBeenCalled();
-  expect(texts()).toEqual(expect.arrayContaining([expect.stringContaining('setup hasn’t caught up')]));
 });

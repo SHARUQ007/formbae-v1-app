@@ -5,11 +5,13 @@ import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer, ScreenHeader, Card } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState, ErrorState } from '../../components/States';
-import { fetchCoachHub } from '../../services/trainerService';
+import { changeCoach, fetchCoachHub } from '../../services/trainerService';
 import { runNativeCheckout } from '../../services/paymentService';
 import { useAuthStore } from '../../store/authStore';
 import { getCoachArtworkSource } from '../../utils/coachArtwork';
 import { coachCheckoutPlan, coachMonthlyLabel, formatCoachLabel } from '../../utils/coachPresentation';
+import { isIncludedCoach } from '../../utils/coachPresentation';
+import { advancePaidSetup } from '../../utils/paidSetupFlow';
 import type { CoachOption } from '../../types/api';
 import type { PaidStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
@@ -48,8 +50,23 @@ export function CoachUpgradeScreen({ navigation, route }: Props) {
   }, [trainerId]);
   useEffect(() => { load(); }, [load]);
 
-  const pay = async () => {
+  const continueWithCoach = async () => {
     if (!coach) return;
+    if (coach.canSelect) {
+      setPaying(true); setError('');
+      try {
+        await changeCoach(coach.trainerId);
+        const fresh = await refreshStatus();
+        if (!advancePaidSetup(navigation, fresh, 'CoachUpgrade')) {
+          navigation.replace('PaidWelcome');
+        }
+      } catch (failure) {
+        setError(failure instanceof Error ? failure.message : 'Your coach could not be saved. Please try again.');
+      } finally {
+        setPaying(false);
+      }
+      return;
+    }
     const plan = coachCheckoutPlan(coach);
     if (!plan) { setError('This coach does not have pricing set up yet.'); return; }
     setPaying(true); setError('');
@@ -98,6 +115,8 @@ export function CoachUpgradeScreen({ navigation, route }: Props) {
 
   const art = getCoachArtworkSource(coach);
   const firstName = coach.name.trim().split(/\s+/)[0] || 'coach';
+  const included = isIncludedCoach(coach);
+  const alreadyAvailable = coach.canSelect;
 
   return (
     <ScreenContainer withBottomInset>
@@ -108,17 +127,17 @@ export function CoachUpgradeScreen({ navigation, route }: Props) {
           <View style={styles.heroCopy}>
             <Text style={styles.name}>{coach.name}</Text>
             <Text style={styles.role}>{formatCoachLabel(coach)}</Text>
-            <Text style={styles.price}>{coachMonthlyLabel(coach)}</Text>
+            <Text style={styles.price}>{included ? 'Included with your ₹49 membership' : alreadyAvailable ? 'Already unlocked' : coachMonthlyLabel(coach)}</Text>
           </View>
         </View>
 
-        <Card style={styles.block}>
+        {!alreadyAvailable ? <Card style={styles.block}>
           <Text style={styles.blockTitle}>About {firstName}</Text>
           <Text style={styles.body}>
             {coach.detailedDescription || coach.description || 'Personal guidance, workout reviews, and plan adjustments from your coach.'}
           </Text>
           {coach.languages.length ? <Text style={styles.languages}>Speaks {coach.languages.join(' · ')}</Text> : null}
-        </Card>
+        </Card> : null}
 
         <Card style={styles.block}>
           <Text style={styles.blockTitle}>What you get</Text>
@@ -145,10 +164,10 @@ export function CoachUpgradeScreen({ navigation, route }: Props) {
       </ScrollView>
 
       <PrimaryButton
-        title={`Unlock ${firstName} · ${coachMonthlyLabel(coach)}`}
-        icon="unlock"
+        title={alreadyAvailable ? `Continue with ${firstName}` : `Continue to payment · ${coachMonthlyLabel(coach)}`}
+        icon={alreadyAvailable ? 'arrow-right' : 'unlock'}
         loading={paying}
-        onPress={pay}
+        onPress={continueWithCoach}
         size="lg"
         style={styles.cta}
       />

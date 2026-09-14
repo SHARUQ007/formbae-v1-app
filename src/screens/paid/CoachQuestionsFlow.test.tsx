@@ -92,7 +92,7 @@ it('a part-answered questionnaire resumes where it was left', async () => {
   expect(texts()).toContain('How hard should sessions feel?');
 });
 
-it('choosing an AI coach goes to its questions, not straight to the plan', async () => {
+it('choosing an AI coach starts by opening its profile', async () => {
   const ava = {
     trainerId: 'ava', name: 'Ava', gender: '', photoUrl: '', expertise: 'AI Trainer', description: '', detailedDescription: '',
     languages: [], monthlyFee: '0', trainerKind: 'ai', availableSlotCount: 0, nextSlotAt: '', changeKind: 'swap' as const,
@@ -101,13 +101,10 @@ it('choosing an AI coach goes to its questions, not straight to the plan', async
   (fetchCoachHub as jest.Mock).mockResolvedValue({ currentTrainer: null, trainers: [ava], access: {} });
   refreshStatus.mockResolvedValue({ ...{ hasPaid: true, questionnaireCompleted: true, trainerAssigned: true, planReady: false }, coachQuestionsRequired: true, coachQuestionsCompleted: false });
   await act(async () => { renderer = create(<FindingTrainerScreen navigation={navigation as never} route={{ name: 'FindingTrainer', key: 'c' } as never} />); });
-  const card = renderer.root.findAll(node => typeof node.props.accessibilityLabel === 'string' && node.props.accessibilityLabel.startsWith('Ava,'))[0];
+  const card = renderer.root.findAllByProps({ accessibilityLabel: 'View Ava coach profile' })[0];
   await act(async () => { card.props.onPress(); });
-  const continueCta = renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Continue with this coach')!;
-  await act(async () => { await continueCta.props.onPress(); });
-
-  expect(changeCoach).toHaveBeenCalledWith('ava');
-  expect(navigation.replace).toHaveBeenCalledWith('CoachQuestions');
+  expect(navigation.navigate).toHaveBeenCalledWith('CoachUpgrade', { trainerId: 'ava' });
+  expect(changeCoach).not.toHaveBeenCalled();
 });
 
 describe('nothing reaches plan building with the questions unanswered', () => {

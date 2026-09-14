@@ -53,10 +53,27 @@ it('the coach page is where you read about them and see what you pay', async () 
     'Amal Rajan', 'Strength and Training Coach', '₹999/mo', 'The longer story about this coach',
   ]));
   expect(texts().join(' ')).toContain('added to the same subscription');
-  expect(cta().props.title).toBe('Unlock Amal · ₹999/mo');
+  expect(cta().props.title).toBe('Continue to payment · ₹999/mo');
   // The paying action reads as the flow's primary: gold, with an unlock icon.
   expect(cta().props.icon).toBe('unlock');
   expect(StyleSheet.flatten(cta().props.style)).toMatchObject({ backgroundColor: colors.gold });
+});
+
+it('Ava is the only coach selectable without another payment', async () => {
+  const ava = {
+    ...paid, trainerId: 'coach-1', name: 'Ava', expertise: 'female_ai', trainerKind: 'ai',
+    trainerPersona: 'female_ai', monthlyFee: '0', canSelect: true, includedInMembership: true,
+    upgradeAmountPaise: 0, paywallId: '',
+  };
+  (fetchCoachHub as jest.Mock).mockResolvedValue({ currentTrainer: null, trainers: [ava], access: {} });
+  refreshStatus.mockResolvedValue({ hasPaid: true, profileSetupCompleted: true, questionnaireCompleted: true, trainerAssigned: true, planReady: false, coachQuestionsRequired: true, coachQuestionsCompleted: false });
+  await renderUpgrade();
+  expect(texts()).toEqual(expect.arrayContaining(['Ava', 'AI trainer', 'Included with your ₹49 membership']));
+  expect(cta().props.title).toBe('Continue with Ava');
+  await act(async () => { await cta().props.onPress(); });
+  expect(changeCoach).toHaveBeenCalledWith('coach-1');
+  expect(runNativeCheckout).not.toHaveBeenCalled();
+  expect(navigation.replace).toHaveBeenCalledWith('CoachQuestions');
 });
 
 it('paying takes you to the confirmation rather than straight back into the flow', async () => {

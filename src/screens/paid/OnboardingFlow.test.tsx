@@ -96,13 +96,12 @@ it('reveals who gifted premium and acknowledges it from the fixed CTA', async ()
   expect(acknowledgeMembershipGift).toHaveBeenCalledTimes(1);
   expect(navigation.replace).toHaveBeenCalledWith('PaidWelcome');
 });
-it('coach selection only offers selectable coaches and persists the selected coach', async () => {
+it('an available coach opens the coach profile before any selection or payment', async () => {
   const coach = { trainerId: 'ava', name: 'Ava', expertise: 'AI coach', canSelect: true, languages: ['English'], photoUrl: '' };
   (fetchCoachHub as jest.Mock).mockResolvedValue({ currentTrainer: null, trainers: [coach, { ...coach, trainerId: 'locked', name: 'Locked coach', canSelect: false }] });
   await render(<FindingTrainerScreen navigation={navigation as never} route={{ name: 'FindingTrainer', key: 'coach' }} />);
-  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Locked coach, AI coach' })).toHaveLength(0);
-  await act(async () => { renderer.root.findAllByProps({ accessibilityLabel: 'Ava, AI coach' })[0].props.onPress(); });
-  await act(async () => { await renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Continue with this coach')!.props.onPress(); });
-  expect(changeCoach).toHaveBeenCalledWith('ava');
-  expect(navigation.replace).toHaveBeenCalledWith('PlanPreparing', { autoStart: true });
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'View Locked coach coach profile' })).toHaveLength(0);
+  await act(async () => { renderer.root.findAllByProps({ accessibilityLabel: 'View Ava coach profile' })[0].props.onPress(); });
+  expect(navigation.navigate).toHaveBeenCalledWith('CoachUpgrade', { trainerId: 'ava' });
+  expect(changeCoach).not.toHaveBeenCalled();
 });

@@ -28,8 +28,8 @@ export function PaidWelcomeScreen({ navigation }: Props) {
     subtitle="Let’s finish your setup and turn your membership into a routine that fits you."
     steps={[
       { title: 'Your membership', detail: 'Confirm your existing payment', artwork: 'membership', complete: status?.hasPaid },
-      { title: 'Your starting point', detail: 'Goals and a schedule that works for you', artwork: 'profile', complete: status?.questionnaireCompleted },
-      { title: 'Your coach', detail: 'Choose from the coaches included in your plan', artwork: 'coach', complete: status?.trainerAssigned, onChange: status?.hasPaid && status.questionnaireCompleted && status.trainerAssigned && !status.planReady ? () => navigation.navigate('FindingTrainer') : undefined },
+      { title: 'Your starting point', detail: 'Exact profile details and a schedule that works for you', artwork: 'profile', complete: status?.profileSetupCompleted ?? status?.questionnaireCompleted },
+      { title: 'Your coach', detail: 'Ava is included; personal coaches are available separately', artwork: 'coach', complete: status?.trainerAssigned, onChange: status?.hasPaid && (status.profileSetupCompleted ?? status.questionnaireCompleted) && status.trainerAssigned && !status.planReady ? () => navigation.navigate('FindingTrainer') : undefined },
       ...(status?.coachQuestionsRequired
         ? [{ title: 'Your coach’s questions', detail: 'What your coach needs before writing your plan', artwork: 'profile' as const, complete: status?.coachQuestionsCompleted }]
         : []),

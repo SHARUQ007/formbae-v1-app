@@ -75,7 +75,7 @@ export function PlanPreparingScreen({ navigation, route }: NativeStackScreenProp
     setError(''); setState('building');
     try {
       const fresh = await refreshStatus();
-      if (!fresh?.hasPaid || !fresh.questionnaireCompleted || !fresh.trainerAssigned) {
+      if (!fresh?.hasPaid || !(fresh.profileSetupCompleted ?? fresh.questionnaireCompleted) || !fresh.trainerAssigned) {
         navigation.replace('PaidWelcome'); return;
       }
       // An AI coach has questions of its own; nothing can be built until they are answered.

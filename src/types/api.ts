@@ -34,6 +34,9 @@ export type UserStatus = {
   hasPaid: boolean;
   paymentStatus: 'none' | 'pending' | 'paid' | 'failed' | 'refunded';
   questionnaireCompleted: boolean;
+  /** Free multiple-choice report answers and paid exact profile setup are separate gates. */
+  freeAnalysisCompleted?: boolean;
+  profileSetupCompleted?: boolean;
   analysisReady: boolean;
   trainerAssigned: boolean;
   /** An AI coach plans from its own questions; these say whether that step is done. */
