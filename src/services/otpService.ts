@@ -58,16 +58,35 @@ type PendingVerification = {
 let pending: PendingVerification | null = null;
 
 /**
+ * Whether this build can talk to Firebase at all.
+ *
+ * Asked before the SDK is loaded, and deliberately through TurboModuleRegistry.get rather
+ * than by attempting the import. Firebase's entry point registers an event emitter while
+ * it evaluates, which reaches for the same native module through getEnforcing and throws
+ * out of module evaluation if it is missing - somewhere a try around the import does not
+ * reliably contain. `get` asks the identical question and answers null.
+ *
+ * It is missing in a build with no Firebase config, and in an app binary older than the JS
+ * being served into it, which is what reloading after adding the pods leaves behind.
+ */
+function firebaseNativeModuleMissing(): boolean {
+  try {
+    const { NativeModules, TurboModuleRegistry } = require('react-native');
+    if (TurboModuleRegistry?.get?.('NativeRNFBTurboApp')) return false;
+    return !NativeModules?.RNFBAppModule;
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Loaded on demand so @react-native-firebase/app does not initialise during cold start
  * for the signed-in trainees who never reach this screen.
- *
- * Loading it is also allowed to fail. Firebase registers native modules, and they are
- * absent from a build with no Firebase config - and from an app binary older than the one
- * the running JS was built against, which is what a reloading Metro leaves behind. Neither
- * should reach anyone as a crash, so both surface as the same unavailable answer every
- * other failure here uses.
  */
 function firebaseAuth() {
+  if (firebaseNativeModuleMissing()) {
+    throw new OtpError('UNAVAILABLE', 'Phone sign-in isn’t available in this build of the app.');
+  }
   try {
     const module = require('@react-native-firebase/auth');
     const { getAuth, signInWithPhoneNumber, signOut } = module;

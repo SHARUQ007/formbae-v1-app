@@ -22,8 +22,20 @@ const confirmation = (token = 'id-token') => ({
   confirm: jest.fn().mockResolvedValue({ user: { getIdToken: jest.fn().mockResolvedValue(token) } }),
 });
 
+/** Stand in for the native module Firebase registers, which no test bundle has. */
+function setNativeModulePresent(present: boolean) {
+  const rn = require('react-native');
+  jest.spyOn(rn.TurboModuleRegistry, 'get').mockReturnValue(present ? {} : null);
+  Object.defineProperty(rn.NativeModules, 'RNFBAppModule', {
+    value: present ? {} : undefined,
+    configurable: true,
+  });
+}
+
 beforeEach(() => {
+  jest.restoreAllMocks();
   jest.clearAllMocks();
+  setNativeModulePresent(true);
   mockSignOut.mockResolvedValue(undefined);
   mockSignInWithPhoneNumber.mockResolvedValue(confirmation());
 });
@@ -132,12 +144,22 @@ describe('a build without the Firebase native module', () => {
   // binary older than the JS Metro is serving into it. Neither may reach anyone as a crash.
   const unregistered = () => { throw new Error('Native module NativeRNFBTurboApp is not registered.'); };
 
+  it('does not even reach for the SDK when the native module is absent', async () => {
+    // Importing it is what throws: Firebase builds an event emitter as it evaluates, and
+    // that reaches for the same module through getEnforcing. So the import must not happen.
+    setNativeModulePresent(false);
+    await expect(startPhoneVerification('+919876543210')).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+    expect(mockSignInWithPhoneNumber).not.toHaveBeenCalled();
+  });
+
   it('reports itself unavailable rather than throwing the native error', async () => {
     mockSignInWithPhoneNumber.mockImplementation(unregistered);
     await expect(startPhoneVerification('+919876543210')).rejects.toMatchObject({ code: 'UNAVAILABLE' });
   });
 
   it('never lets ending a verification take the app down', async () => {
+    setNativeModulePresent(false);
+    await expect(endVerification()).resolves.toBeUndefined();
     mockSignOut.mockImplementation(unregistered);
     await expect(endVerification()).resolves.toBeUndefined();
   });
