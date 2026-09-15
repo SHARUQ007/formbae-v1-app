@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "190649836345",
+    "project_id": "formbae-50d64",
+    "storage_bucket": "formbae-50d64.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:190649836345:android:74b409bca4bcf669b9bee8",
+        "android_client_info": {
+          "package_name": "com.formbae"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCtMn6bUfAAXVUwHJju-1mWaw8hbMM4_L0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
