@@ -27,6 +27,7 @@ import { startPhoneVerification } from '../../services/otpService';
 import { useAuthStore } from '../../store/authStore';
 import { resolveOnboardingInitialRoute, resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
 import { apiErrorCode } from '../../services/apiClient';
+import { fetchAppVersionPolicy, otpRequired } from '../../services/appUpdateService';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
@@ -53,6 +54,9 @@ export function LoginScreen({ navigation, route }: Props) {
   const [name, setName] = useState('');
   const [phoneError, setPhoneError] = useState('');
   const [sending, setSending] = useState(false);
+  // Labels only. Whether a code is actually needed is the backend's answer, asked for on
+  // submit - so this being stale or unread changes the wording and nothing else.
+  const [verifies, setVerifies] = useState(false);
   const [motionPreference, setMotionPreference] = useState<MotionPreference>(
     route.params?.reduceMotion === true
       ? 'reduce'
@@ -61,6 +65,14 @@ export function LoginScreen({ navigation, route }: Props) {
         : 'unknown',
   );
   const isSignup = route.params?.mode === 'signup';
+
+  useEffect(() => {
+    let active = true;
+    fetchAppVersionPolicy()
+      .then(policy => { if (active) setVerifies(otpRequired(policy)); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (route.params?.reduceMotion !== undefined) return undefined;
@@ -327,7 +339,7 @@ export function LoginScreen({ navigation, route }: Props) {
                 />
 
                 <PrimaryButton
-                  title={isSignup ? 'Send my code' : 'Send code'}
+                  title={verifies ? (isSignup ? 'Send my code' : 'Send code') : (isSignup ? 'Continue to analysis' : 'Sign in')}
                   icon="arrow-right"
                   iconPosition="trailing"
                   centerTitle

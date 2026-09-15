@@ -5,6 +5,7 @@ import { LoginScreen, normalizeIndianMobile } from './LoginScreen';
 import { ApiError } from '../../services/apiClient';
 
 const mockStartPhoneVerification = jest.fn();
+const mockFetchPolicy = jest.fn();
 const mockLogin = jest.fn();
 const mockReplace = jest.fn();
 
@@ -14,6 +15,10 @@ jest.mock('../../services/otpService', () => ({
   startPhoneVerification: (...args: unknown[]) => mockStartPhoneVerification(...args),
 }));
 jest.mock('../../store/authStore', () => ({ useAuthStore: () => ({ login: mockLogin }) }));
+jest.mock('../../services/appUpdateService', () => ({
+  fetchAppVersionPolicy: (...args: unknown[]) => mockFetchPolicy(...args),
+  otpRequired: (policy: { otp?: { enabled?: boolean } } | null) => Boolean(policy?.otp?.enabled),
+}));
 
 jest.mock('../../services/activityService', () => ({
   trackMobileInteraction: jest.fn(),
@@ -31,11 +36,11 @@ function createNavigation(canGoBack = true) {
   };
 }
 
-function renderLogin(mode: LoginMode, canGoBack = true, mobile?: string) {
+async function renderLogin(mode: LoginMode, canGoBack = true, mobile?: string) {
   const navigation = createNavigation(canGoBack);
   let renderer: ReactTestRenderer;
 
-  act(() => {
+  await act(async () => {
     renderer = create(
       <LoginScreen
         navigation={navigation as never}
@@ -46,6 +51,7 @@ function renderLogin(mode: LoginMode, canGoBack = true, mobile?: string) {
         }}
       />,
     );
+    await Promise.resolve();
   });
 
   return { navigation, renderer: renderer! };
@@ -64,12 +70,20 @@ function flattenText(value: unknown): string {
   return '';
 }
 
+/** The button says what the next tap does, which follows the verification switch. */
+let verifying = true;
+const ctaLabel = (signup = false) =>
+  verifying ? (signup ? 'Send my code' : 'Send code') : (signup ? 'Continue to analysis' : 'Sign in');
+
 describe('LoginScreen', () => {
   const renderers: ReactTestRenderer[] = [];
 
   beforeEach(() => {
     mockStartPhoneVerification.mockReset();
     mockStartPhoneVerification.mockResolvedValue({ sessionId: 'otp-1' });
+    verifying = true;
+    mockFetchPolicy.mockReset();
+    mockFetchPolicy.mockResolvedValue({ otp: { enabled: true } });
     mockLogin.mockReset();
     mockLogin.mockRejectedValue(new ApiError('Session expired. Please log in again.', 401, { detail: { code: 'OTP_REQUIRED' } }));
     mockReplace.mockReset();
@@ -85,37 +99,37 @@ describe('LoginScreen', () => {
     jest.restoreAllMocks();
   });
 
-  it('presents returning users with focused sign-in copy', () => {
-    const { renderer } = renderLogin('login');
+  it('presents returning users with focused sign-in copy', async () => {
+    const { renderer } = await renderLogin('login');
     renderers.push(renderer);
 
     const copy = renderedText(renderer);
     expect(copy).toContain('Welcome back');
     expect(copy).toContain('Enter the mobile number linked to your FormBae profile.');
-    expect(renderer.root.findByProps({ accessibilityLabel: 'Send code' })).toBeTruthy();
+    expect(renderer.root.findByProps({ accessibilityLabel: ctaLabel() })).toBeTruthy();
     expect(renderer.root.findAllByProps({ accessibilityLabel: 'First name' })).toHaveLength(0);
   });
 
-  it('presents new users with analysis copy and the optional name field', () => {
-    const { renderer } = renderLogin('signup');
+  it('presents new users with analysis copy and the optional name field', async () => {
+    const { renderer } = await renderLogin('signup');
     renderers.push(renderer);
 
     const copy = renderedText(renderer);
     expect(copy).toContain('Start your analysis');
     expect(copy).toContain('Enter your details to create your FormBae profile.');
-    expect(renderer.root.findByProps({ accessibilityLabel: 'Send my code' })).toBeTruthy();
+    expect(renderer.root.findByProps({ accessibilityLabel: ctaLabel(true) })).toBeTruthy();
     expect(renderer.root.findByProps({ accessibilityLabel: 'First name' })).toBeTruthy();
   });
 
-  it.each(['login', 'signup'] as const)('does not mention payment or the web in %s mode', mode => {
-    const { renderer } = renderLogin(mode);
+  it.each(['login', 'signup'] as const)('does not mention payment or the web in %s mode', async mode => {
+    const { renderer } = await renderLogin(mode);
     renderers.push(renderer);
 
     expect(renderedText(renderer)).not.toMatch(/\b(?:paid|payment|web|website)\b/i);
   });
 
-  it('returns to the welcome screen from the sign-in flow', () => {
-    const { navigation, renderer } = renderLogin('login');
+  it('returns to the welcome screen from the sign-in flow', async () => {
+    const { navigation, renderer } = await renderLogin('login');
     renderers.push(renderer);
 
     act(() => {
@@ -126,8 +140,8 @@ describe('LoginScreen', () => {
     expect(navigation.replace).not.toHaveBeenCalled();
   });
 
-  it('restores the welcome screen when login has no back-stack entry', () => {
-    const { navigation, renderer } = renderLogin('login', false);
+  it('restores the welcome screen when login has no back-stack entry', async () => {
+    const { navigation, renderer } = await renderLogin('login', false);
     renderers.push(renderer);
 
     act(() => {
@@ -148,14 +162,14 @@ describe('LoginScreen', () => {
   });
 
   it('shows inline validation and does not submit an invalid number', async () => {
-    const { renderer } = renderLogin('login');
+    const { renderer } = await renderLogin('login');
     renderers.push(renderer);
 
     act(() => {
       renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('12345');
     });
     await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: 'Send code' }).props.onPress();
+      renderer.root.findByProps({ accessibilityLabel: ctaLabel() }).props.onPress();
       await Promise.resolve();
     });
 
@@ -167,7 +181,7 @@ describe('LoginScreen', () => {
   });
 
   it('normalizes the input, sends a code, and hands off to verification', async () => {
-    const { navigation, renderer } = renderLogin('login');
+    const { navigation, renderer } = await renderLogin('login');
     renderers.push(renderer);
 
     act(() => {
@@ -176,7 +190,7 @@ describe('LoginScreen', () => {
         .props.onChangeText('+91 98765 43210');
     });
     await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: 'Send code' }).props.onPress();
+      renderer.root.findByProps({ accessibilityLabel: ctaLabel() }).props.onPress();
       await Promise.resolve();
     });
 
@@ -192,12 +206,12 @@ describe('LoginScreen', () => {
   });
 
   it('prefills signup and lets the user edit the phone before submitting', async () => {
-    const { renderer } = renderLogin('signup', true, '9876543210');
+    const { renderer } = await renderLogin('signup', true, '9876543210');
     renderers.push(renderer);
     expect(renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.value).toBe('9876543210');
     expect(mockStartPhoneVerification).not.toHaveBeenCalled();
     act(() => renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('9876543211'));
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Send my code' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: ctaLabel(true) }).props.onPress());
     expect(mockStartPhoneVerification).toHaveBeenCalledWith('+919876543211');
   });
 
@@ -210,16 +224,16 @@ describe('LoginScreen', () => {
     // Verification is on, so the send is what fails here.
     mockLogin.mockRejectedValue(new ApiError('Session expired. Please log in again.', 401, { detail: { code: 'OTP_REQUIRED' } }));
     mockStartPhoneVerification.mockRejectedValue(error);
-    const { navigation, renderer } = renderLogin('login');
+    const { navigation, renderer } = await renderLogin('login');
     renderers.push(renderer);
     act(() => renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('9876543210'));
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Send code' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: ctaLabel() }).props.onPress());
     expect(navigation.replace).not.toHaveBeenCalled();
     expect(renderedText(renderer)).toContain(error.message);
   });
 
   it('carries a trimmed optional name through to verification', async () => {
-    const { navigation, renderer } = renderLogin('signup');
+    const { navigation, renderer } = await renderLogin('signup');
     renderers.push(renderer);
 
     act(() => {
@@ -232,7 +246,7 @@ describe('LoginScreen', () => {
     });
     await act(async () => {
       renderer.root
-        .findByProps({ accessibilityLabel: 'Send my code' })
+        .findByProps({ accessibilityLabel: ctaLabel(true) })
         .props.onPress();
       await Promise.resolve();
     });
@@ -245,15 +259,31 @@ describe('LoginScreen', () => {
 
   describe('when verification is switched off', () => {
     beforeEach(() => {
+      verifying = false;
+      mockFetchPolicy.mockResolvedValue({ otp: { enabled: false } });
       mockLogin.mockReset();
       mockLogin.mockResolvedValue({ status: { recommendedNextScreen: 'home' } });
     });
 
+    it('offers to sign in rather than to send a code', async () => {
+      // Nothing is sent in this state, so the button must not promise one.
+      const { renderer } = await renderLogin('login');
+      renderers.push(renderer);
+      expect(renderer.root.findByProps({ accessibilityLabel: 'Sign in' })).toBeTruthy();
+      expect(renderer.root.findAllByProps({ accessibilityLabel: 'Send code' })).toHaveLength(0);
+    });
+
+    it('offers to continue rather than to send a code when signing up', async () => {
+      const { renderer } = await renderLogin('signup');
+      renderers.push(renderer);
+      expect(renderer.root.findByProps({ accessibilityLabel: 'Continue to analysis' })).toBeTruthy();
+    });
+
     it('signs in here instead of sending a code', async () => {
-      const { renderer } = renderLogin('login');
+      const { renderer } = await renderLogin('login');
       renderers.push(renderer);
       act(() => renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('9876543210'));
-      await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Send code' }).props.onPress());
+      await act(async () => renderer.root.findByProps({ accessibilityLabel: ctaLabel() }).props.onPress());
 
       expect(mockStartPhoneVerification).not.toHaveBeenCalled();
       expect(mockLogin).toHaveBeenCalledWith('9876543210', undefined, false);
@@ -262,19 +292,19 @@ describe('LoginScreen', () => {
 
     it('still sends an unknown number to signup rather than an error', async () => {
       mockLogin.mockRejectedValue(new ApiError('Create an account', 404, { code: 'ACCOUNT_NOT_FOUND' }));
-      const { navigation, renderer } = renderLogin('login');
+      const { navigation, renderer } = await renderLogin('login');
       renderers.push(renderer);
       act(() => renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('9876543210'));
-      await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Send code' }).props.onPress());
+      await act(async () => renderer.root.findByProps({ accessibilityLabel: ctaLabel() }).props.onPress());
 
       expect(navigation.replace).toHaveBeenCalledWith('Login', { mode: 'signup', mobile: '9876543210', reduceMotion: true });
     });
 
     it('does not send a code when the backend did not ask for one', async () => {
-      const { renderer } = renderLogin('login');
+      const { renderer } = await renderLogin('login');
       renderers.push(renderer);
       act(() => renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('9876543210'));
-      await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Send code' }).props.onPress());
+      await act(async () => renderer.root.findByProps({ accessibilityLabel: ctaLabel() }).props.onPress());
 
       expect(mockStartPhoneVerification).not.toHaveBeenCalled();
     });
