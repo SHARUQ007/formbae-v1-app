@@ -61,6 +61,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     Auth.auth().setAPNSToken(deviceToken, type: .unknown)
   }
 
+  // And the other half. Registration fails on a build whose App ID has no Push
+  // Notifications capability, and Firebase has to be told: left waiting for a token that
+  // will never arrive it sits out its timeout before trying reCAPTCHA, which reads as the
+  // verification having hung.
+  func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+    NSLog("Remote notification registration failed, phone sign-in will use reCAPTCHA: \(error.localizedDescription)")
+  }
+
   func application(
     _ application: UIApplication,
     didReceiveRemoteNotification notification: [AnyHashable: Any],
