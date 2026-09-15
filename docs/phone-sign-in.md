@@ -103,20 +103,27 @@ verdicts. Sideloaded debug builds fall back to reCAPTCHA.
 
 ## iOS pod setup, and why it looks the way it does
 
-React Native Firebase v26 resolves Firebase through Swift Package Manager by default. SPM
-products are automatic libraries, so under this project's static linkage each pod embeds
-its own copy of Firebase and they collide at link time. The Podfile therefore sets
-`$RNFirebaseDisableSPM = true` and resolves Firebase through CocoaPods instead.
+Three settings in the Podfile are load-bearing, and each one is there for a reason that is
+not obvious from reading it.
 
-That in turn hits the older problem: Firebase's Swift pods cannot build as static libraries
-unless the Objective-C pods they import publish module maps. Four pods are given
-`:modular_headers => true` individually rather than turning on `use_modular_headers!`
-globally, which would change header resolution for all 105 pods.
+`$RNFirebaseDisableSPM = true`. React Native Firebase v26 resolves Firebase through Swift
+Package Manager by default. SPM products are automatic libraries, so each pod embeds its
+own copy of Firebase and they collide at link time; RNFB's own installer refuses the
+combination outright. Resolving through CocoaPods is the opt-out it documents.
+
+`use_frameworks! :linkage => :static`, now the default rather than an opt-in env var.
+Firebase's Swift pods cannot be plain static libraries: the Objective-C pods they import
+publish no module maps, so Firebase's umbrella header cannot find `FirebaseAuth-Swift.h`.
+Static frameworks give every pod a module without changing how it is distributed.
+
+`:modular_headers => true` on four pods. Belt and braces for the same problem, scoped
+rather than `use_modular_headers!` globally, which would change header resolution for all
+105 pods.
 
 Worth knowing: Firebase is deprecating CocoaPods, and new versions stop being published
 there after **October 2026**. Existing versions keep working. Moving to SPM before then
-means moving the app to dynamic linkage, which is a larger change than it sounds - budget
-for it rather than discovering it at the deadline.
+means moving the app to dynamic linkage - budget for it rather than discovering it at the
+deadline.
 
 ## Known gaps
 

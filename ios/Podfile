@@ -8,18 +8,27 @@ require Pod::Executable.execute_command('node', ['-p',
 platform :ios, min_ios_version_supported
 prepare_react_native_project!
 
+$RNFirebaseDisableSPM = true
+
 # Keep application warnings visible while preventing third-party pod source
 # warnings from overwhelming Xcode's issue navigator.
 inhibit_all_warnings!
 
-linkage = ENV['USE_FRAMEWORKS']
-if linkage != nil
-  Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
-  use_frameworks! :linkage => linkage.to_sym
-end
+# Firebase's Swift pods cannot be plain static libraries: the Objective-C pods they import
+# publish no module maps, and Firebase's umbrella header then cannot find
+# FirebaseAuth-Swift.h. Linking pods as static frameworks gives every pod a module without
+# changing how they are distributed. USE_FRAMEWORKS still overrides for experiments.
+linkage = ENV['USE_FRAMEWORKS'] || 'static'
+Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
+use_frameworks! :linkage => linkage.to_sym
 
 target 'FormBae' do
   config = use_native_modules!
+
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'FirebaseAuthInterop', :modular_headers => true
+  pod 'FirebaseAppCheckInterop', :modular_headers => true
+  pod 'RecaptchaInterop', :modular_headers => true
 
   use_react_native!(
     :path => config[:reactNativePath],

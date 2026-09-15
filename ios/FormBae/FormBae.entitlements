@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Phone sign-in verifies the device with a silent push. Without this capability
+	     every verification falls back to a reCAPTCHA sheet. Xcode swaps this for
+	     "production" when the build is distributed. -->
+	<key>aps-environment</key>
+	<string>development</string>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:formbae.in</string>
