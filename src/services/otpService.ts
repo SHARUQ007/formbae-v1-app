@@ -141,7 +141,10 @@ export function translateFirebaseError(error: unknown): OtpError {
   if (code.startsWith('app/') || /no firebase app|default app|has been created/i.test(message)) {
     return new OtpError('UNAVAILABLE', 'This build isn’t connected to Firebase yet, so codes can’t be sent.');
   }
-  return new OtpError('UNAVAILABLE', 'We couldn’t verify this number right now. Please try again.');
+  // The code is appended in development only: the screen otherwise shows one of a handful
+  // of sentences and the actual reason is only visible to whoever is watching Metro.
+  const suffix = __DEV__ && code ? ` [${code}]` : '';
+  return new OtpError('UNAVAILABLE', `We couldn’t verify this number right now. Please try again.${suffix}`);
 }
 
 async function sendCode(phone: string) {

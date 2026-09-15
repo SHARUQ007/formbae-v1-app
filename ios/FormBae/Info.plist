@@ -91,6 +91,13 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<!-- Phone sign-in verifies the device with a silent push, and iOS only delivers one to
+	     an app that declares it handles them. Without this the push is dropped and
+	     verification falls back to the reCAPTCHA sheet. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
