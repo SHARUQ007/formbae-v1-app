@@ -4,7 +4,8 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
-import { fetchPaymentStatus, runNativeCheckout } from '../../services/paymentService';
+import { fetchPaymentStatus } from '../../services/paymentService';
+import { fetchStoreProducts, purchaseStoreProduct, restoreStorePurchases, StorePurchaseError } from '../../services/storePurchaseService';
 import { loadProfileSettingsCached, peekProfileSettingsCached } from '../../services/preloadService';
 import { useAuthStore } from '../../store/authStore';
 import type { RootStackParamList } from '../../navigation/types';
@@ -59,10 +60,13 @@ export function SubscriptionRenewalScreen({ navigation }: Props) {
   const benefitWidth = Math.max(280, viewportWidth - (spacing.lg * 2));
   const compactViewport = viewportHeight < 760;
   const carouselRef = useRef<ScrollView>(null);
-  const { user, status, refreshStatus, logout } = useAuthStore();
+  const { status, refreshStatus, logout } = useAuthStore();
   const [plans, setPlans] = useState<PaymentPlan[]>([]);
   const [selectedId, setSelectedId] = useState('');
-  const [paywallId, setPaywallId] = useState('renewal-autopay-49');
+  // The store's own localised prices, keyed by product id. Nothing here formats money:
+  // the store is the one charging, and its sheet is what the trainee will see.
+  const [storePrices, setStorePrices] = useState<Record<string, string>>({});
+  const [restoring, setRestoring] = useState(false);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -84,7 +88,11 @@ export function SubscriptionRenewalScreen({ navigation }: Props) {
       }
       setPlans(availablePlans);
       setSelectedId((current) => availablePlans.some((plan) => plan.planId === current) ? current : availablePlans[0]?.planId || '');
-      setPaywallId(data.paywallId || availablePlans[0]?.paywallId || 'renewal-autopay-49');
+      // A plan whose product the store will not return cannot be renewed, and is shown
+      // without a price rather than at one we invented.
+      const ids = availablePlans.map((plan) => plan.storeProductId || '').filter(Boolean);
+      const products = await fetchStoreProducts(ids).catch(() => []);
+      setStorePrices(Object.fromEntries(products.map((product) => [product.productId, product.priceString])));
     } catch (error) {
       Alert.alert('Could not load renewal options', error instanceof Error ? error.message : 'Please try again.');
     } finally {
@@ -106,24 +114,42 @@ export function SubscriptionRenewalScreen({ navigation }: Props) {
       .catch(() => undefined);
   }, []);
 
+  const restore = async () => {
+    setRestoring(true);
+    try {
+      const result = await restoreStorePurchases();
+      if (!result.active) {
+        Alert.alert('Nothing to restore', 'We couldn’t find an active subscription on this store account.');
+        return;
+      }
+      navigation.replace('SubscriptionSuccess', {
+        planName: plans.find((plan) => plan.planId === selectedId)?.planName || 'FormBae',
+        nextScreen: result.status?.recommendedNextScreen,
+        renewal: true,
+      });
+    } catch (error) {
+      if (error instanceof StorePurchaseError && error.code === 'CANCELLED') return;
+      Alert.alert('Restore issue', error instanceof Error && error.message ? error.message : 'We couldn’t restore your subscription.');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
   const renew = async () => {
     const plan = plans.find((item) => item.planId === selectedId) || plans[0];
     if (!plan || paying) return;
     setPaying(true);
     try {
-      const result = await runNativeCheckout({
-        plan,
-        user: {
-          name: status?.name || user?.name || 'FormBae Trainee',
-          mobile: status?.phone || user?.mobile || '',
-          email: status?.email,
-        },
-        paywallId: plan.paywallId || paywallId,
-        requireRecurring: inGrace,
-      });
-      if (result.cancelled) return;
-      if (!result.success) {
-        Alert.alert('Renewal issue', result.error || 'Your renewal could not be completed. Please try again.');
+      if (!plan.storeProductId) {
+        Alert.alert('Not available yet', 'This plan isn’t available in your store right now. Please try again shortly.');
+        return;
+      }
+      // The membership is a store subscription, so this renews through the store like any
+      // other. A lapsed subscription the trainee already re-bought elsewhere is picked up
+      // by "Restore" below rather than charged again here.
+      const result = await purchaseStoreProduct(plan.storeProductId);
+      if (!result.active) {
+        Alert.alert('Almost there', 'Your renewal is still being confirmed. We’ll restore your access as soon as it clears.');
         return;
       }
       navigation.replace('SubscriptionSuccess', {
@@ -132,7 +158,8 @@ export function SubscriptionRenewalScreen({ navigation }: Props) {
         renewal: true,
       });
     } catch (error) {
-      Alert.alert('Could not finish renewal', error instanceof Error ? error.message : 'Your payment may still be processing. Check its status in a moment.');
+      if (error instanceof StorePurchaseError && error.code === 'CANCELLED') return;
+      Alert.alert('Renewal issue', error instanceof Error && error.message ? error.message : 'Your renewal could not be completed. Please try again.');
     } finally {
       setPaying(false);
     }
@@ -281,7 +308,7 @@ export function SubscriptionRenewalScreen({ navigation }: Props) {
                     <Text style={styles.planBilling}>{plan.billing === 'recurring' ? 'Renews monthly · cancel anytime' : 'One-time payment'}</Text>
                   </View>
                   <View style={styles.priceCopy}>
-                    <Text style={styles.planPrice}>₹{(plan.amount / 100).toLocaleString('en-IN')}</Text>
+                    <Text style={styles.planPrice}>{storePrices[plan.storeProductId || ''] || '—'}</Text>
                     {plan.billing === 'recurring' ? <Text style={styles.pricePeriod}>per month</Text> : null}
                   </View>
                 </TouchableOpacity>
@@ -292,6 +319,11 @@ export function SubscriptionRenewalScreen({ navigation }: Props) {
         )}
 
         <PrimaryButton title="Continue my transformation" icon="arrow-right" onPress={renew} loading={paying} disabled={!plans.length || loading} size="lg" style={styles.renewButton} />
+        {/* Somebody who renewed on another device, or reinstalled, gets their access back
+            here rather than paying a second time. Apple requires it to exist. */}
+        <TouchableOpacity onPress={restore} disabled={restoring} accessibilityRole="button" accessibilityLabel="Restore purchases" style={styles.restoreRow}>
+          <Text style={styles.restoreText}>{restoring ? 'Restoring…' : 'Restore purchases'}</Text>
+        </TouchableOpacity>
         <View style={styles.checkoutMetaRow}>
           {plans.some((plan) => plan.planId === selectedId && plan.billing === 'recurring') ? (
             <Text style={styles.renewalDisclosure}>Monthly renewal · cancel anytime</Text>
@@ -356,6 +388,8 @@ const styles = StyleSheet.create({
   pricePeriod: { ...typography.caption, color: colors.inkSubtle },
   radio: { width: 23, height: 23, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.borderStrong },
   radioSelected: { backgroundColor: colors.primaryAction, borderColor: colors.primaryAction },
+  restoreRow: { alignSelf: 'center', paddingVertical: spacing.xs },
+  restoreText: { ...typography.caption, color: colors.gold, fontWeight: '600' },
   renewButton: { marginTop: spacing.sm },
   checkoutMetaRow: { minHeight: 28, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, paddingHorizontal: spacing.xs, marginTop: spacing.xs },
   renewalDisclosure: { ...typography.caption, color: colors.inkSubtle, flex: 1 },
