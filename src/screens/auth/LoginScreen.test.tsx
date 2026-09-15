@@ -71,7 +71,7 @@ describe('LoginScreen', () => {
     mockStartPhoneVerification.mockReset();
     mockStartPhoneVerification.mockResolvedValue({ sessionId: 'otp-1' });
     mockLogin.mockReset();
-    mockLogin.mockRejectedValue(new ApiError('Verify your mobile number to continue.', 401, { code: 'OTP_REQUIRED' }));
+    mockLogin.mockRejectedValue(new ApiError('Session expired. Please log in again.', 401, { detail: { code: 'OTP_REQUIRED' } }));
     mockReplace.mockReset();
     jest
       .spyOn(AccessibilityInfo, 'announceForAccessibility')
@@ -208,7 +208,7 @@ describe('LoginScreen', () => {
     new ApiError('Account disabled', 403),
   ])('keeps a code that could not be sent on this page: %s', async error => {
     // Verification is on, so the send is what fails here.
-    mockLogin.mockRejectedValue(new ApiError('Verify your mobile number to continue.', 401, { code: 'OTP_REQUIRED' }));
+    mockLogin.mockRejectedValue(new ApiError('Session expired. Please log in again.', 401, { detail: { code: 'OTP_REQUIRED' } }));
     mockStartPhoneVerification.mockRejectedValue(error);
     const { navigation, renderer } = renderLogin('login');
     renderers.push(renderer);

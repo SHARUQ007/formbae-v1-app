@@ -18,7 +18,7 @@ import { KeyboardScreen } from '../../components/KeyboardScreen';
 import { Logo } from '../../components/Logo';
 import { OtpCodeInput } from '../../components/OtpCodeInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
-import { ApiError } from '../../services/apiClient';
+import { apiErrorCode } from '../../services/apiClient';
 import { OTP_CODE_LENGTH, confirmCode, endVerification, getSession, resendCode } from '../../services/otpService';
 import { useAuthStore } from '../../store/authStore';
 import { resolveOnboardingInitialRoute, resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
@@ -29,16 +29,6 @@ import { typography } from '../../theme/typography';
 import type { AuthStackParamList, RootStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'VerifyOtp'>;
-
-/** The backend's answer to a sign-in, read by code rather than by message.
- *
- * apiClient gives every 401 the same "Session expired" text, so the only reliable signal
- * is the code the backend puts in the payload.
- */
-function responseCode(error: unknown): string {
-  if (!(error instanceof ApiError)) return '';
-  return String((error.payload as { code?: string } | undefined)?.code || '');
-}
 
 function formatCountdown(ms: number) {
   const seconds = Math.max(0, Math.ceil(ms / 1000));
@@ -122,7 +112,7 @@ export function VerifyOtpScreen({ navigation, route }: Props) {
       verifiedTokenRef.current = token;
       await signIn(token, needsAccount);
     } catch (submitError) {
-      const failure = responseCode(submitError);
+      const failure = apiErrorCode(submitError);
       if (failure === 'ACCOUNT_NOT_FOUND') {
         // Verified, but new here. Ask for a name and reuse the same token - no second SMS.
         setNeedsAccount(true);

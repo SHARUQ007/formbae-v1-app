@@ -187,6 +187,21 @@ async function measuredRequest<T>(path: string, options: RequestOptions): Promis
   }
 }
 
+/**
+ * The backend's own name for a failure, as opposed to the sentence shown to a person.
+ *
+ * Looked for in two places because the backend sends it in two shapes: routes that build a
+ * JSONResponse put it at the top level, while anything raised as an HTTPException is
+ * wrapped by FastAPI into {"detail": {...}}. Reading only the first missed every raised
+ * one - so an OTP failure read as an unrecognised 401 and surfaced as "Session expired",
+ * and a request for verification was never noticed at all.
+ */
+export function apiErrorCode(error: unknown): string {
+  if (!(error instanceof ApiError)) return '';
+  const payload = error.payload as { code?: unknown; detail?: { code?: unknown } } | undefined;
+  return String(payload?.code || payload?.detail?.code || '');
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = (options.method || 'GET').toUpperCase();
   const token = options.token !== undefined ? options.token : authToken;

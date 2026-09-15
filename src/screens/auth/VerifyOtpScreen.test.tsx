@@ -101,7 +101,7 @@ it('a number with no account asks for a name and reuses the same verification', 
 });
 
 it('a verification the backend rejects starts the whole thing over', async () => {
-  mockLogin.mockRejectedValue(new ApiError('Session expired. Please log in again.', 401, { code: 'OTP_PHONE_MISMATCH' }));
+  mockLogin.mockRejectedValue(new ApiError('Session expired. Please log in again.', 401, { detail: { code: 'OTP_PHONE_MISMATCH' } }));
   await render();
   await act(async () => { await codeInput().props.onComplete('123456'); });
   expect(navigation.replace).toHaveBeenCalledWith('Login', { mode: 'login', mobile: '9876543210', reduceMotion: true });

@@ -26,7 +26,7 @@ import { Logo } from '../../components/Logo';
 import { startPhoneVerification } from '../../services/otpService';
 import { useAuthStore } from '../../store/authStore';
 import { resolveOnboardingInitialRoute, resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
-import { ApiError } from '../../services/apiClient';
+import { apiErrorCode } from '../../services/apiClient';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
@@ -166,9 +166,7 @@ export function LoginScreen({ navigation, route }: Props) {
         rootNav?.replace(root === 'Main' ? 'Splash' : root);
       }
     } catch (submitError) {
-      const failure = submitError instanceof ApiError
-        ? String((submitError.payload as { code?: string } | undefined)?.code || '')
-        : '';
+      const failure = apiErrorCode(submitError);
 
       // Verification is on. Send the code and hand over to the verify screen, which settles
       // whether the number has an account after the code checks out - so an unknown number
