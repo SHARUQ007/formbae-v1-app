@@ -44,11 +44,27 @@ target 'FormBae' do
           build_configuration.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios_version_supported
         end
         build_configuration.build_settings['OTHER_LIBTOOLFLAGS'] = '$(inherited) -no_warning_for_no_symbols'
+
       end
 
       pod_target.shell_script_build_phases.each do |phase|
         if phase.name&.include?('[Hermes] Replace Hermes for the right configuration')
           phase.always_out_of_date = '1'
+        end
+
+        # React Native ships its core, its dependencies and Hermes as separate Debug and
+        # Release builds, and three script phases swap the right one in. Each decides which
+        # by grepping GCC_PREPROCESSOR_DEFINITIONS for DEBUG=1 - a setting CocoaPods never
+        # puts on pod targets, so all three always chose Release. In a Debug build that
+        # links the Release core, whose Sealable has no out-of-line constructor because the
+        # implementation sits behind REACT_NATIVE_DEBUG; RNSVG and RNGestureHandler are
+        # compiled with that flag and fail to link. Xcode always sets CONFIGURATION, so ask
+        # it instead.
+        if phase.shell_script&.include?('grep -q "DEBUG=1"')
+          phase.shell_script = phase.shell_script.sub(
+            'CONFIG="Release"',
+            %{CONFIG="Release"\n      if [ "$CONFIGURATION" = "Debug" ]; then CONFIG="Debug"; fi}
+          )
         end
       end
     end
