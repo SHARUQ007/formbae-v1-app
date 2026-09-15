@@ -101,6 +101,19 @@
 				<string>formbae</string>
 			</array>
 		</dict>
+		<!-- Where phone sign-in's reCAPTCHA sheet returns. Firebase documents using
+		     REVERSED_CLIENT_ID here, but that key only exists once Google Sign-In is
+		     enabled on the project; without it the scheme is the bundle id, which is what
+		     Auth.auth().canHandle(url) looks for in AppDelegate. Verification opens the
+		     sheet and then hangs with no error if this is missing. -->
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.formbae.firebaseauth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.formbae</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>
