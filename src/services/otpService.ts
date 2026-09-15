@@ -147,14 +147,28 @@ export function translateFirebaseError(error: unknown): OtpError {
   return new OtpError('UNAVAILABLE', `We couldn’t verify this number right now. Please try again.${suffix}`);
 }
 
+/**
+ * Skip Firebase's proof that the request came from the real app.
+ *
+ * Only ever true by hand, and only while the number being used is registered under
+ * Authentication -> Settings -> "Phone numbers for testing". Those numbers never send an
+ * SMS, so there is nothing to verify and nothing to spend; turning this on removes the
+ * reCAPTCHA sheet that a simulator always falls back to, because a simulator has no
+ * silent push.
+ *
+ * Against a real number it does not degrade, it breaks: verification is genuinely
+ * required, the request goes up without a client identifier, and the SDK reports the
+ * unmapped response as `auth/internal-error` - no SMS, no useful message. It used to be
+ * on for every debug build, which is exactly the failure that produced.
+ *
+ * `__DEV__` guards it a second time so a release build ignores it even if this is left
+ * on; shipped, it would let anyone holding the API key spend the SMS budget.
+ */
+const USE_TEST_NUMBERS_WITHOUT_VERIFICATION = false;
+
 async function sendCode(phone: string) {
   const { getAuth, signInWithPhoneNumber } = firebaseAuth();
-  if (__DEV__) {
-    // Development only, and it must stay that way. Firebase proves a request comes from the
-    // real app before sending a code - silently by push, or by showing a reCAPTCHA sheet
-    // when the push does not land. Turning that off removes the web step while testing,
-    // and it only works alongside a number registered under "Phone numbers for testing".
-    // Shipped, it would let anyone holding the API key spend the SMS budget.
+  if (__DEV__ && USE_TEST_NUMBERS_WITHOUT_VERIFICATION) {
     try {
       getAuth().settings.appVerificationDisabledForTesting = true;
     } catch {
