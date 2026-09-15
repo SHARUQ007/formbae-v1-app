@@ -112,11 +112,14 @@ the app has to be allowed to receive the push, and Firebase has to be able to se
       service. It downloads once, so keep it. Upload it at Project settings → Cloud
       Messaging with its Key ID and your Team ID. The capability alone only lets the app
       receive the push; this is what lets Firebase send one
+- [ ] **SMS region policy**: Authentication → Settings → allow `IN`. Not hardening - a new
+      project denies every region, and until India is allowed every verification fails with
+      `auth/operation-not-allowed`, whatever else is configured. Keep it as an allowlist of
+      just `IN` rather than opening it up
 - [ ] Enable **App Check** (Play Integrity, App Attest), then enforce it on Authentication
-- [ ] **SMS region policy**: allow `IN` only
 - [ ] Set a **Cloud Billing budget alert** on the phone-auth SKU
 
-Those last three are the actual SMS-abuse controls. The backend's rate limits sit
+Those three are the actual SMS-abuse controls. The backend's rate limits sit
 *downstream* of the spend — Firebase sends from the device, before any request reaches us.
 What they cap is what sign-in costs us: lookups, token verification, and the account
 creation that writes three documents per new number.
@@ -152,6 +155,30 @@ Worth knowing: Firebase is deprecating CocoaPods, and new versions stop being pu
 there after **October 2026**. Existing versions keep working. Moving to SPM before then
 means moving the app to dynamic linkage - budget for it rather than discovering it at the
 deadline.
+
+## Diagnosing a failure
+
+The SDK collapses most failures into `auth/operation-not-allowed` or a generic message, and
+the device console does not carry the JS error. Ask Firebase directly instead - no app, no
+device, no build in the way:
+
+```
+curl -s -X POST "https://identitytoolkit.googleapis.com/v1/accounts:sendVerificationCode?key=$API_KEY" \
+  -H "Content-Type: application/json" -d '{"phoneNumber":"+919961634121"}'
+```
+
+`API_KEY` is `API_KEY` in `GoogleService-Info.plist`. The error it returns is the specific
+one, where the app only ever sees the category. It is how the region policy above was
+found, after a long detour through entitlements, URL schemes and push configuration.
+
+For failures that really are on the device, attach a console and reproduce:
+
+```
+xcrun devicectl device process launch --device <udid> --console --terminate-existing com.formbae
+```
+
+Do not pipe it through `tail` - the output buffers and nothing appears until the process
+ends. That hid a failed build earlier, and then an empty log.
 
 ## Known gaps
 
