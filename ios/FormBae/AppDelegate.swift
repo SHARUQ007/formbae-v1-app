@@ -58,7 +58,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
   // reCAPTCHA sheet away on iOS. Without the token forwarded here every verification
   // falls back to the webview.
   func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
-    Auth.auth().setAPNSToken(deviceToken, type: .unknown)
+    // Named rather than left as .unknown. A debug build is issued a sandbox token and a
+    // release build a production one, and asking Firebase to work it out gets it wrong
+    // often enough that the verification push is sent to the wrong APNs environment,
+    // never arrives, and the whole thing falls back to the reCAPTCHA sheet.
+#if DEBUG
+    Auth.auth().setAPNSToken(deviceToken, type: .sandbox)
+#else
+    Auth.auth().setAPNSToken(deviceToken, type: .prod)
+#endif
   }
 
   // And the other half. Registration fails on a build whose App ID has no Push
