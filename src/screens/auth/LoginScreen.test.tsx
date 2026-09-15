@@ -5,7 +5,6 @@ import { LoginScreen, normalizeIndianMobile } from './LoginScreen';
 import { ApiError } from '../../services/apiClient';
 
 const mockStartPhoneVerification = jest.fn();
-const mockFetchPolicy = jest.fn();
 const mockLogin = jest.fn();
 const mockReplace = jest.fn();
 
@@ -13,10 +12,6 @@ const mockReplace = jest.fn();
 // only sends the code. With it switched off it signs in here directly.
 jest.mock('../../services/otpService', () => ({
   startPhoneVerification: (...args: unknown[]) => mockStartPhoneVerification(...args),
-}));
-jest.mock('../../services/appUpdateService', () => ({
-  fetchAppVersionPolicy: (...args: unknown[]) => mockFetchPolicy(...args),
-  otpRequired: (policy: { otp?: { enabled?: boolean } } | null) => Boolean(policy?.otp?.enabled),
 }));
 jest.mock('../../store/authStore', () => ({ useAuthStore: () => ({ login: mockLogin }) }));
 
@@ -75,9 +70,8 @@ describe('LoginScreen', () => {
   beforeEach(() => {
     mockStartPhoneVerification.mockReset();
     mockStartPhoneVerification.mockResolvedValue({ sessionId: 'otp-1' });
-    mockFetchPolicy.mockReset();
-    mockFetchPolicy.mockResolvedValue({ otp: { enabled: true } });
     mockLogin.mockReset();
+    mockLogin.mockRejectedValue(new ApiError('Verify your mobile number to continue.', 401, { code: 'OTP_REQUIRED' }));
     mockReplace.mockReset();
     jest
       .spyOn(AccessibilityInfo, 'announceForAccessibility')
@@ -213,6 +207,8 @@ describe('LoginScreen', () => {
     new ApiError('Route not found', 404),
     new ApiError('Account disabled', 403),
   ])('keeps a code that could not be sent on this page: %s', async error => {
+    // Verification is on, so the send is what fails here.
+    mockLogin.mockRejectedValue(new ApiError('Verify your mobile number to continue.', 401, { code: 'OTP_REQUIRED' }));
     mockStartPhoneVerification.mockRejectedValue(error);
     const { navigation, renderer } = renderLogin('login');
     renderers.push(renderer);
@@ -249,7 +245,7 @@ describe('LoginScreen', () => {
 
   describe('when verification is switched off', () => {
     beforeEach(() => {
-      mockFetchPolicy.mockResolvedValue({ otp: { enabled: false } });
+      mockLogin.mockReset();
       mockLogin.mockResolvedValue({ status: { recommendedNextScreen: 'home' } });
     });
 
@@ -274,16 +270,13 @@ describe('LoginScreen', () => {
       expect(navigation.replace).toHaveBeenCalledWith('Login', { mode: 'signup', mobile: '9876543210', reduceMotion: true });
     });
 
-    it('a policy that cannot be read still verifies, and the backend decides', async () => {
-      // Failing to reach the setting must not be a way to skip verification: the sign-in that
-      // follows is refused server-side if it was in fact required.
-      mockFetchPolicy.mockRejectedValue(new Error('offline'));
+    it('does not send a code when the backend did not ask for one', async () => {
       const { renderer } = renderLogin('login');
       renderers.push(renderer);
       act(() => renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('9876543210'));
       await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Send code' }).props.onPress());
 
-      expect(mockLogin).toHaveBeenCalled();
+      expect(mockStartPhoneVerification).not.toHaveBeenCalled();
     });
   });
 });

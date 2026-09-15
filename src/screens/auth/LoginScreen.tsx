@@ -23,7 +23,6 @@ import { FormInput } from '../../components/FormInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { KeyboardScreen } from '../../components/KeyboardScreen';
 import { Logo } from '../../components/Logo';
-import { fetchAppVersionPolicy, otpRequired } from '../../services/appUpdateService';
 import { startPhoneVerification } from '../../services/otpService';
 import { useAuthStore } from '../../store/authStore';
 import { resolveOnboardingInitialRoute, resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
@@ -150,39 +149,53 @@ export function LoginScreen({ navigation, route }: Props) {
       // Only chooses a screen. The backend decides for itself whether this sign-in needed a
       // verification, so skipping it here when the setting says so cannot let anyone in -
       // a sign-in that should have been verified is refused there.
-      const verificationRequired = otpRequired(await fetchAppVersionPolicy().catch(() => null));
-      if (!verificationRequired) {
-        const response = await login(digits, isSignup ? name.trim() || undefined : undefined, isSignup);
-        await finishScreenTransition();
-        const rootNav = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
-        const root = resolveRootRoute(response.status.recommendedNextScreen);
-        if (root === 'Onboarding') {
-          rootNav?.replace('Onboarding', { screen: resolveOnboardingInitialRoute(response.status.recommendedNextScreen) });
-        } else if (root === 'PaidTransition') {
-          rootNav?.replace('PaidTransition', { screen: resolvePaidInitialRoute(response.status.recommendedNextScreen) });
-        } else {
-          rootNav?.replace(root === 'Main' ? 'Splash' : root);
+      // Ask, rather than deciding from a copy of the setting. The backend answers
+      // OTP_REQUIRED before it looks anything up, so this costs one round trip when
+      // verification is on and removes the way this used to go wrong: a policy read that
+      // failed made the app think verification was off, sign in directly, and bounce an
+      // unknown number to signup - then take the verification path on the next attempt.
+      const response = await login(digits, isSignup ? name.trim() || undefined : undefined, isSignup);
+      await finishScreenTransition();
+      const rootNav = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
+      const root = resolveRootRoute(response.status.recommendedNextScreen);
+      if (root === 'Onboarding') {
+        rootNav?.replace('Onboarding', { screen: resolveOnboardingInitialRoute(response.status.recommendedNextScreen) });
+      } else if (root === 'PaidTransition') {
+        rootNav?.replace('PaidTransition', { screen: resolvePaidInitialRoute(response.status.recommendedNextScreen) });
+      } else {
+        rootNav?.replace(root === 'Main' ? 'Splash' : root);
+      }
+    } catch (submitError) {
+      const failure = submitError instanceof ApiError
+        ? String((submitError.payload as { code?: string } | undefined)?.code || '')
+        : '';
+
+      // Verification is on. Send the code and hand over to the verify screen, which settles
+      // whether the number has an account after the code checks out - so an unknown number
+      // never gets bounced to signup mid-flow, and never costs a second code.
+      if (failure === 'OTP_REQUIRED') {
+        // Its own try: a send that fails here is inside the outer catch already, so an
+        // error thrown from it would escape unhandled instead of reaching the field.
+        try {
+          const session = await startPhoneVerification(`+91${digits}`);
+          await finishScreenTransition();
+          navigation.navigate('VerifyOtp', {
+            mobile: digits,
+            sessionId: session.sessionId,
+            mode: isSignup ? 'signup' : 'login',
+            name: isSignup ? name.trim() || undefined : undefined,
+            reduceMotion: motionPreference === 'reduce',
+          });
+        } catch (sendError) {
+          const message = sendError instanceof Error ? sendError.message : 'We could not send your code. Please try again.';
+          setPhoneError(message);
+          AccessibilityInfo.announceForAccessibility(message);
         }
         return;
       }
 
-      // Whether this number already has an account is settled after the code is checked,
-      // on the verify screen. Asking first would tell any caller which numbers are
-      // registered, which is exactly what sign-in should stop being able to do.
-      const session = await startPhoneVerification(`+91${digits}`);
-      await finishScreenTransition();
-      navigation.navigate('VerifyOtp', {
-        mobile: digits,
-        sessionId: session.sessionId,
-        mode: isSignup ? 'signup' : 'login',
-        name: isSignup ? name.trim() || undefined : undefined,
-        reduceMotion: motionPreference === 'reduce',
-      });
-    } catch (submitError) {
-      // Unverified sign-in is refused for a number that has no account yet, the same as it
-      // was before: send them to the signup form rather than to an error.
-      if (!isSignup && submitError instanceof ApiError && submitError.status === 404
-        && (submitError.payload as { code?: string } | undefined)?.code === 'ACCOUNT_NOT_FOUND') {
+      // Only reachable with verification off, where nothing has been sent yet.
+      if (!isSignup && failure === 'ACCOUNT_NOT_FOUND') {
         navigation.replace('Login', { mode: 'signup', mobile: digits, reduceMotion: motionPreference === 'reduce' });
         return;
       }
