@@ -60,10 +60,24 @@ let pending: PendingVerification | null = null;
 /**
  * Loaded on demand so @react-native-firebase/app does not initialise during cold start
  * for the signed-in trainees who never reach this screen.
+ *
+ * Loading it is also allowed to fail. Firebase registers native modules, and they are
+ * absent from a build with no Firebase config - and from an app binary older than the one
+ * the running JS was built against, which is what a reloading Metro leaves behind. Neither
+ * should reach anyone as a crash, so both surface as the same unavailable answer every
+ * other failure here uses.
  */
 function firebaseAuth() {
-  const module = require('@react-native-firebase/auth');
-  return { getAuth: module.getAuth, signInWithPhoneNumber: module.signInWithPhoneNumber, signOut: module.signOut };
+  try {
+    const module = require('@react-native-firebase/auth');
+    const { getAuth, signInWithPhoneNumber, signOut } = module;
+    if (typeof getAuth !== 'function' || typeof signInWithPhoneNumber !== 'function') {
+      throw new Error('Firebase auth module is incomplete');
+    }
+    return { getAuth, signInWithPhoneNumber, signOut };
+  } catch {
+    throw new OtpError('UNAVAILABLE', 'Phone sign-in isn’t available in this build of the app.');
+  }
 }
 
 function describe(verification: PendingVerification): OtpSession {
@@ -103,6 +117,7 @@ async function sendCode(phone: string) {
   try {
     return await signInWithPhoneNumber(getAuth(), phone);
   } catch (error) {
+    if (error instanceof OtpError) throw error;
     throw translateFirebaseError(error);
   }
 }

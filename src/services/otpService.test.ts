@@ -126,3 +126,19 @@ describe('Firebase error codes become something a screen can say', () => {
     await expect(startPhoneVerification('+919876543210')).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' });
   });
 });
+
+describe('a build without the Firebase native module', () => {
+  // The native modules are absent from a build with no Firebase config, and from an app
+  // binary older than the JS Metro is serving into it. Neither may reach anyone as a crash.
+  const unregistered = () => { throw new Error('Native module NativeRNFBTurboApp is not registered.'); };
+
+  it('reports itself unavailable rather than throwing the native error', async () => {
+    mockSignInWithPhoneNumber.mockImplementation(unregistered);
+    await expect(startPhoneVerification('+919876543210')).rejects.toMatchObject({ code: 'UNAVAILABLE' });
+  });
+
+  it('never lets ending a verification take the app down', async () => {
+    mockSignOut.mockImplementation(unregistered);
+    await expect(endVerification()).resolves.toBeUndefined();
+  });
+});
