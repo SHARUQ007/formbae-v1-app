@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, ScrollView, Text, TouchableOpacity, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Alert, Linking, Platform, ScrollView, Text, TouchableOpacity, StyleSheet, useWindowDimensions, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
@@ -7,13 +7,13 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import { ScreenContainer } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState } from '../../components/States';
-import { fetchPaymentStatus, runNativeCheckout } from '../../services/paymentService';
+import { fetchPaymentStatus } from '../../services/paymentService';
+import { fetchStoreProducts, purchaseStoreProduct, restoreStorePurchases, StorePurchaseError } from '../../services/storePurchaseService';
 import { displayBehavioralNotification } from '../../services/notificationService';
 import { useAuthStore } from '../../store/authStore';
 import { resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
 import type { HouseholdSuggestion, PaymentPlan } from '../../types/api';
 import type { OnboardingStackParamList, RootStackParamList } from '../../navigation/types';
-import { rupees } from '../../utils/format';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
@@ -21,8 +21,6 @@ import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'PaymentRequired'>;
 
-const secondsUntil = (expiresAt: string) => Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / 1000) || 0);
-const formatTimer = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 const PLUS_ONE_PEOPLE = ['Mother', 'Father', 'Partner', 'Loved one'] as const;
 
 function planLabel(plan: PaymentPlan): string {
@@ -43,7 +41,7 @@ function benefitsForPlan(plan: PaymentPlan, included: string): string[] {
         'Personalized workout and diet plans',
         'Daily guidance and progress tracking',
       ];
-  return [...core, '5-day refund money-back policy', 'Professional coach upgrade at ₹999'];
+  return [...core, 'Cancel anytime in your store account', 'Professional coach upgrade available'];
 }
 
 /** Names the people this plan covers, from what the survey implies. */
@@ -81,22 +79,25 @@ function useDensity() {
 
 export function PaymentRequiredScreen({ navigation }: Props) {
   const density = useDensity();
-  const { user, status, refreshStatus, logout } = useAuthStore();
+  const { user, status, refreshStatus } = useAuthStore();
   const [plans, setPlans] = useState<PaymentPlan[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
-  const [paywallId, setPaywallId] = useState<string>('app-paywall');
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
   const [suggestion, setSuggestion] = useState<HouseholdSuggestion[]>([]);
-  const [offerExpiresAt, setOfferExpiresAt] = useState('');
-  const [offerSeconds, setOfferSeconds] = useState(0);
+  const [storePrices, setStorePrices] = useState<Record<string, string>>({});
+  const [restoring, setRestoring] = useState(false);
   const [plusOnePersonIndex, setPlusOnePersonIndex] = useState(0);
 
   const selectedPlan = plans.find((plan) => plan.planId === selectedId) || plans[0];
   const included = includedPeople(selectedPlan, suggestion);
-  const selectedFullPrice = selectedPlan?.originalAmount && selectedPlan.originalAmount > selectedPlan.amount
-    ? selectedPlan.originalAmount
-    : 0;
+  /**
+   * The store's own price, already localised and already carrying the right symbol.
+   * Nothing here formats money: a price we rendered ourselves could disagree with the
+   * sheet the user is about to be shown, and the store is the one charging.
+   */
+  const priceFor = (plan?: PaymentPlan) => (plan?.storeProductId ? storePrices[plan.storeProductId] || '' : '');
+  const selectedPrice = priceFor(selectedPlan);
 
   const routeAfterPaid = useCallback((screen: string) => {
     const rootNav = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
@@ -124,37 +125,16 @@ export function PaymentRequiredScreen({ navigation }: Props) {
         const preferred = data.plans?.find((plan) => plan.popular) || data.plans?.[0];
         setSelectedId(preferred?.planId || '');
         setSuggestion(data.householdSuggestion || []);
-        setPaywallId(data.paywallId || data.plans?.[0]?.paywallId || 'app-paywall');
-        setOfferExpiresAt(data.offerExpiresAt || '');
-        setOfferSeconds(data.offerExpiresAt ? secondsUntil(data.offerExpiresAt) : 0);
+        // A product the store does not return has not been created yet, or has not
+        // finished propagating, or is not sold in this storefront. Its plan is left
+        // without a price and cannot be bought, rather than shown at one we invented.
+        const ids = (data.plans || []).map((plan) => plan.storeProductId || '').filter(Boolean);
+        const products = await fetchStoreProducts(ids).catch(() => []);
+        setStorePrices(Object.fromEntries(products.map((product) => [product.productId, product.priceString])));
       })
       .catch(() => setPlans([]))
       .finally(() => setLoading(false));
   }, [routeAfterPaid, refreshStatus]);
-
-  useEffect(() => {
-    if (!offerExpiresAt) return;
-    let refreshed = false;
-    const updateTimer = () => {
-      const remaining = secondsUntil(offerExpiresAt);
-      setOfferSeconds(remaining);
-      if (remaining > 0 || refreshed) return;
-      refreshed = true;
-      setPlans((current) => current.map((plan) => plan.originalAmount ? { ...plan, amount: plan.originalAmount } : plan));
-      fetchPaymentStatus()
-        .then((data) => {
-          setPlans(data.plans || []);
-          setPaywallId(data.paywallId || data.plans?.[0]?.paywallId || 'app-paywall');
-          setSelectedId((current) => data.plans?.some((plan) => plan.planId === current)
-            ? current
-            : (data.plans?.find((plan) => plan.popular) || data.plans?.[0])?.planId || '');
-        })
-        .catch(() => undefined);
-    };
-    updateTimer();
-    const timer = setInterval(updateTimer, 1000);
-    return () => clearInterval(timer);
-  }, [offerExpiresAt]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -163,7 +143,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
     return () => clearInterval(timer);
   }, []);
 
-  const onPayNative = async () => {
+  const onBuy = async () => {
     const plan = plans.find((p) => p.planId === selectedId) || plans[0];
     if (!plan) {
       Alert.alert('No plan selected', 'Please choose a plan to continue.');
@@ -173,43 +153,59 @@ export function PaymentRequiredScreen({ navigation }: Props) {
       navigation.navigate('GiftPlanDetails', { planId: plan.planId });
       return;
     }
+    if (!plan.storeProductId || !storePrices[plan.storeProductId]) {
+      Alert.alert('Not available yet', 'This plan isn’t available in your store right now. Please try again shortly.');
+      return;
+    }
     setPaying(true);
     try {
-      // Members are derived server-side from the survey, so none are sent here.
-      const result = await runNativeCheckout({
-        plan,
-        user: {
-          name: status?.name || user?.name || 'FormBae Trainee',
-          mobile: status?.phone || user?.mobile || '',
-          email: status?.email,
-        },
-        paywallId: plan.paywallId || paywallId,
-      });
-      if (result.cancelled) return;
-      if (result.success) {
-        const fresh = await refreshStatus();
-        displayBehavioralNotification('paymentConfirmed').catch(() => undefined);
-        routeAfterPaid(fresh?.recommendedNextScreen || 'payment_sync');
+      // The store takes the money; what that bought is settled by the server, which asks
+      // RevenueCat rather than believing anything this screen sends.
+      const result = await purchaseStoreProduct(plan.storeProductId);
+      if (!result.active) {
+        Alert.alert('Almost there', 'Your purchase is still being confirmed. We’ll unlock your plan as soon as it clears.');
         return;
       }
-      Alert.alert('Payment issue', result.error || 'Payment could not be completed. Please try again.');
+      navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('SubscriptionSuccess', {
+        planName: plan.label || plan.planName,
+        nextScreen: result.status?.recommendedNextScreen,
+      });
+      displayBehavioralNotification('paymentConfirmed').catch(() => undefined);
+    } catch (error) {
+      // A cancelled purchase is a choice, not a failure, and gets no alert.
+      if (error instanceof StorePurchaseError && error.code === 'CANCELLED') return;
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'That purchase didn’t go through. Nothing has been charged.';
+      Alert.alert('Purchase issue', message);
     } finally {
       setPaying(false);
     }
   };
 
-  const onLogout = () => {
-    Alert.alert('Log out?', 'You can sign back in later to continue from this report.', [
-      { text: 'Stay', style: 'cancel' },
-      {
-        text: 'Log out',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-          navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Auth');
-        },
-      },
-    ]);
+  /**
+   * Apple requires a way to restore a purchase without buying again, reachable whether or
+   * not anything has been bought on this device. It is also the honest answer for anyone
+   * who paid on the website, reinstalled, or changed phone.
+   */
+  const onRestore = async () => {
+    setRestoring(true);
+    try {
+      const result = await restoreStorePurchases();
+      if (!result.active) {
+        Alert.alert('Nothing to restore', 'We couldn’t find a purchase on this store account.');
+        return;
+      }
+      navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('SubscriptionSuccess', {
+        planName: selectedPlan?.label || selectedPlan?.planName || 'FormBae',
+        nextScreen: result.status?.recommendedNextScreen,
+      });
+    } catch (error) {
+      if (error instanceof StorePurchaseError && error.code === 'CANCELLED') return;
+      Alert.alert('Restore issue', error instanceof Error && error.message ? error.message : 'We couldn’t restore your purchase.');
+    } finally {
+      setRestoring(false);
+    }
   };
 
   const openPolicy = (path: string) => {
@@ -235,16 +231,6 @@ export function PaymentRequiredScreen({ navigation }: Props) {
           <Feather name="chevron-left" size={13} color={colors.inkSubtle} />
           <Text style={styles.quietActionText}>Report</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={onLogout}
-          style={styles.quietAction}
-          activeOpacity={0.6}
-          accessibilityRole="button"
-          accessibilityLabel="Log out"
-        >
-          <Text style={styles.quietActionText}>Log out</Text>
-          <Feather name="log-out" size={11} color={colors.inkSubtle} />
-        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -260,18 +246,6 @@ export function PaymentRequiredScreen({ navigation }: Props) {
           </Text>
         </View>
 
-        {offerExpiresAt && !loading && plans.length ? (
-          <View style={[styles.offerBar, { minHeight: density.offerHeight }, offerSeconds === 0 && styles.offerBarExpired]}>
-            <View style={styles.offerLabel}>
-              <ClockArtwork expired={offerSeconds === 0} />
-              <Text style={[styles.offerDetail, offerSeconds === 0 && styles.offerDetailExpired]} numberOfLines={1}>
-                {offerSeconds === 0 ? 'Regular price applies' : 'Discounted price reserved'}
-              </Text>
-            </View>
-            {offerSeconds > 0 ? <Text style={[styles.offerTimer, { fontSize: density.offerTimer, lineHeight: density.offerTimer + 4 }]}>{formatTimer(offerSeconds)}</Text> : null}
-          </View>
-        ) : null}
-
         {loading ? (
           <LoadingState message="Loading plans…" />
         ) : plans.length > 1 ? (
@@ -286,7 +260,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
                   style={[styles.planChoice, plan.popular && styles.planChoicePopular, selected && styles.planChoiceSelected]}
                   accessibilityRole="radio"
                   accessibilityState={{ selected }}
-                  accessibilityLabel={`${planLabel(plan)}, ${rupees(plan.amount)} per month`}
+                  accessibilityLabel={`${planLabel(plan)}, ${priceFor(plan) || 'price unavailable'} per month`}
                 >
                   {plan.popular ? (
                     <View style={styles.popularBadge}>
@@ -298,7 +272,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
                       {planLabel(plan)}
                     </Text>
                     <Text style={styles.planChoicePrice} numberOfLines={1}>
-                      {rupees(plan.amount)}
+                      {priceFor(plan) || '—'}
                     </Text>
                     {(plan.memberLimit || 1) === 2 ? (
                       <Text style={[styles.planMeta, { fontSize: density.planMeta }]} numberOfLines={1}>{PLUS_ONE_PEOPLE[plusOnePersonIndex]}</Text>
@@ -316,8 +290,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
               <View style={styles.selectedHeadingCopy}>
                 <Text style={styles.selectedName}>Monthly · {(selectedPlan.memberLimit || 1) === 1 ? 'Just you' : planLabel(selectedPlan)}</Text>
                 <View style={styles.priceRow}>
-                  {selectedFullPrice ? <Text style={styles.selectedOriginalPrice}>{rupees(selectedFullPrice)}</Text> : null}
-                  <Text style={[styles.selectedPrice, { fontSize: density.price + 10, lineHeight: density.priceLine + 11 }]}>{rupees(selectedPlan.amount)}</Text>
+                  <Text style={[styles.selectedPrice, { fontSize: density.price + 10, lineHeight: density.priceLine + 11 }]}>{selectedPrice || '—'}</Text>
                   <Text style={styles.perMonth}>/ month</Text>
                 </View>
               </View>
@@ -335,7 +308,9 @@ export function PaymentRequiredScreen({ navigation }: Props) {
         ) : null}
 
         <View style={styles.checkoutCard}>
-          <Text style={styles.paymentNoteText}>Secure checkout through Razorpay · Access stays linked to this account</Text>
+          <Text style={styles.paymentNoteText}>
+            {Platform.OS === 'ios' ? 'Billed by the App Store' : 'Billed by Google Play'} · Access stays linked to this account
+          </Text>
           <View style={styles.contactField}>
             <Text style={styles.contactText} numberOfLines={1}>{checkoutName}</Text>
           </View>
@@ -347,39 +322,44 @@ export function PaymentRequiredScreen({ navigation }: Props) {
               !selectedPlan
                 ? 'Choose a plan'
                 : (selectedPlan.memberLimit || 1) > 1
-                  ? `Continue · ${rupees(selectedPlan.amount)}`
-                  : `Get started · ${rupees(selectedPlan.amount)}`
+                  ? `Continue · ${selectedPrice}`
+                  : `Get started · ${selectedPrice}`
             }
             icon="arrow-right"
-            onPress={onPayNative}
+            onPress={onBuy}
             loading={paying}
             size="lg"
             style={styles.payBtn}
           />
+          <TouchableOpacity
+            onPress={onRestore}
+            disabled={restoring}
+            accessibilityRole="button"
+            accessibilityLabel="Restore purchases"
+            style={styles.restoreRow}
+          >
+            <Text style={styles.restoreText}>{restoring ? 'Restoring…' : 'Restore purchases'}</Text>
+          </TouchableOpacity>
+          {/* Both stores require the terms of a subscription to be stated where it is
+              bought: what it costs, how long it runs, and that it renews itself. */}
+          <Text style={styles.renewalText}>
+            {`A monthly subscription${selectedPrice ? ` at ${selectedPrice}` : ''}. It renews every month until you cancel, `}
+            {Platform.OS === 'ios' ? 'in your Apple account settings.' : 'in your Google Play subscriptions.'}
+          </Text>
           <View style={styles.policyRow}>
             <Text style={styles.policyText}>By continuing, you agree to the </Text>
             <TouchableOpacity onPress={() => openPolicy('terms-of-use')} accessibilityRole="link">
-              <Text style={styles.policyLink}>FormBae policies</Text>
+              <Text style={styles.policyLink}>Terms of Use</Text>
             </TouchableOpacity>
             <Text style={styles.policyText}> and </Text>
-            <TouchableOpacity onPress={() => openPolicy('refund-policy')} accessibilityRole="link">
-              <Text style={styles.policyLink}>5-day refund policy</Text>
+            <TouchableOpacity onPress={() => openPolicy('privacy-policy')} accessibilityRole="link">
+              <Text style={styles.policyLink}>Privacy Policy</Text>
             </TouchableOpacity>
             <Text style={styles.policyText}>.</Text>
           </View>
         </View>
       </ScrollView>
     </ScreenContainer>
-  );
-}
-
-function ClockArtwork({ expired }: { expired: boolean }) {
-  const color = expired ? colors.inkSubtle : colors.gold;
-  return (
-    <Svg width="22" height="22" viewBox="0 0 24 24">
-      <Circle cx="12" cy="12" r="8.5" fill="none" stroke={color} strokeWidth="1.8" />
-      <Path d="M12 7.4v5l3.4 1.9" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
   );
 }
 
@@ -479,6 +459,9 @@ const styles = StyleSheet.create({
   contactField: { minHeight: 43, justifyContent: 'center', borderRadius: radius.md, backgroundColor: colors.primaryAction, paddingHorizontal: spacing.md },
   contactText: { ...typography.body, color: colors.onPrimary, fontSize: 14 },
   payBtn: { minHeight: 52 },
+  restoreRow: { alignSelf: 'center', paddingVertical: spacing.xs },
+  restoreText: { ...typography.caption, color: colors.primaryAction, fontWeight: '600' },
+  renewalText: { ...typography.caption, color: colors.inkSubtle, textAlign: 'center', lineHeight: 16 },
   policyRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   policyText: { ...typography.caption, color: colors.inkSubtle, fontSize: 10, lineHeight: 14 },
   policyLink: { ...typography.caption, color: colors.inkMuted, fontSize: 10, fontWeight: '700', lineHeight: 14, textDecorationLine: 'underline' },

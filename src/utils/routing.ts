@@ -1,7 +1,7 @@
 import type { RecommendedNextScreen } from '../types/api';
 import type { RootStackParamList } from '../navigation/types';
 
-export function resolveRootRoute(screen: RecommendedNextScreen): keyof RootStackParamList {
+export function resolveRootRoute(screen: RecommendedNextScreen): Exclude<keyof RootStackParamList, 'SubscriptionSuccess'> {
   switch (screen) {
     case 'home':
       return 'Main';
@@ -28,9 +28,9 @@ export function resolveRootRoute(screen: RecommendedNextScreen): keyof RootStack
 export function resolveOnboardingInitialRoute(screen: RecommendedNextScreen): keyof import('../navigation/types').OnboardingStackParamList {
   switch (screen) {
     case 'analysis_report':
-      return 'AnalysisReport';
     case 'payment':
-      return 'PaymentRequired';
+      // Returning unpaid members resume their report, including legacy payment statuses.
+      return 'AnalysisReport';
     case 'trainer_match':
       return 'TrainerMatch';
     case 'questionnaire':

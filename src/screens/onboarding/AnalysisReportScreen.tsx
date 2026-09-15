@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   Easing,
   Image,
@@ -16,7 +17,8 @@ import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenContainer, ScreenTitle } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
-import { ErrorState, LoadingState } from '../../components/States';
+import { ErrorState } from '../../components/States';
+import { ReportLoadingView } from './AnalysisLoadingScreen';
 import { useAsync } from '../../hooks/useAsync';
 import { fetchAnalysis } from '../../services/questionnaireService';
 import { useAuthStore } from '../../store/authStore';
@@ -30,15 +32,22 @@ type Props = NativeStackScreenProps<OnboardingStackParamList, 'AnalysisReport'>;
 const GOLD = '#f8d984';
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
-export function AnalysisReportScreen({ navigation }: Props) {
+export function AnalysisReportScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const { user, status } = useAuthStore();
-  const { data, loading, error, reload } = useAsync(() => fetchAnalysis());
+  const { user, status, logout } = useAuthStore();
+  const { data, loading, error, reload } = useAsync(() => fetchAnalysis(), [], { initialData: route.params });
   const report = data?.report ?? null;
   const [chartVisible, setChartVisible] = useState(false);
   const chartVisibleRef = useRef(false);
   const chartAnchorRef = useRef<View>(null);
+
+  const onLogout = () => {
+    Alert.alert('Log out?', 'You can sign back in later to continue from this report.', [
+      { text: 'Stay', style: 'cancel' },
+      { text: 'Log out', style: 'destructive', onPress: logout },
+    ]);
+  };
 
   const layout = useMemo(() => {
     const compact = windowWidth < 440;
@@ -78,12 +87,7 @@ export function AnalysisReportScreen({ navigation }: Props) {
   }, [report, checkChartVisibility]);
 
   if (loading) {
-    return (
-      <ScreenContainer>
-        <ScreenTitle>Your fitness analysis</ScreenTitle>
-        <LoadingState message="Preparing your personalized report…" />
-      </ScreenContainer>
-    );
+    return <ReportLoadingView />;
   }
 
   if (error || !report) {
@@ -160,7 +164,18 @@ export function AnalysisReportScreen({ navigation }: Props) {
             },
           ]}
         >
-          <Text style={styles.reportEyebrow}>Your preliminary report is ready</Text>
+          <View style={styles.reportHeader}>
+            <Text style={[styles.reportEyebrow, styles.reportHeaderLabel]}>Your preliminary report is ready</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Log out"
+              onPress={onLogout}
+              style={({ pressed }) => [styles.logoutButton, pressed && styles.unlockPressed]}
+            >
+              <Text style={styles.logoutText}>Log out</Text>
+              <Feather name="log-out" size={13} color="rgba(255,255,255,0.62)" />
+            </Pressable>
+          </View>
           <Text style={[styles.reportTitle, { fontSize: layout.titleSize, lineHeight: layout.titleLineHeight }]}>{title}</Text>
           <Text style={styles.reportIntro}>{report.goalSummary}</Text>
 
@@ -532,6 +547,10 @@ function ProjectionChart({
 }
 
 const styles = StyleSheet.create({
+  reportHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  reportHeaderLabel: { flex: 1 },
+  logoutButton: { minHeight: 44, minWidth: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 5 },
+  logoutText: { fontSize: 11, lineHeight: 16, color: 'rgba(255,255,255,0.62)' },
   answerQuestions: {
     marginTop: 12,
   },

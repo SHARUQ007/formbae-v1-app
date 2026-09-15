@@ -126,8 +126,11 @@ export function SubscriptionRenewalScreen({ navigation }: Props) {
         Alert.alert('Renewal issue', result.error || 'Your renewal could not be completed. Please try again.');
         return;
       }
-      await refreshStatus();
-      navigation.replace('Main');
+      navigation.replace('SubscriptionSuccess', {
+        planName: plan.label || plan.planName,
+        nextScreen: result.status?.recommendedNextScreen,
+        renewal: true,
+      });
     } catch (error) {
       Alert.alert('Could not finish renewal', error instanceof Error ? error.message : 'Your payment may still be processing. Check its status in a moment.');
     } finally {

@@ -145,6 +145,12 @@ export type TrainerRecommendation = {
 
 export type PaymentPlan = {
   planId: string;
+  /**
+   * What this plan is called in the App Store and Play. The app buys by this id and
+   * shows the store's own localised price, because store pricing is set in App Store
+   * Connect and Play Console rather than by us.
+   */
+  storeProductId?: string;
   planName: string;
   amount: number;
   originalAmount?: number;

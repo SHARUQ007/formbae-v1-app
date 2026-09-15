@@ -102,6 +102,16 @@ jest.mock('react-native-safe-area-context', () => {
 
 // Firebase never runs under test. Only otpService talks to it, and its own test replaces
 // this with the behaviour it needs; these keep any transitive import inert.
+jest.mock('react-native-purchases', () => ({
+  __esModule: true,
+  default: {
+    configure: jest.fn(),
+    getProducts: jest.fn(() => Promise.resolve([])),
+    purchaseStoreProduct: jest.fn(() => Promise.reject(new Error('Purchases are not available in tests'))),
+    restorePurchases: jest.fn(() => Promise.reject(new Error('Purchases are not available in tests'))),
+  },
+}));
+
 jest.mock('@react-native-firebase/app', () => ({ getApp: jest.fn() }));
 jest.mock('@react-native-firebase/auth', () => ({
   getAuth: jest.fn(() => ({})),

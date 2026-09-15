@@ -9,6 +9,7 @@ describe('root routing', () => {
   it('maps every setup phase to a deterministic root and nested screen', () => {
     expect(resolveRootRoute('questionnaire')).toBe('Onboarding');
     expect(resolveOnboardingInitialRoute('analysis_report')).toBe('AnalysisReport');
+    expect(resolveOnboardingInitialRoute('payment')).toBe('AnalysisReport');
     expect(resolveRootRoute('plan_preparing')).toBe('PaidTransition');
     expect(resolvePaidInitialRoute('plan_preparing')).toBe('PlanPreparing');
     expect(resolvePaidInitialRoute('gifted_welcome')).toBe('GiftedMembership');
@@ -20,6 +21,8 @@ describe('root routing', () => {
     expect(shouldReconcileRootRoute('Splash', 'Main')).toBe(false);
     expect(shouldReconcileRootRoute('Auth', 'Main')).toBe(false);
     expect(shouldReconcileRootRoute('Renewal', 'Main')).toBe(false);
+    expect(shouldReconcileRootRoute('SubscriptionSuccess', 'Main')).toBe(false);
+    expect(shouldReconcileRootRoute('SubscriptionSuccess', 'PaidTransition')).toBe(false);
   });
 
   it('repairs stale setup and main routes after status refreshes', () => {

@@ -6,16 +6,43 @@ import { GiftPlanDetailsScreen } from './GiftPlanDetailsScreen';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { FormInput } from '../../components/FormInput';
 import { useAuthStore } from '../../store/authStore';
-import { fetchPaymentStatus, runNativeCheckout } from '../../services/paymentService';
+import { fetchPaymentStatus } from '../../services/paymentService';
+import {
+  fetchStoreProducts,
+  purchaseStoreProduct,
+  recordHouseholdMembers,
+  restoreStorePurchases,
+  StorePurchaseError,
+} from '../../services/storePurchaseService';
 
 jest.mock('../../store/authStore', () => ({ useAuthStore: jest.fn() }));
-jest.mock('../../services/paymentService', () => ({ fetchPaymentStatus: jest.fn(), runNativeCheckout: jest.fn() }));
+jest.mock('../../services/paymentService', () => ({ fetchPaymentStatus: jest.fn() }));
+// Apple and Google own the transaction now, so the screens talk to the store rather than
+// to Razorpay. The prices asserted below are the store's own strings for that reason.
+jest.mock('../../services/storePurchaseService', () => {
+  class StorePurchaseError extends Error {
+    code: string;
+    constructor(code: string, message: string) { super(message); this.code = code; }
+  }
+  return {
+    StorePurchaseError,
+    fetchStoreProducts: jest.fn(),
+    purchaseStoreProduct: jest.fn(),
+    recordHouseholdMembers: jest.fn(),
+    restoreStorePurchases: jest.fn(),
+  };
+});
 jest.mock('../../services/notificationService', () => ({ displayBehavioralNotification: jest.fn(() => Promise.resolve()) }));
 jest.mock('../../services/activityService', () => ({ trackMobileInteraction: jest.fn() }));
 
-const solo = { planId: 'monthly__individual', planName: 'Just you', amount: 4900, originalAmount: 24900, memberLimit: 1, popular: false, billing: 'recurring' };
-const plusOne = { planId: 'monthly__plus_one', planName: 'You + 1', amount: 9900, originalAmount: 49900, memberLimit: 2, popular: true, billing: 'recurring', benefits: ['Two separate plans'] };
-const plusTwo = { planId: 'monthly__family_3', planName: 'Family of 3', amount: 14900, originalAmount: 74900, memberLimit: 3, popular: false, billing: 'recurring', benefits: ['Three separate plans'] };
+const solo = { planId: 'monthly__individual', storeProductId: 'formbae_monthly_individual', planName: 'Just you', amount: 4900, originalAmount: 24900, memberLimit: 1, popular: false, billing: 'recurring' };
+const plusOne = { planId: 'monthly__plus_one', storeProductId: 'formbae_monthly_plus_one', planName: 'You + 1', amount: 9900, originalAmount: 49900, memberLimit: 2, popular: true, billing: 'recurring', benefits: ['Two separate plans'] };
+const plusTwo = { planId: 'monthly__family_3', storeProductId: 'formbae_monthly_family_3', planName: 'Family of 3', amount: 14900, originalAmount: 74900, memberLimit: 3, popular: false, billing: 'recurring', benefits: ['Three separate plans'] };
+const STORE_PRICES: Record<string, string> = {
+  formbae_monthly_individual: '₹49.00',
+  formbae_monthly_plus_one: '₹99.00',
+  formbae_monthly_family_3: '₹149.00',
+};
 const statusPayload = {
   hasPaid: false,
   plans: [solo],
@@ -30,13 +57,18 @@ const multiPlanStatusPayload = {
 };
 
 let renderer: ReactTestRenderer;
-const navigation = { navigate: jest.fn(), replace: jest.fn(), goBack: jest.fn(), canGoBack: () => true, getParent: jest.fn(() => ({ replace: jest.fn() })) };
+const rootReplace = jest.fn();
+const navigation = { navigate: jest.fn(), replace: jest.fn(), goBack: jest.fn(), canGoBack: () => true, getParent: jest.fn(() => ({ replace: rootReplace })) };
 
 beforeEach(() => {
   jest.clearAllMocks();
   (useAuthStore as jest.Mock).mockReturnValue({ user: { name: 'Test', mobile: '9999999999' }, status: {}, refreshStatus: jest.fn().mockResolvedValue({}), logout: jest.fn() });
   (fetchPaymentStatus as jest.Mock).mockResolvedValue(statusPayload);
-  (runNativeCheckout as jest.Mock).mockResolvedValue({ success: true });
+  (fetchStoreProducts as jest.Mock).mockImplementation(async (ids: string[]) =>
+    ids.filter((id) => STORE_PRICES[id]).map((id) => ({ productId: id, priceString: STORE_PRICES[id], title: id, description: '' })));
+  (purchaseStoreProduct as jest.Mock).mockResolvedValue({ active: true, status: {} });
+  (recordHouseholdMembers as jest.Mock).mockResolvedValue(undefined);
+  (restoreStorePurchases as jest.Mock).mockResolvedValue({ active: true, status: {} });
 });
 afterEach(() => { if (renderer) act(() => renderer.unmount()); });
 
@@ -55,31 +87,71 @@ it('shows one configured price as a full paywall without a redundant selector', 
   expect(copy).toContain('Get started with your fitness journey.');
   expect(copy).toContain('Monthly · ');
   expect(copy).toContain('Just you');
-  expect(copy).toContain('5-day refund money-back policy');
-  expect(cta().props.title).toBe('Get started · ₹49');
+  expect(copy).not.toContain('5-day refund money-back policy');
+  // Both stores want the terms stated where the purchase happens.
+  expect(copy).toContain('renews every month until you cancel');
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Log out' })).toHaveLength(0);
+  expect(cta().props.title).toBe('Get started · ₹49.00');
 });
 
 it('a plan covering two people collects their details before charging anything', async () => {
   (fetchPaymentStatus as jest.Mock).mockResolvedValue(multiPlanStatusPayload);
   await render(paywall());
   // The +1 plan is preselected because it carries the most popular tag.
-  expect(cta().props.title).toBe('Continue · ₹99');
+  expect(cta().props.title).toBe('Continue · ₹99.00');
   await act(async () => { await cta().props.onPress(); });
-  expect(runNativeCheckout).not.toHaveBeenCalled();
+  expect(purchaseStoreProduct).not.toHaveBeenCalled();
   expect(navigation.navigate).toHaveBeenCalledWith('GiftPlanDetails', { planId: 'monthly__plus_one' });
 });
 
 it('a plan for one person goes straight to checkout', async () => {
   await render(paywall());
-  expect(cta().props.title).toBe('Get started · ₹49');
+  expect(cta().props.title).toBe('Get started · ₹49.00');
   await act(async () => { await cta().props.onPress(); });
   expect(navigation.navigate).not.toHaveBeenCalled();
-  expect(runNativeCheckout).toHaveBeenCalledTimes(1);
+  expect(purchaseStoreProduct).toHaveBeenCalledTimes(1);
+  expect(rootReplace).toHaveBeenCalledWith('SubscriptionSuccess', expect.objectContaining({ planName: 'Just you' }));
+});
+
+it.each([
+  ['the trainee backed out', () => Promise.reject(new StorePurchaseError('CANCELLED', ''))],
+  ['the store refused the card', () => Promise.reject(new StorePurchaseError('FAILED', 'Purchase failed'))],
+  ['the payment is still clearing', () => Promise.resolve({ active: false, status: {} })],
+])('does not celebrate an unconfirmed purchase: %s', async (_case, outcome) => {
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  (purchaseStoreProduct as jest.Mock).mockImplementationOnce(outcome);
+  await render(paywall());
+  await act(async () => { await cta().props.onPress(); });
+  expect(rootReplace).not.toHaveBeenCalled();
+  alert.mockRestore();
+});
+
+it('a plan the store will not sell cannot be bought at a price we invented', async () => {
+  // An unreturned product has not been created, or has not propagated, or is not sold in
+  // this storefront. Showing it at our own price would offer something unbuyable.
+  (fetchStoreProducts as jest.Mock).mockResolvedValue([]);
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  await render(paywall());
+  expect(JSON.stringify(renderer.toJSON())).not.toContain('₹49');
+  await act(async () => { await cta().props.onPress(); });
+  expect(purchaseStoreProduct).not.toHaveBeenCalled();
+  expect(alert).toHaveBeenCalled();
+  alert.mockRestore();
+});
+
+it('offers to restore a purchase without buying again', async () => {
+  // Apple requires this, and it is the honest answer for a reinstall or a new phone.
+  await render(paywall());
+  const restore = renderer.root.findByProps({ accessibilityLabel: 'Restore purchases' });
+  await act(async () => { await restore.props.onPress(); });
+  expect(restoreStorePurchases).toHaveBeenCalledTimes(1);
+  expect(rootReplace).toHaveBeenCalledWith('SubscriptionSuccess', expect.anything());
 });
 
 it('the gift page opens on the person the survey implies', async () => {
   (fetchPaymentStatus as jest.Mock).mockResolvedValue(multiPlanStatusPayload);
   await render(giftPage());
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Log out' })).toHaveLength(0);
   expect(renderer.root.findAllByProps({ accessibilityLabel: 'Relationship: Mother. Tap to change.' }).length).toBeGreaterThan(0);
 });
 
@@ -88,12 +160,12 @@ it('incomplete gift details never reach checkout', async () => {
   const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
   await render(giftPage());
   await act(async () => { await cta().props.onPress(); });
-  expect(runNativeCheckout).not.toHaveBeenCalled();
+  expect(purchaseStoreProduct).not.toHaveBeenCalled();
 
   await act(async () => { inputFor('Their name').props.onChangeText('Asha'); });
   await act(async () => { inputFor('Their mobile number').props.onChangeText('98765'); });
   await act(async () => { await cta().props.onPress(); });
-  expect(runNativeCheckout).not.toHaveBeenCalled();
+  expect(purchaseStoreProduct).not.toHaveBeenCalled();
   expect(alert).toHaveBeenCalled();
   alert.mockRestore();
 });
@@ -106,7 +178,11 @@ it('a completed gift is sent with the chosen person, name and number', async () 
   await act(async () => { inputFor('Their mobile number').props.onChangeText('+91 98765 43210'); });
   await act(async () => { await cta().props.onPress(); });
 
-  expect(runNativeCheckout).toHaveBeenCalledWith(expect.objectContaining({
-    householdMembers: [{ relationship: 'mother', name: 'Asha', mobile: '9876543210' }],
-  }));
+  // The store carries no metadata with a purchase, so the names are written down first
+  // and read back when the entitlement arrives.
+  expect(recordHouseholdMembers).toHaveBeenCalledWith('monthly__plus_one', [
+    { relationship: 'mother', name: 'Asha', mobile: '9876543210' },
+  ]);
+  expect(purchaseStoreProduct).toHaveBeenCalledWith('formbae_monthly_plus_one');
+  expect(rootReplace).toHaveBeenCalledWith('SubscriptionSuccess', expect.objectContaining({ planName: 'You + 1' }));
 });

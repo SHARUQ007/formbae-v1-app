@@ -39,12 +39,34 @@ export function reportLoadingDetails(answers: Record<string, string> = {}) {
 }
 
 export function AnalysisLoadingScreen({ navigation, route }: Props) {
+  const answers = useMemo(() => route.params?.answers || {}, [route.params?.answers]);
+
+  useEffect(() => {
+    let active = true;
+    const minimumDisplay = new Promise<void>(resolve => setTimeout(resolve, REPORT_LOADING_MS));
+    (async () => {
+      const [result] = await Promise.allSettled([generateAnalysis(), minimumDisplay]);
+      if (!active) return;
+      // Hand the completed report straight to the screen so it can render immediately.
+      // If the generation response was lost, the report screen recovers with a GET.
+      if (result.status === 'fulfilled') {
+        navigation.replace('AnalysisReport', { report: result.value.report, answers });
+      } else {
+        navigation.replace('AnalysisReport');
+      }
+    })();
+    return () => { active = false; };
+  }, [answers, navigation]);
+
+  return <ReportLoadingView answers={answers} />;
+}
+
+export function ReportLoadingView({ answers = {} }: { answers?: Record<string, string> }) {
   const insets = useSafeAreaInsets();
   const { height, width } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
   const spin = useRef(new Animated.Value(0)).current;
   const compact = height < 740;
-  const answers = useMemo(() => route.params?.answers || {}, [route.params?.answers]);
   const artwork = answers.p_gender === 'male' ? loadingArtwork.male : loadingArtwork.default;
   const details = useMemo(() => reportLoadingDetails(answers), [answers]);
 
@@ -59,17 +81,6 @@ export function AnalysisLoadingScreen({ navigation, route }: Props) {
     animation.start();
     return () => animation.stop();
   }, [reduceMotion, spin]);
-
-  useEffect(() => {
-    let active = true;
-    const minimumDisplay = new Promise<void>(resolve => setTimeout(resolve, REPORT_LOADING_MS));
-    (async () => {
-      await Promise.allSettled([generateAnalysis(), minimumDisplay]);
-      // AnalysisReport retries the GET if generation failed or the response was lost.
-      if (active) navigation.replace('AnalysisReport');
-    })();
-    return () => { active = false; };
-  }, [navigation]);
 
   const ringSize = Math.min(compact ? 184 : 220, width * 0.56);
   const portraitSize = ringSize * 0.68;

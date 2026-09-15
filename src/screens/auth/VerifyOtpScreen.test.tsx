@@ -73,6 +73,13 @@ it('routes a part-way trainee to the step they left off at', async () => {
   expect(mockReplace).toHaveBeenCalledWith('Onboarding', { screen: 'SetupWelcome' });
 });
 
+it.each(['analysis_report', 'payment'])('returns an unpaid member to their report after login: %s', async recommendedNextScreen => {
+  mockLogin.mockResolvedValue({ status: { recommendedNextScreen } });
+  await render();
+  await act(async () => { await codeInput().props.onComplete('123456'); });
+  expect(mockReplace).toHaveBeenCalledWith('Onboarding', { screen: 'AnalysisReport' });
+});
+
 it('a wrong code clears the boxes and keeps them here', async () => {
   (confirmCode as jest.Mock).mockRejectedValue(Object.assign(new Error('That code isn’t right.'), { code: 'INVALID_CODE' }));
   await render();

@@ -1,5 +1,5 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
-import type { WorkoutDayDetail, WorkoutHistoryEntry } from '../types/api';
+import type { AnalysisReport, RecommendedNextScreen, WorkoutDayDetail, WorkoutHistoryEntry } from '../types/api';
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -8,6 +8,7 @@ export type RootStackParamList = {
   PaidTransition: { screen?: keyof PaidStackParamList } | undefined;
   Main: NavigatorScreenParams<MainTabParamList> | undefined;
   Renewal: undefined;
+  SubscriptionSuccess: { planName: string; nextScreen?: RecommendedNextScreen; renewal?: boolean };
 };
 
 export type AuthStackParamList = {
@@ -27,7 +28,7 @@ export type OnboardingStackParamList = {
   SetupWelcome: undefined;
   Questionnaire: undefined;
   AnalysisLoading: { answers?: Record<string, string> } | undefined;
-  AnalysisReport: undefined;
+  AnalysisReport: { report: AnalysisReport; answers: Record<string, string> } | undefined;
   TrainerMatch: undefined;
   PaymentRequired: undefined;
   GiftPlanDetails: { planId: string };

@@ -29,6 +29,7 @@ const getOnboardingNavigator = () => require('./OnboardingNavigator').Onboarding
 const getPaidTransitionNavigator = () => require('./PaidTransitionNavigator').PaidTransitionNavigator;
 const getMainSubscriptionScreen = () => require('./MainSubscriptionScreen').MainSubscriptionScreen;
 const getSubscriptionRenewalScreen = () => require('../screens/paid/SubscriptionRenewalScreen').SubscriptionRenewalScreen;
+const getSubscriptionSuccessScreen = () => require('../screens/paid/SubscriptionSuccessScreen').SubscriptionSuccessScreen;
 
 const navigationTheme = {
   ...DarkTheme,
@@ -173,6 +174,7 @@ export function RootNavigator() {
           <Stack.Screen name="PaidTransition" getComponent={getPaidTransitionNavigator} />
           <Stack.Screen name="Main" getComponent={getMainSubscriptionScreen} />
           <Stack.Screen name="Renewal" getComponent={getSubscriptionRenewalScreen} />
+          <Stack.Screen name="SubscriptionSuccess" getComponent={getSubscriptionSuccessScreen} />
         </Stack.Navigator>
       </NavigationContainer>
       <TrophyInviteGate

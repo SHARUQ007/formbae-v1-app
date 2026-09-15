@@ -300,7 +300,9 @@ export function QuestionnaireFlow({ onComplete }: {
 
   return (
     <LinearGradient colors={['#05070c', '#02040a']} style={styles.root}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={[styles.safeArea, { paddingTop: insets.top + spacing.md, paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.root}>
+      {/* Keep safe-area padding separate: keyboard avoidance owns its own bottom padding. */}
+      <View style={[styles.safeArea, { paddingTop: insets.top + spacing.sm, paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
       <View style={styles.progressHeader}>
         <View style={styles.progressTop}>
           <TouchableOpacity
@@ -325,6 +327,7 @@ export function QuestionnaireFlow({ onComplete }: {
         ref={scrollRef}
         style={styles.questionScroll}
         keyboardShouldPersistTaps="handled"
+        contentInsetAdjustmentBehavior="never"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
       >
@@ -366,6 +369,7 @@ export function QuestionnaireFlow({ onComplete }: {
         style={styles.continueButton}
       />
       </View>
+      </View>
       </KeyboardAvoidingView>
     </LinearGradient>
   );
@@ -374,32 +378,34 @@ export function QuestionnaireFlow({ onComplete }: {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   safeArea: { flex: 1, paddingHorizontal: spacing.lg },
-  progressHeader: { marginBottom: spacing.lg },
-  progressTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
+  progressHeader: { marginBottom: spacing.md, flexShrink: 0 },
+  progressTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   progressMeta: { alignItems: 'flex-end', gap: 2 },
   progressLabel: { ...typography.overline, color: colors.inkSubtle },
   progressCount: { ...typography.caption, color: colors.inkMuted },
   backButton: { width: 44, height: 44, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
   backButtonDisabled: { opacity: 0.28 },
   continueButton: { minHeight: 60, borderRadius: 18 },
-  footer: { paddingTop: spacing.md, gap: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  footer: { flexShrink: 0, paddingTop: 12, gap: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   submitError: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: 12, borderRadius: 12, backgroundColor: colors.errorLight },
   fieldError: { ...typography.caption, color: colors.error, marginTop: spacing.sm },
   submitErrorText: { ...typography.caption, color: colors.error, flex: 1 },
-  questionScroll: { flex: 1 },
-  scroll: { paddingBottom: spacing.lg },
+  questionScroll: { flex: 1, minHeight: 0 },
+  scroll: { flexGrow: 1, paddingBottom: spacing.md },
   title: { fontSize: 27, lineHeight: 33, fontWeight: '700', letterSpacing: -0.4, color: colors.white, marginBottom: spacing.sm },
   subtitle: { ...typography.body, color: 'rgba(255,255,255,0.62)', marginBottom: spacing.lg },
   measureBlock: { marginTop: spacing.md },
-  options: { gap: 12, marginTop: spacing.sm },
+  options: { flexGrow: 1, gap: 12, marginTop: spacing.sm },
   option: {
-    minHeight: 84,
+    flexGrow: 1,
+    minHeight: 64,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: 'rgba(255,255,255,0.055)',
     borderRadius: radius.md,
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 12,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
   },

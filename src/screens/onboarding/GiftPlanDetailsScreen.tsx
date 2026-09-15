@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -18,13 +18,11 @@ import { ScreenContainer } from '../../components/Card';
 import { FormInput } from '../../components/FormInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState } from '../../components/States';
-import { fetchPaymentStatus, runNativeCheckout } from '../../services/paymentService';
+import { fetchPaymentStatus } from '../../services/paymentService';
+import { fetchStoreProducts, purchaseStoreProduct, recordHouseholdMembers, StorePurchaseError } from '../../services/storePurchaseService';
 import { displayBehavioralNotification } from '../../services/notificationService';
-import { useAuthStore } from '../../store/authStore';
-import { resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
 import type { HouseholdGiftMember, HouseholdSuggestion, PaymentPlan } from '../../types/api';
 import type { OnboardingStackParamList, RootStackParamList } from '../../navigation/types';
-import { rupees } from '../../utils/format';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
@@ -56,9 +54,10 @@ const emptyDraft = (relationship: Relationship): GiftDraft => ({ relationship, n
 
 export function GiftPlanDetailsScreen({ navigation, route }: Props) {
   const { planId } = route.params;
-  const { user, status, refreshStatus, logout } = useAuthStore();
   const [plan, setPlan] = useState<PaymentPlan | null>(null);
-  const [paywallId, setPaywallId] = useState('app-paywall');
+  // The store's own localised price. Nothing here formats money: the store is the one
+  // charging, and a price we rendered ourselves could disagree with its sheet.
+  const [storePrice, setStorePrice] = useState('');
   const [drafts, setDrafts] = useState<GiftDraft[]>([]);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState(false);
@@ -66,24 +65,15 @@ export function GiftPlanDetailsScreen({ navigation, route }: Props) {
 
   const memberCount = Math.max(0, (plan?.memberLimit || 1) - 1);
 
-  const routeAfterPaid = useCallback((screen: string) => {
-    const rootNav = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
-    const root = resolveRootRoute(screen as never);
-    if (root === 'Main') {
-      rootNav?.replace('Main');
-      return;
-    }
-    rootNav?.replace('PaidTransition', {
-      screen: root === 'PaidTransition' ? resolvePaidInitialRoute(screen as never) : 'PaymentSync',
-    });
-  }, [navigation]);
-
   useEffect(() => {
     fetchPaymentStatus()
-      .then((data) => {
+      .then(async (data) => {
         const selected = data.plans?.find((entry) => entry.planId === planId) || data.plans?.[0] || null;
         setPlan(selected);
-        setPaywallId(data.paywallId || selected?.paywallId || 'app-paywall');
+        if (selected?.storeProductId) {
+          const products = await fetchStoreProducts([selected.storeProductId]).catch(() => []);
+          setStorePrice(products[0]?.priceString || '');
+        }
         const extra = Math.max(0, (selected?.memberLimit || 1) - 1);
         const suggestion: HouseholdSuggestion[] = data.householdSuggestion || [];
         // The survey already implies who this is for, so the picker opens on that answer.
@@ -121,41 +111,32 @@ export function GiftPlanDetailsScreen({ navigation, route }: Props) {
         mobile: draft.mobile,
         ...(draft.relationship === 'other' ? { customLabel: draft.customLabel.trim() } : {}),
       }));
-      const result = await runNativeCheckout({
-        plan,
-        user: {
-          name: status?.name || user?.name || 'FormBae Trainee',
-          mobile: status?.phone || user?.mobile || '',
-          email: status?.email,
-        },
-        paywallId: plan.paywallId || paywallId,
-        householdMembers: members,
-      });
-      if (result.cancelled) return;
-      if (result.success) {
-        const fresh = await refreshStatus();
-        displayBehavioralNotification('paymentConfirmed').catch(() => undefined);
-        routeAfterPaid(fresh?.recommendedNextScreen || 'payment_sync');
+      if (!plan.storeProductId) {
+        Alert.alert('Not available yet', 'This plan isn’t available in your store right now. Please try again shortly.');
         return;
       }
-      Alert.alert('Payment issue', result.error || 'Payment could not be completed. Please try again.');
+      // Written down first: the store sells one product and carries none of this with it,
+      // so the server reads these back when the entitlement arrives.
+      await recordHouseholdMembers(plan.planId, members);
+      const result = await purchaseStoreProduct(plan.storeProductId);
+      if (!result.active) {
+        Alert.alert('Almost there', 'Your purchase is still being confirmed. We’ll unlock your plans as soon as it clears.');
+        return;
+      }
+      navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('SubscriptionSuccess', {
+        planName: plan.label || plan.planName,
+        nextScreen: result.status?.recommendedNextScreen,
+      });
+      displayBehavioralNotification('paymentConfirmed').catch(() => undefined);
+    } catch (error) {
+      if (error instanceof StorePurchaseError && error.code === 'CANCELLED') return;
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'That purchase didn’t go through. Nothing has been charged.';
+      Alert.alert('Purchase issue', message);
     } finally {
       setPaying(false);
     }
-  };
-
-  const onLogout = () => {
-    Alert.alert('Log out?', 'You can sign back in later to continue from this report.', [
-      { text: 'Stay', style: 'cancel' },
-      {
-        text: 'Log out',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-          navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Auth');
-        },
-      },
-    ]);
   };
 
   return (
@@ -170,16 +151,6 @@ export function GiftPlanDetailsScreen({ navigation, route }: Props) {
         >
           <Feather name="chevron-left" size={13} color={colors.inkSubtle} />
           <Text style={styles.quietActionText}>Plans</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={onLogout}
-          style={styles.quietAction}
-          activeOpacity={0.6}
-          accessibilityRole="button"
-          accessibilityLabel="Log out"
-        >
-          <Text style={styles.quietActionText}>Log out</Text>
-          <Feather name="log-out" size={11} color={colors.inkSubtle} />
         </TouchableOpacity>
       </View>
 
@@ -269,7 +240,7 @@ export function GiftPlanDetailsScreen({ navigation, route }: Props) {
 
         <View style={styles.footer}>
           <PrimaryButton
-            title={plan ? `Pay ${rupees(plan.amount)} & continue` : 'Continue'}
+            title={plan && storePrice ? `Pay ${storePrice} & continue` : 'Continue'}
             icon="lock"
             onPress={onPay}
             loading={paying}
