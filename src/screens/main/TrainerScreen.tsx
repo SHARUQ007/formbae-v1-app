@@ -28,7 +28,8 @@ import { rupees } from '../../utils/format';
 import { loadCoachBundleCached, peekCoachBundleCached } from '../../services/preloadService';
 import { useAuthStore } from '../../store/authStore';
 import type { CoachHubPayload, CoachOption } from '../../types/api';
-import type { CoachScreenParams } from '../../navigation/types';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { CoachScreenParams, WorkoutStackParamList } from '../../navigation/types';
 import { getCoachArtworkSource } from '../../utils/coachArtwork';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
@@ -96,7 +97,7 @@ function mergeCoachPhotos(current: CoachHubPayload, fallback: CoachHubPayload): 
 }
 
 export function TrainerScreen() {
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<WorkoutStackParamList>>();
   const route = useRoute<CoachRoute>();
   const tabBarHeight = useBottomTabBarHeight();
   const { width: viewportWidth, fontScale } = useWindowDimensions();
@@ -338,7 +339,16 @@ export function TrainerScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshCoaches} tintColor={colors.accent} />}
         >
           <CoachHero key={`coach-hero-${coachImageRevision}`} coach={currentCoach} ai={currentIsAi} onImageError={recoverCoachImages} />
-          <CoachAbout coach={selectedCoach || currentCoach} ai={currentIsAi} onUpgrade={() => setTab('change')} onChange={() => setTab('change')} />
+          <CoachAbout
+            coach={selectedCoach || currentCoach}
+            ai={currentIsAi}
+            onUpgrade={() => setTab('change')}
+            onChange={() => setTab('change')}
+            onBookSession={() => {
+              const coach = selectedCoach || currentCoach;
+              if (coach) navigation.navigate('CoachSessions', { trainerId: coach.trainerId, trainerName: coach.name });
+            }}
+          />
         </ScrollView>
       ) : null}
 
@@ -489,11 +499,13 @@ function CoachAbout({
   ai,
   onUpgrade,
   onChange,
+  onBookSession,
 }: {
   coach: CoachOption;
   ai: boolean;
   onUpgrade: () => void;
   onChange: () => void;
+  onBookSession: () => void;
 }) {
   const bio = coach.detailedDescription || coach.description || 'Your coach will guide your training, review your progress, and keep the plan moving.';
   return (
@@ -511,7 +523,11 @@ function CoachAbout({
       {ai ? (
         <GoldUpgradeButton onPress={onUpgrade} />
       ) : (
-        <PrimaryButton title="Change coach" icon="repeat" variant="secondary" onPress={onChange} style={styles.singleActionButton} />
+        <>
+          {/* The live one-to-one time is what a personal coach is for, so it leads. */}
+          <PrimaryButton title="Book a live session" icon="video" onPress={onBookSession} style={styles.singleActionButton} />
+          <PrimaryButton title="Change coach" icon="repeat" variant="secondary" onPress={onChange} style={styles.singleActionButton} />
+        </>
       )}
     </>
   );

@@ -27,6 +27,7 @@ export function ProfileNavigator() {
       <Stack.Screen name="EditProfile" getComponent={getEditProfileScreen} options={{ headerShown: false }} />
       <Stack.Screen name="GymPicker" getComponent={getGymPickerScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Trainer" getComponent={getTrainerScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="CoachSessions" getComponent={() => require('../screens/main/CoachSessionsScreen').CoachSessionsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="Legal" getComponent={getLegalScreen} />
       <Stack.Screen name="DeleteAccount" getComponent={getDeleteAccountScreen} />
     </Stack.Navigator>

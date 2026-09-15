@@ -81,6 +81,8 @@ export type WorkoutStackParamList = {
     };
   } | undefined;
   Coach: CoachScreenParams | undefined;
+  /** Live one-to-one time with the coach: what is booked, and the calendar to book more. */
+  CoachSessions: { trainerId: string; trainerName?: string };
   PlanRefresh: { retryFailedBuild?: boolean } | undefined;
   WorkoutSummary: { planDayId: string; title: string; mode?: 'standard' | 'quick'; initialDetail?: WorkoutDayDetail };
   WorkoutDetail: { planDayId: string; title: string; mode?: 'standard' | 'quick'; initialDetail?: WorkoutDayDetail };
@@ -102,6 +104,8 @@ export type ProfileStackParamList = {
   EditProfile: undefined;
   GymPicker: undefined;
   Trainer: CoachScreenParams | undefined;
+  /** Live one-to-one time with the coach: what is booked, and the calendar to book more. */
+  CoachSessions: { trainerId: string; trainerName?: string };
   Legal: undefined;
   DeleteAccount: undefined;
 };

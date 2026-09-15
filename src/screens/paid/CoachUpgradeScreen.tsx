@@ -21,10 +21,20 @@ import { typography } from '../../theme/typography';
 
 type Props = NativeStackScreenProps<PaidStackParamList, 'CoachUpgrade'>;
 
+/**
+ * Live one-to-one time leads, because it is what this upgrade actually is.
+ *
+ * It is also why this purchase stays on Razorpay while everything else in the app went to
+ * store billing: Apple's 3.1.3(e) exempts "realtime person-to-person experiences between
+ * two individuals" and names fitness training, and Play treats a live one-to-one service
+ * the same way. That only holds while the sessions are real, so this list must keep
+ * describing what a trainee can actually book.
+ */
 const WHAT_YOU_GET = [
+  'Live one-to-one sessions with your coach, booked when it suits you',
   'A plan written for you by your coach, not a template',
   'Form and progress reviewed as you log your workouts',
-  'Message your coach when something is not working',
+  'Message your coach between sessions',
 ];
 
 export function CoachUpgradeScreen({ navigation, route }: Props) {
