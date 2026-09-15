@@ -104,6 +104,12 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+    // The upload key, which never lives in this repository. Put these in the gradle.properties
+    // of the machine that builds (~/.gradle/gradle.properties, not the one here), or pass them
+    // in CI as ORG_GRADLE_PROJECT_FORMBAE_UPLOAD_* environment variables.
+    def uploadStoreFile = findProperty('FORMBAE_UPLOAD_STORE_FILE')
+    def hasUploadKey = uploadStoreFile != null && file(uploadStoreFile).exists()
+
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -111,15 +117,28 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (hasUploadKey) {
+            release {
+                storeFile file(uploadStoreFile)
+                storePassword findProperty('FORMBAE_UPLOAD_STORE_PASSWORD')
+                keyAlias findProperty('FORMBAE_UPLOAD_KEY_ALIAS')
+                keyPassword findProperty('FORMBAE_UPLOAD_KEY_PASSWORD')
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig = signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig = signingConfigs.debug
+            // Signed with the upload key when one is configured, and otherwise left unsigned
+            // on purpose. This used to say signingConfigs.debug - the keystore sitting in this
+            // directory, whose password is the published default "android". Play refuses an
+            // upload signed with it, which is the lucky half; the unlucky half would have been
+            // shipping an app anyone could forge an update for.
+            if (hasUploadKey) {
+                signingConfig = signingConfigs.release
+            }
             minifyEnabled = enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
