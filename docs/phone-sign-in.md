@@ -93,18 +93,25 @@ configuration, and the security model is SHA pinning plus App Check, not secrecy
       crashes the app the moment a code is requested - it does not degrade. Regenerate it
       if the Firebase app is ever recreated.
 
-Silent-push verification is the nicer path and is worth doing, but it is a separate piece
-of setup and the app builds and works without it:
+Silent-push verification is not optional in practice. Without it every attempt logs
 
-- [ ] Enable **Push Notifications** on the App ID (Xcode → Signing & Capabilities, or the
-      developer portal). Do this *before* the next step - an entitlement the provisioning
-      profile does not carry fails the build with
+```
+Remote notification registration failed, phone sign-in will use reCAPTCHA:
+no valid "aps-environment" entitlement string found for application
+```
+
+and falls back to a reCAPTCHA sheet that did not complete for us. Both halves are needed -
+the app has to be allowed to receive the push, and Firebase has to be able to send it:
+
+- [ ] **Push Notifications** capability on the iOS target (Xcode → Signing & Capabilities →
+      + Capability). With automatic signing this enables it on the App ID, regenerates the
+      profile, and writes `aps-environment` into the entitlements. Adding that key by hand
+      without the App ID carrying the capability fails the build with
       `doesn't include the aps-environment entitlement`
-- [ ] Put `aps-environment` back in `ios/FormBae/FormBae.entitlements`; it is commented out
-      there with this note
-- [ ] Upload an **APNs auth key (.p8)** to Project settings → Cloud Messaging, with its Key
-      ID and Team ID. This is what verifies the device silently and keeps the reCAPTCHA
-      sheet away
+- [ ] **APNs auth key (.p8)**: Apple Developer → Keys → + → Apple Push Notifications
+      service. It downloads once, so keep it. Upload it at Project settings → Cloud
+      Messaging with its Key ID and your Team ID. The capability alone only lets the app
+      receive the push; this is what lets Firebase send one
 - [ ] Enable **App Check** (Play Integrity, App Attest), then enforce it on Authentication
 - [ ] **SMS region policy**: allow `IN` only
 - [ ] Set a **Cloud Billing budget alert** on the phone-auth SKU

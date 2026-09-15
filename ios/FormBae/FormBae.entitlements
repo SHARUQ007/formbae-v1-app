@@ -2,12 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Phone sign-in would rather verify the device with a silent push, which needs an
-	     aps-environment entitlement here and Push Notifications enabled on the App ID.
-	     Left out until the App ID has it: claiming an entitlement the provisioning profile
-	     does not carry fails the build outright. Until then verification falls back to a
-	     reCAPTCHA sheet, which needs the REVERSED_CLIENT_ID URL scheme in Info.plist.
-	     See docs/phone-sign-in.md. -->
+	<!-- Phone sign-in verifies the device with a silent push, and without this every
+	     attempt logs "no valid aps-environment entitlement string found" and falls back to
+	     a reCAPTCHA sheet. Added through Xcode's Push Notifications capability, which also
+	     enables it on the App ID - claiming it here alone fails the build, because a
+	     provisioning profile that does not carry it is rejected outright. -->
+	<key>aps-environment</key>
+	<string>development</string>
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:formbae.in</string>
