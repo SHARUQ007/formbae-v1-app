@@ -160,13 +160,17 @@ deadline.
 
 **`auth/internal-error` right after a number stops being a test number.** `otpService` can
 set `appVerificationDisabledForTesting`, which tells Firebase to skip proving the request
-came from the real app. That is only coherent for a number listed under "Phone numbers for
-testing" - those never send an SMS, so there is nothing to verify. Against a real number
+came from the real app. That is only coherent when no SMS is going to be sent, which on a
+simulator means driving the flow with a console-registered test number. Anywhere else
 verification is genuinely required, the request goes up without a client identifier, and
 the SDK reports the response it cannot map as `auth/internal-error`. It is off; turn
-`USE_TEST_NUMBERS_WITHOUT_VERIFICATION` on by hand while developing against a test number
-on a simulator, and turn it back off. It was once on for every debug build, which is
-precisely the trap above.
+`DISABLE_FIREBASE_APP_VERIFICATION` on by hand for that case only, and turn it back off.
+It was once on for every debug build, which is precisely the trap above.
+
+Nothing in this codebase treats one number differently from another. Test numbers are a
+Firebase console feature and live entirely outside it: enforcement is the single
+`mobile_otp_policy` flag, and when it is on every number verifies, when it is off no
+number does.
 
 
 The SDK collapses most failures into `auth/operation-not-allowed` or a generic message, and

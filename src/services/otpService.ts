@@ -150,25 +150,29 @@ export function translateFirebaseError(error: unknown): OtpError {
 /**
  * Skip Firebase's proof that the request came from the real app.
  *
- * Only ever true by hand, and only while the number being used is registered under
- * Authentication -> Settings -> "Phone numbers for testing". Those numbers never send an
- * SMS, so there is nothing to verify and nothing to spend; turning this on removes the
- * reCAPTCHA sheet that a simulator always falls back to, because a simulator has no
- * silent push.
+ * This decides nothing about which numbers can sign in. Verification applies to every
+ * number, always - there is no list of numbers anywhere in this codebase, and no number
+ * is treated differently from any other. What this switches off is a step that happens
+ * before the SMS: Firebase checking that the request came from our app and not from
+ * someone holding the API key, silently by push, or by showing a reCAPTCHA sheet when the
+ * push does not land.
  *
- * Against a real number it does not degrade, it breaks: verification is genuinely
- * required, the request goes up without a client identifier, and the SDK reports the
- * unmapped response as `auth/internal-error` - no SMS, no useful message. It used to be
- * on for every debug build, which is exactly the failure that produced.
+ * Turning it off is only coherent when no SMS is going to be sent at all, which on a
+ * simulator means driving the flow with a number registered in the Firebase console under
+ * Authentication -> Settings -> "Phone numbers for testing". That is a console feature,
+ * outside this code. Everywhere else it does not degrade, it breaks: the request goes up
+ * without a client identifier and the SDK reports the response it cannot map as
+ * `auth/internal-error`. It used to be on for every debug build, which is exactly the
+ * failure that produced.
  *
  * `__DEV__` guards it a second time so a release build ignores it even if this is left
  * on; shipped, it would let anyone holding the API key spend the SMS budget.
  */
-const USE_TEST_NUMBERS_WITHOUT_VERIFICATION = false;
+const DISABLE_FIREBASE_APP_VERIFICATION = false;
 
 async function sendCode(phone: string) {
   const { getAuth, signInWithPhoneNumber } = firebaseAuth();
-  if (__DEV__ && USE_TEST_NUMBERS_WITHOUT_VERIFICATION) {
+  if (__DEV__ && DISABLE_FIREBASE_APP_VERIFICATION) {
     try {
       getAuth().settings.appVerificationDisabledForTesting = true;
     } catch {
