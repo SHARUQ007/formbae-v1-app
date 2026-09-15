@@ -125,12 +125,15 @@ it('once the wait is over a new code can be sent', async () => {
 });
 
 it('changing the number ends the verification rather than leaving it live', async () => {
-  // A live Firebase session keeps minting tokens, so it has to go with the screen.
+  // A live Firebase session keeps minting tokens, so it has to go with the screen. It is
+  // replaced rather than popped, so the forward gesture cannot return to a screen whose
+  // verification has just been ended.
   await render();
   const back = renderer.root.find(node => node.props.accessibilityLabel === 'Change number');
   await act(async () => { back.props.onPress(); });
   expect(endVerification).toHaveBeenCalled();
-  expect(navigation.goBack).toHaveBeenCalled();
+  expect(navigation.replace).toHaveBeenCalledWith('Login', { mode: 'login', mobile: '9876543210', reduceMotion: true });
+  expect(navigation.goBack).not.toHaveBeenCalled();
 });
 
 it('a verification lost to a restart says so instead of taking a code that cannot work', async () => {

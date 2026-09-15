@@ -1,4 +1,5 @@
 import React from 'react';
+import { AppState } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { PaidWelcomeScreen } from './PaidWelcomeScreen';
 import { PlanPreparingScreen } from './PlanPreparingScreen';
@@ -37,6 +38,12 @@ beforeEach(() => {
 });
 afterEach(() => { if (renderer) act(() => renderer.unmount()); });
 async function render(element: React.ReactElement) { await act(async () => { renderer = create(element); }); }
+const renderedText = () => renderer.root
+  .findAll(node => typeof node.type === 'string')
+  .map(node => (Array.isArray(node.props.children) ? node.props.children : [node.props.children]))
+  .flat()
+  .filter(child => typeof child === 'string' || typeof child === 'number')
+  .join('');
 
 it('paid member continues from fresh server facts rather than a stale coach selection', async () => {
   await render(<PaidWelcomeScreen navigation={navigation as never} route={{ name: 'PaidWelcome', key: 'paid' }} />);
@@ -56,11 +63,59 @@ it('creating a first plan is an explicit action, then lets itself in', async () 
   expect(rootReplace).toHaveBeenCalledWith('Main');
 });
 it('resumes a running build without starting another request', async () => {
-  (fetchOnboardingPlanState as jest.Mock).mockResolvedValue({ status: 'building' });
+  (fetchOnboardingPlanState as jest.Mock).mockResolvedValue({
+    status: 'building',
+    progress: {
+      stage: 'building', message: 'Adding Goblet Squat', daysMapped: 2,
+      items: [{ kind: 'exercise', text: 'Adding Goblet Squat' }, { kind: 'day', text: 'Day 2: Upper Body' }],
+    },
+  });
   await render(<PlanPreparingScreen navigation={navigation as never} route={{ name: 'PlanPreparing', key: 'plan' }} />);
   expect(createOnboardingPlan).not.toHaveBeenCalled();
+  expect(JSON.stringify(renderer.toJSON())).toContain('Adding Goblet Squat');
+  // The count is interpolated, so it reaches the tree as two text children rather
+  // than one string. Read the rendered text instead of the serialized tree.
+  expect(renderedText()).toContain('2 of 7 days');
   // Nothing to press while it works; the screen polls and moves on when the plan lands.
   expect(renderer.root.findAllByType(PrimaryButton)).toHaveLength(0);
+});
+it('keeps the live build visible through an early idle response and applies the next progress poll', async () => {
+  jest.useFakeTimers();
+  const previousAppState = AppState.currentState;
+  (AppState as { currentState: string | null }).currentState = 'active';
+  let finishBuild!: (value: { status: 'building' }) => void;
+  (createOnboardingPlan as jest.Mock).mockReturnValue(new Promise(resolve => { finishBuild = resolve; }));
+  (fetchOnboardingPlanState as jest.Mock)
+    .mockResolvedValueOnce({ status: 'idle' })
+    .mockResolvedValue({
+      status: 'building',
+      progress: {
+        stage: 'building', message: 'Day 3: Lower Body', daysMapped: 3,
+        items: [{ kind: 'day', text: 'Day 3: Lower Body' }],
+      },
+    });
+
+  try {
+    await render(
+      <PlanPreparingScreen
+        navigation={navigation as never}
+        route={{ name: 'PlanPreparing', key: 'plan', params: { autoStart: true } }}
+      />,
+    );
+    expect(renderer.root.findAllByType(PrimaryButton)).toHaveLength(0);
+    await act(async () => {
+      jest.advanceTimersByTime(2_100);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetchOnboardingPlanState).toHaveBeenCalledTimes(2);
+    expect(renderedText()).toContain('Day 3: Lower Body');
+    expect(renderedText()).toContain('3 of 7 days');
+  } finally {
+    await act(async () => { finishBuild({ status: 'building' }); });
+    (AppState as { currentState: string | null }).currentState = previousAppState;
+    jest.useRealTimers();
+  }
 });
 it('a lost build response is reconciled with the saved plan', async () => {
   (createOnboardingPlan as jest.Mock).mockRejectedValue(new Error('timeout'));

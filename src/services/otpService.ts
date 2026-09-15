@@ -149,6 +149,18 @@ export function translateFirebaseError(error: unknown): OtpError {
 
 async function sendCode(phone: string) {
   const { getAuth, signInWithPhoneNumber } = firebaseAuth();
+  if (__DEV__) {
+    // Development only, and it must stay that way. Firebase proves a request comes from the
+    // real app before sending a code - silently by push, or by showing a reCAPTCHA sheet
+    // when the push does not land. Turning that off removes the web step while testing,
+    // and it only works alongside a number registered under "Phone numbers for testing".
+    // Shipped, it would let anyone holding the API key spend the SMS budget.
+    try {
+      getAuth().settings.appVerificationDisabledForTesting = true;
+    } catch {
+      // Older SDKs expose no settings object; the reCAPTCHA sheet just stays.
+    }
+  }
   try {
     return await signInWithPhoneNumber(getAuth(), phone);
   } catch (error) {

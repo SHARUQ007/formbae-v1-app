@@ -27,6 +27,7 @@ type Props = Omit<
   icon?: string;
   prefix?: string;
   suffix?: string;
+  size?: 'md' | 'lg';
   helperText?: string;
   error?: string;
   multiline?: boolean;
@@ -45,6 +46,7 @@ export const FormInput = forwardRef<TextInput, Props>(function FormInputField(
     icon,
     prefix,
     suffix,
+    size = 'md',
     helperText,
     error,
     multiline = false,
@@ -64,6 +66,7 @@ export const FormInput = forwardRef<TextInput, Props>(function FormInputField(
       <View
         style={[
           styles.inputWrap,
+          size === 'lg' && styles.largeWrap,
           multiline && styles.multilineWrap,
           focused && styles.focused,
           error && styles.error,
@@ -79,7 +82,7 @@ export const FormInput = forwardRef<TextInput, Props>(function FormInputField(
         ) : null}
         <TextInput
           ref={ref}
-          style={[styles.input, multiline && styles.multiline]}
+          style={[styles.input, size === 'lg' && styles.largeInput, multiline && styles.multiline]}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
@@ -104,7 +107,7 @@ export const FormInput = forwardRef<TextInput, Props>(function FormInputField(
           textAlignVertical={multiline ? 'top' : 'center'}
           accessibilityLabel={accessibilityLabel || label || placeholder}
         />
-        {suffix ? <Text style={styles.suffix}>{suffix}</Text> : null}
+        {suffix ? <Text style={[styles.suffix, size === 'lg' && styles.largeSuffix]}>{suffix}</Text> : null}
       </View>
       {error ? (
         <Text style={styles.errorText} accessibilityLiveRegion="polite">
@@ -130,6 +133,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     minHeight: 54,
   },
+  largeWrap: { minHeight: 76, paddingHorizontal: spacing.lg },
+  largeInput: { minHeight: 74, fontSize: 24, lineHeight: 32 },
+  largeSuffix: { fontSize: 16, lineHeight: 22 },
   multilineWrap: { alignItems: 'flex-start', paddingVertical: 12 },
   focused: { borderColor: colors.goldMuted, backgroundColor: colors.panelRaised },
   error: { borderColor: colors.error },

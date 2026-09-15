@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   AppState,
+  Keyboard,
   StyleSheet,
   Text,
   TextInput,
@@ -169,11 +170,12 @@ export function VerifyOtpScreen({ navigation, route }: Props) {
   }, [fail, sessionId]);
 
   const changeNumber = useCallback(() => {
+    // The code field takes focus on arrival, so the keyboard is up and covering part of the
+    // screen. Dismissing it first means the tap that leaves cannot be spent closing it.
+    Keyboard.dismiss();
     endVerification().catch(() => undefined);
-    if (navigation.canGoBack()) {
-      navigation.goBack();
-      return;
-    }
+    // Always replace rather than pop. Going back leaves this screen on the stack holding a
+    // verification that has just been ended, which the forward gesture can return to.
     navigation.replace('Login', { mode: mode === 'signup' ? 'signup' : 'login', mobile, reduceMotion });
   }, [mobile, mode, navigation, reduceMotion]);
 

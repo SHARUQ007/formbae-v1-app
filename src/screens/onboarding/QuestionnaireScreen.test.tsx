@@ -6,6 +6,7 @@ import { PrimaryButton } from '../../components/PrimaryButton';
 import { FormInput } from '../../components/FormInput';
 import { fetchQuestionnaire, submitQuestionnaire } from '../../services/questionnaireService';
 import { loadQuestionnaireDraft } from '../../store/onboardingStore';
+import { ApiError } from '../../services/apiClient';
 
 jest.mock('../../store/authStore', () => ({ useAuthStore: () => ({ user: { userId: 'member' } }) }));
 jest.mock('../../services/questionnaireService', () => ({ fetchQuestionnaire: jest.fn(), submitQuestionnaire: jest.fn(), saveQuestionnaireDraft: jest.fn() }));
@@ -47,6 +48,38 @@ it('paid profile setup uses its completion callback without entering analysis or
   expect(submitQuestionnaire).toHaveBeenCalledWith({ goal: 'strength', location: 'home' });
   expect(complete).toHaveBeenCalledTimes(1);
 });
+it('keeps answers after a failed submission and clears the error while retrying', async () => {
+  const complete = jest.fn();
+  (submitQuestionnaire as jest.Mock).mockRejectedValueOnce(new Error('offline'));
+  await render(complete);
+  const radio = renderer.root.findAllByProps({ accessibilityRole: 'radio' })[0];
+  await act(async () => { await radio.props.onPress(); });
+  await act(async () => { await renderer.root.findByType(PrimaryButton).props.onPress(); });
+  expect(renderer.root.findByType(PrimaryButton).props.title).toBe('Try again');
+  expect(renderer.root.findAllByProps({ accessibilityRole: 'alert' }).length).toBeGreaterThan(0);
+  expect(complete).not.toHaveBeenCalled();
+
+  let finish!: () => void;
+  (submitQuestionnaire as jest.Mock).mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  let retry!: Promise<void>;
+  await act(async () => { retry = renderer.root.findByType(PrimaryButton).props.onPress(); });
+  expect(renderer.root.findByType(PrimaryButton).props.loading).toBe(true);
+  expect(renderer.root.findAllByProps({ accessibilityRole: 'alert' })).toHaveLength(0);
+  expect(submitQuestionnaire).toHaveBeenLastCalledWith({ goal: 'strength', location: 'home' });
+  await act(async () => { finish(); await retry; });
+  expect(complete).toHaveBeenCalledTimes(1);
+});
+it('retries navigation without submitting again when the answers were already saved', async () => {
+  const complete = jest.fn().mockRejectedValueOnce(new Error('Status unavailable')).mockResolvedValue(undefined);
+  (submitQuestionnaire as jest.Mock).mockResolvedValue({ ok: true, completed: true });
+  await render(complete);
+  await act(async () => { await renderer.root.findAllByProps({ accessibilityRole: 'radio' })[0].props.onPress(); });
+  await act(async () => { await renderer.root.findByType(PrimaryButton).props.onPress(); });
+  expect(JSON.stringify(renderer.toJSON())).toContain('Your answers are saved.');
+  await act(async () => { await renderer.root.findByType(PrimaryButton).props.onPress(); });
+  expect(submitQuestionnaire).toHaveBeenCalledTimes(1);
+  expect(complete).toHaveBeenCalledTimes(2);
+});
 it('offers quick coach notes while preserving an editable answer', async () => {
   (fetchQuestionnaire as jest.Mock).mockResolvedValue({
     questions: [{
@@ -75,6 +108,48 @@ describe('exact measurements and preferred languages', () => {
   };
   const input = () => renderer.root.findByType(FormInput);
   const cta = () => renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Submit answers')!;
+
+  it('does not skip exact measurements when a local assessment draft still contains ranges', async () => {
+    (loadQuestionnaireDraft as jest.Mock).mockResolvedValue({ p_height: '160-170' });
+    (fetchQuestionnaire as jest.Mock).mockResolvedValue({ questions: [measure, languages], answers: { p_height: '' } });
+    await render();
+    expect(input().props.value).toBe('');
+    expect(JSON.stringify(renderer.toJSON())).toContain('What is your height?');
+    await act(async () => { await renderer.root.findByType(PrimaryButton).props.onPress(); });
+    expect(submitQuestionnaire).not.toHaveBeenCalled();
+    expect(input().props.error).toBe('Enter a number to continue.');
+    await act(async () => { await input().props.onChangeText('172'); });
+    await act(async () => { await renderer.root.findByType(PrimaryButton).props.onPress(); });
+    await act(async () => { await cta().props.onPress(); });
+    expect(submitQuestionnaire).toHaveBeenCalledWith({ p_height: '172', languages: '' });
+  });
+
+  it('keeps a valid server measurement when the local draft contains a stale range', async () => {
+    (loadQuestionnaireDraft as jest.Mock).mockResolvedValue({ p_height: '160-170' });
+    (fetchQuestionnaire as jest.Mock).mockResolvedValue({ questions: [measure, languages], answers: { p_height: '172' } });
+    await render();
+    expect(JSON.stringify(renderer.toJSON())).toContain('Which languages do you prefer?');
+    await act(async () => { await cta().props.onPress(); });
+    expect(submitQuestionnaire).toHaveBeenCalledWith({ p_height: '172', languages: '' });
+  });
+
+  it.each([
+    { detail: { error: 'Answer out of range', fields: ['p_height'] } },
+    { detail: { error: 'Incomplete questionnaire', missing: [{ id: 'p_height' }] } },
+    { error: 'Incomplete questionnaire', missing: [{ id: 'p_height' }] },
+  ])('opens the rejected question when the server rejects an earlier answer: %j', async payload => {
+    (fetchQuestionnaire as jest.Mock).mockResolvedValue({ questions: [measure, languages], answers: { p_height: '172' } });
+    (submitQuestionnaire as jest.Mock).mockRejectedValueOnce(new ApiError('[object Object]', 400, payload));
+    await render();
+    await act(async () => { await cta().props.onPress(); });
+    expect(input().props.value).toBe('172');
+    expect(input().props.error).toBe('Check this value and enter it again.');
+    await act(async () => { await input().props.onChangeText('173'); });
+    expect(input().props.error).toBe('');
+    await act(async () => { await renderer.root.findByType(PrimaryButton).props.onPress(); });
+    await act(async () => { await cta().props.onPress(); });
+    expect(submitQuestionnaire).toHaveBeenLastCalledWith({ p_height: '173', languages: '' });
+  });
 
   it('keeps a measurement to digits and refuses one outside the range', async () => {
     (fetchQuestionnaire as jest.Mock).mockResolvedValue({ questions: [measure], answers: {} });

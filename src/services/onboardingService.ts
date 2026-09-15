@@ -2,8 +2,24 @@ import { apiRequest } from './apiClient';
 import { invalidateCachedResource } from './appCache';
 import type { MobileQuestion } from '../types/api';
 
-export type OnboardingPlanState = { status: 'idle' | 'building' | 'completed' | 'failed'; planId?: string };
-export const fetchOnboardingPlanState = () => apiRequest<OnboardingPlanState>('/onboarding/plan');
+export type PlanBuildProgress = {
+  stage: string;
+  message: string;
+  daysMapped: number;
+  items: Array<{ kind: 'status' | 'day' | 'exercise'; text: string }>;
+  updatedAt?: string;
+};
+export type OnboardingPlanState = {
+  status: 'idle' | 'building' | 'completed' | 'failed';
+  planId?: string;
+  progress?: PlanBuildProgress;
+};
+// Progress polling should fail quickly and try again on the next tick. Long GET retries can
+// otherwise serialize several missed updates behind one slow request.
+export const fetchOnboardingPlanState = () => apiRequest<OnboardingPlanState>('/onboarding/plan', {
+  timeoutMs: 8_000,
+  retries: 0,
+});
 export async function createOnboardingPlan() {
   const result = await apiRequest<OnboardingPlanState>('/onboarding/plan', { method: 'POST', timeoutMs: 315_000, retries: 0 });
   if (result.status === 'completed') {

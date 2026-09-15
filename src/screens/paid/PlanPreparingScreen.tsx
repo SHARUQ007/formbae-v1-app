@@ -1,32 +1,46 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, AppState, Easing, Image, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
-import type { NativeStackScreenProps, NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, AppState, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
+import LinearGradient from 'react-native-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { PrimaryButton } from '../../components/PrimaryButton';
+import { StableImage, StableImageBackground } from '../../components/StableImage';
 import { useAuthStore } from '../../store/authStore';
-import { createOnboardingPlan, fetchCoachQuestions, fetchOnboardingPlanState, type OnboardingPlanState } from '../../services/onboardingService';
-import { loadProfileSettingsCached, peekProfileSettingsCached } from '../../services/preloadService';
-import { getPlanProfileArtwork } from '../../utils/profileArtwork';
-import { planTunnelCopy, planTunnelStages, resolvePlanBuildPhase } from '../../utils/planTunnel';
+import {
+  createOnboardingPlan,
+  fetchCoachQuestions,
+  fetchOnboardingPlanState,
+  type OnboardingPlanState,
+  type PlanBuildProgress,
+} from '../../services/onboardingService';
+import { planTunnelCopy, resolvePlanBuildPhase } from '../../utils/planTunnel';
 import { ApiError } from '../../services/apiClient';
 import type { PaidStackParamList, RootStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
+import { shadows } from '../../theme/shadows';
+
+const AVA_ARTWORK = require('../../assets/editorial/ava-coach-portrait-v2.jpg');
+const PLAN_ARTWORK = require('../../assets/editorial/accountability-plan.jpg');
+const POLL_INTERVAL_MS = 2_000;
 
 export function PlanPreparingScreen({ navigation, route }: NativeStackScreenProps<PaidStackParamList, 'PlanPreparing'>) {
-  const { refreshStatus, status } = useAuthStore();
+  const { refreshStatus } = useAuthStore();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const [profileGender, setProfileGender] = useState(() => peekProfileSettingsCached()?.profile?.gender || '');
+  const { height } = useWindowDimensions();
+  const compact = height < 760;
   const [state, setState] = useState<OnboardingPlanState['status']>('idle');
+  const [progress, setProgress] = useState<PlanBuildProgress | null>(null);
   const [checking, setChecking] = useState(true);
+  const [opening, setOpening] = useState(false);
   const [error, setError] = useState('');
   const alive = useRef(true);
-  const buildRef = useRef<(() => Promise<void>) | null>(null);
-  const reduceMotion = useReducedMotion();
-  const requestRunning = useRef(false);
-  const checkingRef = useRef(false);
+  const stateRef = useRef<OnboardingPlanState['status']>('idle');
+  const pollPromise = useRef<Promise<OnboardingPlanState | null> | null>(null);
+  const buildRunning = useRef(false);
+  const autoStartHandled = useRef(false);
+  const entered = useRef(false);
+
   const coachQuestionsPending = useCallback(async () => {
     try {
       const coach = await fetchCoachQuestions();
@@ -36,19 +50,106 @@ export function PlanPreparingScreen({ navigation, route }: NativeStackScreenProp
     }
   }, []);
 
-  const check = useCallback(async () => {
-    if (checkingRef.current) return;
-    checkingRef.current = true;
-    try {
-      const result = await fetchOnboardingPlanState();
-      if (alive.current) { setState(result.status); setError(''); }
-    } catch {
-      if (alive.current) setError('We couldn’t check your plan. Your setup is saved.');
-    } finally {
-      checkingRef.current = false;
-      if (alive.current) setChecking(false);
+  const applyPlanState = useCallback((next: OnboardingPlanState) => {
+    if (!alive.current) return;
+    // The first poll can race the POST before its database lease exists. Keep showing the
+    // local building state until that request has had a chance to claim the build.
+    if (!(buildRunning.current && next.status === 'idle')) {
+      stateRef.current = next.status;
+      setState(next.status);
     }
+    if (next.progress) setProgress(next.progress);
+    if (next.status === 'building' || next.status === 'completed') setError('');
   }, []);
+
+  const check = useCallback(() => {
+    if (pollPromise.current) return pollPromise.current;
+    const request = fetchOnboardingPlanState()
+      .then(result => {
+        applyPlanState(result);
+        return result;
+      })
+      .catch(() => {
+        if (alive.current && stateRef.current !== 'building') setError('We couldn’t check your plan. Your setup is saved.');
+        return null;
+      })
+      .finally(() => {
+        if (pollPromise.current === request) pollPromise.current = null;
+        if (alive.current) setChecking(false);
+      });
+    pollPromise.current = request;
+    return request;
+  }, [applyPlanState]);
+
+  const build = useCallback(async () => {
+    if (buildRunning.current) return;
+    buildRunning.current = true;
+    setError('');
+    stateRef.current = 'building';
+    setState('building');
+    setProgress({
+      stage: 'start',
+      message: 'Ava is reading your goals',
+      daysMapped: 0,
+      items: [{ kind: 'status', text: 'Ava is reading your goals' }],
+    });
+    try {
+      const fresh = await refreshStatus();
+      if (!fresh?.hasPaid || !(fresh.profileSetupCompleted ?? fresh.questionnaireCompleted) || !fresh.trainerAssigned) {
+        navigation.replace('PaidWelcome');
+        return;
+      }
+      if ((fresh.coachQuestionsRequired && !fresh.coachQuestionsCompleted) || await coachQuestionsPending()) {
+        navigation.replace('CoachQuestions');
+        return;
+      }
+      if (fresh.planReady) {
+        applyPlanState({ status: 'completed' });
+        return;
+      }
+      const result = await createOnboardingPlan();
+      applyPlanState(result);
+    } catch (failure) {
+      if (failure instanceof ApiError && failure.status === 409 && await coachQuestionsPending()) {
+        navigation.replace('CoachQuestions');
+        return;
+      }
+      const latest = await check();
+      if (!alive.current) return;
+      if (!latest || (latest.status !== 'building' && latest.status !== 'completed')) {
+        stateRef.current = latest?.status || 'failed';
+        setState(stateRef.current);
+        setError(failure instanceof ApiError && failure.isNetwork
+          ? 'The connection dropped. Your setup is saved—try again when you’re online.'
+          : 'Ava couldn’t finish this build. Your setup is saved, so you can try again.');
+      }
+    } finally {
+      buildRunning.current = false;
+    }
+  }, [applyPlanState, check, coachQuestionsPending, navigation, refreshStatus]);
+
+  const enter = useCallback(async () => {
+    if (opening) return;
+    setOpening(true);
+    setError('');
+    try {
+      const fresh = await refreshStatus();
+      if (fresh?.planReady || fresh?.recommendedNextScreen === 'home') {
+        const parent = navigation.getParent?.() as NativeStackNavigationProp<RootStackParamList> | undefined;
+        if (parent) parent.replace('Main');
+        else setError('Your plan is ready, but we couldn’t open it. Please try again.');
+      } else {
+        const latest = await check();
+        if (latest?.status !== 'completed') setError('Your plan is still syncing. Check again in a moment.');
+        else setError('Your plan is ready, but we couldn’t open it. Please try again.');
+      }
+    } catch {
+      if (alive.current) setError('Your plan is ready, but we couldn’t open it. Please try again.');
+    } finally {
+      if (alive.current) setOpening(false);
+    }
+  }, [check, navigation, opening, refreshStatus]);
+
   useEffect(() => {
     alive.current = true;
     (async () => {
@@ -57,131 +158,140 @@ export function PlanPreparingScreen({ navigation, route }: NativeStackScreenProp
         return;
       }
       if (!alive.current) return;
-      // Arriving from a step that already said "build my plan" should not ask again.
-      if (route.params?.autoStart) buildRef.current?.();
-      else check();
-    })();
-    const subscription = AppState.addEventListener('change', next => { if (next === 'active') check(); });
-    return () => { alive.current = false; subscription.remove(); };
-  }, [check, coachQuestionsPending, navigation, route.params?.autoStart]);
+      if (route.params?.autoStart && !autoStartHandled.current) {
+        autoStartHandled.current = true;
+        await build();
+      } else {
+        await check();
+      }
+    })().catch(() => undefined);
+    const subscription = AppState.addEventListener('change', next => {
+      if (next === 'active') check().catch(() => undefined);
+    });
+    return () => {
+      alive.current = false;
+      subscription.remove();
+    };
+  }, [build, check, coachQuestionsPending, navigation, route.params?.autoStart]);
+
   useEffect(() => {
-    if (state !== 'building') return;
-    const timer = setInterval(() => { if (AppState.currentState === 'active') check(); }, 15000);
+    if (state !== 'building') return undefined;
+    check().catch(() => undefined);
+    const timer = setInterval(() => {
+      if (AppState.currentState === 'active') check().catch(() => undefined);
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [state, check]);
-  const build = async () => {
-    if (requestRunning.current) return;
-    requestRunning.current = true;
-    setError(''); setState('building');
-    try {
-      const fresh = await refreshStatus();
-      if (!fresh?.hasPaid || !(fresh.profileSetupCompleted ?? fresh.questionnaireCompleted) || !fresh.trainerAssigned) {
-        navigation.replace('PaidWelcome'); return;
-      }
-      // An AI coach has questions of its own; nothing can be built until they are answered.
-      if ((fresh.coachQuestionsRequired && !fresh.coachQuestionsCompleted) || await coachQuestionsPending()) {
-        navigation.replace('CoachQuestions'); return;
-      }
-      if (fresh.planReady) { if (alive.current) setState('completed'); return; }
-      const result = await createOnboardingPlan();
-      if (alive.current) setState(result.status);
-    } catch (failure) {
-      // The server refuses to plan before the coach has asked; send them there, not to a retry.
-      if (failure instanceof ApiError && failure.status === 409 && await coachQuestionsPending()) {
-        navigation.replace('CoachQuestions');
-        return;
-      }
-      // A lost response doesn't mean the server failed. Reconcile before offering a retry.
-      try {
-        const latest = await fetchOnboardingPlanState();
-        if (alive.current) {
-          setState(latest.status);
-          if (latest.status !== 'building' && latest.status !== 'completed') setError('Your plan couldn’t finish. Please try again.');
-        }
-      } catch { if (alive.current) setError('Connection interrupted. Check your plan status before trying again.'); }
-    } finally { requestRunning.current = false; }
-  };
-  buildRef.current = build;
-
-  const enterRef = useRef<(() => Promise<void>) | null>(null);
-  const enteredRef = useRef(false);
-
-  const enter = async () => {
-    setChecking(true); setError('');
-    try {
-      const fresh = await refreshStatus();
-      if (fresh?.recommendedNextScreen === 'home') navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('Main');
-      else { await check(); setError('Your plan is still syncing. Please check again.'); }
-    } catch { setError('We couldn’t open your plan. Please try again.'); }
-    finally { if (alive.current) setChecking(false); }
-  };
-  enterRef.current = enter;
+  }, [check, state]);
 
   useEffect(() => {
-    loadProfileSettingsCached()
-      .then((settings) => setProfileGender(settings.profile?.gender || ''))
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    if (state !== 'completed' || enteredRef.current) return;
-    enteredRef.current = true;
-    enterRef.current?.();
-  }, [state]);
+    if (state !== 'completed' || entered.current) return;
+    entered.current = true;
+    enter().catch(() => undefined);
+  }, [enter, state]);
 
   const building = state === 'building';
   const ready = state === 'completed';
   const phase = resolvePlanBuildPhase(state, checking);
   const copy = planTunnelCopy(phase);
-  const stages = planTunnelStages(phase, status ?? undefined);
-  const artwork = useMemo(() => getPlanProfileArtwork(profileGender), [profileGender]);
-  const ringSize = Math.min(240, Math.max(176, width * 0.56));
+  const daysMapped = Math.max(0, Math.min(7, progress?.daysMapped || 0));
+  const feed = progress?.items?.slice(0, compact ? 3 : 4) || [];
+  const liveMessage = progress?.message || 'Ava is reading your goals';
 
   return (
-    <View style={styles.tunnel}>
-      <Image source={artwork} style={styles.backdrop} blurRadius={8} accessibilityIgnoresInvertColors />
-      <View style={styles.scrim} />
-      {building || ready ? null : (
+    <View style={styles.root}>
+      <StableImageBackground source={PLAN_ARTWORK} defaultSource={PLAN_ARTWORK} resizeMode="cover" style={styles.backdrop}>
+        <LinearGradient
+          colors={['rgba(2,4,10,0.50)', 'rgba(2,4,10,0.92)', '#02040a']}
+          locations={[0, 0.42, 0.76]}
+          style={StyleSheet.absoluteFill}
+        />
+      </StableImageBackground>
+
+      {!building && !ready ? (
         <TouchableOpacity
           onPress={() => navigation.navigate('PaidWelcome')}
-          style={[styles.back, { top: insets.top + 12 }]}
+          style={[styles.back, { top: insets.top + 10 }]}
           accessibilityRole="button"
           accessibilityLabel="Back to setup"
         >
-          <Feather name="chevron-left" size={24} color={colors.white} />
+          <Feather name="chevron-left" size={25} color={colors.white} />
         </TouchableOpacity>
-      )}
-      <View style={[styles.body, { paddingTop: insets.top + 20, paddingBottom: Math.max(insets.bottom, 16) + 12 }]}>
-        <View style={styles.stage}>
-          <View style={{ width: ringSize, height: ringSize }}>
-            <TunnelRing active={!ready} reduceMotion={reduceMotion} />
-            <Image source={artwork} style={styles.portrait} accessibilityIgnoresInvertColors />
-            {ready ? (
-              <View style={styles.readyBadge}><Feather name="check" size={20} color={colors.onPrimary} /></View>
-            ) : null}
+      ) : null}
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.content, compact && styles.contentCompact, {
+          paddingTop: insets.top + (compact ? 14 : 28),
+          paddingBottom: Math.max(insets.bottom, 16) + 12,
+        }]}
+      >
+        <View style={[styles.coachCard, compact && styles.coachCardCompact]}>
+          <View style={styles.portraitFrame}>
+            <StableImage source={AVA_ARTWORK} defaultSource={AVA_ARTWORK} resizeMode="cover" style={styles.portrait} accessibilityLabel="Ava, your FormBae coach" />
           </View>
-        </View>
-
-        <Text style={styles.eyebrow}>{copy.eyebrow}</Text>
-        <Text style={styles.title}>{copy.title}</Text>
-        <Text style={styles.copy}>{copy.body}</Text>
-
-        <View style={styles.stages}>
-          {stages.map((item) => (
-            <View key={item.label} style={[styles.stageTile, item.done && styles.stageTileDone]}>
-              <Text style={styles.stageLabel}>{item.label}</Text>
-              <Text style={[styles.stageValue, item.done && styles.stageValueDone]} numberOfLines={1}>{item.value}</Text>
+          <View style={styles.coachCopy}>
+            <View style={styles.coachNameRow}>
+              <Text style={styles.coachName}>Ava</Text>
+              <View style={styles.aiBadge}><Text style={styles.aiBadgeText}>AI COACH</Text></View>
             </View>
-          ))}
+            <Text style={styles.coachRole}>{building ? 'Designing your first training week' : ready ? 'Your plan is ready' : 'Ready to build around your goals'}</Text>
+          </View>
+          {building ? <ActivityIndicator color={colors.gold} /> : ready ? <Feather name="check-circle" size={25} color={colors.success} /> : null}
         </View>
 
-        {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+        <View style={styles.heading}>
+          <Text style={styles.eyebrow}>{building ? 'BUILDING LIVE' : copy.eyebrow}</Text>
+          <Text style={[styles.title, compact && styles.titleCompact]}>{building ? liveMessage : copy.title}</Text>
+          <Text style={styles.description}>{building ? 'Watch your training week take shape as Ava maps each session.' : copy.body}</Text>
+        </View>
 
-        {building || ready ? (
-          <Text style={styles.footnote}>Your membership, profile and coach are saved to your account.</Text>
+        {building ? (
+          <View style={[styles.livePanel, shadows.card]}>
+            <View style={styles.liveHeader}>
+              <View style={styles.liveStatus}>
+                <View style={styles.liveDot} />
+                <Text style={styles.liveLabel}>LIVE UPDATES</Text>
+              </View>
+              <Text style={styles.dayCount}>{daysMapped} of 7 days</Text>
+            </View>
+            <View style={styles.days} accessibilityLabel={`${daysMapped} of 7 workout days mapped`}>
+              {Array.from({ length: 7 }, (_, day) => (
+                <View key={day} style={styles.dayColumn}>
+                  <View style={[styles.dayBar, day < daysMapped && styles.dayBarDone]} />
+                  <Text style={[styles.dayLabel, day < daysMapped && styles.dayLabelDone]}>{['M', 'T', 'W', 'T', 'F', 'S', 'S'][day]}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={styles.feed}>
+              {feed.map((item, itemIndex) => (
+                <View key={`${item.kind}-${item.text}-${itemIndex}`} style={[styles.feedRow, itemIndex === 0 && styles.feedRowCurrent]}>
+                  <View style={[styles.feedIcon, itemIndex === 0 && styles.feedIconCurrent]}>
+                    <Feather name={item.kind === 'exercise' ? 'plus' : item.kind === 'day' ? 'calendar' : 'activity'} size={14} color={itemIndex === 0 ? colors.onPrimary : colors.inkMuted} />
+                  </View>
+                  <Text style={[styles.feedText, itemIndex === 0 && styles.feedTextCurrent]} numberOfLines={2}>{item.text}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {error ? (
+          <View style={styles.errorCard}>
+            <Feather name="alert-circle" size={18} color={colors.error} />
+            <Text accessibilityRole="alert" style={styles.error}>{error}</Text>
+          </View>
+        ) : null}
+
+        {building ? (
+          <View style={styles.savedRow}>
+            <Feather name="cloud" size={16} color={colors.inkSubtle} />
+            <Text style={styles.savedText}>This keeps building if you leave the screen.</Text>
+          </View>
+        ) : ready ? (
+          <PrimaryButton title="Open my plan" onPress={enter} loading={opening} icon="arrow-right" iconPosition="trailing" style={styles.cta} />
         ) : (
           <PrimaryButton
-            title={state === 'failed' ? 'Try creating my plan again' : 'Create my workout plan'}
+            title={state === 'failed' ? 'Try building again' : 'Create my workout plan'}
             onPress={build}
             loading={checking}
             icon="arrow-right"
@@ -189,71 +299,65 @@ export function PlanPreparingScreen({ navigation, route }: NativeStackScreenProp
             style={styles.cta}
           />
         )}
-      </View>
+      </ScrollView>
     </View>
   );
 }
 
-/** The ring the web tunnel spins while the plan is being written. */
-function TunnelRing({ active, reduceMotion }: { active: boolean; reduceMotion: boolean }) {
-  const spin = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (!active || reduceMotion) return;
-    const loop = Animated.loop(
-      Animated.timing(spin, { toValue: 1, duration: 2800, easing: Easing.linear, useNativeDriver: true }),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [active, reduceMotion, spin]);
-
-  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-  return (
-    <Animated.View
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      style={[styles.ring, active ? null : styles.ringSettled, { transform: [{ rotate }] }]}
-    />
-  );
-}
-
 const styles = StyleSheet.create({
-  tunnel: { flex: 1, backgroundColor: '#02040a' },
-  backdrop: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, width: '100%', height: '100%', opacity: 0.3 },
-  scrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(2,4,10,0.72)' },
-  body: { flex: 1, paddingHorizontal: 22, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  root: { flex: 1, backgroundColor: '#02040a' },
+  backdrop: { ...StyleSheet.absoluteFill, height: '58%', opacity: 0.72 },
   back: {
-    position: 'absolute', left: 18, zIndex: 2, width: 40, height: 40, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)',
+    position: 'absolute', left: 18, zIndex: 2, width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(4,5,8,0.54)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
   },
-  stage: { alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-  ring: {
-    ...StyleSheet.absoluteFill,
-    borderRadius: 999,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    borderTopColor: colors.gold,
-    borderRightColor: 'rgba(255,255,255,0.5)',
+  content: { flexGrow: 1, justifyContent: 'flex-end', paddingHorizontal: 22, gap: 20 },
+  contentCompact: { gap: 14 },
+  coachCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 13, minHeight: 88, padding: 12,
+    borderRadius: 22, backgroundColor: 'rgba(17,18,23,0.94)', borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.13)',
   },
-  ringSettled: { borderColor: colors.success },
-  portrait: { position: 'absolute', top: '16%', left: '16%', width: '68%', height: '68%', borderRadius: 36 },
-  readyBadge: {
-    position: 'absolute', right: '12%', bottom: '12%', width: 40, height: 40, borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: colors.success,
+  coachCardCompact: { minHeight: 76, padding: 10 },
+  portraitFrame: { width: 62, height: 62, borderRadius: 18, overflow: 'hidden', backgroundColor: colors.panelRaised },
+  portrait: { width: '100%', height: '100%' },
+  coachCopy: { flex: 1, gap: 4 },
+  coachNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  coachName: { color: colors.white, fontSize: 19, lineHeight: 24, fontWeight: '800' },
+  aiBadge: { borderRadius: 99, backgroundColor: colors.accentLight, paddingHorizontal: 8, paddingVertical: 4 },
+  aiBadgeText: { color: colors.gold, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+  coachRole: { color: colors.inkMuted, fontSize: 12, lineHeight: 17 },
+  heading: { alignItems: 'center', gap: 8 },
+  eyebrow: { color: colors.gold, fontSize: 10, fontWeight: '800', letterSpacing: 2 },
+  title: { color: colors.white, fontSize: 30, lineHeight: 36, fontWeight: '800', letterSpacing: -0.7, textAlign: 'center' },
+  titleCompact: { fontSize: 26, lineHeight: 31 },
+  description: { maxWidth: 360, color: colors.inkMuted, fontSize: 14, lineHeight: 21, textAlign: 'center' },
+  livePanel: {
+    alignSelf: 'stretch', padding: 16, borderRadius: 22, backgroundColor: 'rgba(17,18,23,0.96)',
+    borderWidth: 1, borderColor: 'rgba(240,206,120,0.24)',
   },
-  eyebrow: { fontSize: 11, letterSpacing: 2, fontWeight: '800', color: 'rgba(255,255,255,0.6)', textAlign: 'center' },
-  title: { fontSize: 30, lineHeight: 34, fontWeight: '800', color: colors.white, textAlign: 'center', letterSpacing: -0.6 },
-  copy: { fontSize: 14, lineHeight: 22, color: 'rgba(255,255,255,0.64)', textAlign: 'center', maxWidth: 360 },
-  stages: { flexDirection: 'row', gap: 8, alignSelf: 'stretch', marginTop: 10 },
-  stageTile: {
-    flex: 1, borderRadius: 18, paddingVertical: 12, paddingHorizontal: 12,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', backgroundColor: 'rgba(255,255,255,0.07)',
-  },
-  stageTileDone: { borderColor: 'rgba(248,217,132,0.4)' },
-  stageLabel: { fontSize: 10, letterSpacing: 1.4, fontWeight: '700', color: 'rgba(255,255,255,0.42)' },
-  stageValue: { marginTop: 5, fontSize: 15, fontWeight: '700', color: colors.white },
-  stageValueDone: { color: colors.gold },
-  error: { color: colors.error, fontSize: 14, lineHeight: 21, textAlign: 'center', marginTop: 8 },
-  footnote: { fontSize: 12, lineHeight: 19, color: 'rgba(255,255,255,0.42)', textAlign: 'center', marginTop: 12 },
-  cta: { alignSelf: 'stretch', marginTop: 16, backgroundColor: colors.gold, borderColor: colors.gold },
+  liveHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  liveStatus: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.success },
+  liveLabel: { color: colors.success, fontSize: 10, fontWeight: '800', letterSpacing: 1.3 },
+  dayCount: { color: colors.gold, fontSize: 12, fontWeight: '700' },
+  days: { flexDirection: 'row', gap: 7, marginTop: 14 },
+  dayColumn: { flex: 1, alignItems: 'center', gap: 6 },
+  dayBar: { width: '100%', height: 6, borderRadius: 99, backgroundColor: colors.panelRaised },
+  dayBarDone: { backgroundColor: colors.gold },
+  dayLabel: { color: colors.inkSubtle, fontSize: 9, fontWeight: '700' },
+  dayLabelDone: { color: colors.gold },
+  feed: { gap: 8, marginTop: 14 },
+  feedRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 8, borderRadius: 12 },
+  feedRowCurrent: { backgroundColor: colors.accentLight },
+  feedIcon: { width: 26, height: 26, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.panelRaised },
+  feedIconCurrent: { backgroundColor: colors.gold },
+  feedText: { flex: 1, color: colors.inkSubtle, fontSize: 12, lineHeight: 17 },
+  feedTextCurrent: { color: colors.ink, fontWeight: '600' },
+  errorCard: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 12, borderRadius: 14, backgroundColor: colors.errorLight },
+  error: { flex: 1, color: colors.error, fontSize: 13, lineHeight: 18 },
+  savedRow: { minHeight: 44, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
+  savedText: { color: colors.inkSubtle, fontSize: 12, lineHeight: 18 },
+  cta: { alignSelf: 'stretch', minHeight: 60, borderRadius: 18, backgroundColor: colors.gold, borderColor: colors.gold },
 });
