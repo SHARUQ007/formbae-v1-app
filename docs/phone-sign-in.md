@@ -78,11 +78,20 @@ configuration, and the security model is SHA pinning plus App Check, not secrecy
       last one is the classic "works in internal testing, fails for every real install"
 - [ ] Add the iOS app, and drag `GoogleService-Info.plist` into Xcode with *Copy items if
       needed*. Confirm it is a member of the **FormBae target**, or it is not in the bundle
-- [ ] **Required on iOS today**: add `REVERSED_CLIENT_ID` from `GoogleService-Info.plist` as
-      a URL scheme in `ios/FormBae/Info.plist` `CFBundleURLTypes`. Verification falls back
-      to a reCAPTCHA sheet, and that sheet returns through this scheme - without it the
-      verification hangs with no error. It stays needed even once push is set up, because
-      the fallback still fires on simulators and on devices with push disabled
+- [ ] **Required on iOS**: register the reCAPTCHA return scheme in `ios/FormBae/Info.plist`
+      `CFBundleURLTypes`. It is `GOOGLE_APP_ID` from `GoogleService-Info.plist` with its
+      colons turned into dashes and `app-` in front:
+
+      ```
+      GOOGLE_APP_ID  1:190649836345:ios:a93f4d0338c4a566b9bee8
+      URL scheme     app-1-190649836345-ios-a93f4d0338c4a566b9bee8
+      ```
+
+      Not `REVERSED_CLIENT_ID`, which older Firebase docs name and which only exists once
+      Google Sign-In is enabled on the project. Not the bundle id either. Firebase checks
+      for this exact string and calls `fatalError` when it is absent, so a wrong value
+      crashes the app the moment a code is requested - it does not degrade. Regenerate it
+      if the Firebase app is ever recreated.
 
 Silent-push verification is the nicer path and is worth doing, but it is a separate piece
 of setup and the app builds and works without it:

@@ -101,17 +101,19 @@
 				<string>formbae</string>
 			</array>
 		</dict>
-		<!-- Where phone sign-in's reCAPTCHA sheet returns. Firebase documents using
-		     REVERSED_CLIENT_ID here, but that key only exists once Google Sign-In is
-		     enabled on the project; without it the scheme is the bundle id, which is what
-		     Auth.auth().canHandle(url) looks for in AppDelegate. Verification opens the
-		     sheet and then hangs with no error if this is missing. -->
+		<!-- Where phone sign-in's reCAPTCHA sheet returns. The scheme is GOOGLE_APP_ID from
+		     GoogleService-Info.plist with its colons turned into dashes and "app-" in
+		     front - not REVERSED_CLIENT_ID, which older Firebase docs name and which only
+		     exists once Google Sign-In is enabled, and not the bundle id. Firebase checks
+		     for this exact string and calls fatalError if it is absent, so getting it
+		     wrong crashes the app the moment a code is requested. Regenerate it if the
+		     Firebase app is ever recreated. -->
 		<dict>
 			<key>CFBundleURLName</key>
 			<string>com.formbae.firebaseauth</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.formbae</string>
+				<string>app-1-190649836345-ios-a93f4d0338c4a566b9bee8</string>
 			</array>
 		</dict>
 	</array>
