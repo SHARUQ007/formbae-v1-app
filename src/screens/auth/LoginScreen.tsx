@@ -15,7 +15,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { NativeStackScreenProps, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import NativeLinearGradient from 'react-native-linear-gradient';
 import { ScreenContainer } from '../../components/Card';
@@ -23,12 +23,16 @@ import { FormInput } from '../../components/FormInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { KeyboardScreen } from '../../components/KeyboardScreen';
 import { Logo } from '../../components/Logo';
+import { fetchAppVersionPolicy, otpRequired } from '../../services/appUpdateService';
 import { startPhoneVerification } from '../../services/otpService';
+import { useAuthStore } from '../../store/authStore';
+import { resolveOnboardingInitialRoute, resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
+import { ApiError } from '../../services/apiClient';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { radius } from '../../theme/radius';
 import { typography } from '../../theme/typography';
-import type { AuthStackParamList } from '../../navigation/types';
+import type { AuthStackParamList, RootStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
@@ -38,6 +42,7 @@ const PRIVACY_URL = 'https://formbae.in/privacy-policy';
 type MotionPreference = 'unknown' | 'full' | 'reduce';
 
 export function LoginScreen({ navigation, route }: Props) {
+  const { login } = useAuthStore();
   const { height, fontScale } = useWindowDimensions();
   const compact = height < 700 || fontScale > 1.15;
   const phoneRef = useRef<TextInput>(null);
@@ -142,6 +147,25 @@ export function LoginScreen({ navigation, route }: Props) {
     setSending(true);
     setPhoneError('');
     try {
+      // Only chooses a screen. The backend decides for itself whether this sign-in needed a
+      // verification, so skipping it here when the setting says so cannot let anyone in -
+      // a sign-in that should have been verified is refused there.
+      const verificationRequired = otpRequired(await fetchAppVersionPolicy().catch(() => null));
+      if (!verificationRequired) {
+        const response = await login(digits, isSignup ? name.trim() || undefined : undefined, isSignup);
+        await finishScreenTransition();
+        const rootNav = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
+        const root = resolveRootRoute(response.status.recommendedNextScreen);
+        if (root === 'Onboarding') {
+          rootNav?.replace('Onboarding', { screen: resolveOnboardingInitialRoute(response.status.recommendedNextScreen) });
+        } else if (root === 'PaidTransition') {
+          rootNav?.replace('PaidTransition', { screen: resolvePaidInitialRoute(response.status.recommendedNextScreen) });
+        } else {
+          rootNav?.replace(root === 'Main' ? 'Splash' : root);
+        }
+        return;
+      }
+
       // Whether this number already has an account is settled after the code is checked,
       // on the verify screen. Asking first would tell any caller which numbers are
       // registered, which is exactly what sign-in should stop being able to do.
@@ -155,6 +179,13 @@ export function LoginScreen({ navigation, route }: Props) {
         reduceMotion: motionPreference === 'reduce',
       });
     } catch (submitError) {
+      // Unverified sign-in is refused for a number that has no account yet, the same as it
+      // was before: send them to the signup form rather than to an error.
+      if (!isSignup && submitError instanceof ApiError && submitError.status === 404
+        && (submitError.payload as { code?: string } | undefined)?.code === 'ACCOUNT_NOT_FOUND') {
+        navigation.replace('Login', { mode: 'signup', mobile: digits, reduceMotion: motionPreference === 'reduce' });
+        return;
+      }
       const message = submitError instanceof Error ? submitError.message : 'We could not send your code. Please try again.';
       setPhoneError(message);
       AccessibilityInfo.announceForAccessibility(message);

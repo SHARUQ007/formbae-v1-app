@@ -7,6 +7,8 @@ export type AppVersionPolicy = {
   title: string;
   message: string;
   updatedAt: string;
+  /** Whether sign-in must prove the number. Read to choose a screen, never as permission. */
+  otp?: { enabled: boolean };
 };
 
 export type RequiredAppUpdate = {
@@ -48,4 +50,16 @@ export function requiredAppUpdate(policy: AppVersionPolicy, currentVersion = CUR
     title: policy.title,
     message: policy.message,
   };
+}
+
+/**
+ * Whether to take the trainee through verification.
+ *
+ * Only ever decides which screen to show. The backend reads the same setting and judges
+ * every sign-in itself, so a tampered app that skips verification is refused there - which
+ * is why defaulting to false when the policy cannot be read costs nothing: the sign-in that
+ * follows is rejected if verification was in fact required.
+ */
+export function otpRequired(policy: AppVersionPolicy | null): boolean {
+  return Boolean(policy?.otp?.enabled);
 }

@@ -5,12 +5,20 @@ import { LoginScreen, normalizeIndianMobile } from './LoginScreen';
 import { ApiError } from '../../services/apiClient';
 
 const mockStartPhoneVerification = jest.fn();
+const mockFetchPolicy = jest.fn();
+const mockLogin = jest.fn();
 const mockReplace = jest.fn();
 
-// Signing in now happens on the verify screen; this one only sends the code.
+// Signing in happens on the verify screen whenever verification is required; this one
+// only sends the code. With it switched off it signs in here directly.
 jest.mock('../../services/otpService', () => ({
   startPhoneVerification: (...args: unknown[]) => mockStartPhoneVerification(...args),
 }));
+jest.mock('../../services/appUpdateService', () => ({
+  fetchAppVersionPolicy: (...args: unknown[]) => mockFetchPolicy(...args),
+  otpRequired: (policy: { otp?: { enabled?: boolean } } | null) => Boolean(policy?.otp?.enabled),
+}));
+jest.mock('../../store/authStore', () => ({ useAuthStore: () => ({ login: mockLogin }) }));
 
 jest.mock('../../services/activityService', () => ({
   trackMobileInteraction: jest.fn(),
@@ -67,6 +75,9 @@ describe('LoginScreen', () => {
   beforeEach(() => {
     mockStartPhoneVerification.mockReset();
     mockStartPhoneVerification.mockResolvedValue({ sessionId: 'otp-1' });
+    mockFetchPolicy.mockReset();
+    mockFetchPolicy.mockResolvedValue({ otp: { enabled: true } });
+    mockLogin.mockReset();
     mockReplace.mockReset();
     jest
       .spyOn(AccessibilityInfo, 'announceForAccessibility')
@@ -234,5 +245,45 @@ describe('LoginScreen', () => {
     expect(navigation.navigate).toHaveBeenCalledWith('VerifyOtp', expect.objectContaining({
       mobile: '9876543210', name: 'Maya', mode: 'signup',
     }));
+  });
+
+  describe('when verification is switched off', () => {
+    beforeEach(() => {
+      mockFetchPolicy.mockResolvedValue({ otp: { enabled: false } });
+      mockLogin.mockResolvedValue({ status: { recommendedNextScreen: 'home' } });
+    });
+
+    it('signs in here instead of sending a code', async () => {
+      const { renderer } = renderLogin('login');
+      renderers.push(renderer);
+      act(() => renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('9876543210'));
+      await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Send code' }).props.onPress());
+
+      expect(mockStartPhoneVerification).not.toHaveBeenCalled();
+      expect(mockLogin).toHaveBeenCalledWith('9876543210', undefined, false);
+      expect(mockReplace).toHaveBeenCalledWith('Splash');
+    });
+
+    it('still sends an unknown number to signup rather than an error', async () => {
+      mockLogin.mockRejectedValue(new ApiError('Create an account', 404, { code: 'ACCOUNT_NOT_FOUND' }));
+      const { navigation, renderer } = renderLogin('login');
+      renderers.push(renderer);
+      act(() => renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('9876543210'));
+      await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Send code' }).props.onPress());
+
+      expect(navigation.replace).toHaveBeenCalledWith('Login', { mode: 'signup', mobile: '9876543210', reduceMotion: true });
+    });
+
+    it('a policy that cannot be read still verifies, and the backend decides', async () => {
+      // Failing to reach the setting must not be a way to skip verification: the sign-in that
+      // follows is refused server-side if it was in fact required.
+      mockFetchPolicy.mockRejectedValue(new Error('offline'));
+      const { renderer } = renderLogin('login');
+      renderers.push(renderer);
+      act(() => renderer.root.findByProps({ accessibilityLabel: 'Mobile number' }).props.onChangeText('9876543210'));
+      await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Send code' }).props.onPress());
+
+      expect(mockLogin).toHaveBeenCalled();
+    });
   });
 });
