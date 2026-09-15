@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loadToken, login as loginRequest, logout as logoutRequest } from '../services/authService';
+import { configureStore, resetStore } from '../services/storePurchaseService';
 import { fetchUserStatus } from '../services/statusService';
 import { setUnauthorizedHandler } from '../services/apiClient';
 import { registerForRemotePush, syncReminders } from '../services/notificationService';
@@ -22,6 +23,14 @@ function runPostAuthInit(status: UserStatus) {
   if (initializedUserId !== status.userId) {
     initializedUserId = status.userId;
     // Fire-and-forget; never blocks or breaks the UI.
+    // The stores need to know whose account this is before anything is bought: a purchase
+    // made against the wrong account id, or none, is one the server cannot later find when
+    // it asks what this trainee is entitled to.
+    try {
+      configureStore(status.userId);
+    } catch {
+      // No key configured, or no store on this build. The paywall says so itself.
+    }
     flushWorkoutQueue().catch(() => undefined);
     registerForRemotePush().catch(() => undefined);
     syncReminders({
@@ -39,6 +48,13 @@ function runPostAuthInit(status: UserStatus) {
 }
 
 function resetPostAuthInit() {
+  // Otherwise the next trainee to sign in on this device inherits the last one's store
+  // account, and their purchase would be attributed to somebody else.
+  try {
+    resetStore();
+  } catch {
+    // Nothing to reset when the store was never reachable.
+  }
   initializedUserId = '';
   mainPreloadedUserId = '';
   statusRefreshInFlight = null;

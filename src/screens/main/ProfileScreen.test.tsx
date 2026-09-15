@@ -58,12 +58,17 @@ describe('Profile subscription disclosure', () => {
     expect(bodyArtwork.props.defaultSource).toEqual(bodyArtwork.props.source);
     expect(planArtwork.props.defaultSource).toEqual(planArtwork.props.source);
 
-    expect(tree!.root.findAllByProps({ children: 'Cancel subscription' })).toHaveLength(0);
+    // Cancelling is the store's to do: ending access ourselves stopped the app working
+    // and did nothing about the money, which keeps being taken until the subscription is
+    // cancelled where it was bought.
+    const manageInStore = () => tree!.root.findAllByProps({ accessibilityLabel: 'Manage subscription in the store' });
+    expect(manageInStore()).toHaveLength(0);
 
     act(() => {
       tree!.root.findByProps({ accessibilityLabel: 'Manage subscription' }).props.onPress();
     });
 
-    expect(tree!.root.findAllByProps({ children: 'Cancel subscription' }).length).toBeGreaterThan(0);
+    expect(manageInStore().length).toBeGreaterThan(0);
+    expect(tree!.root.findAllByProps({ children: 'Cancel subscription' })).toHaveLength(0);
   });
 });

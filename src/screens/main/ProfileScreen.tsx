@@ -1,6 +1,6 @@
 import { StableImage } from '../../components/StableImage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Alert, Linking, Platform, RefreshControl, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useFocusEffect } from '@react-navigation/native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -14,7 +14,7 @@ import { ProfileGymSection } from '../../components/ProfileGymSection';
 import { LoadingState, ErrorState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { peekCachedResource } from '../../services/appCache';
-import { cancelMobileSubscription, fetchSettings, updateSettings, type MobileSettingsResponse } from '../../services/settingsService';
+import { fetchSettings, updateSettings, type MobileSettingsResponse } from '../../services/settingsService';
 import { fetchGym, type GymPlace } from '../../services/gymService';
 import { syncReminders } from '../../services/notificationService';
 import { CACHE_KEYS, loadProfileSettingsCached } from '../../services/preloadService';
@@ -95,7 +95,6 @@ export function ProfileScreen({ navigation }: Props) {
   const { width: viewportWidth, fontScale } = useWindowDimensions();
   const { logout, status } = useAuthStore();
   const cached = useMemo(() => peekCachedResource<MobileSettingsResponse>(CACHE_KEYS.profileSettings), []);
-  const [cancelling, setCancelling] = useState(false);
   const [manageAccessOpen, setManageAccessOpen] = useState(false);
   const [bodyArtworkWidth, setBodyArtworkWidth] = useState(0);
   const [planArtworkWidth, setPlanArtworkWidth] = useState(0);
@@ -231,27 +230,26 @@ export function ProfileScreen({ navigation }: Props) {
     Math.max(184, Math.min(210, availableArtworkWidth / 1.9)) + (largeText ? 24 : 0),
   );
 
-  const confirmCancel = () => {
-    Alert.alert('Cancel subscription?', 'Cancelling removes app access immediately. Refund review is handled separately by email within the eligible 5-day window.', [
-      { text: 'Keep access', style: 'cancel' },
-      {
-        text: 'Cancel subscription',
-        style: 'destructive',
-        onPress: async () => {
-          setCancelling(true);
-          try {
-            const result = await cancelMobileSubscription();
-            await loadProfileSettingsCached({ force: true }).catch(() => undefined);
-            await reload();
-            Alert.alert('Subscription cancelled', result.message);
-          } catch (e) {
-            Alert.alert('Could not cancel', e instanceof Error ? e.message : 'Please try again.');
-          } finally {
-            setCancelling(false);
-          }
-        },
-      },
-    ]);
+  /**
+   * Cancelling is the store's to do, not ours.
+   *
+   * We used to end access ourselves, which stopped the app working and did nothing at all
+   * about the money: a store subscription keeps charging until it is cancelled where it
+   * was bought. Sending people to the right screen is both what actually works and what
+   * Apple requires of an app selling auto-renewing subscriptions.
+   */
+  const openStoreSubscriptions = () => {
+    const url = Platform.OS === 'ios'
+      ? 'itms-apps://apps.apple.com/account/subscriptions'
+      : 'https://play.google.com/store/account/subscriptions';
+    Linking.openURL(url).catch(() => {
+      Alert.alert(
+        'Could not open your subscriptions',
+        Platform.OS === 'ios'
+          ? 'Open Settings, tap your name, then Subscriptions.'
+          : 'Open the Play Store, tap your profile, then Payments and subscriptions.',
+      );
+    });
   };
 
   return (
@@ -459,16 +457,28 @@ export function ProfileScreen({ navigation }: Props) {
                   <>Renew before the grace period ends to keep your access uninterrupted.</>
                 ) : (
                   <>
-                    Refund requests: <Text style={styles.supportEmail}>team@formbae.in</Text>. Send your payment ID or mobile number within 5 days of payment for review.
+                    {Platform.OS === 'ios'
+                      ? 'Your membership is billed by the App Store. Cancel or request a refund from your Apple subscription settings.'
+                      : 'Your membership is billed by Google Play. Cancel or request a refund from your Play subscriptions.'}
+                    {'\n\n'}
+                    Bought on formbae.in instead? Email <Text style={styles.supportEmail}>team@formbae.in</Text> with your payment ID.
                   </>
                 )}
               </Text>
               {inGrace ? (
                 <PrimaryButton title="Renew subscription" icon="arrow-right" onPress={openRenewal} style={styles.manageRenewButton} />
               ) : accessActive ? (
-                <TouchableOpacity activeOpacity={0.8} style={styles.cancelButton} onPress={confirmCancel} disabled={cancelling}>
-                  <Feather name="x-circle" size={16} color={colors.error} />
-                  <Text style={styles.cancelButtonText}>{cancelling ? 'Cancelling...' : 'Cancel subscription'}</Text>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  style={styles.cancelButton}
+                  onPress={openStoreSubscriptions}
+                  accessibilityRole="button"
+                  accessibilityLabel="Manage subscription in the store"
+                >
+                  <Feather name="external-link" size={16} color={colors.accentDark} />
+                  <Text style={styles.manageStoreText}>
+                    {Platform.OS === 'ios' ? 'Manage in App Store' : 'Manage in Google Play'}
+                  </Text>
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -886,6 +896,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
+  manageStoreText: { ...typography.body, color: colors.accentDark, fontWeight: '600' },
   cancelButtonText: {
     ...typography.caption,
     color: colors.error,

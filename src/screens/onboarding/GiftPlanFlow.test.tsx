@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert } from 'react-native';
+import { Alert, Text } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { PaymentRequiredScreen } from './PaymentRequiredScreen';
 import { GiftPlanDetailsScreen } from './GiftPlanDetailsScreen';
@@ -126,17 +126,19 @@ it.each([
   alert.mockRestore();
 });
 
-it('a plan the store will not sell cannot be bought at a price we invented', async () => {
-  // An unreturned product has not been created, or has not propagated, or is not sold in
-  // this storefront. Showing it at our own price would offer something unbuyable.
+it('says the plans are unavailable rather than showing an empty price', async () => {
+  // A store that returns nothing means the products do not exist yet, have not
+  // propagated, or this build has no store. Whatever the cause, the screen must not print
+  // an em dash where the price goes and a button trailing off after "Get started ·".
   (fetchStoreProducts as jest.Mock).mockResolvedValue([]);
-  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
   await render(paywall());
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('₹49');
-  await act(async () => { await cta().props.onPress(); });
+  const copy = renderer.root.findAllByType(Text).flatMap((node) =>
+    React.Children.toArray(node.props.children).filter((child): child is string => typeof child === 'string')).join(' ');
+  expect(copy).toContain('Plans aren’t available right now');
+  expect(copy).not.toContain('₹49');
+  // Nothing to press: the checkout is not drawn at all while there is nothing to buy.
+  expect(renderer.root.findAllByType(PrimaryButton)).toHaveLength(0);
   expect(purchaseStoreProduct).not.toHaveBeenCalled();
-  expect(alert).toHaveBeenCalled();
-  alert.mockRestore();
 });
 
 it('offers to restore a purchase without buying again', async () => {

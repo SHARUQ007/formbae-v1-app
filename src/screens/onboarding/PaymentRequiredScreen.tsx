@@ -98,6 +98,15 @@ export function PaymentRequiredScreen({ navigation }: Props) {
    */
   const priceFor = (plan?: PaymentPlan) => (plan?.storeProductId ? storePrices[plan.storeProductId] || '' : '');
   const selectedPrice = priceFor(selectedPlan);
+  /**
+   * The store returned no price for anything on offer.
+   *
+   * It means the products have not been created yet, or have not propagated, or this
+   * build has no store configured. Whatever the cause, nothing here can be bought, and
+   * the screen has to say so rather than show an em dash where the price goes and a
+   * button that trails off after "Get started ·".
+   */
+  const storeUnavailable = !loading && plans.length > 0 && Object.keys(storePrices).length === 0;
 
   const routeAfterPaid = useCallback((screen: string) => {
     const rootNav = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
@@ -113,8 +122,9 @@ export function PaymentRequiredScreen({ navigation }: Props) {
     rootNav?.replace('PaidTransition', { screen: 'PaymentSync' });
   }, [navigation]);
 
-  useEffect(() => {
-    fetchPaymentStatus()
+  const reload = useCallback(() => {
+    setLoading(true);
+    return fetchPaymentStatus()
       .then(async (data) => {
         if (data.hasPaid) {
           const fresh = await refreshStatus();
@@ -135,6 +145,10 @@ export function PaymentRequiredScreen({ navigation }: Props) {
       .catch(() => setPlans([]))
       .finally(() => setLoading(false));
   }, [routeAfterPaid, refreshStatus]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -246,9 +260,22 @@ export function PaymentRequiredScreen({ navigation }: Props) {
           </Text>
         </View>
 
+        {storeUnavailable ? (
+          <View style={styles.unavailableCard}>
+            <Text style={styles.unavailableTitle}>Plans aren’t available right now</Text>
+            <Text style={styles.unavailableBody}>
+              We couldn’t reach {Platform.OS === 'ios' ? 'the App Store' : 'Google Play'} to load pricing. Check your
+              connection and try again — nothing has been charged.
+            </Text>
+            <TouchableOpacity onPress={reload} accessibilityRole="button" accessibilityLabel="Try again" style={styles.retryRow}>
+              <Text style={styles.retryText}>Try again</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {loading ? (
           <LoadingState message="Loading plans…" />
-        ) : plans.length > 1 ? (
+        ) : storeUnavailable ? null : plans.length > 1 ? (
           <View style={styles.planChoices} accessibilityRole="radiogroup">
             {plans.map((plan) => {
               const selected = plan.planId === selectedId;
@@ -284,7 +311,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
           </View>
         ) : null}
 
-        {selectedPlan ? (
+        {selectedPlan && !storeUnavailable ? (
           <View style={styles.selectedCard}>
             <View style={styles.selectedHeader}>
               <View style={styles.selectedHeadingCopy}>
@@ -307,6 +334,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
           </View>
         ) : null}
 
+        {storeUnavailable ? null : (
         <View style={styles.checkoutCard}>
           <Text style={styles.paymentNoteText}>
             {Platform.OS === 'ios' ? 'Billed by the App Store' : 'Billed by Google Play'} · Access stays linked to this account
@@ -322,8 +350,8 @@ export function PaymentRequiredScreen({ navigation }: Props) {
               !selectedPlan
                 ? 'Choose a plan'
                 : (selectedPlan.memberLimit || 1) > 1
-                  ? `Continue · ${selectedPrice}`
-                  : `Get started · ${selectedPrice}`
+                  ? (selectedPrice ? `Continue · ${selectedPrice}` : 'Continue')
+                  : (selectedPrice ? `Get started · ${selectedPrice}` : 'Get started')
             }
             icon="arrow-right"
             onPress={onBuy}
@@ -358,6 +386,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
             <Text style={styles.policyText}>.</Text>
           </View>
         </View>
+        )}
       </ScrollView>
     </ScreenContainer>
   );
@@ -459,6 +488,14 @@ const styles = StyleSheet.create({
   contactField: { minHeight: 43, justifyContent: 'center', borderRadius: radius.md, backgroundColor: colors.primaryAction, paddingHorizontal: spacing.md },
   contactText: { ...typography.body, color: colors.onPrimary, fontSize: 14 },
   payBtn: { minHeight: 52 },
+  unavailableCard: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.xl,
+    padding: spacing.md, backgroundColor: colors.panel, gap: spacing.xs,
+  },
+  unavailableTitle: { ...typography.bodyBold, color: colors.ink },
+  unavailableBody: { ...typography.caption, color: colors.inkSubtle, lineHeight: 18 },
+  retryRow: { paddingTop: spacing.xs },
+  retryText: { ...typography.caption, color: colors.primaryAction, fontWeight: '700' },
   restoreRow: { alignSelf: 'center', paddingVertical: spacing.xs },
   restoreText: { ...typography.caption, color: colors.primaryAction, fontWeight: '600' },
   renewalText: { ...typography.caption, color: colors.inkSubtle, textAlign: 'center', lineHeight: 16 },
