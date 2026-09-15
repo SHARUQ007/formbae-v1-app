@@ -113,6 +113,12 @@ function describe(verification: PendingVerification): OtpSession {
 /** Firebase's error codes, turned into the handful of things a screen can say. */
 export function translateFirebaseError(error: unknown): OtpError {
   const code = String((error as { code?: string })?.code || '');
+  if (__DEV__) {
+    // The screen only ever shows one of a handful of sentences, so the code and message
+    // underneath it would otherwise be lost - and they are the whole diagnosis.
+    // eslint-disable-next-line no-console
+    console.warn('[otp] firebase rejected:', code || '(no code)', String((error as { message?: string })?.message || error));
+  }
   if (code === 'auth/invalid-verification-code' || code === 'auth/invalid-verification-id') {
     return new OtpError('INVALID_CODE', 'That code isn’t right. Check the SMS and try again.');
   }
