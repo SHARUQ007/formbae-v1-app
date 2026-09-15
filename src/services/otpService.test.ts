@@ -125,12 +125,24 @@ describe('Firebase error codes become something a screen can say', () => {
     ['auth/network-request-failed', 'OFFLINE'],
     ['auth/invalid-phone-number', 'UNSUPPORTED_NUMBER'],
     ['auth/app-not-authorized', 'UNAVAILABLE'],
+    ['app/no-app', 'UNAVAILABLE'],
     ['', 'UNAVAILABLE'],
   ])('%s becomes %s', (firebaseCode, expected) => {
     const translated = translateFirebaseError({ code: firebaseCode });
     expect(translated).toBeInstanceOf(OtpError);
     expect(translated.code).toBe(expected);
     expect(translated.message).toEqual(expect.any(String));
+  });
+
+  it('a build with no Firebase project behind it does not read as worth retrying', () => {
+    // configure() is skipped when the config file is absent, so every call fails this way
+    // and no amount of trying again will change it.
+    const unconfigured = translateFirebaseError(
+      new Error("No Firebase App '[DEFAULT]' has been created - call firebase.initializeApp()"),
+    );
+    expect(unconfigured.code).toBe('UNAVAILABLE');
+    expect(unconfigured.message).toContain('isn’t connected to Firebase');
+    expect(translateFirebaseError({ code: 'auth/network-request-failed' }).message).not.toContain('Firebase');
   });
 
   it('a failure to send reaches the caller already translated', async () => {

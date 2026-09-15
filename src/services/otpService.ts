@@ -128,6 +128,13 @@ export function translateFirebaseError(error: unknown): OtpError {
   if (code === 'auth/invalid-phone-number' || code === 'auth/missing-phone-number') {
     return new OtpError('UNSUPPORTED_NUMBER', 'That number doesn’t look right. Check it and try again.');
   }
+  // The native module is present but no Firebase project is behind it: the config file is
+  // missing from the build, so nothing called configure(). Distinguished from a failure
+  // worth retrying, because retrying will never help.
+  const message = String((error as { message?: string })?.message || '');
+  if (code.startsWith('app/') || /no firebase app|default app|has been created/i.test(message)) {
+    return new OtpError('UNAVAILABLE', 'This build isn’t connected to Firebase yet, so codes can’t be sent.');
+  }
   return new OtpError('UNAVAILABLE', 'We couldn’t verify this number right now. Please try again.');
 }
 
