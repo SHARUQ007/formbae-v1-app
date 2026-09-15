@@ -78,12 +78,24 @@ configuration, and the security model is SHA pinning plus App Check, not secrecy
       last one is the classic "works in internal testing, fails for every real install"
 - [ ] Add the iOS app, and drag `GoogleService-Info.plist` into Xcode with *Copy items if
       needed*. Confirm it is a member of the **FormBae target**, or it is not in the bundle
+- [ ] **Required on iOS today**: add `REVERSED_CLIENT_ID` from `GoogleService-Info.plist` as
+      a URL scheme in `ios/FormBae/Info.plist` `CFBundleURLTypes`. Verification falls back
+      to a reCAPTCHA sheet, and that sheet returns through this scheme - without it the
+      verification hangs with no error. It stays needed even once push is set up, because
+      the fallback still fires on simulators and on devices with push disabled
+
+Silent-push verification is the nicer path and is worth doing, but it is a separate piece
+of setup and the app builds and works without it:
+
+- [ ] Enable **Push Notifications** on the App ID (Xcode → Signing & Capabilities, or the
+      developer portal). Do this *before* the next step - an entitlement the provisioning
+      profile does not carry fails the build with
+      `doesn't include the aps-environment entitlement`
+- [ ] Put `aps-environment` back in `ios/FormBae/FormBae.entitlements`; it is commented out
+      there with this note
 - [ ] Upload an **APNs auth key (.p8)** to Project settings → Cloud Messaging, with its Key
-      ID and Team ID. This is what gives iOS the silent-push verification that keeps the
-      reCAPTCHA sheet away
-- [ ] Add `REVERSED_CLIENT_ID` from `GoogleService-Info.plist` as a URL scheme in
-      `ios/FormBae/Info.plist` `CFBundleURLTypes`. Still needed with APNs configured: the
-      fallback fires on simulators and on devices with push disabled
+      ID and Team ID. This is what verifies the device silently and keeps the reCAPTCHA
+      sheet away
 - [ ] Enable **App Check** (Play Integrity, App Attest), then enforce it on Authentication
 - [ ] **SMS region policy**: allow `IN` only
 - [ ] Set a **Cloud Billing budget alert** on the phone-auth SKU
