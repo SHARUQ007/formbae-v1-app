@@ -76,7 +76,14 @@ react {
 /**
  * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
  */
-def enableProguardInReleaseBuilds = false
+// R8 on. It shrinks the release and, more usefully, produces the mapping file Play asks
+// for - without it every crash report names obfuscated classes. The rules that keep the
+// React Native bridge working live in proguard-rules.pro.
+//
+// Worth knowing: R8 breaks at runtime, not at build time. A release build that compiles
+// can still crash on launch if a keep rule is missing, so a smoke test on a device is
+// part of shipping this, not optional.
+def enableProguardInReleaseBuilds = true
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
