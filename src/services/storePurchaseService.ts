@@ -33,8 +33,8 @@ import type { UserStatus } from '../types/api';
  * development and a release build falls back to the platform key.
  */
 export const REVENUECAT_PUBLIC_KEYS = {
-  ios: '',
-  android: '',
+  ios: 'appl_feBDsWllmjfXSymSACDfdwWLSth',
+  android: 'goog_mCxsJuBYRNpTWMqaLlOqNbzlBGV',
   test: 'test_UlYuNPBMGOupTJCcVrEZATsLqVZ',
 };
 
