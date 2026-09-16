@@ -22,14 +22,29 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.formbae.invite</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>formbae</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.formbae.firebaseauth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>app-1-190649836345-ios-a93f4d0338c4a566b9bee8</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<!-- HTTPS and the platform's own keychain only: no encryption beyond what Apple
-	     exempts. Declared here so every upload stops asking the same question. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<key>LSRequiresIPhoneOS</key>
-	<true/>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>tez</string>
@@ -56,6 +71,8 @@
 		<string>whatsapp</string>
 		<string>kotakbank</string>
 	</array>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
@@ -74,10 +91,12 @@
 		<string>Feather.ttf</string>
 		<string>MaterialCommunityIcons.ttf</string>
 	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
-	<key>UIUserInterfaceStyle</key>
-	<string>Dark</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>arm64</string>
@@ -86,47 +105,9 @@
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
-	<key>UISupportedInterfaceOrientations~ipad</key>
-	<array>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
-	</array>
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
-	<!-- Phone sign-in verifies the device with a silent push, and iOS only delivers one to
-	     an app that declares it handles them. Without this the push is dropped and
-	     verification falls back to the reCAPTCHA sheet. -->
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-	</array>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.formbae.invite</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>formbae</string>
-			</array>
-		</dict>
-		<!-- Where phone sign-in's reCAPTCHA sheet returns. The scheme is GOOGLE_APP_ID from
-		     GoogleService-Info.plist with its colons turned into dashes and "app-" in
-		     front - not REVERSED_CLIENT_ID, which older Firebase docs name and which only
-		     exists once Google Sign-In is enabled, and not the bundle id. Firebase checks
-		     for this exact string and calls fatalError if it is absent, so getting it
-		     wrong crashes the app the moment a code is requested. Regenerate it if the
-		     Firebase app is ever recreated. -->
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.formbae.firebaseauth</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>app-1-190649836345-ios-a93f4d0338c4a566b9bee8</string>
-			</array>
-		</dict>
-	</array>
 </dict>
 </plist>
