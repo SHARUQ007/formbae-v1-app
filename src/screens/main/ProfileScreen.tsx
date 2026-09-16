@@ -15,6 +15,7 @@ import { LoadingState, ErrorState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { peekCachedResource } from '../../services/appCache';
 import { fetchSettings, updateSettings, type MobileSettingsResponse } from '../../services/settingsService';
+import { presentCustomerCenter } from '../../services/storePurchaseService';
 import { fetchGym, type GymPlace } from '../../services/gymService';
 import { syncReminders } from '../../services/notificationService';
 import { CACHE_KEYS, loadProfileSettingsCached } from '../../services/preloadService';
@@ -238,7 +239,17 @@ export function ProfileScreen({ navigation }: Props) {
    * was bought. Sending people to the right screen is both what actually works and what
    * Apple requires of an app selling auto-renewing subscriptions.
    */
-  const openStoreSubscriptions = () => {
+  const openStoreSubscriptions = async () => {
+    // RevenueCat's Customer Center where it is available: it does cancel, restore and
+    // refund requests with the store's own flows, which is more than a deep link can.
+    try {
+      await presentCustomerCenter();
+      await reload();
+      return;
+    } catch {
+      // Not available in this build, or the sheet could not open. The store's own
+      // subscription screen is the fallback, and is what Apple asks for at minimum.
+    }
     const url = Platform.OS === 'ios'
       ? 'itms-apps://apps.apple.com/account/subscriptions'
       : 'https://play.google.com/store/account/subscriptions';

@@ -23,14 +23,32 @@ import type { UserStatus } from '../types/api';
 /**
  * The public SDK keys, from RevenueCat → Project settings → API keys.
  *
- * Public on purpose: these identify the app to RevenueCat and are designed to ship
- * inside it. The secret key, which can read and change entitlements, lives only on the
- * server. Never put that one here.
+ * Public on purpose: these identify the app to RevenueCat and are designed to ship inside
+ * it. The secret key, which can read and change entitlements, lives only on the server.
+ * Never put that one here.
+ *
+ * `test` is RevenueCat's Test Store key. It buys from a simulated store, so the paywall
+ * works before any product exists in App Store Connect or Play Console - which is what
+ * makes the flow testable today. It cannot take real money, so it is used only in
+ * development and a release build falls back to the platform key.
  */
 export const REVENUECAT_PUBLIC_KEYS = {
   ios: '',
   android: '',
+  test: 'test_UlYuNPBMGOupTJCcVrEZATsLqVZ',
 };
+
+/** The entitlement a paid account holds. Must match the identifier in RevenueCat. */
+export const ENTITLEMENT_ID = 'formbae_pro';
+
+function apiKey(): string {
+  const { Platform } = require('react-native');
+  const platformKey = Platform.OS === 'ios' ? REVENUECAT_PUBLIC_KEYS.ios : REVENUECAT_PUBLIC_KEYS.android;
+  // The real key wins wherever one is set, so a release build can never reach the test
+  // store even if this file still carries its key.
+  if (platformKey) return platformKey;
+  return __DEV__ ? REVENUECAT_PUBLIC_KEYS.test : '';
+}
 
 export type StoreProduct = {
   productId: string;
@@ -66,9 +84,7 @@ export class StorePurchaseError extends Error {
  */
 function storeModuleMissing(): boolean {
   try {
-    const { Platform } = require('react-native');
-    const key = Platform.OS === 'ios' ? REVENUECAT_PUBLIC_KEYS.ios : REVENUECAT_PUBLIC_KEYS.android;
-    if (!key) return true;
+    if (!apiKey()) return true;
     require('react-native-purchases');
     return false;
   } catch {
@@ -98,10 +114,8 @@ let configuredFor = '';
 export function configureStore(userId: string): void {
   const account = String(userId || '').trim();
   if (!account || account === configuredFor) return;
-  const { Platform } = require('react-native');
   const Purchases = purchases();
-  const apiKey = Platform.OS === 'ios' ? REVENUECAT_PUBLIC_KEYS.ios : REVENUECAT_PUBLIC_KEYS.android;
-  Purchases.configure({ apiKey, appUserID: account });
+  Purchases.configure({ apiKey: apiKey(), appUserID: account });
   configuredFor = account;
 }
 
@@ -224,4 +238,83 @@ export async function restoreStorePurchases(): Promise<{ active: boolean; status
 /** Whether a paywall can be shown at all in this build. */
 export function storePurchasesAvailable(): boolean {
   return !storeModuleMissing();
+}
+
+/**
+ * What RevenueCat itself believes this account holds.
+ *
+ * Useful for showing state - a "you're subscribed" badge, whether to offer the paywall at
+ * all - and never for granting anything. Granting is the server's, because this runs on a
+ * device we do not control. The two answers agree in practice; where they differ, the
+ * server's is the one that decides what the trainee can open.
+ */
+export type CustomerState = {
+  entitled: boolean;
+  activeEntitlements: string[];
+  managementUrl: string;
+  willRenew: boolean;
+  expiresAt: string;
+};
+
+export async function fetchCustomerState(): Promise<CustomerState> {
+  const Purchases = purchases();
+  const info = await Purchases.getCustomerInfo();
+  const active = (info?.entitlements?.active || {}) as Record<string, {
+    willRenew?: boolean;
+    expirationDate?: string | null;
+  }>;
+  const names = Object.keys(active);
+  const mine = active[ENTITLEMENT_ID] || active[names[0]] || undefined;
+  return {
+    entitled: names.includes(ENTITLEMENT_ID) || names.length > 0,
+    activeEntitlements: names,
+    managementUrl: String(info?.managementURL || ''),
+    willRenew: Boolean(mine?.willRenew),
+    expiresAt: String(mine?.expirationDate || ''),
+  };
+}
+
+/**
+ * Show the paywall RevenueCat hosts, rather than one we drew.
+ *
+ * Worth it where the offer is a straight choice between products: the prices, the period
+ * labels and the store's own purchase sheet all come from the offering, so nothing here
+ * can print a price that disagrees with what is charged, and Apple's required disclosures
+ * are part of the template rather than something to remember.
+ *
+ * Our own paywall stays for the household plans, which have to collect who the extra
+ * memberships are for before anything is bought - a step no hosted template knows about.
+ *
+ * Returns whether the account came out of it entitled, having asked the server, because
+ * what the paywall reports is a device's claim and access is not granted on those.
+ */
+export async function presentStorePaywall(): Promise<{ active: boolean; status: UserStatus } | null> {
+  if (storeModuleMissing()) {
+    throw new StorePurchaseError('NOT_AVAILABLE', 'Purchases aren’t available in this build of the app.');
+  }
+  const ui = require('react-native-purchases-ui');
+  const RevenueCatUI = ui.default || ui;
+  const result = await RevenueCatUI.presentPaywallIfNeeded({ requiredEntitlementIdentifier: ENTITLEMENT_ID });
+  // NOT_PRESENTED means they were already entitled; CANCELLED and ERROR mean nothing was
+  // bought. Only a completed purchase or restore is worth asking the server about.
+  const outcome = String(result || '').toUpperCase();
+  if (outcome.includes('CANCEL') || outcome.includes('ERROR')) return null;
+  return syncStorePurchase();
+}
+
+/**
+ * RevenueCat's Customer Center: manage, cancel, restore, or ask for a refund.
+ *
+ * This is the right home for all of that. Apple requires an app selling auto-renewing
+ * subscriptions to lead people to where the subscription actually lives, and the Customer
+ * Center does it with the store's own flows - including refund requests, which we cannot
+ * grant ourselves because the money never reached us.
+ */
+export async function presentCustomerCenter(): Promise<void> {
+  if (storeModuleMissing()) {
+    throw new StorePurchaseError('NOT_AVAILABLE', 'Subscription management isn’t available in this build.');
+  }
+  const ui = require('react-native-purchases-ui');
+  const RevenueCatUI = ui.default || ui;
+  await RevenueCatUI.presentCustomerCenter();
 }

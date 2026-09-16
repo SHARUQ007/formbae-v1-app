@@ -94,6 +94,11 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - PurchasesHybridCommon (18.37.0):
+    - RevenueCat (= 5.88.0)
+  - PurchasesHybridCommonUI (18.37.0):
+    - PurchasesHybridCommon (= 18.37.0)
+    - RevenueCatUI (= 5.88.0)
   - razorpay-core-pod (1.0.7)
   - razorpay-pod (1.5.0):
     - razorpay-core-pod
@@ -2058,6 +2063,9 @@ PODS:
     - ReactNativeDependencies
   - ReactNativeDependencies (0.86.0)
   - RecaptchaInterop (101.0.0)
+  - RevenueCat (5.88.0)
+  - RevenueCatUI (5.88.0):
+    - RevenueCat (= 5.88.0)
   - RNCAsyncStorage (2.2.0):
     - hermes-engine
     - RCTRequired
@@ -2178,6 +2186,12 @@ PODS:
     - React-Core
     - RNNotifee/NotifeeCore (= 9.1.8)
   - RNNotifee/NotifeeCore (9.1.8):
+    - React-Core
+  - RNPaywalls (10.9.1):
+    - PurchasesHybridCommonUI (= 18.37.0)
+    - React-Core
+  - RNPurchases (10.9.1):
+    - PurchasesHybridCommon (= 18.37.0)
     - React-Core
   - RNScreens (4.25.2):
     - hermes-engine
@@ -2389,6 +2403,8 @@ DEPENDENCIES:
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
   - RNKeychain (from `../node_modules/react-native-keychain`)
   - "RNNotifee (from `../node_modules/@notifee/react-native`)"
+  - RNPaywalls (from `../node_modules/react-native-purchases-ui`)
+  - RNPurchases (from `../node_modules/react-native-purchases`)
   - RNScreens (from `../node_modules/react-native-screens`)
   - RNSVG (from `../node_modules/react-native-svg`)
   - RNVectorIcons (from `../node_modules/react-native-vector-icons`)
@@ -2406,9 +2422,13 @@ SPEC REPOS:
     - GoogleUtilities
     - GTMSessionFetcher
     - lottie-ios
+    - PurchasesHybridCommon
+    - PurchasesHybridCommonUI
     - razorpay-core-pod
     - razorpay-pod
     - RecaptchaInterop
+    - RevenueCat
+    - RevenueCatUI
 
 EXTERNAL SOURCES:
   BVLinearGradient:
@@ -2588,6 +2608,10 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-keychain"
   RNNotifee:
     :path: "../node_modules/@notifee/react-native"
+  RNPaywalls:
+    :path: "../node_modules/react-native-purchases-ui"
+  RNPurchases:
+    :path: "../node_modules/react-native-purchases"
   RNScreens:
     :path: "../node_modules/react-native-screens"
   RNSVG:
@@ -2612,6 +2636,8 @@ SPEC CHECKSUMS:
   hermes-engine: 8b54d79a85216e5cba8a1d42c9e8a20a2256c11a
   lottie-ios: 8f959969761e9c45d70353667d00af0e5b9cadb3
   lottie-react-native: a5233d6dc3d2158b37b4dc32bddc7b803ae86227
+  PurchasesHybridCommon: 2e72564d3393d480ca126d4d057737435dd7ccba
+  PurchasesHybridCommonUI: b9e63653fa3abb753b702e0a9b074fbf452b0cbb
   razorpay-core-pod: c7f3ac3d214c1a7fac4e9a59c1de7eac02130573
   razorpay-pod: f634f1b8397eb54d547f25d35291f679545ddf17
   RCTDeprecation: 2a74a2c57675e64419bd89078efde81f7c1de90b
@@ -2692,6 +2718,8 @@ SPEC CHECKSUMS:
   ReactCommon: d5c1bb4427bf51c443de5926aac332c89ddd9363
   ReactNativeDependencies: fa0a54b3f5319ae0e3b9aff32bfee7a424b88e66
   RecaptchaInterop: 11e0b637842dfb48308d242afc3f448062325aba
+  RevenueCat: 96e12da1f3de201c65f337ff661506ac28ee1514
+  RevenueCatUI: 86e2209d13c41893a4e24da4e26370d4bd9f8b93
   RNCAsyncStorage: d90e523830fa7705f8c61632479abde871bc792f
   RNFBApp: 00190274babd8165002ef0a80c7207d3140ba3ca
   RNFBAuth: 7e96469ad23fe124f72fabe43c1e6de17f1561cf
@@ -2699,11 +2727,13 @@ SPEC CHECKSUMS:
   RNGestureHandler: 7b07d9192bc65c6883fb37fdecc05dc6b61c814f
   RNKeychain: d57edf101a72acf3ae85fe4d796eed1d951d2a90
   RNNotifee: 5e3b271e8ea7456a36eec994085543c9adca9168
+  RNPaywalls: 660b29b1fb64fd90776a21b4005631d43e2e3e9c
+  RNPurchases: 2575285384b5e4705a0aca11dfd0791c8484f216
   RNScreens: 8d318eb8905fa1d3439a1ce5d567f82ae8245657
   RNSVG: 394cfd0518613b144c65ffe69045f827b78a7a7c
   RNVectorIcons: dbd176cd99540c419d243cd5ad99310764d2c7e0
   Yoga: c30c859b7e9b75e547b600b486fe33165f60de00
 
-PODFILE CHECKSUM: 115d8a193f400baeb0acf8e71e7f64fdab5e9e06
+PODFILE CHECKSUM: db9202b0253c096d8a88d32b982cc6fa32752fa4
 
 COCOAPODS: 1.16.2
