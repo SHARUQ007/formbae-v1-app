@@ -8,6 +8,7 @@ import { ScreenContainer } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState } from '../../components/States';
 import { fetchPaymentStatus } from '../../services/paymentService';
+import { rupees } from '../../utils/format';
 import { fetchStoreProducts, presentStorePaywall, purchaseStoreProduct, restoreStorePurchases, StorePurchaseError } from '../../services/storePurchaseService';
 import { displayBehavioralNotification } from '../../services/notificationService';
 import { useAuthStore } from '../../store/authStore';
@@ -100,6 +101,19 @@ export function PaymentRequiredScreen({ navigation }: Props) {
    */
   const priceFor = (plan?: PaymentPlan) => (plan?.storeProductId ? storePrices[plan.storeProductId] || '' : '');
   const selectedPrice = priceFor(selectedPlan);
+  /**
+   * The list price, struck through beside what the store is charging.
+   *
+   * Comes from the plan's fullPricePaise, which an admin sets - so the number shown is
+   * whatever is configured as the standard price, not one invented here. Shown only when
+   * it is genuinely higher than what is being charged, and never when the store has given
+   * us no price at all, where striking one number through another would compare nothing.
+   */
+  const listPriceFor = (plan?: PaymentPlan) => {
+    const full = plan?.originalAmount || 0;
+    return full > (plan?.amount || 0) && priceFor(plan) ? rupees(full) : '';
+  };
+  const selectedListPrice = listPriceFor(selectedPlan);
   /**
    * The store returned no price for anything on offer.
    *
@@ -333,9 +347,14 @@ export function PaymentRequiredScreen({ navigation }: Props) {
                     <Text style={[styles.planName, { fontSize: density.planName }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
                       {planLabel(plan)}
                     </Text>
-                    <Text style={styles.planChoicePrice} numberOfLines={1}>
-                      {priceFor(plan) || '—'}
-                    </Text>
+                    <View style={styles.planChoicePriceRow}>
+                      {listPriceFor(plan) ? (
+                        <Text style={styles.planChoiceOriginalPrice} numberOfLines={1}>{listPriceFor(plan)}</Text>
+                      ) : null}
+                      <Text style={styles.planChoicePrice} numberOfLines={1}>
+                        {priceFor(plan) || '—'}
+                      </Text>
+                    </View>
                     {(plan.memberLimit || 1) === 2 ? (
                       <Text style={[styles.planMeta, { fontSize: density.planMeta }]} numberOfLines={1}>{PLUS_ONE_PEOPLE[plusOnePersonIndex]}</Text>
                     ) : <View style={styles.planMetaSpacer} />}
@@ -352,6 +371,11 @@ export function PaymentRequiredScreen({ navigation }: Props) {
               <View style={styles.selectedHeadingCopy}>
                 <Text style={styles.selectedName}>Monthly · {(selectedPlan.memberLimit || 1) === 1 ? 'Just you' : planLabel(selectedPlan)}</Text>
                 <View style={styles.priceRow}>
+                  {selectedListPrice ? (
+                    <Text style={styles.selectedOriginalPrice} accessibilityLabel={`Usually ${selectedListPrice}`}>
+                      {selectedListPrice}
+                    </Text>
+                  ) : null}
                   <Text style={[styles.selectedPrice, { fontSize: density.price + 10, lineHeight: density.priceLine + 11 }]}>{selectedPrice || '—'}</Text>
                   <Text style={styles.perMonth}>/ month</Text>
                 </View>
@@ -531,6 +555,11 @@ const styles = StyleSheet.create({
   unavailableBody: { ...typography.caption, color: colors.inkSubtle, lineHeight: 18 },
   retryRow: { paddingTop: spacing.xs },
   retryText: { ...typography.caption, color: colors.primaryAction, fontWeight: '700' },
+  planChoicePriceRow: { alignItems: 'center', gap: 1 },
+  planChoiceOriginalPrice: {
+    ...typography.caption, fontSize: 11, color: colors.inkSubtle,
+    textDecorationLine: 'line-through',
+  },
   restoreRow: { alignSelf: 'center', paddingVertical: spacing.xs },
   restoreText: { ...typography.caption, color: colors.primaryAction, fontWeight: '600' },
   renewalText: { ...typography.caption, color: colors.inkSubtle, textAlign: 'center', lineHeight: 16 },

@@ -128,6 +128,25 @@ it.each([
   alert.mockRestore();
 });
 
+it('strikes the list price through beside what the store charges', async () => {
+  // The anchor comes from the plan's configured full price, so the number shown is what an
+  // admin set as standard rather than one invented on the screen.
+  await render(paywall());
+  const copy = renderer.root.findAllByType(Text).flatMap((node) =>
+    React.Children.toArray(node.props.children).filter((child): child is string => typeof child === 'string')).join(' ');
+  expect(copy).toContain('₹249');   // solo.originalAmount is 24900 paise
+  expect(copy).toContain('₹49.00'); // and this is what the store will actually charge
+});
+
+it('strikes nothing through when the store gave us no price', async () => {
+  // One number crossed out next to an em dash compares nothing.
+  (fetchStoreProducts as jest.Mock).mockResolvedValue([]);
+  await render(paywall());
+  const copy = renderer.root.findAllByType(Text).flatMap((node) =>
+    React.Children.toArray(node.props.children).filter((child): child is string => typeof child === 'string')).join(' ');
+  expect(copy).not.toContain('₹249');
+});
+
 it('says the plans are unavailable rather than showing an empty price', async () => {
   // A store that returns nothing means the products do not exist yet, have not
   // propagated, or this build has no store. Whatever the cause, the screen must not print
