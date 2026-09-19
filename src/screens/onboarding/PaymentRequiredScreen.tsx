@@ -123,6 +123,15 @@ export function PaymentRequiredScreen({ navigation }: Props) {
    * button that trails off after "Get started ·".
    */
   const storeUnavailable = !loading && plans.length > 0 && Object.keys(storePrices).length === 0;
+  /**
+   * What we asked the store for, shown when it returned nothing.
+   *
+   * This failure is otherwise completely silent - no error in the app, nothing in any log,
+   * just a paywall with no prices - and the cause is almost always that these ids do not
+   * match what exists in the store. Printing them turns hours of guessing into one glance,
+   * for whoever is reading it over a trainee's shoulder as much as for us.
+   */
+  const askedFor = plans.map((plan) => plan.storeProductId || '(not set)').join(', ');
 
   const routeAfterPaid = useCallback((screen: string) => {
     const rootNav = navigation.getParent<NativeStackNavigationProp<RootStackParamList>>();
@@ -319,6 +328,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
             <TouchableOpacity onPress={reload} accessibilityRole="button" accessibilityLabel="Try again" style={styles.retryRow}>
               <Text style={styles.retryText}>Try again</Text>
             </TouchableOpacity>
+            <Text style={styles.unavailableDetail} selectable>Looked for: {askedFor}</Text>
           </View>
         ) : null}
 
@@ -551,6 +561,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, borderRadius: radius.xl,
     padding: spacing.md, backgroundColor: colors.panel, gap: spacing.xs,
   },
+  unavailableDetail: { ...typography.caption, fontSize: 11, color: colors.inkSubtle, opacity: 0.7 },
   unavailableTitle: { ...typography.bodyBold, color: colors.ink },
   unavailableBody: { ...typography.caption, color: colors.inkSubtle, lineHeight: 18 },
   retryRow: { paddingTop: spacing.xs },

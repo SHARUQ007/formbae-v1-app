@@ -156,6 +156,9 @@ it('says the plans are unavailable rather than showing an empty price', async ()
   const copy = renderer.root.findAllByType(Text).flatMap((node) =>
     React.Children.toArray(node.props.children).filter((child): child is string => typeof child === 'string')).join(' ');
   expect(copy).toContain('Plans aren’t available right now');
+  // The ids we asked for. This failure is otherwise entirely silent, and is almost always
+  // a mismatch between them and what the store actually has.
+  expect(copy.replace(/\s+/g, ' ')).toContain('Looked for: formbae_monthly_individual');
   expect(copy).not.toContain('₹49');
   // Nothing to press: the checkout is not drawn at all while there is nothing to buy.
   expect(renderer.root.findAllByType(PrimaryButton)).toHaveLength(0);
