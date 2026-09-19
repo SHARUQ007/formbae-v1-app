@@ -108,7 +108,9 @@ android {
         applicationId = "com.formbae"
         minSdkVersion = rootProject.ext.minSdkVersion
         targetSdkVersion = rootProject.ext.targetSdkVersion
-        versionCode = 1
+        // Play refuses an upload whose versionCode is not higher than the last. 1 is the
+        // build already on the closed track, which predates the store key and cannot buy.
+        versionCode = 2
         versionName = "1.0"
     }
     // The upload key, which never lives in this repository. Put these in the gradle.properties
