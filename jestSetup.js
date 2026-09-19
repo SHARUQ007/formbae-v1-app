@@ -115,6 +115,8 @@ jest.mock('react-native-purchases', () => ({
   default: {
     configure: jest.fn(),
     getProducts: jest.fn(() => Promise.resolve([])),
+    getOfferings: jest.fn(() => Promise.resolve({ current: null, all: {} })),
+    purchasePackage: jest.fn(() => Promise.reject(new Error('Purchases are not available in tests'))),
     purchaseStoreProduct: jest.fn(() => Promise.reject(new Error('Purchases are not available in tests'))),
     restorePurchases: jest.fn(() => Promise.reject(new Error('Purchases are not available in tests'))),
     getCustomerInfo: jest.fn(() => Promise.resolve({ entitlements: { active: {} }, managementURL: null })),

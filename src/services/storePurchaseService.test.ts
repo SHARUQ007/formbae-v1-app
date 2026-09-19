@@ -2,6 +2,7 @@ import Purchases from 'react-native-purchases';
 import RevenueCatUI from 'react-native-purchases-ui';
 import {
   ENTITLEMENT_ID,
+  fetchStoreProducts,
   fetchCustomerState,
   presentCustomerCenter,
   presentStorePaywall,
@@ -100,6 +101,46 @@ describe('the customer center', () => {
   it('reports a build with no store rather than failing silently', async () => {
     ui.presentCustomerCenter.mockRejectedValue(new Error('not linked'));
     await expect(presentCustomerCenter()).rejects.toThrow();
+  });
+});
+
+describe('one admin value, two stores', () => {
+  const pkg = (identifier: string, price: string) => ({
+    identifier: '$rc_monthly',
+    product: { identifier, priceString: price, title: identifier, description: '' },
+  });
+
+  it('finds a Play subscription even though Play renames it', async () => {
+    // Google addresses a subscription as subscriptionId:basePlanId, Apple does not.
+    purchases.getOfferings.mockResolvedValue({ current: { availablePackages: [pkg('monthly:monthly', '₹59.00')] }, all: {} });
+    const found = await fetchStoreProducts(['monthly']);
+    // Reported back under the id the admin typed, not the store's spelling of it, so the
+    // screen can look the price up by the value it already has.
+    expect(found).toEqual([expect.objectContaining({ productId: 'monthly', priceString: '₹59.00' })]);
+  });
+
+  it('buys the package rather than the bare product where one exists', async () => {
+    // On Play a subscription is bought through its base plan, which the package carries.
+    const monthly = pkg('monthly:monthly', '₹59.00');
+    purchases.getOfferings.mockResolvedValue({ current: { availablePackages: [monthly] }, all: {} });
+    purchases.purchasePackage.mockResolvedValue({});
+    await purchaseStoreProduct('monthly');
+    expect(purchases.purchasePackage).toHaveBeenCalledWith(monthly);
+    expect(purchases.purchaseStoreProduct).not.toHaveBeenCalled();
+  });
+
+  it('still works from products alone when no offering is configured', async () => {
+    // An App Store build with products and no offering must not be left with no paywall.
+    purchases.getOfferings.mockResolvedValue({ current: null, all: {} });
+    purchases.getProducts.mockResolvedValue([{ identifier: 'monthly', priceString: '₹59.00' }]);
+    const found = await fetchStoreProducts(['monthly']);
+    expect(found).toEqual([expect.objectContaining({ productId: 'monthly' })]);
+  });
+
+  it('an offering that cannot be read does not stop the direct lookup', async () => {
+    purchases.getOfferings.mockRejectedValue(new Error('offline'));
+    purchases.getProducts.mockResolvedValue([{ identifier: 'monthly', priceString: '₹59.00' }]);
+    await expect(fetchStoreProducts(['monthly'])).resolves.toHaveLength(1);
   });
 });
 

@@ -124,6 +124,18 @@ export function resetStore(): void {
   configuredFor = '';
 }
 
+/**
+ * A store product id with Play's base plan dropped.
+ *
+ * Google addresses a subscription as `subscriptionId:basePlanId` where Apple uses the bare
+ * id, so one plan is "monthly" on the App Store and "monthly:monthly" on Play. The admin
+ * names a plan's product once, so both have to reduce to the same thing - the server does
+ * exactly this when it decides what a purchase bought.
+ */
+function baseProductId(productId: string): string {
+  return String(productId || '').split(':', 1)[0].trim().toLowerCase();
+}
+
 function toProduct(raw: Record<string, unknown>): StoreProduct {
   return {
     productId: String(raw.identifier || ''),
@@ -141,12 +153,45 @@ function toProduct(raw: Record<string, unknown>): StoreProduct {
  * than shown at a price we made up, so the screen can only ever offer something buyable.
  */
 export async function fetchStoreProducts(productIds: string[]): Promise<StoreProduct[]> {
-  const ids = productIds.map((id) => String(id || '').trim()).filter(Boolean);
-  if (!ids.length) return [];
+  const wanted = productIds.map(baseProductId).filter(Boolean);
+  if (!wanted.length) return [];
   const Purchases = purchases();
+
+  // Offerings first, and getProducts only as a fallback. A package already holds the right
+  // product for the platform it is running on, which is what makes one admin value work
+  // for both stores: asking getProducts for "monthly" finds nothing on Play, where the
+  // same subscription is called "monthly:monthly".
   try {
-    const products = await Purchases.getProducts(ids);
-    return (Array.isArray(products) ? products : []).map(toProduct).filter((product) => product.productId && product.priceString);
+    const offerings = await Purchases.getOfferings();
+    const packages = [
+      ...(offerings?.current?.availablePackages || []),
+      ...Object.values(offerings?.all || {}).flatMap((offering) =>
+        (offering as { availablePackages?: unknown[] })?.availablePackages || []),
+    ];
+    const found = new Map<string, StoreProduct>();
+    for (const entry of packages) {
+      const product = (entry as { product?: Record<string, unknown> })?.product;
+      if (!product) continue;
+      const mapped = toProduct(product);
+      // Reported back under the id the caller asked for, so the screen can look a plan's
+      // price up by the value an admin typed rather than the store's spelling of it.
+      const key = baseProductId(mapped.productId);
+      if (wanted.includes(key) && mapped.priceString && !found.has(key)) {
+        found.set(key, { ...mapped, productId: key });
+      }
+    }
+    if (found.size) return Array.from(found.values());
+  } catch {
+    // No offering configured, or the store could not be reached. Try the direct lookup
+    // rather than giving up: an App Store build with products and no offering still works.
+  }
+
+  try {
+    const products = await Purchases.getProducts(wanted);
+    return (Array.isArray(products) ? products : [])
+      .map(toProduct)
+      .filter((product) => product.productId && product.priceString)
+      .map((product) => ({ ...product, productId: baseProductId(product.productId) }));
   } catch {
     throw new StorePurchaseError('NETWORK', 'We couldn’t reach the store. Check your connection and try again.');
   }
@@ -202,13 +247,35 @@ export async function recordHouseholdMembers(planId: string, householdMembers: u
 /** Buy one plan, then let the server decide what that bought. */
 export async function purchaseStoreProduct(productId: string): Promise<{ active: boolean; status: UserStatus }> {
   const Purchases = purchases();
+  const wanted = baseProductId(productId);
   try {
-    const products = await Purchases.getProducts([productId]);
-    const product = (Array.isArray(products) ? products : [])[0];
-    if (!product) {
-      throw new StorePurchaseError('NOT_AVAILABLE', 'That plan isn’t available in your store right now.');
+    // Buy the package where there is one. On Play a subscription is bought through its
+    // base plan, and the package carries that; buying a bare product id would fail.
+    let pkg;
+    try {
+      const offerings = await Purchases.getOfferings();
+      const packages = [
+        ...(offerings?.current?.availablePackages || []),
+        ...Object.values(offerings?.all || {}).flatMap((offering) =>
+          (offering as { availablePackages?: unknown[] })?.availablePackages || []),
+      ];
+      pkg = packages.find((entry) => baseProductId(
+        String(((entry as { product?: { identifier?: string } })?.product?.identifier) || ''),
+      ) === wanted);
+    } catch {
+      pkg = undefined;
     }
-    await Purchases.purchaseStoreProduct(product);
+
+    if (pkg) {
+      await Purchases.purchasePackage(pkg);
+    } else {
+      const products = await Purchases.getProducts([wanted]);
+      const product = (Array.isArray(products) ? products : [])[0];
+      if (!product) {
+        throw new StorePurchaseError('NOT_AVAILABLE', 'That plan isn’t available in your store right now.');
+      }
+      await Purchases.purchaseStoreProduct(product);
+    }
   } catch (error) {
     if (error instanceof StorePurchaseError) throw error;
     const translated = translate(error);
