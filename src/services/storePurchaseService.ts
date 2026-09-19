@@ -28,9 +28,9 @@ import type { UserStatus } from '../types/api';
  * Never put that one here.
  *
  * `test` is RevenueCat's Test Store key. It buys from a simulated store, so the paywall
- * works before any product exists in App Store Connect or Play Console - which is what
- * makes the flow testable today. It cannot take real money, so it is used only in
- * development and a release build falls back to the platform key.
+ * works before any product exists in App Store Connect or Play Console. It cannot take
+ * real money, and it is reached only by setting `USE_TEST_STORE` below: both platform
+ * keys are set, so it is otherwise unreachable.
  */
 export const REVENUECAT_PUBLIC_KEYS = {
   ios: 'appl_feBDsWllmjfXSymSACDfdwWLSth',
@@ -41,8 +41,31 @@ export const REVENUECAT_PUBLIC_KEYS = {
 /** The entitlement a paid account holds. Must match the identifier in RevenueCat. */
 export const ENTITLEMENT_ID = 'formbae_pro';
 
+/**
+ * Buy from RevenueCat's simulated store instead of Apple or Google.
+ *
+ * Off, and switched on by hand for exactly as long as a paywall change is being tested.
+ * The platform keys below are both set, so without this the test key is unreachable and
+ * every purchase attempt - debug builds included - is a real charge against a real card.
+ * On Play that means a live transaction that a card or UPI mandate can simply decline,
+ * which says nothing about whether our flow works.
+ *
+ * What it does not replace is testing the real thing. The simulated store cannot tell us
+ * that a base plan is priced right, that a mandate can be set up, or that Play's sheet
+ * opens at all. For that, add the account under Play Console -> Setup -> License testing,
+ * which is a console feature and separate from the closed-track tester list; a license
+ * tester buys with Play's test instruments and is never charged.
+ *
+ * `__DEV__` guards it a second time so a release build ignores it even if this is left
+ * on; shipped, it would hand out entitlements nobody paid for.
+ */
+const USE_TEST_STORE = false;
+
 function apiKey(): string {
   const { Platform } = require('react-native');
+  // Asked first, so a deliberate opt-in is not silently overridden by the platform keys
+  // being present - which they always are, both being hardcoded above.
+  if (__DEV__ && USE_TEST_STORE && REVENUECAT_PUBLIC_KEYS.test) return REVENUECAT_PUBLIC_KEYS.test;
   const platformKey = Platform.OS === 'ios' ? REVENUECAT_PUBLIC_KEYS.ios : REVENUECAT_PUBLIC_KEYS.android;
   // The real key wins wherever one is set, so a release build can never reach the test
   // store even if this file still carries its key.
