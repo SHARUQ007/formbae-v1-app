@@ -246,10 +246,13 @@ export function PaymentRequiredScreen({ navigation }: Props) {
     } catch (error) {
       // A cancelled purchase is a choice, not a failure, and gets no alert.
       if (error instanceof StorePurchaseError && error.code === 'CANCELLED') return;
+      // A payment that went through and could not be confirmed is not a purchase issue,
+      // and must not be headed like one: the money left, and the plan is coming.
+      const paid = error instanceof StorePurchaseError && error.code === 'NOT_CONFIRMED';
       const message = error instanceof Error && error.message
         ? error.message
         : 'That purchase didn’t go through. Nothing has been charged.';
-      Alert.alert('Purchase issue', message);
+      Alert.alert(paid ? 'Payment received' : 'Purchase issue', message);
     } finally {
       setPaying(false);
     }

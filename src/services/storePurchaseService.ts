@@ -63,6 +63,15 @@ export type StorePurchaseErrorCode =
   | 'ALREADY_OWNED'
   | 'PAYMENT_PENDING'
   | 'NETWORK'
+  /**
+   * The store took the money and we could not confirm it with our server.
+   *
+   * Its own code because it is the one failure that must never be reported the way the
+   * others are. Everything else here means no charge was made; this one means a charge
+   * was, and telling somebody who has just paid that nothing happened is how a support
+   * ticket becomes a refund request and a Play review.
+   */
+  | 'NOT_CONFIRMED'
   | 'FAILED';
 
 export class StorePurchaseError extends Error {
@@ -227,6 +236,26 @@ function translate(error: unknown): StorePurchaseError {
  * Deliberately sends nothing about the purchase. The server reads it from RevenueCat
  * itself, so there is no field here for a tampered client to lie in.
  */
+/**
+ * Settle a purchase that has already been paid for.
+ *
+ * Separate from `syncStorePurchase` so the two failures stay distinguishable: a sync that
+ * fails before any money moved is an ordinary error, and one that fails after is a
+ * receipt we have not managed to read yet. The entitlement is real either way - it is
+ * held by RevenueCat, not by this app - so the honest thing to say is that it will land,
+ * and that restoring is the way to hurry it.
+ */
+async function confirmPaidPurchase(): Promise<{ active: boolean; status: UserStatus }> {
+  try {
+    return await syncStorePurchase();
+  } catch {
+    throw new StorePurchaseError(
+      'NOT_CONFIRMED',
+      'Your payment went through, but we couldn’t confirm it just now. Reopen the app in a moment, or tap Restore purchases — you won’t be charged again.',
+    );
+  }
+}
+
 export async function syncStorePurchase(): Promise<{ active: boolean; status: UserStatus }> {
   return apiRequest<{ active: boolean; status: UserStatus }>('/payment/store/sync', { method: 'POST' });
 }
@@ -281,7 +310,9 @@ export async function purchaseStoreProduct(productId: string): Promise<{ active:
     // the store will not charge twice, and the entitlement is already there to be read.
     if (translated.code !== 'ALREADY_OWNED') throw translated;
   }
-  return syncStorePurchase();
+  // Past this point the store has taken the money, so a failure is a confirmation
+  // failure and not a purchase failure.
+  return confirmPaidPurchase();
 }
 
 /**
@@ -381,7 +412,7 @@ export async function presentStorePaywall(offeringId?: string): Promise<{ active
   // bought. Only a completed purchase or restore is worth asking the server about.
   const outcome = String(result || '').toUpperCase();
   if (outcome.includes('CANCEL') || outcome.includes('ERROR')) return null;
-  return syncStorePurchase();
+  return confirmPaidPurchase();
 }
 
 /**
