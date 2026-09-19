@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Local reminder notifications (workout / check-in). Prompted contextually on Android 13+. -->
@@ -7,6 +8,27 @@
     <!-- Diet diary photo capture/import. Prompted only when the user adds a food photo. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- Permissions our dependencies add and this app does not need. They arrive through
+         manifest merge, so the only way to be rid of them is to remove them here - and a
+         permission that ships is a permission on the store listing, whether or not any
+         code asks for it.
+
+         READ_PHONE_STATE comes from the Razorpay SDK, which uses it to read the SIM for
+         OTP autofill. It is a dangerous permission, Google Play asks what it is for, and
+         checkout works without it.
+
+         SCHEDULE_EXACT_ALARM comes from notifee. Reminders here are scheduled with
+         allowWhileIdle and no exact type, so they are inexact alarms already; keeping the
+         permission would mean answering Play's exact-alarm declaration for something the
+         app never does.
+
+         The storage pair comes from react-native-fs and is inert at targetSdk 36, where
+         scoped storage replaced it - but it still shows on the listing. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove" />
 
     <application
       android:name=".MainApplication"
