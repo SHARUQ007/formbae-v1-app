@@ -16,6 +16,17 @@ export async function fetchPaymentStatus() {
     offerExpiresAt?: string;
     offerActive?: boolean;
     householdSuggestion?: HouseholdSuggestion[];
+    /**
+     * How the paywall should be shown, decided by an admin rather than by this build.
+     *
+     * `offeringId` names a RevenueCat offering, which is how a different set of prices
+     * goes live without a release: the price of a store product cannot be changed from
+     * here - the store charges, so the store owns the price - but which products are on
+     * offer is ours to switch.
+     *
+     * `hosted` shows RevenueCat's own paywall template instead of the screen we drew.
+     */
+    paywall?: { offeringId?: string; hosted?: boolean };
   }>('/payment/status');
 }
 

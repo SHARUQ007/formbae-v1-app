@@ -8,7 +8,7 @@ import { ScreenContainer } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState } from '../../components/States';
 import { fetchPaymentStatus } from '../../services/paymentService';
-import { fetchStoreProducts, purchaseStoreProduct, restoreStorePurchases, StorePurchaseError } from '../../services/storePurchaseService';
+import { fetchStoreProducts, presentStorePaywall, purchaseStoreProduct, restoreStorePurchases, StorePurchaseError } from '../../services/storePurchaseService';
 import { displayBehavioralNotification } from '../../services/notificationService';
 import { useAuthStore } from '../../store/authStore';
 import { resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
@@ -86,6 +86,8 @@ export function PaymentRequiredScreen({ navigation }: Props) {
   const [paying, setPaying] = useState(false);
   const [suggestion, setSuggestion] = useState<HouseholdSuggestion[]>([]);
   const [storePrices, setStorePrices] = useState<Record<string, string>>({});
+  // How the paywall should look, decided by an admin rather than by this build.
+  const [presentation, setPresentation] = useState<{ offeringId?: string; hosted?: boolean }>({});
   const [restoring, setRestoring] = useState(false);
   const [plusOnePersonIndex, setPlusOnePersonIndex] = useState(0);
 
@@ -135,6 +137,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
         const preferred = data.plans?.find((plan) => plan.popular) || data.plans?.[0];
         setSelectedId(preferred?.planId || '');
         setSuggestion(data.householdSuggestion || []);
+        setPresentation(data.paywall || {});
         // A product the store does not return has not been created yet, or has not
         // finished propagating, or is not sold in this storefront. Its plan is left
         // without a price and cannot be bought, rather than shown at one we invented.
@@ -157,7 +160,39 @@ export function PaymentRequiredScreen({ navigation }: Props) {
     return () => clearInterval(timer);
   }, []);
 
+  /**
+   * RevenueCat's own paywall, when an admin has asked for it.
+   *
+   * Worth having as a switch rather than a decision: the hosted template takes its prices,
+   * period labels and required disclosures from the offering, so a seasonal set of prices
+   * needs no release - while our own screen keeps the household step, which no template
+   * knows about.
+   */
+  const onHostedPaywall = async () => {
+    setPaying(true);
+    try {
+      const result = await presentStorePaywall(presentation.offeringId);
+      if (!result?.active) return;
+      navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('SubscriptionSuccess', {
+        planName: selectedPlan?.label || selectedPlan?.planName || 'FormBae',
+        nextScreen: result.status?.recommendedNextScreen,
+      });
+      displayBehavioralNotification('paymentConfirmed').catch(() => undefined);
+    } catch (error) {
+      if (error instanceof StorePurchaseError && error.code === 'CANCELLED') return;
+      Alert.alert('Purchase issue', error instanceof Error && error.message ? error.message : 'Please try again.');
+    } finally {
+      setPaying(false);
+    }
+  };
+
   const onBuy = async () => {
+    // A household plan collects who the memberships are for first, which is a step the
+    // hosted template has no concept of - so it always uses our own screen.
+    const chosen = plans.find((p) => p.planId === selectedId) || plans[0];
+    if (presentation.hosted && (chosen?.memberLimit || 1) === 1) {
+      return onHostedPaywall();
+    }
     const plan = plans.find((p) => p.planId === selectedId) || plans[0];
     if (!plan) {
       Alert.alert('No plan selected', 'Please choose a plan to continue.');

@@ -288,13 +288,30 @@ export async function fetchCustomerState(): Promise<CustomerState> {
  * Returns whether the account came out of it entitled, having asked the server, because
  * what the paywall reports is a device's claim and access is not granted on those.
  */
-export async function presentStorePaywall(): Promise<{ active: boolean; status: UserStatus } | null> {
+export async function presentStorePaywall(offeringId?: string): Promise<{ active: boolean; status: UserStatus } | null> {
   if (storeModuleMissing()) {
     throw new StorePurchaseError('NOT_AVAILABLE', 'Purchases aren’t available in this build of the app.');
   }
   const ui = require('react-native-purchases-ui');
   const RevenueCatUI = ui.default || ui;
-  const result = await RevenueCatUI.presentPaywallIfNeeded({ requiredEntitlementIdentifier: ENTITLEMENT_ID });
+
+  // An offering named by the admin is how a different set of prices goes live without a
+  // release. Falling back to the current one rather than failing: an offering that has
+  // been renamed or removed should show the default paywall, not no paywall.
+  let offering;
+  if (offeringId) {
+    try {
+      const offerings = await purchases().getOfferings();
+      offering = offerings?.all?.[offeringId] || undefined;
+    } catch {
+      offering = undefined;
+    }
+  }
+
+  const result = await RevenueCatUI.presentPaywallIfNeeded({
+    requiredEntitlementIdentifier: ENTITLEMENT_ID,
+    ...(offering ? { offering } : {}),
+  });
   // NOT_PRESENTED means they were already entitled; CANCELLED and ERROR mean nothing was
   // bought. Only a completed purchase or restore is worth asking the server about.
   const outcome = String(result || '').toUpperCase();

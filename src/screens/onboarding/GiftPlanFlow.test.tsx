@@ -9,6 +9,7 @@ import { useAuthStore } from '../../store/authStore';
 import { fetchPaymentStatus } from '../../services/paymentService';
 import {
   fetchStoreProducts,
+  presentStorePaywall,
   purchaseStoreProduct,
   recordHouseholdMembers,
   restoreStorePurchases,
@@ -27,6 +28,7 @@ jest.mock('../../services/storePurchaseService', () => {
   return {
     StorePurchaseError,
     fetchStoreProducts: jest.fn(),
+    presentStorePaywall: jest.fn(),
     purchaseStoreProduct: jest.fn(),
     recordHouseholdMembers: jest.fn(),
     restoreStorePurchases: jest.fn(),
@@ -139,6 +141,32 @@ it('says the plans are unavailable rather than showing an empty price', async ()
   // Nothing to press: the checkout is not drawn at all while there is nothing to buy.
   expect(renderer.root.findAllByType(PrimaryButton)).toHaveLength(0);
   expect(purchaseStoreProduct).not.toHaveBeenCalled();
+});
+
+it('shows the hosted paywall when an admin has asked for it', async () => {
+  // Which paywall, and which offering, is an admin edit rather than a release. The price
+  // of a store product cannot be changed from our side - the store charges, so the store
+  // owns it - but which set of products is on offer can be.
+  (fetchPaymentStatus as jest.Mock).mockResolvedValue({
+    ...statusPayload, paywall: { hosted: true, offeringId: 'diwali' },
+  });
+  (presentStorePaywall as jest.Mock).mockResolvedValue({ active: true, status: {} });
+  await render(paywall());
+  await act(async () => { await cta().props.onPress(); });
+  expect(presentStorePaywall).toHaveBeenCalledWith('diwali');
+  expect(purchaseStoreProduct).not.toHaveBeenCalled();
+  expect(rootReplace).toHaveBeenCalledWith('SubscriptionSuccess', expect.anything());
+});
+
+it('keeps household plans on our own screen, whatever the admin chose', async () => {
+  // The hosted template has no concept of collecting who the extra memberships are for.
+  (fetchPaymentStatus as jest.Mock).mockResolvedValue({
+    ...multiPlanStatusPayload, paywall: { hosted: true },
+  });
+  await render(paywall());
+  await act(async () => { await cta().props.onPress(); });
+  expect(presentStorePaywall).not.toHaveBeenCalled();
+  expect(navigation.navigate).toHaveBeenCalledWith('GiftPlanDetails', { planId: 'monthly__plus_one' });
 });
 
 it('offers to restore a purchase without buying again', async () => {
