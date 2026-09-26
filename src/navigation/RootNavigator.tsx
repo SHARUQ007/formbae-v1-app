@@ -65,7 +65,18 @@ export function RootNavigator() {
   const [navigationReady, setNavigationReady] = useState(false);
   const [activeRoot, setActiveRoot] = useState('Splash');
   const [requiredUpdate, setRequiredUpdate] = useState<RequiredAppUpdate | null>(null);
-  const { ready, token, status } = useAuthStore();
+  const { ready, token, status, refreshStatus } = useAuthStore();
+
+  useEffect(() => {
+    if (!ready || !token || !navigationReady || !['Onboarding', 'PaidTransition'].includes(activeRoot)) return undefined;
+    // Admin access changes and store cancellations can happen while setup is open.
+    // Reconcile from fresh membership facts instead of keeping the cached paid route.
+    const refresh = () => { refreshStatus().catch(() => undefined); };
+    refresh();
+    const timer = setInterval(() => { if (AppState.currentState === 'active') refresh(); }, 30_000);
+    const listener = AppState.addEventListener('change', next => { if (next === 'active') refresh(); });
+    return () => { clearInterval(timer); listener.remove(); };
+  }, [activeRoot, navigationReady, ready, refreshStatus, token]);
 
   const checkVersionPolicy = useCallback(async () => {
     const policy = await fetchAppVersionPolicy();

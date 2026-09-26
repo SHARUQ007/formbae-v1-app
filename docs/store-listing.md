@@ -2,6 +2,14 @@
 
 Draft metadata for App Store Connect and Google Play Console. Finalize copy with marketing/legal.
 
+## App Store description submission
+
+Use [app-store-description.txt](app-store-description.txt) for the iOS **Description** field. Copy only that file's text; this shared planning document includes platform labels and submission notes that are not customer-facing metadata.
+
+For the September 22, 2026 rejection under Guideline 2.3.10, replace the description in App Store Connect for iOS version 1.0 and save. Check every submitted localization for references to other app stores. The local description already omitted those references; changing this repository does not update the submitted listing.
+
+This description correction does not resolve the separate Guideline 2.1 request for a demo account with an expired subscription.
+
 ## App name
 - **FormBae** (primary)
 - Fallback if taken: "FormBae: Personal Training"

@@ -125,11 +125,63 @@ it('a lost build response is reconciled with the saved plan', async () => {
   await act(async () => { await renderer.root.findAllByType(PrimaryButton)[0].props.onPress(); });
   expect(rootReplace).toHaveBeenCalledWith('Main');
 });
+it('a retry ignores the previous failed lease until the new build responds', async () => {
+  (fetchOnboardingPlanState as jest.Mock).mockResolvedValue({ status: 'failed' });
+  let finishBuild!: (value: { status: 'completed' }) => void;
+  (createOnboardingPlan as jest.Mock).mockReturnValue(new Promise(resolve => { finishBuild = resolve; }));
+  await render(<PlanPreparingScreen navigation={navigation as never} route={{ name: 'PlanPreparing', key: 'retry' }} />);
+  const retry = renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Try building again')!;
+  let pending!: Promise<void>;
+  await act(async () => { pending = retry.props.onPress(); });
+  // The immediate progress poll still belongs to the failed attempt, but must
+  // not stop polling or put the retry button back while this POST is running.
+  expect(fetchOnboardingPlanState).toHaveBeenCalledTimes(2);
+  expect(renderedText()).toContain('BUILDING LIVE');
+  expect(renderer.root.findAllByType(PrimaryButton)).toHaveLength(0);
+  refreshStatus.mockResolvedValue({ ...paid, planReady: true, recommendedNextScreen: 'home' });
+  await act(async () => { finishBuild({ status: 'completed' }); await pending; });
+  expect(createOnboardingPlan).toHaveBeenCalledTimes(1);
+  expect(rootReplace).toHaveBeenCalledWith('Main');
+});
+it('lost progress updates offer a status check without starting another plan', async () => {
+  (fetchOnboardingPlanState as jest.Mock)
+    .mockResolvedValueOnce({ status: 'building' })
+    .mockRejectedValue(new Error('offline'));
+  await render(<PlanPreparingScreen navigation={navigation as never} route={{ name: 'PlanPreparing', key: 'offline' }} />);
+  expect(renderedText()).toContain('Live updates lost connection');
+  const reconnect = renderer.root.findAllByType(PrimaryButton).find(node => node.props.title === 'Check build status')!;
+  (fetchOnboardingPlanState as jest.Mock).mockResolvedValue({ status: 'completed' });
+  refreshStatus.mockResolvedValue({ ...paid, planReady: true, recommendedNextScreen: 'home' });
+  await act(async () => { reconnect.props.onPress(); });
+  expect(createOnboardingPlan).not.toHaveBeenCalled();
+  expect(rootReplace).toHaveBeenCalledWith('Main');
+});
 it('failed payment verification does not claim membership is active', async () => {
   (syncPayment as jest.Mock).mockRejectedValue(new Error('offline'));
   await render(<PaymentSyncScreen navigation={navigation as never} route={{ name: 'PaymentSync', key: 'sync' }} />);
   expect(navigation.replace).not.toHaveBeenCalled();
   expect(renderer.root.findAllByType(PrimaryButton).some(node => node.props.title === 'Check again')).toBe(true);
+});
+it('a retained coach cannot skip an incomplete profile after premium is restored', async () => {
+  refreshStatus.mockResolvedValue({ ...paid, profileSetupCompleted: false, coachQuestionsRequired: true, coachQuestionsCompleted: false });
+  await render(<PlanPreparingScreen navigation={navigation as never} route={{ name: 'PlanPreparing', key: 'restored', params: { autoStart: true } }} />);
+  expect(navigation.replace).toHaveBeenCalledWith('ProfileSetup');
+  expect(createOnboardingPlan).not.toHaveBeenCalled();
+  expect(fetchOnboardingPlanState).not.toHaveBeenCalled();
+});
+it('removed premium leaves a cached coach build before resuming its old progress', async () => {
+  refreshStatus.mockResolvedValue({ ...paid, hasPaid: false, recommendedNextScreen: 'questionnaire' });
+  await render(<PlanPreparingScreen navigation={navigation as never} route={{ name: 'PlanPreparing', key: 'removed' }} />);
+  expect(rootReplace).toHaveBeenCalledWith('Onboarding', { screen: 'SetupWelcome' });
+  expect(fetchOnboardingPlanState).not.toHaveBeenCalled();
+  expect(createOnboardingPlan).not.toHaveBeenCalled();
+});
+it('an old completed plan does not bypass removed membership', async () => {
+  refreshStatus.mockResolvedValue({ ...paid, hasPaid: false, planReady: true, recommendedNextScreen: 'renewal' });
+  await render(<PlanPreparingScreen navigation={navigation as never} route={{ name: 'PlanPreparing', key: 'old-plan' }} />);
+  expect(rootReplace).toHaveBeenCalledWith('Renewal');
+  expect(rootReplace).not.toHaveBeenCalledWith('Main');
+  expect(createOnboardingPlan).not.toHaveBeenCalled();
 });
 it('reveals who gifted premium and acknowledges it from the fixed CTA', async () => {
   const gifted = {

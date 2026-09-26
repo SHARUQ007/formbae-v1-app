@@ -59,6 +59,7 @@
 - [ ] 401 handling forces logout; retry buttons work offline
 
 ## Store compliance gates
+- [ ] iOS Description matches `docs/app-store-description.txt`; all submitted iOS localizations omit references to other app stores and internal submission notes
 - [ ] No Expo packages (`grep -i expo package.json` → none)
 - [ ] Only INTERNET / POST_NOTIFICATIONS / VIBRATE / CAMERA permissions on Android; camera access is requested only when adding a food photo
 - [ ] Privacy Policy + Terms links working in-app
