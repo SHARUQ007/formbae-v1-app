@@ -108,10 +108,18 @@ export function PaymentRequiredScreen({ navigation }: Props) {
    * whatever is configured as the standard price, not one invented here. Shown only when
    * it is genuinely higher than what is being charged, and never when the store has given
    * us no price at all, where striking one number through another would compare nothing.
+   *
+   * And only against a rupee price. The admin's figure is paise and can only be rendered
+   * as rupees, while the store charges in the currency of the account's storefront - so
+   * on a US or UK account this used to read "Rs 249 $0.99", two currencies struck against
+   * each other, which states a discount nobody is getting. A foreign storefront gets no
+   * comparison rather than a false one.
    */
   const listPriceFor = (plan?: PaymentPlan) => {
     const full = plan?.originalAmount || 0;
-    return full > (plan?.amount || 0) && priceFor(plan) ? rupees(full) : '';
+    const storePrice = priceFor(plan);
+    if (!storePrice || !storePrice.includes('\u20b9')) return '';
+    return full > (plan?.amount || 0) ? rupees(full) : '';
   };
   const selectedListPrice = listPriceFor(selectedPlan);
   /**
