@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, ImageBackground, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, ImageBackground, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Feather from 'react-native-vector-icons/Feather';
 import { ScreenContainer } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { fetchPaymentStatus } from '../../services/paymentService';
-import { fetchStoreProducts, purchaseStoreProduct, restoreStorePurchases, StorePurchaseError } from '../../services/storePurchaseService';
+import { fetchStoreProducts, purchaseStoreProduct, restoreStorePurchases, StorePurchaseError, syncStorePurchase } from '../../services/storePurchaseService';
+import { PaymentFlowOverlay, usePaymentFlow } from '../../components/PaymentFlow';
 import { loadProfileSettingsCached, peekProfileSettingsCached } from '../../services/preloadService';
 import { useAuthStore } from '../../store/authStore';
 import type { RootStackParamList } from '../../navigation/types';
@@ -18,6 +19,9 @@ import { typography } from '../../theme/typography';
 import { resolveBodyGender } from '../../utils/weeklyMuscles';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Renewal'>;
+
+const APPLE_STANDARD_EULA_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
+const PRIVACY_POLICY_URL = 'https://formbae.in/privacy-policy';
 
 const MEMBERSHIP_BENEFITS = [
   {
@@ -68,12 +72,22 @@ export function SubscriptionRenewalScreen({ navigation }: Props) {
   const [storePrices, setStorePrices] = useState<Record<string, string>>({});
   const [restoring, setRestoring] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [paying, setPaying] = useState(false);
   const [checking, setChecking] = useState(false);
   const [benefitIndex, setBenefitIndex] = useState(0);
   const [profileGender, setProfileGender] = useState(() => resolveBodyGender(peekProfileSettingsCached()?.profile?.gender));
   const subscription = status?.subscription;
   const inGrace = subscription?.state === 'grace';
+  const selectedPlan = plans.find((plan) => plan.planId === selectedId) || plans[0];
+  const payment = usePaymentFlow({
+    gateway: 'store',
+    recheck: syncStorePurchase,
+    restore: restoreStorePurchases,
+    onConfirmed: (fresh) => navigation.replace('SubscriptionSuccess', {
+      planName: selectedPlan?.label || selectedPlan?.planName || 'FormBae',
+      nextScreen: fresh?.recommendedNextScreen,
+      renewal: true,
+    }),
+  });
 
   const loadPlans = useCallback(async () => {
     setLoading(true);
@@ -135,34 +149,29 @@ export function SubscriptionRenewalScreen({ navigation }: Props) {
     }
   };
 
-  const renew = async () => {
+  /**
+   * The renewal itself, watched by the shared payment flow rather than ending in an alert.
+   *
+   * A renewal that has been paid for and not yet confirmed used to close onto this very
+   * screen, whose primary button says "Continue my transformation" - which is an
+   * invitation to pay twice for the same month. The flow covers the screen until the
+   * payment has somewhere honest to land.
+   */
+  const renew = () => {
     const plan = plans.find((item) => item.planId === selectedId) || plans[0];
-    if (!plan || paying) return;
-    setPaying(true);
-    try {
-      if (!plan.storeProductId) {
-        Alert.alert('Not available yet', 'This plan isn’t available in your store right now. Please try again shortly.');
-        return;
-      }
+    if (!plan || payment.busy) return;
+    if (!plan.storeProductId) {
+      Alert.alert('Not available yet', 'This plan isn’t available in your store right now. Please try again shortly.');
+      return;
+    }
+    const storeProductId = plan.storeProductId;
+    payment.start(async (report) => {
+      report('authorizing');
       // The membership is a store subscription, so this renews through the store like any
       // other. A lapsed subscription the trainee already re-bought elsewhere is picked up
-      // by "Restore" below rather than charged again here.
-      const result = await purchaseStoreProduct(plan.storeProductId);
-      if (!result.active) {
-        Alert.alert('Almost there', 'Your renewal is still being confirmed. We’ll restore your access as soon as it clears.');
-        return;
-      }
-      navigation.replace('SubscriptionSuccess', {
-        planName: plan.label || plan.planName,
-        nextScreen: result.status?.recommendedNextScreen,
-        renewal: true,
-      });
-    } catch (error) {
-      if (error instanceof StorePurchaseError && error.code === 'CANCELLED') return;
-      Alert.alert('Renewal issue', error instanceof Error && error.message ? error.message : 'Your renewal could not be completed. Please try again.');
-    } finally {
-      setPaying(false);
-    }
+      // by "Restore" rather than charged again here.
+      return purchaseStoreProduct(storeProductId, () => report('confirming'));
+    });
   };
 
   const checkAccess = async () => {
@@ -180,6 +189,12 @@ export function SubscriptionRenewalScreen({ navigation }: Props) {
     } finally {
       setChecking(false);
     }
+  };
+
+  const openPolicy = (url: string) => {
+    Linking.openURL(url).catch(() => {
+      Alert.alert('Could not open this page', 'Please try again when you are connected.');
+    });
   };
 
   const signOut = async () => {
@@ -318,7 +333,7 @@ export function SubscriptionRenewalScreen({ navigation }: Props) {
           </View>
         )}
 
-        <PrimaryButton title="Continue my transformation" icon="arrow-right" onPress={renew} loading={paying} disabled={!plans.length || loading} size="lg" style={styles.renewButton} />
+        <PrimaryButton title="Continue my transformation" icon="arrow-right" onPress={renew} loading={payment.busy} disabled={!plans.length || loading} size="lg" style={styles.renewButton} />
         {/* Somebody who renewed on another device, or reinstalled, gets their access back
             here rather than paying a second time. Apple requires it to exist. */}
         <TouchableOpacity onPress={restore} disabled={restoring} accessibilityRole="button" accessibilityLabel="Restore purchases" style={styles.restoreRow}>
@@ -332,8 +347,18 @@ export function SubscriptionRenewalScreen({ navigation }: Props) {
             <Text style={styles.checkText}>{checking ? 'Refreshing…' : 'Already paid?'}</Text>
           </TouchableOpacity>
         </View>
+        <View style={styles.policyRow}>
+          <TouchableOpacity onPress={() => openPolicy(APPLE_STANDARD_EULA_URL)} accessibilityRole="link" accessibilityLabel="Open Terms of Use EULA">
+            <Text style={styles.policyLink}>Terms of Use (EULA)</Text>
+          </TouchableOpacity>
+          <Text style={styles.policySeparator}> · </Text>
+          <TouchableOpacity onPress={() => openPolicy(PRIVACY_POLICY_URL)} accessibilityRole="link" accessibilityLabel="Open Privacy Policy">
+            <Text style={styles.policyLink}>Privacy Policy</Text>
+          </TouchableOpacity>
+        </View>
         {!inGrace ? <TouchableOpacity onPress={signOut} style={styles.logoutButton} accessibilityRole="button"><Text style={styles.logoutText}>Log out</Text></TouchableOpacity> : null}
       </View>
+      <PaymentFlowOverlay flow={payment} planName={selectedPlan?.label || selectedPlan?.planName} />
     </ScreenContainer>
   );
 }
@@ -395,6 +420,9 @@ const styles = StyleSheet.create({
   renewalDisclosure: { ...typography.caption, color: colors.inkSubtle, flex: 1 },
   checkButton: { minHeight: 28, justifyContent: 'center' },
   checkText: { ...typography.label, color: colors.inkMuted },
+  policyRow: { minHeight: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  policySeparator: { ...typography.caption, color: colors.inkSubtle },
+  policyLink: { ...typography.caption, color: colors.inkMuted, fontWeight: '700', textDecorationLine: 'underline' },
   logoutButton: { minHeight: 28, alignItems: 'center', justifyContent: 'center' },
   logoutText: { ...typography.label, color: colors.inkMuted },
 });

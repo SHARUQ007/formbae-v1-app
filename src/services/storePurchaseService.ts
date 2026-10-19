@@ -271,8 +271,18 @@ export async function recordHouseholdMembers(planId: string, householdMembers: u
   await apiRequest('/payment/store/household', { method: 'POST', body: { planId, householdMembers } });
 }
 
-/** Buy one plan, then let the server decide what that bought. */
-export async function purchaseStoreProduct(productId: string): Promise<{ active: boolean; status: UserStatus }> {
+/**
+ * Buy one plan, then let the server decide what that bought.
+ *
+ * `onPaid` fires in the gap between the two - the store sheet has closed and the server
+ * has not answered yet. It is the only moment a screen cannot infer from the outside, and
+ * it is the one worth showing: a trainee whose money has just left wants to be told we
+ * are checking, not left on a paywall with a spinning button.
+ */
+export async function purchaseStoreProduct(
+  productId: string,
+  onPaid?: () => void,
+): Promise<{ active: boolean; status: UserStatus }> {
   const Purchases = purchases();
   const wanted = baseProductId(productId);
   try {
@@ -312,6 +322,7 @@ export async function purchaseStoreProduct(productId: string): Promise<{ active:
   }
   // Past this point the store has taken the money, so a failure is a confirmation
   // failure and not a purchase failure.
+  onPaid?.();
   return confirmPaidPurchase();
 }
 
@@ -321,13 +332,14 @@ export async function purchaseStoreProduct(productId: string): Promise<{ active:
  * Apple requires this to exist and to be reachable without buying anything, which is why
  * the screen shows it whether or not a purchase has been attempted.
  */
-export async function restoreStorePurchases(): Promise<{ active: boolean; status: UserStatus }> {
+export async function restoreStorePurchases(onRestored?: () => void): Promise<{ active: boolean; status: UserStatus }> {
   const Purchases = purchases();
   try {
     await Purchases.restorePurchases();
   } catch (error) {
     throw translate(error);
   }
+  onRestored?.();
   return syncStorePurchase();
 }
 
@@ -384,7 +396,10 @@ export async function fetchCustomerState(): Promise<CustomerState> {
  * Returns whether the account came out of it entitled, having asked the server, because
  * what the paywall reports is a device's claim and access is not granted on those.
  */
-export async function presentStorePaywall(offeringId?: string): Promise<{ active: boolean; status: UserStatus } | null> {
+export async function presentStorePaywall(
+  offeringId?: string,
+  onPaid?: () => void,
+): Promise<{ active: boolean; status: UserStatus } | null> {
   if (storeModuleMissing()) {
     throw new StorePurchaseError('NOT_AVAILABLE', 'Purchases aren’t available in this build of the app.');
   }
@@ -412,6 +427,7 @@ export async function presentStorePaywall(offeringId?: string): Promise<{ active
   // bought. Only a completed purchase or restore is worth asking the server about.
   const outcome = String(result || '').toUpperCase();
   if (outcome.includes('CANCEL') || outcome.includes('ERROR')) return null;
+  onPaid?.();
   return confirmPaidPurchase();
 }
 

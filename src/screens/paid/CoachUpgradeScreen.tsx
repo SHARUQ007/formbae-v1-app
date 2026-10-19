@@ -6,7 +6,9 @@ import { ScreenContainer, ScreenHeader, Card } from '../../components/Card';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState, ErrorState } from '../../components/States';
 import { changeCoach, fetchCoachHub } from '../../services/trainerService';
-import { runNativeCheckout } from '../../services/paymentService';
+import { recoverSavedPayment, runNativeCheckout } from '../../services/paymentService';
+import { settleCheckoutResult } from '../../services/paymentOutcome';
+import { PaymentFlowOverlay, usePaymentFlow } from '../../components/PaymentFlow';
 import { useAuthStore } from '../../store/authStore';
 import { getCoachArtworkSource } from '../../utils/coachArtwork';
 import { coachCheckoutPlan, coachMonthlyLabel, formatCoachLabel } from '../../utils/coachPresentation';
@@ -60,6 +62,20 @@ export function CoachUpgradeScreen({ navigation, route }: Props) {
   }, [trainerId]);
   useEffect(() => { load(); }, [load]);
 
+  const payment = usePaymentFlow({
+    gateway: 'razorpay',
+    // Replaying the saved receipt, never reopening checkout: a verification that failed
+    // left proof of itself, and sending that again is the only safe way to chase it.
+    recheck: recoverSavedPayment,
+    onConfirmed: () => {
+      // Verification already recorded the coach against the subscription; pull it through
+      // so the rest of the flow sees the new coach before moving on.
+      refreshStatus()
+        .catch(() => undefined)
+        .finally(() => coach && navigation.replace('CoachUnlocked', { trainerId: coach.trainerId }));
+    },
+  });
+
   const continueWithCoach = async () => {
     if (!coach) return;
     if (coach.canSelect) {
@@ -79,9 +95,14 @@ export function CoachUpgradeScreen({ navigation, route }: Props) {
     }
     const plan = coachCheckoutPlan(coach);
     if (!plan) { setError('This coach does not have pricing set up yet.'); return; }
-    setPaying(true); setError('');
-    try {
-      const result = await runNativeCheckout({
+    setError('');
+    // Razorpay rather than the store, because a coach is a service delivered by a person
+    // and not digital content the stores claim a cut of. It still reports through the
+    // same flow, so a UPI mandate left pending here reads exactly as one left pending on
+    // the membership paywall.
+    payment.start(async (report) => {
+      report('authorizing');
+      return settleCheckoutResult(await runNativeCheckout({
         plan,
         paywallId: coach.paywallId,
         selectedTrainerId: coach.trainerId,
@@ -90,19 +111,8 @@ export function CoachUpgradeScreen({ navigation, route }: Props) {
           mobile: status?.phone || user?.mobile || '',
           email: status?.email,
         },
-      });
-      if (result.cancelled) return;
-      if (!result.success) {
-        setError(result.error || 'Payment could not be completed. Please try again.');
-        return;
-      }
-      // Verification already recorded the coach against the subscription; pull it through
-      // so the rest of the flow sees the new coach before moving on.
-      await refreshStatus().catch(() => undefined);
-      navigation.replace('CoachUnlocked', { trainerId: coach.trainerId });
-    } finally {
-      setPaying(false);
-    }
+      }));
+    });
   };
 
   if (loading) {
@@ -130,7 +140,7 @@ export function CoachUpgradeScreen({ navigation, route }: Props) {
 
   return (
     <ScreenContainer withBottomInset>
-      <ScreenHeader title="Coach profile" onBack={paying ? undefined : () => navigation.goBack()} />
+      <ScreenHeader title="Coach profile" onBack={paying || payment.busy ? undefined : () => navigation.goBack()} />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         <View style={styles.hero}>
           {art ? <Image source={art} style={styles.portrait} /> : <View style={styles.fallback}><Feather name="user" size={34} color={colors.gold} /></View>}
@@ -176,11 +186,12 @@ export function CoachUpgradeScreen({ navigation, route }: Props) {
       <PrimaryButton
         title={alreadyAvailable ? `Continue with ${firstName}` : `Continue to payment · ${coachMonthlyLabel(coach)}`}
         icon={alreadyAvailable ? 'arrow-right' : 'unlock'}
-        loading={paying}
+        loading={paying || payment.busy}
         onPress={continueWithCoach}
         size="lg"
         style={styles.cta}
       />
+      <PaymentFlowOverlay flow={payment} planName={coach.name} />
     </ScreenContainer>
   );
 }

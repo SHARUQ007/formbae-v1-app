@@ -19,7 +19,8 @@ import { FormInput } from '../../components/FormInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState } from '../../components/States';
 import { fetchPaymentStatus } from '../../services/paymentService';
-import { fetchStoreProducts, purchaseStoreProduct, recordHouseholdMembers, StorePurchaseError } from '../../services/storePurchaseService';
+import { fetchStoreProducts, purchaseStoreProduct, recordHouseholdMembers, restoreStorePurchases, syncStorePurchase } from '../../services/storePurchaseService';
+import { PaymentFlowOverlay, usePaymentFlow } from '../../components/PaymentFlow';
 import { displayBehavioralNotification } from '../../services/notificationService';
 import type { HouseholdGiftMember, HouseholdSuggestion, PaymentPlan } from '../../types/api';
 import type { OnboardingStackParamList, RootStackParamList } from '../../navigation/types';
@@ -60,7 +61,6 @@ export function GiftPlanDetailsScreen({ navigation, route }: Props) {
   const [storePrice, setStorePrice] = useState('');
   const [drafts, setDrafts] = useState<GiftDraft[]>([]);
   const [loading, setLoading] = useState(true);
-  const [paying, setPaying] = useState(false);
   const [picking, setPicking] = useState(-1);
 
   const memberCount = Math.max(0, (plan?.memberLimit || 1) - 1);
@@ -97,49 +97,48 @@ export function GiftPlanDetailsScreen({ navigation, route }: Props) {
     return '';
   }, [drafts]);
 
-  const onPay = async () => {
-    if (!plan) return;
+  /**
+   * The household purchase reports through the same flow as every other, so a deferred
+   * payment for two memberships reads exactly like one for a single plan.
+   */
+  const payment = usePaymentFlow({
+    gateway: 'store',
+    recheck: syncStorePurchase,
+    restore: restoreStorePurchases,
+    onConfirmed: (fresh) => {
+      navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('SubscriptionSuccess', {
+        planName: plan?.label || plan?.planName || 'FormBae',
+        nextScreen: fresh?.recommendedNextScreen,
+      });
+      displayBehavioralNotification('paymentConfirmed').catch(() => undefined);
+    },
+  });
+
+  const onPay = () => {
+    if (!plan || payment.busy) return;
     if (firstProblem) {
       Alert.alert('Almost there', firstProblem);
       return;
     }
-    setPaying(true);
-    try {
-      const members: HouseholdGiftMember[] = drafts.map((draft) => ({
-        relationship: draft.relationship,
-        name: draft.name.trim(),
-        mobile: draft.mobile,
-        ...(draft.relationship === 'other' ? { customLabel: draft.customLabel.trim() } : {}),
-      }));
-      if (!plan.storeProductId) {
-        Alert.alert('Not available yet', 'This plan isn’t available in your store right now. Please try again shortly.');
-        return;
-      }
-      // Written down first: the store sells one product and carries none of this with it,
-      // so the server reads these back when the entitlement arrives.
-      await recordHouseholdMembers(plan.planId, members);
-      const result = await purchaseStoreProduct(plan.storeProductId);
-      if (!result.active) {
-        Alert.alert('Almost there', 'Your purchase is still being confirmed. We’ll unlock your plans as soon as it clears.');
-        return;
-      }
-      navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('SubscriptionSuccess', {
-        planName: plan.label || plan.planName,
-        nextScreen: result.status?.recommendedNextScreen,
-      });
-      displayBehavioralNotification('paymentConfirmed').catch(() => undefined);
-    } catch (error) {
-      if (error instanceof StorePurchaseError && error.code === 'CANCELLED') return;
-      // A payment that went through and could not be confirmed is not a purchase issue,
-      // and must not be headed like one: the money left, and the plan is coming.
-      const paid = error instanceof StorePurchaseError && error.code === 'NOT_CONFIRMED';
-      const message = error instanceof Error && error.message
-        ? error.message
-        : 'That purchase didn’t go through. Nothing has been charged.';
-      Alert.alert(paid ? 'Payment received' : 'Purchase issue', message);
-    } finally {
-      setPaying(false);
+    if (!plan.storeProductId) {
+      Alert.alert('Not available yet', 'This plan isn’t available in your store right now. Please try again shortly.');
+      return;
     }
+    const storeProductId = plan.storeProductId;
+    const members: HouseholdGiftMember[] = drafts.map((draft) => ({
+      relationship: draft.relationship,
+      name: draft.name.trim(),
+      mobile: draft.mobile,
+      ...(draft.relationship === 'other' ? { customLabel: draft.customLabel.trim() } : {}),
+    }));
+    payment.start(async (report) => {
+      // Written down first: the store sells one product and carries none of this with it,
+      // so the server reads these back when the entitlement arrives. It happens inside the
+      // attempt so a retry re-records them - the names may have been edited in between.
+      await recordHouseholdMembers(plan.planId, members);
+      report('authorizing');
+      return purchaseStoreProduct(storeProductId, () => report('confirming'));
+    });
   };
 
   return (
@@ -246,7 +245,7 @@ export function GiftPlanDetailsScreen({ navigation, route }: Props) {
             title={plan && storePrice ? `Pay ${storePrice} & continue` : 'Continue'}
             icon="lock"
             onPress={onPay}
-            loading={paying}
+            loading={payment.busy}
             disabled={loading || !plan}
             size="lg"
             style={styles.payBtn}
@@ -280,6 +279,7 @@ export function GiftPlanDetailsScreen({ navigation, route }: Props) {
           </View>
         </TouchableOpacity>
       </Modal>
+      <PaymentFlowOverlay flow={payment} planName={plan?.label || plan?.planName} />
     </ScreenContainer>
   );
 }

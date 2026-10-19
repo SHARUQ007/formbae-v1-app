@@ -128,6 +128,24 @@ it.each([
   alert.mockRestore();
 });
 
+it('a payment still clearing is shown as pending, with no way to pay twice', async () => {
+  // What the trainee used to get here was a dialog headed "Purchase issue" with one OK
+  // button, which closed onto a paywall whose primary action is "Get started" - an
+  // invitation to be charged a second time for the plan they had just bought.
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  (purchaseStoreProduct as jest.Mock).mockResolvedValueOnce({ active: false, status: {} });
+  await render(paywall());
+  await act(async () => { await cta().props.onPress(); });
+  const copy = renderer.root.findAllByType(Text).flatMap((node) =>
+    React.Children.toArray(node.props.children).filter((child): child is string => typeof child === 'string'));
+  expect(alert).not.toHaveBeenCalled();
+  expect(copy).toContain('PAYMENT PENDING');
+  expect(copy).toContain('This payment is already recorded. You won’t be charged again.');
+  expect(copy).toContain('Check again');
+  expect(copy).not.toContain('Try again');
+  alert.mockRestore();
+});
+
 it('strikes the list price through beside what the store charges', async () => {
   // The anchor comes from the plan's configured full price, so the number shown is what an
   // admin set as standard rather than one invented on the screen.
@@ -175,7 +193,8 @@ it('shows the hosted paywall when an admin has asked for it', async () => {
   (presentStorePaywall as jest.Mock).mockResolvedValue({ active: true, status: {} });
   await render(paywall());
   await act(async () => { await cta().props.onPress(); });
-  expect(presentStorePaywall).toHaveBeenCalledWith('diwali');
+  // The second argument is the progress callback the payment flow passes in.
+  expect(presentStorePaywall).toHaveBeenCalledWith('diwali', expect.any(Function));
   expect(purchaseStoreProduct).not.toHaveBeenCalled();
   expect(rootReplace).toHaveBeenCalledWith('SubscriptionSuccess', expect.anything());
 });
@@ -235,6 +254,6 @@ it('a completed gift is sent with the chosen person, name and number', async () 
   expect(recordHouseholdMembers).toHaveBeenCalledWith('monthly__plus_one', [
     { relationship: 'mother', name: 'Asha', mobile: '9876543210' },
   ]);
-  expect(purchaseStoreProduct).toHaveBeenCalledWith('formbae_monthly_plus_one');
+  expect(purchaseStoreProduct).toHaveBeenCalledWith('formbae_monthly_plus_one', expect.any(Function));
   expect(rootReplace).toHaveBeenCalledWith('SubscriptionSuccess', expect.objectContaining({ planName: 'You + 1' }));
 });

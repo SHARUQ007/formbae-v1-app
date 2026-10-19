@@ -9,7 +9,9 @@ import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState } from '../../components/States';
 import { fetchPaymentStatus } from '../../services/paymentService';
 import { rupees } from '../../utils/format';
-import { fetchStoreProducts, presentStorePaywall, purchaseStoreProduct, restoreStorePurchases, StorePurchaseError } from '../../services/storePurchaseService';
+import { fetchStoreProducts, presentStorePaywall, purchaseStoreProduct, restoreStorePurchases, StorePurchaseError, syncStorePurchase } from '../../services/storePurchaseService';
+import { PaymentFlowOverlay, usePaymentFlow } from '../../components/PaymentFlow';
+import { cancelledOutcome, PaymentFlowError } from '../../services/paymentOutcome';
 import { displayBehavioralNotification } from '../../services/notificationService';
 import { useAuthStore } from '../../store/authStore';
 import { resolvePaidInitialRoute, resolveRootRoute } from '../../utils/routing';
@@ -23,6 +25,8 @@ import { typography } from '../../theme/typography';
 type Props = NativeStackScreenProps<OnboardingStackParamList, 'PaymentRequired'>;
 
 const PLUS_ONE_PEOPLE = ['Mother', 'Father', 'Partner', 'Loved one'] as const;
+const APPLE_STANDARD_EULA_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
+const PRIVACY_POLICY_URL = 'https://formbae.in/privacy-policy';
 
 function planLabel(plan: PaymentPlan): string {
   if ((plan.memberLimit || 1) === 3) return 'You + 2';
@@ -84,7 +88,6 @@ export function PaymentRequiredScreen({ navigation }: Props) {
   const [plans, setPlans] = useState<PaymentPlan[]>([]);
   const [selectedId, setSelectedId] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  const [paying, setPaying] = useState(false);
   const [suggestion, setSuggestion] = useState<HouseholdSuggestion[]>([]);
   const [storePrices, setStorePrices] = useState<Record<string, string>>({});
   // How the paywall should look, decided by an admin rather than by this build.
@@ -155,6 +158,24 @@ export function PaymentRequiredScreen({ navigation }: Props) {
     rootNav?.replace('PaidTransition', { screen: 'PaymentSync' });
   }, [navigation]);
 
+  /**
+   * Both ways of buying from this screen - our own plan list and RevenueCat's hosted
+   * template - report through one flow, so a deferred Play payment reads the same
+   * whichever paywall took it.
+   */
+  const payment = usePaymentFlow({
+    gateway: 'store',
+    recheck: syncStorePurchase,
+    restore: restoreStorePurchases,
+    onConfirmed: (fresh) => {
+      navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('SubscriptionSuccess', {
+        planName: selectedPlan?.label || selectedPlan?.planName || 'FormBae',
+        nextScreen: fresh?.recommendedNextScreen,
+      });
+      displayBehavioralNotification('paymentConfirmed').catch(() => undefined);
+    },
+  });
+
   const reload = useCallback(() => {
     setLoading(true);
     return fetchPaymentStatus()
@@ -199,23 +220,15 @@ export function PaymentRequiredScreen({ navigation }: Props) {
    * needs no release - while our own screen keeps the household step, which no template
    * knows about.
    */
-  const onHostedPaywall = async () => {
-    setPaying(true);
-    try {
-      const result = await presentStorePaywall(presentation.offeringId);
-      if (!result?.active) return;
-      navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('SubscriptionSuccess', {
-        planName: selectedPlan?.label || selectedPlan?.planName || 'FormBae',
-        nextScreen: result.status?.recommendedNextScreen,
-      });
-      displayBehavioralNotification('paymentConfirmed').catch(() => undefined);
-    } catch (error) {
-      if (error instanceof StorePurchaseError && error.code === 'CANCELLED') return;
-      Alert.alert('Purchase issue', error instanceof Error && error.message ? error.message : 'Please try again.');
-    } finally {
-      setPaying(false);
-    }
-  };
+  const onHostedPaywall = () => payment.start(async (report) => {
+    report('authorizing');
+    const result = await presentStorePaywall(presentation.offeringId, () => report('confirming'));
+    // RevenueCat's template reports nothing when it was closed without buying, which is a
+    // dismissal and not a failure: it ends the flow silently rather than drawing an error
+    // over a paywall the trainee has just chosen to leave.
+    if (!result) throw new PaymentFlowError(cancelledOutcome('store'));
+    return result;
+  });
 
   const onBuy = async () => {
     // A household plan collects who the memberships are for first, which is a step the
@@ -237,33 +250,15 @@ export function PaymentRequiredScreen({ navigation }: Props) {
       Alert.alert('Not available yet', 'This plan isn’t available in your store right now. Please try again shortly.');
       return;
     }
-    setPaying(true);
-    try {
-      // The store takes the money; what that bought is settled by the server, which asks
-      // RevenueCat rather than believing anything this screen sends.
-      const result = await purchaseStoreProduct(plan.storeProductId);
-      if (!result.active) {
-        Alert.alert('Almost there', 'Your purchase is still being confirmed. We’ll unlock your plan as soon as it clears.');
-        return;
-      }
-      navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.replace('SubscriptionSuccess', {
-        planName: plan.label || plan.planName,
-        nextScreen: result.status?.recommendedNextScreen,
-      });
-      displayBehavioralNotification('paymentConfirmed').catch(() => undefined);
-    } catch (error) {
-      // A cancelled purchase is a choice, not a failure, and gets no alert.
-      if (error instanceof StorePurchaseError && error.code === 'CANCELLED') return;
-      // A payment that went through and could not be confirmed is not a purchase issue,
-      // and must not be headed like one: the money left, and the plan is coming.
-      const paid = error instanceof StorePurchaseError && error.code === 'NOT_CONFIRMED';
-      const message = error instanceof Error && error.message
-        ? error.message
-        : 'That purchase didn’t go through. Nothing has been charged.';
-      Alert.alert(paid ? 'Payment received' : 'Purchase issue', message);
-    } finally {
-      setPaying(false);
-    }
+    const storeProductId = plan.storeProductId;
+    // The store takes the money; what that bought is settled by the server, which asks
+    // RevenueCat rather than believing anything this screen sends. Everything the store
+    // can say about how that went - cancelled, deferred, taken but unread - is told by
+    // the flow, which knows which of those may offer to pay again.
+    payment.start(async (report) => {
+      report('authorizing');
+      return purchaseStoreProduct(storeProductId, () => report('confirming'));
+    });
   };
 
   /**
@@ -291,8 +286,8 @@ export function PaymentRequiredScreen({ navigation }: Props) {
     }
   };
 
-  const openPolicy = (path: string) => {
-    Linking.openURL(`https://formbae.in/${path}`).catch(() => {
+  const openPolicy = (url: string) => {
+    Linking.openURL(url).catch(() => {
       Alert.alert('Could not open this page', 'Please try again when you are connected.');
     });
   };
@@ -435,7 +430,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
             }
             icon="arrow-right"
             onPress={onBuy}
-            loading={paying}
+            loading={payment.busy}
             size="lg"
             style={styles.payBtn}
           />
@@ -456,11 +451,11 @@ export function PaymentRequiredScreen({ navigation }: Props) {
           </Text>
           <View style={styles.policyRow}>
             <Text style={styles.policyText}>By continuing, you agree to the </Text>
-            <TouchableOpacity onPress={() => openPolicy('terms-of-use')} accessibilityRole="link">
-              <Text style={styles.policyLink}>Terms of Use</Text>
+            <TouchableOpacity onPress={() => openPolicy(APPLE_STANDARD_EULA_URL)} accessibilityRole="link" accessibilityLabel="Open Terms of Use EULA">
+              <Text style={styles.policyLink}>Terms of Use (EULA)</Text>
             </TouchableOpacity>
             <Text style={styles.policyText}> and </Text>
-            <TouchableOpacity onPress={() => openPolicy('privacy-policy')} accessibilityRole="link">
+            <TouchableOpacity onPress={() => openPolicy(PRIVACY_POLICY_URL)} accessibilityRole="link" accessibilityLabel="Open Privacy Policy">
               <Text style={styles.policyLink}>Privacy Policy</Text>
             </TouchableOpacity>
             <Text style={styles.policyText}>.</Text>
@@ -468,6 +463,7 @@ export function PaymentRequiredScreen({ navigation }: Props) {
         </View>
         )}
       </ScrollView>
+      <PaymentFlowOverlay flow={payment} planName={selectedPlan?.label || selectedPlan?.planName} />
     </ScreenContainer>
   );
 }

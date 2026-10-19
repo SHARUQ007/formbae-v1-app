@@ -312,6 +312,22 @@ async function recoverPendingPayment() {
   return result;
 }
 
+/**
+ * Replay a saved receipt, and never open checkout.
+ *
+ * What "Check again" means on the Razorpay side. A payment whose verification failed left
+ * proof of itself in the keychain, so the honest way to chase it is to send that again -
+ * not to put the trainee back through a sheet that would take the money twice.
+ */
+export async function recoverSavedPayment(): Promise<{ active: boolean; status?: UserStatus }> {
+  try {
+    const recovered = await recoverPendingPayment();
+    return { active: Boolean(recovered?.success), status: recovered?.status };
+  } catch {
+    return { active: false };
+  }
+}
+
 export async function runNativeCheckout(params: Parameters<typeof performNativeCheckout>[0]): Promise<CheckoutResult> {
   if (checkoutInProgress) return { success: false, error: 'A payment is already in progress.' };
   const token = getAuthToken();

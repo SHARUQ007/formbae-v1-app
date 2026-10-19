@@ -22,7 +22,9 @@ import { PrimaryButton } from '../../components/PrimaryButton';
 import { LoadingState, ErrorState, EmptyState } from '../../components/States';
 import { useAsync } from '../../hooks/useAsync';
 import { changeCoach, fetchCoachHubPhotoFallbacks } from '../../services/trainerService';
-import { runNativeCheckout } from '../../services/paymentService';
+import { recoverSavedPayment, runNativeCheckout } from '../../services/paymentService';
+import { settleCheckoutResult } from '../../services/paymentOutcome';
+import { PaymentFlowOverlay, usePaymentFlow } from '../../components/PaymentFlow';
 import { coachAccessPrice, coachCheckoutPlan, coachMonthlyLabel, coachPricePaise, formatCoachLabel, isIncludedCoach } from '../../utils/coachPresentation';
 import { rupees } from '../../utils/format';
 import { loadCoachBundleCached, peekCoachBundleCached } from '../../services/preloadService';
@@ -112,6 +114,7 @@ export function TrainerScreen() {
   const [viewingCoach, setViewingCoach] = useState<CoachOption | null>(null);
   const [changingId, setChangingId] = useState('');
   const [payingTrainerId, setPayingTrainerId] = useState('');
+  const [payingCoachName, setPayingCoachName] = useState('');
   const [coachImageRevision, setCoachImageRevision] = useState(0);
   const coachImageRecoveryAttempted = useRef(false);
   const { user, status, refreshStatus } = useAuthStore();
@@ -119,6 +122,21 @@ export function TrainerScreen() {
   const { data, loading, error, reload, refresh, refreshing, setData } = useAsync((mode) =>
     loadCoachBundleCached({ force: mode === 'refresh' }),
   [], { initialData: peekCoachBundleCached() });
+
+  const payment = usePaymentFlow({
+    gateway: 'razorpay',
+    recheck: recoverSavedPayment,
+    onConfirmed: () => {
+      Promise.resolve()
+        .then(() => refreshStatus().catch(() => undefined))
+        .then(() => loadCoachBundleCached({ force: true }).catch(() => undefined))
+        .then(() => reload())
+        .finally(() => {
+          setViewingCoach(null);
+          setTab('about');
+        });
+    },
+  });
 
   const refreshCoaches = useCallback(async () => {
     // Remount image nodes as well as refreshing data. React Native otherwise
@@ -207,16 +225,26 @@ export function TrainerScreen() {
 
   const activeTab: CoachTab = !currentCoach && tab === 'about' ? 'change' : tab;
 
+  /**
+   * Unlocking a coach, watched by the same flow the membership paywall uses.
+   *
+   * It used to end in an `Alert.alert('Payment issue')` that could not tell a refused card
+   * from a mandate still clearing - and dismissed onto a list whose buttons all say
+   * "Unlock". The flow keeps the distinction the gateway already made, and only ever
+   * offers to pay again where nothing was charged.
+   */
   const startCoachCheckout = useCallback(
-    async (coach: CoachOption) => {
+    (coach: CoachOption) => {
       const plan = coachCheckoutPlan(coach);
       if (!plan) {
         Alert.alert('Coach unavailable', 'This coach does not have pricing set up yet. Please pick another coach.');
         return;
       }
       setPayingTrainerId(coach.trainerId);
-      try {
-        const result = await runNativeCheckout({
+      setPayingCoachName(coach.name);
+      payment.start(async (report) => {
+        report('authorizing');
+        return settleCheckoutResult(await runNativeCheckout({
           plan,
           paywallId: coach.paywallId,
           selectedTrainerId: coach.trainerId,
@@ -225,22 +253,10 @@ export function TrainerScreen() {
             mobile: status?.phone || user?.mobile || '',
             email: status?.email,
           },
-        });
-        if (result.cancelled) return;
-        if (!result.success) {
-          Alert.alert('Payment issue', result.error || 'Payment could not be completed.');
-          return;
-        }
-        await refreshStatus().catch(() => undefined);
-        await loadCoachBundleCached({ force: true }).catch(() => undefined);
-        await reload();
-        setViewingCoach(null);
-        setTab('about');
-      } finally {
-        setPayingTrainerId('');
-      }
+        }));
+      }).finally(() => setPayingTrainerId(''));
     },
-    [reload, refreshStatus, status, user],
+    [payment, status, user],
   );
 
   const confirmCoachPurchase = useCallback(
@@ -440,6 +456,7 @@ export function TrainerScreen() {
           }}
         />
       ) : null}
+      <PaymentFlowOverlay flow={payment} planName={payingCoachName} />
     </ScreenContainer>
   );
 }
