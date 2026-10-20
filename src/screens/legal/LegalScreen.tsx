@@ -1,4 +1,4 @@
-import { ScrollView, Text, StyleSheet, View, Linking, Alert } from 'react-native';
+import { ScrollView, Text, StyleSheet, View, Linking, Alert, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { ScreenContainer, ScreenHeader, Card, SectionTitle } from '../../components/Card';
 import { ListRow } from '../../components/ListRow';
@@ -9,6 +9,8 @@ import { fetchLegal } from '../../services/legalService';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { typography } from '../../theme/typography';
+
+const APPLE_STANDARD_EULA_URL = 'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
 async function openUrl(url: string) {
   try {
@@ -46,6 +48,9 @@ export function LegalScreen() {
   const links: Array<{ label: string; url: string; icon: string }> = [
     { label: 'Privacy Policy', url: data.privacyPolicyUrl, icon: 'shield' },
     { label: 'Terms of Use', url: data.termsUrl, icon: 'file-text' },
+    ...(Platform.OS === 'ios'
+      ? [{ label: 'Apple Standard EULA', url: APPLE_STANDARD_EULA_URL, icon: 'file-text' }]
+      : []),
     { label: 'Refund Policy', url: data.refundPolicyUrl, icon: 'credit-card' },
     { label: 'Help & Support', url: data.supportUrl, icon: 'help-circle' },
   ];

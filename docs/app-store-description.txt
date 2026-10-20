@@ -2,7 +2,7 @@ FormBae builds a workout and diet plan around your body, your goals and the time
 
 WHAT YOU GET
 
-• A plan made for you, not a template. Answer a short set of questions about your body, goals, food preferences and schedule, and get a plan built from your answers.
+• A plan made for you, not a template.
 • Workouts with video for every exercise, so you know what each movement should look like before you do it.
 • A diet plan that fits how you eat — vegetarian, non-vegetarian, or whatever your household cooks.
 • A food diary. Photograph a meal or note it down, and see your week.
@@ -21,7 +21,7 @@ MEMBERSHIP
 
 FormBae is a monthly subscription. It renews every month until you cancel, which you can do any time in your Apple Account subscription settings. The coach upgrade is billed separately.
 
-Privacy policy: https://formbae.in/privacy-policy
-Terms of use: https://formbae.in/terms-of-use
+Privacy Policy: https://formbae.in/privacy-policy
+Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 Delete your account: https://formbae.in/delete-account
 Support: WhatsApp +91 99616 34121
